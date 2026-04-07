@@ -1,0 +1,455 @@
+# Databricks App Bundle Configuration
+# SOC Intelligence Platform - Complete Enterprise SIEM
+
+bundle:
+  name: soc-intelligence-platform
+
+variables:
+  catalog:
+    default: soc_intelligence
+    description: "Unity Catalog name for SOC data"
+
+  environment:
+    default: production
+    description: "Deployment environment (dev, staging, production)"
+
+  vector_search_endpoint:
+    default: soc-vector-search
+    description: "Vector search endpoint name"
+
+include:
+  - "*.yml"
+  - "resources/*.yml"
+
+targets:
+  dev:
+    mode: development
+    workspace:
+      host: "{{env.DATABRICKS_DEV_HOST}}"
+    variables:
+      catalog: soc_intelligence_dev
+      environment: dev
+
+  staging:
+    mode: staging
+    workspace:
+      host: "{{env.DATABRICKS_STAGING_HOST}}"
+    variables:
+      catalog: soc_intelligence_staging
+      environment: staging
+
+  prod:
+    mode: production
+    workspace:
+      host: "{{env.DATABRICKS_PROD_HOST}}"
+    variables:
+      catalog: soc_intelligence
+      environment: production
+
+resources:
+  apps:
+    soc_intelligence:
+      name: soc-intelligence-platform-${var.environment}
+      description: "Enterprise SIEM with Graph-Based Threat Detection and ML-Powered Analytics"
+
+      resources:
+        - name: frontend
+          description: "React/TypeScript frontend application"
+          subdomain: "soc-platform-${var.environment}"
+
+          config:
+            command: ["npm", "run", "start"]
+
+            env:
+              - name: NODE_ENV
+                value: "production"
+
+              - name: VITE_DATABRICKS_HOST
+                value: "{{workspace.host}}"
+
+              - name: VITE_DATABRICKS_WAREHOUSE_ID
+                value: "{{resources.sql_warehouses.soc_warehouse.id}}"
+
+              - name: VITE_CATALOG
+                value: "${var.catalog}"
+
+              - name: VITE_ENVIRONMENT
+                value: "${var.environment}"
+
+              - name: VITE_VECTOR_SEARCH_ENDPOINT
+                value: "${var.vector_search_endpoint}"
+
+            compute:
+              size: "SMALL"
+              auto_stop_minutes: 30
+
+      permissions:
+        - level: CAN_USE
+          group_name: "analysts"
+        - level: CAN_USE
+          group_name: "threat_hunters"
+        - level: CAN_MANAGE
+          group_name: "soc_admins"
+        - level: CAN_MANAGE
+          group_name: "security_engineers"
+
+  sql_warehouses:
+    soc_warehouse:
+      name: "soc-query-warehouse-${var.environment}"
+      cluster_size: "2X-Small"
+      enable_serverless_compute: true
+      enable_photon: true
+      min_num_clusters: 1
+      max_num_clusters: 10
+      auto_stop_mins: 30
+
+      tags:
+        project: "soc-platform"
+        environment: "${var.environment}"
+        cost_center: "security-operations"
+
+      channel:
+        name: "CHANNEL_NAME_CURRENT"
+
+  jobs:
+    streaming_correlation_engine:
+      name: "SOC - Streaming Correlation Engine (${var.environment})"
+      description: "Real-time graph-based threat detection with Spark Streaming and GraphX"
+
+      tags:
+        project: "soc-platform"
+        job_type: "streaming"
+        environment: "${var.environment}"
+
+      job_clusters:
+        - job_cluster_key: "spark_cluster"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.2xlarge"
+            num_workers: 10
+            autoscale:
+              min_workers: 5
+              max_workers: 50
+
+            spark_conf:
+              "spark.databricks.delta.optimizeWrite.enabled": "true"
+              "spark.databricks.delta.autoCompact.enabled": "true"
+              "spark.sql.adaptive.enabled": "true"
+              "spark.sql.adaptive.coalescePartitions.enabled": "true"
+              "spark.databricks.photon.enabled": "true"
+
+            aws_attributes:
+              first_on_demand: 1
+              availability: "SPOT_WITH_FALLBACK"
+              spot_bid_price_percent: 100
+
+            azure_attributes:
+              first_on_demand: 1
+              availability: "SPOT_WITH_FALLBACK_AZURE"
+              spot_bid_max_price: -1
+
+            enable_elastic_disk: true
+
+      tasks:
+        - task_key: "ingest_normalize"
+          job_cluster_key: "spark_cluster"
+          description: "Stream 1: Ingest and normalize events to OCSF"
+
+          spark_python_task:
+            python_file: "backend/spark_streaming_correlation.py"
+            parameters:
+              - "--mode"
+              - "normalize"
+              - "--catalog"
+              - "${var.catalog}"
+
+          libraries:
+            - pypi:
+                package: "graphframes==0.8.2"
+            - pypi:
+                package: "psycopg2-binary==2.9.9"
+
+        - task_key: "graph_construction"
+          job_cluster_key: "spark_cluster"
+          description: "Stream 2: Build graph from events"
+          depends_on:
+            - task_key: "ingest_normalize"
+
+          spark_python_task:
+            python_file: "backend/spark_streaming_correlation.py"
+            parameters:
+              - "--mode"
+              - "graph"
+              - "--catalog"
+              - "${var.catalog}"
+
+        - task_key: "graph_analytics"
+          job_cluster_key: "spark_cluster"
+          description: "Stream 3: Run GraphX algorithms"
+          depends_on:
+            - task_key: "graph_construction"
+
+          spark_python_task:
+            python_file: "backend/spark_streaming_correlation.py"
+            parameters:
+              - "--mode"
+              - "analytics"
+              - "--catalog"
+              - "${var.catalog}"
+
+        - task_key: "pattern_discovery"
+          job_cluster_key: "spark_cluster"
+          description: "Stream 4: Detect attack patterns"
+          depends_on:
+            - task_key: "graph_analytics"
+
+          spark_python_task:
+            python_file: "backend/spark_streaming_correlation.py"
+            parameters:
+              - "--mode"
+              - "patterns"
+              - "--catalog"
+              - "${var.catalog}"
+
+        - task_key: "ml_anomaly_detection"
+          job_cluster_key: "spark_cluster"
+          description: "Stream 5: ML-based anomaly detection"
+          depends_on:
+            - task_key: "graph_analytics"
+
+          spark_python_task:
+            python_file: "backend/spark_streaming_correlation.py"
+            parameters:
+              - "--mode"
+              - "ml"
+              - "--catalog"
+              - "${var.catalog}"
+
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: "UTC"
+        pause_status: "UNPAUSED"
+
+      email_notifications:
+        on_start:
+          - "soc-team@company.com"
+        on_failure:
+          - "soc-team@company.com"
+          - "oncall@company.com"
+        on_success:
+          - "soc-team@company.com"
+
+      max_concurrent_runs: 1
+      timeout_seconds: 0
+
+    etl_processor:
+      name: "SOC - ETL Processor (${var.environment})"
+      description: "Parse, enrich, and correlate security events"
+
+      job_clusters:
+        - job_cluster_key: "etl_cluster"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 5
+            autoscale:
+              min_workers: 2
+              max_workers: 20
+
+            spark_conf:
+              "spark.databricks.delta.optimizeWrite.enabled": "true"
+              "spark.databricks.photon.enabled": "true"
+
+            aws_attributes:
+              first_on_demand: 1
+              availability: "SPOT_WITH_FALLBACK"
+              spot_bid_price_percent: 100
+
+      tasks:
+        - task_key: "run_etl"
+          job_cluster_key: "etl_cluster"
+
+          spark_python_task:
+            python_file: "backend/etl_processor.py"
+            parameters:
+              - "--catalog"
+              - "${var.catalog}"
+
+      schedule:
+        quartz_cron_expression: "0 */1 * * * ?"
+        timezone_id: "UTC"
+        pause_status: "UNPAUSED"
+
+      email_notifications:
+        on_failure:
+          - "soc-team@company.com"
+
+      max_concurrent_runs: 3
+      timeout_seconds: 3600
+
+    vector_enrichment:
+      name: "SOC - Vector Enrichment (${var.environment})"
+      description: "Generate embeddings and update vector search indexes"
+
+      job_clusters:
+        - job_cluster_key: "ml_cluster"
+          new_cluster:
+            spark_version: "14.3.x-gpu-ml-scala2.12"
+            node_type_id: "g5.2xlarge"
+            num_workers: 3
+            autoscale:
+              min_workers: 1
+              max_workers: 10
+
+            spark_conf:
+              "spark.databricks.delta.optimizeWrite.enabled": "true"
+
+      tasks:
+        - task_key: "generate_embeddings"
+          job_cluster_key: "ml_cluster"
+
+          spark_python_task:
+            python_file: "backend/vector_enrichment.py"
+            parameters:
+              - "--catalog"
+              - "${var.catalog}"
+              - "--endpoint"
+              - "${var.vector_search_endpoint}"
+
+          libraries:
+            - pypi:
+                package: "sentence-transformers==2.3.1"
+            - pypi:
+                package: "transformers==4.37.0"
+
+      schedule:
+        quartz_cron_expression: "0 0 */6 * * ?"
+        timezone_id: "UTC"
+        pause_status: "UNPAUSED"
+
+      email_notifications:
+        on_failure:
+          - "ml-team@company.com"
+
+      max_concurrent_runs: 1
+      timeout_seconds: 7200
+
+  pipelines:
+    delta_live_tables:
+      name: "SOC - Delta Live Tables Pipeline (${var.environment})"
+      catalog: "${var.catalog}"
+      target: "events"
+
+      configuration:
+        "pipelines.applyChangesPreviewEnabled": "true"
+
+      clusters:
+        - label: "default"
+          autoscale:
+            min_workers: 2
+            max_workers: 20
+            mode: "ENHANCED"
+
+          aws_attributes:
+            first_on_demand: 1
+            availability: "SPOT_WITH_FALLBACK"
+            spot_bid_price_percent: 100
+
+      libraries:
+        - notebook:
+            path: "backend/dlt/bronze_layer.py"
+        - notebook:
+            path: "backend/dlt/silver_layer.py"
+        - notebook:
+            path: "backend/dlt/gold_layer.py"
+
+      channel: "CURRENT"
+      photon: true
+      continuous: true
+
+      notifications:
+        - email_recipients:
+            - "soc-team@company.com"
+          alerts:
+            - "on-update-failure"
+            - "on-flow-failure"
+
+  vector_search_endpoints:
+    soc_vector_search:
+      name: "${var.vector_search_endpoint}"
+      endpoint_type: "STANDARD"
+
+  vector_search_indexes:
+    ioc_embeddings:
+      name: "${var.catalog}.threat_intel.ioc_embeddings_index"
+      endpoint_name: "${var.vector_search_endpoint}"
+      primary_key: "id"
+      index_type: "DELTA_SYNC"
+
+      delta_sync_index_spec:
+        source_table: "${var.catalog}.threat_intel.ioc_embeddings"
+        pipeline_type: "TRIGGERED"
+        embedding_dimension: 1536
+        embedding_vector_column: "embedding_array"
+
+    event_embeddings:
+      name: "${var.catalog}.events.event_embeddings_index"
+      endpoint_name: "${var.vector_search_endpoint}"
+      primary_key: "event_id"
+      index_type: "DELTA_SYNC"
+
+      delta_sync_index_spec:
+        source_table: "${var.catalog}.events.gold_enriched_events"
+        pipeline_type: "CONTINUOUS"
+        embedding_dimension: 1536
+        embedding_vector_column: "event_embedding"
+        embedding_source_column: "description"
+
+  secrets:
+    supabase:
+      scope: "soc-secrets"
+      secrets:
+        - key: "supabase_url"
+          string_value: "{{env.SUPABASE_URL}}"
+
+        - key: "supabase_anon_key"
+          string_value: "{{env.SUPABASE_ANON_KEY}}"
+
+        - key: "supabase_service_role_key"
+          string_value: "{{env.SUPABASE_SERVICE_ROLE_KEY}}"
+
+  permissions:
+    catalog:
+      - principal: "soc_admins"
+        privileges:
+          - "ALL_PRIVILEGES"
+
+      - principal: "analysts"
+        privileges:
+          - "USE_CATALOG"
+          - "USE_SCHEMA"
+          - "SELECT"
+
+      - principal: "threat_hunters"
+        privileges:
+          - "USE_CATALOG"
+          - "USE_SCHEMA"
+          - "SELECT"
+          - "EXECUTE"
+
+artifacts:
+  frontend:
+    type: whl
+    files:
+      - source: ./src
+      - source: ./public
+      - source: ./index.html
+      - source: ./package.json
+      - source: ./vite.config.ts
+
+  backend:
+    type: whl
+    files:
+      - source: ./backend
+      - source: ./spark_streaming_correlation.py
+      - source: ./requirements.txt

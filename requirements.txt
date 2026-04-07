@@ -1,0 +1,26 @@
+# This is a Node.js/React/TypeScript application, not a Python application.
+# Python requirements are not applicable for this project.
+#
+# For deployment, you need:
+# 1. Node.js 20 or higher
+# 2. npm or yarn package manager
+#
+# To install Node.js dependencies, run:
+#   npm install
+#
+# To build the application for production, run:
+#   npm run build
+#
+# To run the development server, run:
+#   npm run dev
+#
+# The application uses the following key dependencies:
+# - React 18.3.1
+# - Vite 5.4.2
+# - TypeScript 5.5.3
+# - @supabase/supabase-js 2.57.4
+# - three 0.180.0 (3D graphics)
+# - lucide-react 0.344.0 (icons)
+# - tailwindcss 3.4.1 (styling)
+#
+# See package.json for the complete list of dependencies.
