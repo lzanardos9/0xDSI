@@ -458,7 +458,7 @@ const Dashboard = () => {
       </aside>
 
       {/* Main Content */}
-      <div className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
+      <div className={`flex-1 min-w-0 overflow-x-hidden transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
         {/* Header */}
         <header className="glass-panel sticky top-0 z-40 border-b border-slate-800/30">
           <div className="px-8 py-3">
@@ -523,7 +523,7 @@ const Dashboard = () => {
         </header>
 
         {/* Main Content Area */}
-        <main className="p-8 custom-scrollbar">
+        <main className="p-8 custom-scrollbar min-w-0 overflow-x-hidden">
           {selectedView === 'overview' && (
             <>
               <div className="mb-8">
