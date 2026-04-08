@@ -3,7 +3,7 @@ import {
   Shield, Search, ChevronLeft, ChevronRight,
   Zap, AlertTriangle, Filter, X, ChevronDown,
   Activity, Target, Eye, RefreshCw, BarChart3,
-  Brain, Network, Clock, Fingerprint,
+  Brain, Network, Clock, Fingerprint, EyeOff,
   Dice1 as Dice, Layers, Swords, Merge, FileCode, History,
   Download
 } from 'lucide-react';
@@ -67,6 +67,7 @@ const RULE_TYPE_CONFIG: Record<string, { label: string; icon: any; bg: string; t
   ensemble_multi_model: { label: 'Ensemble Multi-Model', icon: Layers, bg: 'bg-orange-500/15', text: 'text-orange-300', border: 'border-orange-500/30', short: 'ENS' },
   adversarial_simulation: { label: 'Adversarial Simulation', icon: Swords, bg: 'bg-red-500/15', text: 'text-red-300', border: 'border-red-500/30', short: 'ADVSIM' },
   cross_domain_fusion: { label: 'Cross-Domain Fusion', icon: Merge, bg: 'bg-fuchsia-500/15', text: 'text-fuchsia-300', border: 'border-fuchsia-500/30', short: 'FUSION' },
+  negative_correlation: { label: 'Negative Correlation', icon: EyeOff, bg: 'bg-red-500/15', text: 'text-red-300', border: 'border-red-500/30', short: 'NEG' },
 };
 
 const RULE_TYPES = Object.keys(RULE_TYPE_CONFIG);
