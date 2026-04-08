@@ -81,6 +81,7 @@ import CorrelationRulesPanel from './CorrelationRulesPanel';
 import SOCAgents3D from './SOCAgents3D';
 import LLMGuardrailsControl from './LLMGuardrailsControl';
 import GlasswingPanel from './glasswing/GlasswingPanel';
+import NegativeCorrelationPanel from './negative-correlation/NegativeCorrelationPanel';
 import DashboardMigrationsTab from './dashboard-builder/DashboardMigrationsTab';
 import { supabase } from '../lib/supabase';
 
@@ -95,7 +96,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userRole, setUserRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
@@ -297,6 +298,7 @@ const Dashboard = () => {
         { id: 'attackvectors', label: 'Attack Vectors', icon: Target },
         { id: 'threatmodeling', label: 'Smart Threat Modeling', icon: Scan },
         { id: 'correlationrules', label: 'Correlation Rules', icon: Zap },
+        { id: 'negcorrelation', label: 'Negative Correlation', icon: AlertTriangle },
       ]
     },
     {
@@ -955,6 +957,7 @@ const Dashboard = () => {
           {selectedView === 'correlationrules' && <CorrelationRulesPanel />}
           {selectedView === 'dashboardstudio' && <DashboardMigrationsTab />}
           {selectedView === 'glasswing' && <GlasswingPanel />}
+          {selectedView === 'negcorrelation' && <NegativeCorrelationPanel />}
           {selectedView === 'attackvectors' && (
             <div className="enterprise-card overflow-hidden">
               <div className="bg-slate-800/30 px-6 py-4 border-b border-slate-700/50">
