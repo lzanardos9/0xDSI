@@ -23,6 +23,7 @@ import {
   LogOut,
   Layers,
   CheckCircle2,
+  ShieldCheck,
   ArrowUpRight,
   ArrowDownRight,
   Minus,
@@ -78,6 +79,7 @@ import DocumentAnalysis from './DocumentAnalysis';
 import HoneypotControl from './HoneypotControl';
 import CorrelationRulesPanel from './CorrelationRulesPanel';
 import SOCAgents3D from './SOCAgents3D';
+import LLMGuardrailsControl from './LLMGuardrailsControl';
 import DashboardMigrationsTab from './dashboard-builder/DashboardMigrationsTab';
 import { supabase } from '../lib/supabase';
 
@@ -92,7 +94,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userRole, setUserRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
@@ -289,6 +291,7 @@ const Dashboard = () => {
         { id: 'honeypot', label: 'HoneyPot & Tokens', icon: Eye },
         { id: 'malwaresandbox', label: 'AI Malware Sandbox', icon: Bug },
         { id: 'poisonguard', label: 'Model Poisoning Guard', icon: Shield },
+        { id: 'guardrails', label: 'LLM Guardrails', icon: ShieldCheck },
         { id: 'attackvectors', label: 'Attack Vectors', icon: Target },
         { id: 'threatmodeling', label: 'Smart Threat Modeling', icon: Scan },
         { id: 'correlationrules', label: 'Correlation Rules', icon: Zap },
@@ -931,6 +934,7 @@ const Dashboard = () => {
           {selectedView === 'iocs' && <IOCPanel />}
           {selectedView === 'malwaresandbox' && <AIMalwareSandbox />}
           {selectedView === 'poisonguard' && <ModelPoisoningGuard />}
+          {selectedView === 'guardrails' && <LLMGuardrailsControl />}
           {selectedView === 'honeypot' && (
             <div className="h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
               <HoneypotControl />
