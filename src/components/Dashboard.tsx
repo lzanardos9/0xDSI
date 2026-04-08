@@ -80,6 +80,7 @@ import HoneypotControl from './HoneypotControl';
 import CorrelationRulesPanel from './CorrelationRulesPanel';
 import SOCAgents3D from './SOCAgents3D';
 import LLMGuardrailsControl from './LLMGuardrailsControl';
+import GlasswingPanel from './glasswing/GlasswingPanel';
 import DashboardMigrationsTab from './dashboard-builder/DashboardMigrationsTab';
 import { supabase } from '../lib/supabase';
 
@@ -94,7 +95,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userRole, setUserRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
@@ -286,6 +287,7 @@ const Dashboard = () => {
       section: 'Detection & Intelligence',
       roles: ['analyst', 'engineer', 'admin'],
       items: [
+        { id: 'glasswing', label: 'Glasswing Scanner', icon: Scan },
         { id: 'feeds', label: 'Threat Feeds', icon: Rss },
         { id: 'iocs', label: 'IOCs', icon: Shield },
         { id: 'honeypot', label: 'HoneyPot & Tokens', icon: Eye },
@@ -952,6 +954,7 @@ const Dashboard = () => {
           {selectedView === 'notebooks' && <DatabricksNotebooksPanel />}
           {selectedView === 'correlationrules' && <CorrelationRulesPanel />}
           {selectedView === 'dashboardstudio' && <DashboardMigrationsTab />}
+          {selectedView === 'glasswing' && <GlasswingPanel />}
           {selectedView === 'attackvectors' && (
             <div className="enterprise-card overflow-hidden">
               <div className="bg-slate-800/30 px-6 py-4 border-b border-slate-700/50">
