@@ -374,7 +374,7 @@ export default function NegativeCorrelationPanel() {
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             {Object.entries(SUBCATEGORY_STATS).map(([key, config]) => {
               const Icon = config.icon;
               return (
@@ -390,7 +390,7 @@ export default function NegativeCorrelationPanel() {
             })}
           </div>
 
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {DAC_STATUS_ORDER.map(status => {
               const count = libraryRules.filter(r => r.dac_status === status).length;
               return (

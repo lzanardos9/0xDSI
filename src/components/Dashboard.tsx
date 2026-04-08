@@ -957,7 +957,11 @@ const Dashboard = () => {
           {selectedView === 'correlationrules' && <CorrelationRulesPanel />}
           {selectedView === 'dashboardstudio' && <DashboardMigrationsTab />}
           {selectedView === 'glasswing' && <GlasswingPanel />}
-          {selectedView === 'negcorrelation' && <NegativeCorrelationPanel />}
+          {selectedView === 'negcorrelation' && (
+            <div className="h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
+              <NegativeCorrelationPanel />
+            </div>
+          )}
           {selectedView === 'attackvectors' && (
             <div className="enterprise-card overflow-hidden">
               <div className="bg-slate-800/30 px-6 py-4 border-b border-slate-700/50">
