@@ -12,6 +12,7 @@ import LowAndSlowTracker from './LowAndSlowTracker';
 import RealtimeCEPGraph from './RealtimeCEPGraph';
 import EventDrilldownModal from './EventDrilldownModal';
 import IntelligenceMonitoring from './IntelligenceMonitoring';
+import PredictiveThreatAnalytics from './PredictiveThreatAnalytics';
 import ThreatGlobe from '../ThreatGlobe';
 import { Globe, Shield } from 'lucide-react';
 
@@ -57,6 +58,8 @@ const CommandCenter = () => {
   return (
     <div className="space-y-4">
       <DefconAlert />
+
+      <PredictiveThreatAnalytics />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <div className="lg:col-span-3 h-[420px] cursor-pointer" onClick={() => handleEventDrilldown('radar')}>

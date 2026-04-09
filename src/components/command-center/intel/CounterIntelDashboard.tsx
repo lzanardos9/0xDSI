@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Radar, AlertTriangle, Shield, Eye, UserX, Target, Clock } from 'lucide-react';
 
-interface CICase {
+interface ThreatCase {
   id: string;
   codename: string;
-  type: 'mole_hunt' | 'foreign_agent' | 'insider_threat' | 'technical_surveillance' | 'double_agent';
+  type: 'data_leak_investigation' | 'external_threat_actor' | 'compromised_insider' | 'technical_surveillance' | 'insider_threat';
   status: 'active' | 'surveillance' | 'neutralized' | 'escalated';
   threat: 'critical' | 'high' | 'medium';
   subject: string;
@@ -15,80 +15,80 @@ interface CICase {
   daysActive: number;
 }
 
-const CI_CASES: CICase[] = [
+const THREAT_CASES: ThreatCase[] = [
   {
-    id: 'CI-0047',
+    id: 'IT-0047',
     codename: 'WINTER FOX',
-    type: 'mole_hunt',
+    type: 'data_leak_investigation',
     status: 'active',
     threat: 'critical',
     subject: 'Unknown Insider - Senior Analyst Pool',
-    affiliation: 'SVR (suspected)',
-    detectedVia: 'Anomalous classified access patterns',
-    description: 'Pattern analysis indicates unauthorized access to ORION compartment documents outside normal duty hours. Behavioral profiling narrows suspects to 3 senior analysts with TS/SCI clearance.',
-    indicators: ['Off-hours SCIF access', 'Encrypted personal device usage', 'Unexplained foreign travel', 'Financial anomalies detected'],
+    affiliation: 'Competitor (suspected)',
+    detectedVia: 'Anomalous data access patterns',
+    description: 'Pattern analysis indicates unauthorized access to restricted M&A documents outside normal business hours. Behavioral profiling narrows suspects to 3 senior analysts with Level 4 access.',
+    indicators: ['Off-hours secure zone access', 'Unauthorized USB device usage', 'Unexplained contact with competitor', 'Financial anomalies detected'],
     daysActive: 47,
   },
   {
-    id: 'CI-0048',
+    id: 'IT-0048',
     codename: 'IRON CURTAIN',
-    type: 'foreign_agent',
+    type: 'external_threat_actor',
     status: 'surveillance',
     threat: 'high',
-    subject: 'Diplomatic Attache - Embassy Row',
-    affiliation: 'GRU Unit 29155',
-    detectedVia: 'HUMINT source report + SIGINT correlation',
-    description: 'Foreign intelligence officer operating under diplomatic cover identified conducting dead drops and signal site communications. Counter-surveillance team deployed.',
-    indicators: ['SDR (Surveillance Detection Route) pattern', 'Signal site activity at Lincoln Memorial', 'Contact with known intelligence facilitator', 'Encrypted burst transmissions'],
+    subject: 'APT Group - Targeted Spear Phishing Campaign',
+    affiliation: 'APT-41 (Wicked Panda)',
+    detectedVia: 'Threat intel feed + NDR correlation',
+    description: 'Advanced persistent threat group identified conducting targeted spear phishing against senior executives. Malicious infrastructure mapped and monitored. Threat hunting team deployed.',
+    indicators: ['Spear phishing email pattern detected', 'C2 infrastructure identified', 'Contact with known threat actor infrastructure', 'Encrypted payload delivery attempts'],
     daysActive: 23,
   },
   {
-    id: 'CI-0049',
-    codename: 'STARDUST LEAK',
+    id: 'IT-0049',
+    codename: 'SHADOW LEAK',
     type: 'insider_threat',
     status: 'escalated',
     threat: 'critical',
-    subject: 'Mr. Andrei Volkov - NSA/SID',
+    subject: 'Andrei Volkov - IT Operations',
     affiliation: 'Under investigation',
-    detectedVia: 'UEBA + polygraph inconsistency',
-    description: 'Translation specialist flagged after failed polygraph questions regarding foreign contacts. UEBA detected bulk download of STARDUST compartment materials. Access suspended pending investigation.',
-    indicators: ['Failed CI polygraph', 'Bulk classified download', 'Undisclosed foreign contact', 'Encrypted external communications', 'Travel to non-allied nation'],
+    detectedVia: 'UEBA + background check inconsistency',
+    description: 'Security operations analyst flagged after background check discrepancies regarding outside employment. UEBA detected bulk download of restricted threat intelligence materials. Access suspended pending investigation.',
+    indicators: ['Failed background check update', 'Bulk data download', 'Undisclosed outside employment', 'Encrypted external communications', 'Unusual data transfer patterns'],
     daysActive: 12,
   },
   {
-    id: 'CI-0050',
+    id: 'IT-0050',
     codename: 'GLASS EYE',
     type: 'technical_surveillance',
     status: 'active',
     threat: 'high',
-    subject: 'SCIF-F2 Anomaly',
-    affiliation: 'State actor (unknown)',
-    detectedVia: 'TSCM sweep anomaly',
-    description: 'Routine TSCM (Technical Surveillance Countermeasures) sweep detected anomalous RF emissions from Counter-Intel Vault. Possible implanted listening device. Full TEMPEST re-certification initiated.',
-    indicators: ['Anomalous 1.2 GHz emission', 'RF pattern inconsistent with known devices', 'Detected during off-peak sweep', 'Wall cavity inspection ordered'],
+    subject: 'Digital Forensics Lab Anomaly',
+    affiliation: 'Unknown threat actor',
+    detectedVia: 'Network sweep anomaly',
+    description: 'Routine network security sweep detected anomalous traffic from the Digital Forensics Lab. Possible rogue wireless access point or implanted network tap. Full infrastructure re-certification initiated.',
+    indicators: ['Anomalous 2.4 GHz emission', 'Traffic pattern inconsistent with known devices', 'Detected during off-peak sweep', 'Physical inspection ordered'],
     daysActive: 3,
   },
   {
-    id: 'CI-0051',
+    id: 'IT-0051',
     codename: 'MIRROR IMAGE',
-    type: 'double_agent',
+    type: 'compromised_insider',
     status: 'surveillance',
     threat: 'medium',
-    subject: 'Asset CARDINAL (controlled)',
-    affiliation: 'Managed operation',
-    detectedVia: 'Operational assessment',
-    description: 'Double agent operation in progress. Asset CARDINAL believed to be feeding disinformation to hostile service while providing genuine intelligence. Operational security review scheduled.',
-    indicators: ['Controlled information flow verified', 'Handler meetings on schedule', 'No burn indicators detected'],
+    subject: 'Compromised Account - Controlled Monitoring',
+    affiliation: 'Criminal organization (Ransomware-as-a-Service)',
+    detectedVia: 'Threat intelligence assessment',
+    description: 'Employee account compromised via credential stuffing. Account placed under controlled monitoring to map adversary lateral movement. Containment plan ready for immediate execution.',
+    indicators: ['Controlled access monitoring active', 'Adversary activity tracked on schedule', 'No data exfiltration detected'],
     daysActive: 156,
   },
 ];
 
 const typeLabels: Record<string, { label: string; color: string }> = {
-  mole_hunt: { label: 'MOLE HUNT', color: '#ef4444' },
-  foreign_agent: { label: 'FOREIGN AGENT', color: '#f97316' },
+  data_leak_investigation: { label: 'DATA LEAK', color: '#ef4444' },
+  external_threat_actor: { label: 'EXT THREAT ACTOR', color: '#f97316' },
   insider_threat: { label: 'INSIDER THREAT', color: '#eab308' },
   technical_surveillance: { label: 'TECH SURV', color: '#3b82f6' },
-  double_agent: { label: 'DOUBLE AGENT', color: '#10b981' },
+  compromised_insider: { label: 'COMPROMISED ACCT', color: '#10b981' },
 };
 
 const threatColor = (t: string) => {
@@ -133,8 +133,8 @@ const CounterIntelDashboard = () => {
     resize();
     window.addEventListener('resize', resize);
 
-    const targets = CI_CASES.map((c, i) => ({
-      angle: (i / CI_CASES.length) * Math.PI * 2 - Math.PI / 2,
+    const targets = THREAT_CASES.map((c, i) => ({
+      angle: (i / THREAT_CASES.length) * Math.PI * 2 - Math.PI / 2,
       dist: c.threat === 'critical' ? 0.25 : c.threat === 'high' ? 0.5 : 0.7,
       color: typeLabels[c.type].color,
       label: c.codename,
@@ -253,13 +253,13 @@ const CounterIntelDashboard = () => {
           <div className="absolute top-3 left-4 z-10 flex items-center gap-2">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-black/70 rounded-lg border border-orange-500/20">
               <Radar className="w-3 h-3 text-orange-400" />
-              <span className="text-orange-400 text-[10px] font-mono font-bold tracking-wider">COUNTER-INTELLIGENCE RADAR</span>
+              <span className="text-orange-400 text-[10px] font-mono font-bold tracking-wider">INSIDER THREAT RADAR</span>
             </div>
           </div>
           <div className="absolute top-3 right-4 z-10">
             <div className="px-2 py-1 bg-black/70 rounded border border-red-500/20 text-[9px] font-mono">
               <span className="text-slate-500">ACTIVE CASES: </span>
-              <span className="text-red-400 font-bold">{CI_CASES.filter(c => c.status !== 'neutralized').length}</span>
+              <span className="text-red-400 font-bold">{THREAT_CASES.filter(c => c.status !== 'neutralized').length}</span>
             </div>
           </div>
           <canvas ref={canvasRef} className="w-full h-full" />
@@ -277,17 +277,17 @@ const CounterIntelDashboard = () => {
           <div className="enterprise-card p-4 border-red-900/20">
             <div className="flex items-center gap-2 mb-2">
               <Target className="w-4 h-4 text-red-400" />
-              <span className="text-[10px] font-mono font-bold text-red-400 tracking-wider">MOLE HUNTS</span>
+              <span className="text-[10px] font-mono font-bold text-red-400 tracking-wider">DATA LEAK CASES</span>
             </div>
-            <div className="text-2xl font-mono font-bold text-red-400">{CI_CASES.filter(c => c.type === 'mole_hunt').length}</div>
+            <div className="text-2xl font-mono font-bold text-red-400">{THREAT_CASES.filter(c => c.type === 'data_leak_investigation').length}</div>
             <div className="text-[9px] font-mono text-slate-500 mt-1">Active investigations</div>
           </div>
           <div className="enterprise-card p-4 border-orange-900/20">
             <div className="flex items-center gap-2 mb-2">
               <UserX className="w-4 h-4 text-orange-400" />
-              <span className="text-[10px] font-mono font-bold text-orange-400 tracking-wider">FOREIGN AGENTS</span>
+              <span className="text-[10px] font-mono font-bold text-orange-400 tracking-wider">EXT THREAT ACTORS</span>
             </div>
-            <div className="text-2xl font-mono font-bold text-orange-400">{CI_CASES.filter(c => c.type === 'foreign_agent').length}</div>
+            <div className="text-2xl font-mono font-bold text-orange-400">{THREAT_CASES.filter(c => c.type === 'external_threat_actor').length}</div>
             <div className="text-[9px] font-mono text-slate-500 mt-1">Under surveillance</div>
           </div>
           <div className="enterprise-card p-4 border-yellow-900/20">
@@ -295,7 +295,7 @@ const CounterIntelDashboard = () => {
               <AlertTriangle className="w-4 h-4 text-yellow-400" />
               <span className="text-[10px] font-mono font-bold text-yellow-400 tracking-wider">INSIDER THREATS</span>
             </div>
-            <div className="text-2xl font-mono font-bold text-yellow-400">{CI_CASES.filter(c => c.type === 'insider_threat').length}</div>
+            <div className="text-2xl font-mono font-bold text-yellow-400">{THREAT_CASES.filter(c => c.type === 'insider_threat').length}</div>
             <div className="text-[9px] font-mono text-slate-500 mt-1">Flagged personnel</div>
           </div>
           <div className="enterprise-card p-4 border-blue-900/20">
@@ -303,8 +303,8 @@ const CounterIntelDashboard = () => {
               <Eye className="w-4 h-4 text-blue-400" />
               <span className="text-[10px] font-mono font-bold text-blue-400 tracking-wider">TECH SURVEILLANCE</span>
             </div>
-            <div className="text-2xl font-mono font-bold text-blue-400">{CI_CASES.filter(c => c.type === 'technical_surveillance').length}</div>
-            <div className="text-[9px] font-mono text-slate-500 mt-1">TSCM anomalies</div>
+            <div className="text-2xl font-mono font-bold text-blue-400">{THREAT_CASES.filter(c => c.type === 'technical_surveillance').length}</div>
+            <div className="text-[9px] font-mono text-slate-500 mt-1">Network anomalies</div>
           </div>
         </div>
       </div>
@@ -312,13 +312,13 @@ const CounterIntelDashboard = () => {
       <div className="enterprise-card overflow-hidden">
         <div className="bg-slate-800/20 px-4 py-2 border-b border-slate-800/30 flex items-center gap-2">
           <Shield className="w-3.5 h-3.5 text-orange-400" />
-          <span className="text-xs font-mono font-bold text-slate-300 tracking-wider">ACTIVE CI CASES</span>
+          <span className="text-xs font-mono font-bold text-slate-300 tracking-wider">ACTIVE THREAT CASES</span>
           <span className="ml-2 px-1.5 py-0.5 rounded text-[7px] font-mono font-bold bg-red-500/10 text-red-400 border border-red-500/20">
-            EYES ONLY
+            RESTRICTED
           </span>
         </div>
         <div className="divide-y divide-slate-800/20 max-h-[400px] overflow-y-auto custom-scrollbar">
-          {CI_CASES.map(c => {
+          {THREAT_CASES.map(c => {
             const tl = typeLabels[c.type];
             const tc = threatColor(c.threat);
             const ss = statusStyle(c.status);

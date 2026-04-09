@@ -6,7 +6,7 @@ interface Compartment {
   codename: string;
   classification: string;
   description: string;
-  controlOfficer: string;
+  programOwner: string;
   accessList: { name: string; role: string; granted: string; lastAccess: string }[];
   pendingRequests: number;
   violations: number;
@@ -15,86 +15,86 @@ interface Compartment {
 
 const COMPARTMENTS: Compartment[] = [
   {
-    id: 'COMP-ORION',
-    codename: 'ORION',
-    classification: 'TS/SCI',
-    description: 'Satellite reconnaissance and imagery intelligence operations targeting strategic nuclear facilities',
-    controlOfficer: 'DIR. Calvelli (NRO)',
+    id: 'PROG-VULN',
+    codename: 'VULN SHIELD',
+    classification: 'RESTRICTED',
+    description: 'Vulnerability management program covering critical infrastructure scanning and zero-day tracking',
+    programOwner: 'Dir. Security Engineering, R. Calvelli',
     accessList: [
-      { name: 'ADM. Richardson', role: 'Operations Director', granted: '2023-06-15', lastAccess: '2024-03-15 14:22' },
-      { name: 'CAPT. Zhang', role: 'IMINT Analyst', granted: '2023-08-20', lastAccess: '2024-03-15 13:45' },
-      { name: 'Dr. Nakamura', role: 'WMD Analyst', granted: '2023-11-01', lastAccess: '2024-03-14 16:30' },
+      { name: 'J. Richardson', role: 'VP Security Ops', granted: '2023-06-15', lastAccess: '2024-03-15 14:22' },
+      { name: 'L. Zhang', role: 'Vuln Mgmt Lead', granted: '2023-08-20', lastAccess: '2024-03-15 13:45' },
+      { name: 'Dr. E. Nakamura', role: 'Risk Assessment Lead', granted: '2023-11-01', lastAccess: '2024-03-14 16:30' },
     ],
     pendingRequests: 2,
     violations: 0,
     status: 'active',
   },
   {
-    id: 'COMP-CARDINAL',
-    codename: 'CARDINAL',
-    classification: 'TS/SCI',
-    description: 'Human intelligence source network operating within hostile foreign intelligence services',
-    controlOfficer: 'COS Berlin (CIA/DO)',
+    id: 'PROG-INSIDER',
+    codename: 'INSIDER WATCH',
+    classification: 'RESTRICTED',
+    description: 'Insider threat detection program monitoring privileged user behavior and data exfiltration indicators',
+    programOwner: 'Sr. Insider Threat Analyst, M. Williams',
     accessList: [
-      { name: 'ADM. Richardson', role: 'Operations Director', granted: '2022-01-10', lastAccess: '2024-03-15 14:30' },
-      { name: 'SAC Williams', role: 'CI Division Chief', granted: '2023-04-22', lastAccess: '2024-03-15 12:15' },
+      { name: 'J. Richardson', role: 'VP Security Ops', granted: '2022-01-10', lastAccess: '2024-03-15 14:30' },
+      { name: 'M. Williams', role: 'Sr. Insider Threat Analyst', granted: '2023-04-22', lastAccess: '2024-03-15 12:15' },
     ],
     pendingRequests: 0,
     violations: 0,
     status: 'restricted',
   },
   {
-    id: 'COMP-NIGHTFALL',
-    codename: 'NIGHTFALL',
-    classification: 'TS/SCI',
-    description: 'Offensive cyber operations program targeting adversary command and control infrastructure',
-    controlOfficer: 'COL. Chen (CYBERCOM)',
+    id: 'PROG-REDTEAM',
+    codename: 'RED FORGE',
+    classification: 'RESTRICTED',
+    description: 'Offensive security and penetration testing program targeting internal and external attack surfaces',
+    programOwner: 'Lead Security Engineer, S. Chen',
     accessList: [
-      { name: 'COL. Chen', role: 'Cyber Ops Lead', granted: '2023-01-15', lastAccess: '2024-03-15 14:28' },
-      { name: 'ADM. Richardson', role: 'Operations Director', granted: '2023-01-15', lastAccess: '2024-03-14 09:00' },
-      { name: 'SSA. Murphy', role: 'Cyber Forensics', granted: '2023-06-30', lastAccess: '2024-03-10 11:22' },
+      { name: 'S. Chen', role: 'Lead Security Engineer', granted: '2023-01-15', lastAccess: '2024-03-15 14:28' },
+      { name: 'J. Richardson', role: 'VP Security Ops', granted: '2023-01-15', lastAccess: '2024-03-14 09:00' },
+      { name: 'T. Murphy', role: 'Digital Forensics Analyst', granted: '2023-06-30', lastAccess: '2024-03-10 11:22' },
     ],
     pendingRequests: 3,
     violations: 1,
     status: 'active',
   },
   {
-    id: 'COMP-PHOENIX',
-    codename: 'PHOENIX',
-    classification: 'TS/SCI',
-    description: 'Counter-proliferation operations targeting WMD supply chain networks across Eastern Europe and Asia',
-    controlOfficer: 'GEN. Berrier (DIA)',
+    id: 'PROG-THREATINTEL',
+    codename: 'THREAT HORIZON',
+    classification: 'RESTRICTED',
+    description: 'Threat intelligence program tracking APT groups, dark web activity, and supply chain compromise indicators',
+    programOwner: 'CISO, D. Berrier',
     accessList: [
-      { name: 'Dr. Nakamura', role: 'WMD Analyst', granted: '2023-03-10', lastAccess: '2024-03-15 14:41' },
-      { name: 'ADM. Richardson', role: 'Operations Director', granted: '2022-11-20', lastAccess: '2024-03-15 08:00' },
+      { name: 'Dr. E. Nakamura', role: 'Risk Assessment Lead', granted: '2023-03-10', lastAccess: '2024-03-15 14:41' },
+      { name: 'J. Richardson', role: 'VP Security Ops', granted: '2022-11-20', lastAccess: '2024-03-15 08:00' },
     ],
     pendingRequests: 1,
     violations: 0,
     status: 'active',
   },
   {
-    id: 'COMP-SHADOW',
-    codename: 'SHADOW GATE',
-    classification: 'TS/SCI',
-    description: 'Deep cover agent network embedded in foreign intelligence services - compartmentalized HUMINT',
-    controlOfficer: 'CLASSIFIED',
+    id: 'PROG-IRPLAN',
+    codename: 'RAPID RESPONSE',
+    classification: 'RESTRICTED',
+    description: 'Incident response playbooks and breach containment procedures for critical business systems',
+    programOwner: 'VP Security Ops, J. Richardson',
     accessList: [
-      { name: 'ADM. Richardson', role: 'Operations Director', granted: '2021-06-01', lastAccess: '2024-03-15 14:32' },
+      { name: 'J. Richardson', role: 'VP Security Ops', granted: '2021-06-01', lastAccess: '2024-03-15 14:32' },
     ],
     pendingRequests: 0,
     violations: 0,
     status: 'restricted',
   },
   {
-    id: 'COMP-STARDUST',
-    codename: 'STARDUST',
-    classification: 'TS/SCI',
-    description: 'SIGINT collection program monitoring foreign diplomatic and military communications globally',
-    controlOfficer: 'DIR. Nakasone (NSA)',
+    id: 'PROG-DARKWEB',
+    codename: 'SHADOW WATCH',
+    classification: 'RESTRICTED',
+    description: 'Dark web monitoring program tracking leaked credentials, data dumps, and threat actor communications',
+    programOwner: 'Dir. Threat Intel, M. Nakasone',
     accessList: [
-      { name: 'LCDR. Petrov', role: 'SIGINT Specialist', granted: '2023-02-15', lastAccess: '2024-03-15 14:10' },
-      { name: 'COL. Chen', role: 'Cyber Ops Lead', granted: '2023-05-01', lastAccess: '2024-03-14 16:00' },
-      { name: 'Mr. Volkov', role: 'Translation Services', granted: '2023-02-20', lastAccess: '2024-03-12 09:30' },
+      { name: 'V. Petrov', role: 'Network Security Analyst', granted: '2023-02-15', lastAccess: '2024-03-15 14:10' },
+      { name: 'S. Chen', role: 'Lead Security Engineer', granted: '2023-05-01', lastAccess: '2024-03-14 16:00' },
+      { name: 'A. Volkov', role: 'Security Ops Analyst', granted: '2023-02-20', lastAccess: '2024-03-12 09:30' },
     ],
     pendingRequests: 0,
     violations: 2,
@@ -117,7 +117,7 @@ const NeedToKnowCompartments = () => {
         <div className="enterprise-card p-4 border-emerald-900/20">
           <div className="flex items-center gap-2 mb-2">
             <Check className="w-4 h-4 text-emerald-400" />
-            <span className="text-[10px] font-mono font-bold text-emerald-400 tracking-wider">ACTIVE COMPARTMENTS</span>
+            <span className="text-[10px] font-mono font-bold text-emerald-400 tracking-wider">ACTIVE PROGRAMS</span>
           </div>
           <div className="text-2xl font-mono font-bold text-emerald-400">{COMPARTMENTS.filter(c => c.status === 'active').length}</div>
         </div>
@@ -184,7 +184,7 @@ const NeedToKnowCompartments = () => {
                 <div className="border-t border-slate-800/30 px-4 py-3 bg-slate-900/20">
                   <div className="flex items-center gap-2 mb-3">
                     <Shield className="w-3 h-3 text-slate-500" />
-                    <span className="text-[10px] font-mono font-bold text-slate-400 tracking-wider">CONTROL OFFICER: {comp.controlOfficer}</span>
+                    <span className="text-[10px] font-mono font-bold text-slate-400 tracking-wider">PROGRAM OWNER: {comp.programOwner}</span>
                   </div>
                   <div className="space-y-1.5">
                     {comp.accessList.map(person => (

@@ -4,7 +4,7 @@ import { Lock, ArrowDown, Shield } from 'lucide-react';
 interface ClassifiedDoc {
   id: string;
   title: string;
-  classification: 'TOP SECRET' | 'SECRET' | 'CONFIDENTIAL' | 'UNCLASSIFIED';
+  classification: 'RESTRICTED' | 'INTERNAL' | 'CONFIDENTIAL' | 'PUBLIC';
   codeword: string;
   compartment: string;
   originator: string;
@@ -15,21 +15,21 @@ interface ClassifiedDoc {
 }
 
 const CLASSIFICATION_COLORS: Record<string, { bg: string; border: string; text: string; hex: string }> = {
-  'TOP SECRET': { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400', hex: '#ef4444' },
-  'SECRET': { bg: 'bg-orange-500/10', border: 'border-orange-500/30', text: 'text-orange-400', hex: '#f97316' },
+  'RESTRICTED': { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400', hex: '#ef4444' },
+  'INTERNAL': { bg: 'bg-orange-500/10', border: 'border-orange-500/30', text: 'text-orange-400', hex: '#f97316' },
   'CONFIDENTIAL': { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', hex: '#3b82f6' },
-  'UNCLASSIFIED': { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', hex: '#10b981' },
+  'PUBLIC': { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', hex: '#10b981' },
 };
 
 const MOCK_DOCS: ClassifiedDoc[] = [
-  { id: 'TS-2024-0147', title: 'OPERATION MIDNIGHT FALCON - Phase III Brief', classification: 'TOP SECRET', codeword: 'GAMMA/ORION', compartment: 'SCI-TALENT KEYHOLE', originator: 'CIA/NCS', handler: 'ADM. Richardson', status: 'in_transit', timestamp: '14:32:47 UTC', destination: 'NSC Situation Room' },
-  { id: 'TS-2024-0148', title: 'SIGINT Intercept - Tehran Station', classification: 'TOP SECRET', codeword: 'COMINT/DELTA', compartment: 'SCI-SPECIAL INTEL', originator: 'NSA/CSS', handler: 'DIR. Nakasone', status: 'accessed', timestamp: '14:28:19 UTC', destination: 'DNI Briefing Room' },
-  { id: 'S-2024-0892', title: 'Counterintelligence Assessment - Moscow Ops', classification: 'SECRET', codeword: 'NOFORN', compartment: 'CI/HUMINT', originator: 'FBI/CI Division', handler: 'SAC Williams', status: 'flagged', timestamp: '14:15:03 UTC', destination: 'FBI SCIF Level 3' },
-  { id: 'S-2024-0893', title: 'Threat Actor Profile - APT-29 Update', classification: 'SECRET', codeword: 'REL FVEY', compartment: 'CYBER/THREAT', originator: 'CYBERCOM', handler: 'COL. Chen', status: 'archived', timestamp: '13:58:41 UTC', destination: 'Pentagon JWICS' },
-  { id: 'C-2024-2341', title: 'Embassy Security Assessment - Kyiv', classification: 'CONFIDENTIAL', codeword: '', compartment: 'DS/SECURITY', originator: 'State/DS', handler: 'RSO Petrov', status: 'in_transit', timestamp: '14:05:22 UTC', destination: 'Regional Security Office' },
-  { id: 'TS-2024-0149', title: 'Satellite Imagery - Facility 47 Changes', classification: 'TOP SECRET', codeword: 'TALENT KEYHOLE', compartment: 'SCI-IMINT', originator: 'NRO', handler: 'DIR. Calvelli', status: 'accessed', timestamp: '14:41:08 UTC', destination: 'GEOINT Analysis Center' },
-  { id: 'S-2024-0894', title: 'HUMINT Source Report - CARDINAL', classification: 'SECRET', codeword: 'NOFORN/ORCON', compartment: 'HUMINT/CASE', originator: 'CIA/DO', handler: 'COS Berlin', status: 'in_transit', timestamp: '14:22:56 UTC', destination: 'Counterintelligence Center' },
-  { id: 'TS-2024-0150', title: 'Nuclear Proliferation Alert - Site OMEGA', classification: 'TOP SECRET', codeword: 'GAMMA/RESTRICTED', compartment: 'WMD/NUCLEAR', originator: 'DIA', handler: 'GEN. Berrier', status: 'flagged', timestamp: '14:47:33 UTC', destination: 'White House Situation Room' },
+  { id: 'RES-2024-0147', title: 'M&A Target Risk Assessment - Project Falcon Phase III', classification: 'RESTRICTED', codeword: 'PROJ-FALCON', compartment: 'EXECUTIVE/M&A', originator: 'CISO Office', handler: 'VP Security Ops, J. Richardson', status: 'in_transit', timestamp: '14:32:47 UTC', destination: 'CISO Briefing Room' },
+  { id: 'RES-2024-0148', title: 'Dark Web Monitoring Brief - Credential Exposure', classification: 'RESTRICTED', codeword: 'DARKWEB/DELTA', compartment: 'THREAT-INTEL/OSINT', originator: 'Threat Intel Team', handler: 'Dir. Threat Intel, M. Nakasone', status: 'accessed', timestamp: '14:28:19 UTC', destination: 'SOC War Room' },
+  { id: 'INT-2024-0892', title: 'Insider Threat Assessment - Finance Division', classification: 'INTERNAL', codeword: 'NEED-TO-KNOW', compartment: 'INSIDER-THREAT/HR', originator: 'Insider Threat Program', handler: 'Sr. Investigator, K. Williams', status: 'flagged', timestamp: '14:15:03 UTC', destination: 'Incident Response Center' },
+  { id: 'INT-2024-0893', title: 'Threat Actor Profile - APT-29 Update', classification: 'INTERNAL', codeword: 'SHARE-SOC', compartment: 'CYBER/THREAT-INTEL', originator: 'Security Engineering', handler: 'Lead Threat Analyst, S. Chen', status: 'archived', timestamp: '13:58:41 UTC', destination: 'SOC Operations Floor' },
+  { id: 'CON-2024-2341', title: 'Facility Physical Security Assessment - HQ Campus', classification: 'CONFIDENTIAL', codeword: '', compartment: 'PHYSICAL-SEC', originator: 'Corp Security Team', handler: 'Facilities Security Mgr, A. Petrov', status: 'in_transit', timestamp: '14:05:22 UTC', destination: 'Corporate Security Office' },
+  { id: 'RES-2024-0149', title: 'Vulnerability Report - Critical Infrastructure Scan', classification: 'RESTRICTED', codeword: 'PROJ-KEYHOLE', compartment: 'VULN-MGMT', originator: 'Security Engineering', handler: 'Dir. Security Engineering, R. Calvelli', status: 'accessed', timestamp: '14:41:08 UTC', destination: 'Threat Analysis Lab' },
+  { id: 'INT-2024-0894', title: 'Data Breach Risk Assessment - Customer PII', classification: 'INTERNAL', codeword: 'NEED-TO-KNOW/LEGAL', compartment: 'DATA-PROTECTION', originator: 'Risk Management', handler: 'Sr. Risk Analyst, T. Park', status: 'in_transit', timestamp: '14:22:56 UTC', destination: 'Executive Briefing Room' },
+  { id: 'RES-2024-0150', title: 'Ransomware Readiness Assessment - Site OMEGA', classification: 'RESTRICTED', codeword: 'PROJ-OMEGA/RESTRICTED', compartment: 'INCIDENT-RESP/BCP', originator: 'IT Operations', handler: 'CISO, D. Berrier', status: 'flagged', timestamp: '14:47:33 UTC', destination: 'CISO Briefing Room' },
 ];
 
 const ClassifiedInfoFlow = () => {
@@ -70,7 +70,7 @@ const ClassifiedInfoFlow = () => {
     let lastSpawn = 0;
 
     const classColors = ['#ef4444', '#f97316', '#3b82f6', '#10b981'];
-    const classLabels = ['TS', 'S', 'C', 'U'];
+    const classLabels = ['R', 'I', 'C', 'P'];
 
     const animate = () => {
       const rect = canvas.parentElement?.getBoundingClientRect();
@@ -116,10 +116,10 @@ const ClassifiedInfoFlow = () => {
       }
 
       const levels = [
-        { label: 'TOP SECRET / SCI', y: h * 0.15, color: '#ef4444' },
-        { label: 'SECRET', y: h * 0.4, color: '#f97316' },
+        { label: 'RESTRICTED', y: h * 0.15, color: '#ef4444' },
+        { label: 'INTERNAL', y: h * 0.4, color: '#f97316' },
         { label: 'CONFIDENTIAL', y: h * 0.65, color: '#3b82f6' },
-        { label: 'UNCLASSIFIED', y: h * 0.88, color: '#10b981' },
+        { label: 'PUBLIC', y: h * 0.88, color: '#10b981' },
       ];
 
       for (const level of levels) {
@@ -198,7 +198,7 @@ const ClassifiedInfoFlow = () => {
         <div className="absolute top-3 left-4 z-10 flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-black/70 rounded-lg border border-red-500/20">
             <Lock className="w-3 h-3 text-red-400" />
-            <span className="text-red-400 text-[10px] font-mono font-bold tracking-wider">CLASSIFIED INFORMATION FLOW</span>
+            <span className="text-red-400 text-[10px] font-mono font-bold tracking-wider">SENSITIVE DATA FLOW</span>
           </div>
         </div>
         <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
@@ -237,7 +237,7 @@ const ClassifiedInfoFlow = () => {
               >
                 <div className="flex items-center gap-3">
                   <div className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border ${cc.bg} ${cc.border} ${cc.text}`}>
-                    {doc.classification === 'TOP SECRET' ? 'TS' : doc.classification === 'SECRET' ? 'S' : doc.classification === 'CONFIDENTIAL' ? 'C' : 'U'}
+                    {doc.classification === 'RESTRICTED' ? 'R' : doc.classification === 'INTERNAL' ? 'I' : doc.classification === 'CONFIDENTIAL' ? 'C' : 'P'}
                   </div>
                   <span className="text-[10px] font-mono text-slate-500">{doc.id}</span>
                   <span className="text-xs text-slate-200 flex-1 truncate">{doc.title}</span>
@@ -268,7 +268,7 @@ const ClassifiedInfoFlow = () => {
                       <div className="text-[10px] font-mono text-cyan-400">{doc.destination}</div>
                     </div>
                     <div className="bg-slate-900/40 rounded p-2 border border-slate-800/30">
-                      <div className="text-[8px] font-mono text-slate-600 mb-0.5">COMPARTMENT</div>
+                      <div className="text-[8px] font-mono text-slate-600 mb-0.5">DEPARTMENT</div>
                       <div className="text-[10px] font-mono text-orange-400">{doc.compartment}</div>
                     </div>
                   </div>

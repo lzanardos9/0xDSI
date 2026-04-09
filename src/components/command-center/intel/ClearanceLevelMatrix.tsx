@@ -4,40 +4,40 @@ import { Shield, ChevronDown, ChevronUp, AlertTriangle, Check, X, Clock } from '
 interface Personnel {
   name: string;
   role: string;
-  agency: string;
-  clearance: 'TS/SCI' | 'TOP SECRET' | 'SECRET' | 'CONFIDENTIAL';
-  polygraph: 'CI Poly' | 'Full Scope' | 'None' | 'Expired';
-  sciAccess: string[];
+  department: string;
+  clearance: 'Level 4 (Executive)' | 'Level 3 (Senior)' | 'Level 2 (Standard)' | 'Level 1 (Basic)';
+  backgroundCheck: 'Enhanced' | 'Standard' | 'Basic' | 'Pending';
+  accessTags: string[];
   lastReview: string;
   status: 'active' | 'suspended' | 'under_review' | 'revoked';
   riskScore: number;
 }
 
 const CLEARANCE_LEVELS = [
-  { level: 'TS/SCI', color: '#ef4444', count: 12, label: 'Top Secret / SCI' },
-  { level: 'TOP SECRET', color: '#f97316', count: 28, label: 'Top Secret' },
-  { level: 'SECRET', color: '#eab308', count: 67, label: 'Secret' },
-  { level: 'CONFIDENTIAL', color: '#3b82f6', count: 143, label: 'Confidential' },
+  { level: 'Level 4 (Executive)', color: '#ef4444', count: 12, label: 'Executive Access' },
+  { level: 'Level 3 (Senior)', color: '#f97316', count: 28, label: 'Senior Access' },
+  { level: 'Level 2 (Standard)', color: '#eab308', count: 67, label: 'Standard Access' },
+  { level: 'Level 1 (Basic)', color: '#3b82f6', count: 143, label: 'Basic Access' },
 ];
 
 const MOCK_PERSONNEL: Personnel[] = [
-  { name: 'ADM. James Richardson', role: 'Director of Operations', agency: 'CIA/NCS', clearance: 'TS/SCI', polygraph: 'Full Scope', sciAccess: ['TK', 'SI', 'GAMMA', 'HCS'], lastReview: '2024-01-15', status: 'active', riskScore: 8 },
-  { name: 'COL. Sarah Chen', role: 'Cyber Operations Lead', agency: 'CYBERCOM', clearance: 'TS/SCI', polygraph: 'Full Scope', sciAccess: ['TK', 'SI', 'NOFORN'], lastReview: '2024-02-20', status: 'active', riskScore: 12 },
-  { name: 'SAC Michael Williams', role: 'CI Division Chief', agency: 'FBI/NSD', clearance: 'TS/SCI', polygraph: 'CI Poly', sciAccess: ['SI', 'HCS', 'ORCON'], lastReview: '2023-11-30', status: 'active', riskScore: 15 },
-  { name: 'Dr. Emily Nakamura', role: 'WMD Analyst', agency: 'DIA', clearance: 'TOP SECRET', polygraph: 'CI Poly', sciAccess: ['TK', 'SI'], lastReview: '2024-03-01', status: 'active', riskScore: 22 },
-  { name: 'LCDR. Viktor Petrov', role: 'SIGINT Specialist', agency: 'NSA/CSS', clearance: 'TS/SCI', polygraph: 'Full Scope', sciAccess: ['SI', 'GAMMA', 'DELTA'], lastReview: '2023-09-15', status: 'under_review', riskScore: 67 },
-  { name: 'Agt. David Park', role: 'Case Officer', agency: 'CIA/DO', clearance: 'TOP SECRET', polygraph: 'Full Scope', sciAccess: ['HCS'], lastReview: '2024-01-28', status: 'active', riskScore: 18 },
-  { name: 'Ms. Rachel Torres', role: 'Liaison Officer', agency: 'State/INR', clearance: 'SECRET', polygraph: 'None', sciAccess: [], lastReview: '2023-12-10', status: 'active', riskScore: 31 },
-  { name: 'Mr. Andrei Volkov', role: 'Translation Services', agency: 'NSA/SID', clearance: 'TS/SCI', polygraph: 'CI Poly', sciAccess: ['SI', 'COMINT'], lastReview: '2023-06-22', status: 'suspended', riskScore: 89 },
-  { name: 'CAPT. Lisa Zhang', role: 'IMINT Analyst', agency: 'NRO', clearance: 'TS/SCI', polygraph: 'Full Scope', sciAccess: ['TK', 'BYEMAN'], lastReview: '2024-02-14', status: 'active', riskScore: 10 },
-  { name: 'SSA. Thomas Murphy', role: 'Cyber Forensics', agency: 'FBI/CyD', clearance: 'TOP SECRET', polygraph: 'Expired', sciAccess: ['SI'], lastReview: '2023-04-18', status: 'under_review', riskScore: 54 },
+  { name: 'James Richardson', role: 'VP Security Operations', department: 'SOC Operations', clearance: 'Level 4 (Executive)', backgroundCheck: 'Enhanced', accessTags: ['SOC-FULL', 'THREAT-INTEL', 'ADMIN-PRIV', 'INCIDENT-RESP'], lastReview: '2024-01-15', status: 'active', riskScore: 8 },
+  { name: 'Sarah Chen', role: 'Lead Security Engineer', department: 'Security Engineering', clearance: 'Level 4 (Executive)', backgroundCheck: 'Enhanced', accessTags: ['SOC-FULL', 'ADMIN-PRIV', 'VULN-MGMT'], lastReview: '2024-02-20', status: 'active', riskScore: 12 },
+  { name: 'Michael Williams', role: 'Sr. Insider Threat Analyst', department: 'Insider Threat Program', clearance: 'Level 4 (Executive)', backgroundCheck: 'Enhanced', accessTags: ['INSIDER-THREAT', 'INCIDENT-RESP', 'HR-ACCESS'], lastReview: '2023-11-30', status: 'active', riskScore: 15 },
+  { name: 'Dr. Emily Nakamura', role: 'Risk Assessment Lead', department: 'Risk Management', clearance: 'Level 3 (Senior)', backgroundCheck: 'Standard', accessTags: ['SOC-FULL', 'THREAT-INTEL'], lastReview: '2024-03-01', status: 'active', riskScore: 22 },
+  { name: 'Viktor Petrov', role: 'Network Security Analyst', department: 'Threat Intelligence', clearance: 'Level 4 (Executive)', backgroundCheck: 'Enhanced', accessTags: ['THREAT-INTEL', 'NETMON', 'NDR-ACCESS'], lastReview: '2023-09-15', status: 'under_review', riskScore: 67 },
+  { name: 'David Park', role: 'Incident Response Analyst', department: 'SOC Operations', clearance: 'Level 3 (Senior)', backgroundCheck: 'Standard', accessTags: ['INCIDENT-RESP'], lastReview: '2024-01-28', status: 'active', riskScore: 18 },
+  { name: 'Rachel Torres', role: 'Compliance Manager', department: 'Compliance', clearance: 'Level 2 (Standard)', backgroundCheck: 'Basic', accessTags: [], lastReview: '2023-12-10', status: 'active', riskScore: 31 },
+  { name: 'Andrei Volkov', role: 'Security Operations Analyst', department: 'IT Operations', clearance: 'Level 4 (Executive)', backgroundCheck: 'Pending', accessTags: ['THREAT-INTEL', 'NETMON'], lastReview: '2023-06-22', status: 'suspended', riskScore: 89 },
+  { name: 'Lisa Zhang', role: 'Vulnerability Management Lead', department: 'Security Engineering', clearance: 'Level 4 (Executive)', backgroundCheck: 'Enhanced', accessTags: ['VULN-MGMT', 'ASSET-INV'], lastReview: '2024-02-14', status: 'active', riskScore: 10 },
+  { name: 'Thomas Murphy', role: 'Digital Forensics Analyst', department: 'Incident Response', clearance: 'Level 3 (Senior)', backgroundCheck: 'Pending', accessTags: ['FORENSICS'], lastReview: '2023-04-18', status: 'under_review', riskScore: 54 },
 ];
 
 const clearanceColor = (c: string) => {
   switch (c) {
-    case 'TS/SCI': return { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400' };
-    case 'TOP SECRET': return { bg: 'bg-orange-500/10', border: 'border-orange-500/30', text: 'text-orange-400' };
-    case 'SECRET': return { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-400' };
+    case 'Level 4 (Executive)': return { bg: 'bg-red-500/10', border: 'border-red-500/30', text: 'text-red-400' };
+    case 'Level 3 (Senior)': return { bg: 'bg-orange-500/10', border: 'border-orange-500/30', text: 'text-orange-400' };
+    case 'Level 2 (Standard)': return { bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-400' };
     default: return { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400' };
   }
 };
@@ -59,7 +59,7 @@ const ClearanceLevelMatrix = () => {
   const sorted = [...MOCK_PERSONNEL].sort((a, b) => {
     if (sortBy === 'risk') return b.riskScore - a.riskScore;
     if (sortBy === 'name') return a.name.localeCompare(b.name);
-    const order = ['TS/SCI', 'TOP SECRET', 'SECRET', 'CONFIDENTIAL'];
+    const order = ['Level 4 (Executive)', 'Level 3 (Senior)', 'Level 2 (Standard)', 'Level 1 (Basic)'];
     return order.indexOf(a.clearance) - order.indexOf(b.clearance);
   });
 
@@ -85,7 +85,7 @@ const ClearanceLevelMatrix = () => {
         <div className="bg-slate-800/20 px-4 py-2 border-b border-slate-800/30 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-xs font-mono font-bold text-slate-300 tracking-wider">PERSONNEL CLEARANCE REGISTRY</span>
+            <span className="text-xs font-mono font-bold text-slate-300 tracking-wider">PERSONNEL ACCESS REGISTRY</span>
           </div>
           <div className="flex items-center gap-1">
             {(['risk', 'name', 'clearance'] as const).map(s => (
@@ -118,14 +118,14 @@ const ClearanceLevelMatrix = () => {
                 <div className="flex items-center gap-3">
                   {statusIcon(p.status)}
                   <span className="text-xs text-slate-200 font-medium w-48 truncate">{p.name}</span>
-                  <span className="text-[10px] font-mono text-slate-500 w-28 truncate">{p.agency}</span>
+                  <span className="text-[10px] font-mono text-slate-500 w-28 truncate">{p.department}</span>
                   <div className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border ${cc.bg} ${cc.border} ${cc.text}`}>
                     {p.clearance}
                   </div>
                   <div className="flex-1 flex items-center gap-1">
-                    {p.sciAccess.map(sci => (
-                      <span key={sci} className="px-1 py-0.5 rounded bg-slate-800/50 text-[7px] font-mono text-slate-400 border border-slate-700/30">
-                        {sci}
+                    {p.accessTags.map(tag => (
+                      <span key={tag} className="px-1 py-0.5 rounded bg-slate-800/50 text-[7px] font-mono text-slate-400 border border-slate-700/30">
+                        {tag}
                       </span>
                     ))}
                   </div>
@@ -142,9 +142,9 @@ const ClearanceLevelMatrix = () => {
                       <div className="text-[10px] font-mono text-slate-300">{p.role}</div>
                     </div>
                     <div className="bg-slate-900/40 rounded p-2 border border-slate-800/30">
-                      <div className="text-[8px] font-mono text-slate-600 mb-0.5">POLYGRAPH</div>
-                      <div className={`text-[10px] font-mono ${p.polygraph === 'Expired' ? 'text-red-400' : p.polygraph === 'None' ? 'text-slate-400' : 'text-emerald-400'}`}>
-                        {p.polygraph}
+                      <div className="text-[8px] font-mono text-slate-600 mb-0.5">BACKGROUND CHECK</div>
+                      <div className={`text-[10px] font-mono ${p.backgroundCheck === 'Pending' ? 'text-red-400' : p.backgroundCheck === 'Basic' ? 'text-slate-400' : 'text-emerald-400'}`}>
+                        {p.backgroundCheck}
                       </div>
                     </div>
                     <div className="bg-slate-900/40 rounded p-2 border border-slate-800/30">

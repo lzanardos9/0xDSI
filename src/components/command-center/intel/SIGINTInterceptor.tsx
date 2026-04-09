@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Satellite, Radio, Activity, Zap, Volume2, VolumeX } from 'lucide-react';
 
-interface Intercept {
+interface SignalEvent {
   id: string;
   timestamp: string;
   source: string;
   targetFreq: string;
-  type: 'COMINT' | 'ELINT' | 'FISINT' | 'MASINT';
+  type: 'NETFLOW' | 'DNS_ANALYSIS' | 'PAYLOAD_INSPECTION' | 'ANOMALY_DETECTION';
   classification: string;
   signal: string;
   bearing: string;
@@ -16,20 +16,20 @@ interface Intercept {
   priority: 'flash' | 'immediate' | 'priority' | 'routine';
 }
 
-const MOCK_INTERCEPTS: Intercept[] = [
-  { id: 'SIG-7741', timestamp: '14:47:22', source: 'SAT-KH-12', targetFreq: '8.432 GHz', type: 'COMINT', classification: 'TS/SCI-SI', signal: 'Encrypted voice channel - GRU Main Directorate', bearing: '047.3 NE', strength: 87, content: 'Burst transmission detected. Duration: 14.2s. Encryption: military-grade COMSEC. Voice pattern matches SIGINT target VOSTOK-7.', status: 'active', priority: 'flash' },
-  { id: 'SIG-7742', timestamp: '14:44:08', source: 'ECHELON-NW', targetFreq: '14.250 MHz', type: 'COMINT', classification: 'TS/SCI-SI', signal: 'HF diplomatic channel - Tehran Embassy', bearing: '112.8 SE', strength: 62, content: 'Coded message intercept. Pattern matches one-time pad usage. 847 character groups. Forwarded to cryptanalysis.', status: 'recorded', priority: 'immediate' },
-  { id: 'SIG-7743', timestamp: '14:41:55', source: 'SATCOM-3', targetFreq: '2.4 GHz', type: 'ELINT', classification: 'SECRET', signal: 'Radar emission - S-400 battery activation', bearing: '023.1 N', strength: 94, content: 'S-400 Triumf fire control radar detected. Emission pattern indicates tracking mode. Grid reference: 55.7N 37.6E.', status: 'analyzed', priority: 'flash' },
-  { id: 'SIG-7744', timestamp: '14:38:33', source: 'SOSUS-ATL', targetFreq: '12-50 Hz', type: 'MASINT', classification: 'TS/SCI', signal: 'Submarine acoustic signature', bearing: '284.5 W', strength: 41, content: 'Probable submarine contact. Acoustic signature analysis: 73% match to Yasen-class SSN. Depth estimate: 200-300m. Speed: 8 knots.', status: 'active', priority: 'immediate' },
-  { id: 'SIG-7745', timestamp: '14:35:19', source: 'SIGINT-PKT', targetFreq: '1.8 GHz', type: 'FISINT', classification: 'SECRET', signal: 'Missile telemetry intercept', bearing: '068.7 NE', strength: 78, content: 'Ballistic missile test telemetry captured. Flight parameters indicate medium-range capability. Apogee: ~250km.', status: 'disseminated', priority: 'priority' },
-  { id: 'SIG-7746', timestamp: '14:30:02', source: 'ECHELON-EU', targetFreq: '900 MHz', type: 'COMINT', classification: 'SECRET', signal: 'Cellular intercept - Target SHADOW-9', bearing: '192.4 S', strength: 55, content: 'Target SHADOW-9 mobile device geolocated. Call metadata captured. Contact with known intelligence facilitator confirmed.', status: 'analyzed', priority: 'priority' },
+const MOCK_SIGNALS: SignalEvent[] = [
+  { id: 'NET-7741', timestamp: '14:47:22', source: 'NDR-SENSOR-01', targetFreq: '443/TCP', type: 'NETFLOW', classification: 'RESTRICTED', signal: 'Encrypted C2 beacon - suspicious outbound traffic pattern', bearing: 'VLAN 47 - Server Segment', strength: 87, content: 'Anomalous encrypted outbound traffic detected. Duration: 14.2s intervals. TLS fingerprint matches known malware family. Destination IP correlates with threat intel IOC feed.', status: 'active', priority: 'flash' },
+  { id: 'NET-7742', timestamp: '14:44:08', source: 'DNS-FIREWALL-NW', targetFreq: '53/UDP', type: 'DNS_ANALYSIS', classification: 'RESTRICTED', signal: 'DNS tunneling attempt - high-entropy subdomain queries', bearing: 'VLAN 12 - Corporate LAN', strength: 62, content: 'Suspicious DNS query pattern detected. High entropy subdomain names indicative of DNS tunneling. 847 unique subdomains queried in 10 minutes. Forwarded to threat analysis.', status: 'recorded', priority: 'immediate' },
+  { id: 'NET-7743', timestamp: '14:41:55', source: 'IDS-SENSOR-03', targetFreq: '8080/TCP', type: 'PAYLOAD_INSPECTION', classification: 'INTERNAL', signal: 'SQL injection attempt - web application firewall alert', bearing: 'DMZ - Web Servers', strength: 94, content: 'SQL injection payload detected in POST request to /api/auth endpoint. Attack signature matches automated scanning tool. Source IP: external cloud provider.', status: 'analyzed', priority: 'flash' },
+  { id: 'NET-7744', timestamp: '14:38:33', source: 'PCAP-ENGINE-ATL', targetFreq: '4443/TCP', type: 'ANOMALY_DETECTION', classification: 'RESTRICTED', signal: 'Lateral movement pattern - internal reconnaissance', bearing: 'VLAN 88 - Development Segment', strength: 41, content: 'Probable lateral movement detected. Single workstation scanning sequential internal IPs on management ports. Behavior consistent with post-exploitation reconnaissance. Speed: 8 hosts/second.', status: 'active', priority: 'immediate' },
+  { id: 'NET-7745', timestamp: '14:35:19', source: 'IPS-INLINE-02', targetFreq: '445/TCP', type: 'PAYLOAD_INSPECTION', classification: 'INTERNAL', signal: 'SMB exploit attempt - EternalBlue variant detected', bearing: 'VLAN 22 - Legacy Systems', strength: 78, content: 'SMB exploit attempt captured. Payload analysis indicates EternalBlue variant targeting unpatched Windows systems. Attack blocked by IPS inline.', status: 'disseminated', priority: 'priority' },
+  { id: 'NET-7746', timestamp: '14:30:02', source: 'NDR-SENSOR-EU', targetFreq: '22/TCP', type: 'NETFLOW', classification: 'INTERNAL', signal: 'Anomalous SSH session - data exfiltration indicator', bearing: 'VLAN 55 - Database Segment', strength: 55, content: 'Unusual SSH session with high data transfer volume to external IP. Session duration and volume inconsistent with normal admin activity. Correlated with watchlisted user account.', status: 'analyzed', priority: 'priority' },
 ];
 
 const typeColors: Record<string, string> = {
-  COMINT: '#22d3ee',
-  ELINT: '#f97316',
-  FISINT: '#a855f7',
-  MASINT: '#10b981',
+  NETFLOW: '#22d3ee',
+  DNS_ANALYSIS: '#f97316',
+  PAYLOAD_INSPECTION: '#a855f7',
+  ANOMALY_DETECTION: '#10b981',
 };
 
 const priorityColors: Record<string, { bg: string; text: string; border: string }> = {
@@ -39,10 +39,10 @@ const priorityColors: Record<string, { bg: string; text: string; border: string 
   routine: { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' },
 };
 
-const SIGINTInterceptor = () => {
+const NetworkSignalMonitor = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
-  const [selectedIntercept, setSelectedIntercept] = useState<Intercept | null>(null);
+  const [selectedSignal, setSelectedSignal] = useState<SignalEvent | null>(null);
   const [monitoring, setMonitoring] = useState(true);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ const SIGINTInterceptor = () => {
       ctx.fillRect(0, 0, w, h);
 
       const colors = ['#22d3ee', '#f97316', '#10b981', '#ef4444'];
-      const labels = ['COMINT', 'ELINT', 'MASINT', 'FLASH'];
+      const labels = ['NETFLOW', 'DNS', 'ANOMALY', 'CRITICAL'];
       const channelH = (h - 30) / 4;
 
       for (let ch = 0; ch < 4; ch++) {
@@ -170,7 +170,7 @@ const SIGINTInterceptor = () => {
         <div className="absolute top-3 left-4 z-10 flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-black/70 rounded-lg border border-blue-500/20">
             <Radio className="w-3 h-3 text-blue-400 animate-pulse" />
-            <span className="text-blue-400 text-[10px] font-mono font-bold tracking-wider">SIGINT / ELINT INTERCEPT</span>
+            <span className="text-blue-400 text-[10px] font-mono font-bold tracking-wider">NETWORK SIGNAL MONITOR</span>
           </div>
         </div>
         <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
@@ -193,7 +193,7 @@ const SIGINTInterceptor = () => {
       <div className="enterprise-card overflow-hidden">
         <div className="bg-slate-800/20 px-4 py-2 border-b border-slate-800/30 flex items-center gap-2">
           <Satellite className="w-3.5 h-3.5 text-blue-400" />
-          <span className="text-xs font-mono font-bold text-slate-300 tracking-wider">INTERCEPT LOG</span>
+          <span className="text-xs font-mono font-bold text-slate-300 tracking-wider">SIGNAL EVENT LOG</span>
           <div className="ml-auto flex items-center gap-3 text-[9px] font-mono">
             {Object.entries(typeColors).map(([type, color]) => (
               <div key={type} className="flex items-center gap-1">
@@ -204,15 +204,15 @@ const SIGINTInterceptor = () => {
           </div>
         </div>
         <div className="divide-y divide-slate-800/20 max-h-[350px] overflow-y-auto custom-scrollbar">
-          {MOCK_INTERCEPTS.map(ic => {
+          {MOCK_SIGNALS.map(ic => {
             const pc = priorityColors[ic.priority];
             const tc = typeColors[ic.type];
-            const isSelected = selectedIntercept?.id === ic.id;
+            const isSelected = selectedSignal?.id === ic.id;
             return (
               <div
                 key={ic.id}
                 className={`px-4 py-2.5 hover:bg-white/2 cursor-pointer transition-colors ${ic.priority === 'flash' ? 'bg-red-500/3' : ''}`}
-                onClick={() => setSelectedIntercept(isSelected ? null : ic)}
+                onClick={() => setSelectedSignal(isSelected ? null : ic)}
               >
                 <div className="flex items-center gap-3">
                   <Activity className="w-3 h-3" style={{ color: tc }} />
@@ -240,11 +240,11 @@ const SIGINTInterceptor = () => {
                         <div className="text-[10px] font-mono text-cyan-400">{ic.source}</div>
                       </div>
                       <div className="bg-slate-900/40 rounded p-2 border border-slate-800/30">
-                        <div className="text-[7px] font-mono text-slate-600">FREQUENCY</div>
+                        <div className="text-[7px] font-mono text-slate-600">PORT/PROTOCOL</div>
                         <div className="text-[10px] font-mono text-slate-300">{ic.targetFreq}</div>
                       </div>
                       <div className="bg-slate-900/40 rounded p-2 border border-slate-800/30">
-                        <div className="text-[7px] font-mono text-slate-600">BEARING</div>
+                        <div className="text-[7px] font-mono text-slate-600">NETWORK SEGMENT</div>
                         <div className="text-[10px] font-mono text-emerald-400">{ic.bearing}</div>
                       </div>
                       <div className="bg-slate-900/40 rounded p-2 border border-slate-800/30">
@@ -253,7 +253,7 @@ const SIGINTInterceptor = () => {
                       </div>
                     </div>
                     <div className="bg-black/40 rounded p-3 border border-slate-800/30">
-                      <div className="text-[7px] font-mono text-slate-600 mb-1">INTERCEPT CONTENT</div>
+                      <div className="text-[7px] font-mono text-slate-600 mb-1">SIGNAL ANALYSIS</div>
                       <p className="text-[10px] font-mono text-slate-300 leading-relaxed">{ic.content}</p>
                     </div>
                   </div>
@@ -267,4 +267,4 @@ const SIGINTInterceptor = () => {
   );
 };
 
-export default SIGINTInterceptor;
+export default NetworkSignalMonitor;

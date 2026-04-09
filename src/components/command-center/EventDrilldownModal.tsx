@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { X, AlertTriangle, Shield, Clock, MapPin, Server, User, Activity, ChevronRight, ExternalLink, Terminal, Network, FileWarning, Layers } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { X, AlertTriangle, Shield, Clock, MapPin, Server, User, ChevronRight, ChevronLeft, ExternalLink, Terminal, Network, FileWarning, Layers, GitBranch } from 'lucide-react';
 
 export interface DrilldownEvent {
   id: string;
@@ -21,6 +21,7 @@ export interface DrilldownEvent {
   timeline: { time: string; action: string; detail: string }[];
   relatedAlerts: { id: string; title: string; severity: string }[];
   responseActions: { action: string; status: 'completed' | 'pending' | 'in_progress'; by: string }[];
+  vectorEmbedding?: number[];
 }
 
 const MOCK_EVENTS: DrilldownEvent[] = [
@@ -59,6 +60,7 @@ const MOCK_EVENTS: DrilldownEvent[] = [
       { action: 'Memory dump acquisition', status: 'in_progress', by: 'DFIR Team' },
       { action: 'Full AD audit initiated', status: 'pending', by: 'IAM Team' },
     ],
+    vectorEmbedding: [0.92, 0.87, 0.15, 0.78, 0.95, 0.33, 0.88, 0.12],
   },
   {
     id: 'EVT-2024-0852',
@@ -92,6 +94,7 @@ const MOCK_EVENTS: DrilldownEvent[] = [
       { action: 'Quarantine beacon DLL', status: 'completed', by: 'EDR-AUTO' },
       { action: 'Full disk forensic image', status: 'in_progress', by: 'DFIR Team' },
     ],
+    vectorEmbedding: [0.89, 0.91, 0.22, 0.82, 0.90, 0.29, 0.93, 0.10],
   },
   {
     id: 'EVT-2024-0861',
@@ -127,6 +130,7 @@ const MOCK_EVENTS: DrilldownEvent[] = [
       { action: 'Verify backup integrity', status: 'in_progress', by: 'IT Ops' },
       { action: 'Activate incident response plan', status: 'in_progress', by: 'CISO Office' },
     ],
+    vectorEmbedding: [0.45, 0.38, 0.91, 0.22, 0.55, 0.88, 0.30, 0.95],
   },
   {
     id: 'EVT-2024-0855',
@@ -158,6 +162,7 @@ const MOCK_EVENTS: DrilldownEvent[] = [
       { action: 'Force password reset for all affected accounts', status: 'in_progress', by: 'IAM Team' },
       { action: 'Revoke all Kerberos tickets (krbtgt reset)', status: 'pending', by: 'AD Admin' },
     ],
+    vectorEmbedding: [0.85, 0.88, 0.18, 0.90, 0.82, 0.25, 0.91, 0.08],
   },
   {
     id: 'EVT-2024-0866',
@@ -188,6 +193,7 @@ const MOCK_EVENTS: DrilldownEvent[] = [
       { action: 'Block DNS queries to cozybeaR.top', status: 'completed', by: 'DNS-FW-AUTO' },
       { action: 'Assess scope of exfiltrated data', status: 'in_progress', by: 'DFIR Team' },
     ],
+    vectorEmbedding: [0.70, 0.65, 0.40, 0.55, 0.72, 0.60, 0.68, 0.48],
   },
   {
     id: 'EVT-2024-0870',
@@ -216,8 +222,19 @@ const MOCK_EVENTS: DrilldownEvent[] = [
       { action: 'Rate limiting enabled on VPN gateway', status: 'completed', by: 'FW-AUTO' },
       { action: 'GeoIP blocking for attack source ranges', status: 'completed', by: 'SOC-L1' },
     ],
+    vectorEmbedding: [0.30, 0.25, 0.10, 0.15, 0.35, 0.12, 0.20, 0.55],
   },
 ];
+
+const computeSimilarity = (a: number[], b: number[]): number => {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+};
 
 const sevColor = (s: string) => {
   switch (s) {
@@ -244,17 +261,88 @@ const CATEGORY_MAP: Record<string, string[]> = {
   'embedding': ['EVT-2024-0847', 'EVT-2024-0870'],
 };
 
-export const getRandomEvent = (): DrilldownEvent => MOCK_EVENTS[Math.floor(Math.random() * MOCK_EVENTS.length)];
-export const getEventById = (id: string): DrilldownEvent | undefined => MOCK_EVENTS.find(e => e.id === id);
-export const getEventByCategory = (cat: string): DrilldownEvent => {
-  const ids = CATEGORY_MAP[cat] || [];
-  const id = ids[Math.floor(Math.random() * ids.length)];
-  return getEventById(id) || MOCK_EVENTS[0];
-};
-
 const EventDrilldownModal = ({ isOpen, onClose, eventId, category }: EventDrilldownModalProps) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'raw' | 'response'>('overview');
-  const event = eventId ? getEventById(eventId) : category ? getEventByCategory(category) : getRandomEvent();
+  const [navMode, setNavMode] = useState<'timeline' | 'similar'>('timeline');
+  const [slideDir, setSlideDir] = useState<'left' | 'right' | null>(null);
+
+  const categoryEvents = useMemo(() => {
+    if (!category) return MOCK_EVENTS;
+    const ids = CATEGORY_MAP[category] || [];
+    return ids.length > 0 ? MOCK_EVENTS.filter(e => ids.includes(e.id)) : MOCK_EVENTS;
+  }, [category]);
+
+  const initialIndex = useMemo(() => {
+    if (eventId) {
+      const idx = categoryEvents.findIndex(e => e.id === eventId);
+      return idx >= 0 ? idx : 0;
+    }
+    return 0;
+  }, [eventId, categoryEvents]);
+
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [originEvent] = useState(() => categoryEvents[initialIndex]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentIndex(initialIndex);
+      setActiveTab('overview');
+      setSlideDir(null);
+    }
+  }, [isOpen, initialIndex]);
+
+  const sortedEvents = useMemo(() => {
+    if (navMode === 'similar' && originEvent?.vectorEmbedding) {
+      const withSimilarity = categoryEvents
+        .filter(e => e.vectorEmbedding)
+        .map(e => ({
+          event: e,
+          similarity: computeSimilarity(originEvent.vectorEmbedding!, e.vectorEmbedding!),
+        }))
+        .sort((a, b) => b.similarity - a.similarity);
+      return withSimilarity.map(w => w.event);
+    }
+    return [...categoryEvents].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }, [navMode, categoryEvents, originEvent]);
+
+  const similarityScores = useMemo(() => {
+    if (navMode !== 'similar' || !originEvent?.vectorEmbedding) return {};
+    const scores: Record<string, number> = {};
+    sortedEvents.forEach(e => {
+      if (e.vectorEmbedding) {
+        scores[e.id] = computeSimilarity(originEvent.vectorEmbedding!, e.vectorEmbedding);
+      }
+    });
+    return scores;
+  }, [navMode, sortedEvents, originEvent]);
+
+  const event = sortedEvents[currentIndex] || sortedEvents[0];
+
+  const navigate = useCallback((dir: 'left' | 'right') => {
+    setSlideDir(dir);
+    setTimeout(() => {
+      setCurrentIndex(prev => {
+        if (dir === 'left') return prev > 0 ? prev - 1 : sortedEvents.length - 1;
+        return prev < sortedEvents.length - 1 ? prev + 1 : 0;
+      });
+      setSlideDir(null);
+    }, 200);
+  }, [sortedEvents.length]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') navigate('left');
+      else if (e.key === 'ArrowRight') navigate('right');
+      else if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isOpen, navigate, onClose]);
+
+  useEffect(() => {
+    setCurrentIndex(0);
+  }, [navMode]);
 
   if (!isOpen || !event) return null;
 
@@ -266,9 +354,30 @@ const EventDrilldownModal = ({ isOpen, onClose, eventId, category }: EventDrilld
     { key: 'response', label: 'Response', icon: Shield },
   ] as const;
 
+  const simScore = similarityScores[event.id];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-4xl max-h-[85vh] bg-[#0a0e18] border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      <button
+        onClick={(e) => { e.stopPropagation(); navigate('left'); }}
+        className="absolute left-4 top-1/2 -translate-y-1/2 z-[60] w-12 h-12 rounded-full bg-slate-800/80 border border-slate-600/40 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700/80 hover:border-cyan-500/40 transition-all backdrop-blur-sm group"
+      >
+        <ChevronLeft className="w-6 h-6 group-hover:-translate-x-0.5 transition-transform" />
+      </button>
+
+      <button
+        onClick={(e) => { e.stopPropagation(); navigate('right'); }}
+        className="absolute right-4 top-1/2 -translate-y-1/2 z-[60] w-12 h-12 rounded-full bg-slate-800/80 border border-slate-600/40 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700/80 hover:border-cyan-500/40 transition-all backdrop-blur-sm group"
+      >
+        <ChevronRight className="w-6 h-6 group-hover:translate-x-0.5 transition-transform" />
+      </button>
+
+      <div
+        className={`w-full max-w-4xl max-h-[85vh] bg-[#0a0e18] border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col transition-all duration-200 ${
+          slideDir === 'left' ? 'translate-x-4 opacity-80' : slideDir === 'right' ? '-translate-x-4 opacity-80' : 'translate-x-0 opacity-100'
+        }`}
+        onClick={e => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between px-6 py-3 bg-[#0c1020] border-b border-slate-800/50">
           <div className="flex items-center gap-3">
             <AlertTriangle className={`w-5 h-5 ${sc.text}`} />
@@ -278,10 +387,63 @@ const EventDrilldownModal = ({ isOpen, onClose, eventId, category }: EventDrilld
             </div>
             <span className="text-slate-500 text-xs font-mono">{event.category}</span>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors p-1 hover:bg-white/5 rounded">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/60 border border-slate-700/30">
+              <span className="text-[10px] font-mono text-slate-500">{currentIndex + 1} / {sortedEvents.length}</span>
+              <div className="flex gap-1 ml-2">
+                {sortedEvents.map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-1.5 h-1.5 rounded-full transition-all ${
+                      i === currentIndex ? 'bg-cyan-400 scale-125' : 'bg-slate-700 hover:bg-slate-500 cursor-pointer'
+                    }`}
+                    onClick={() => setCurrentIndex(i)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="flex rounded-lg overflow-hidden border border-slate-700/30">
+              <button
+                onClick={() => setNavMode('timeline')}
+                className={`px-2.5 py-1 text-[10px] font-mono font-bold flex items-center gap-1 transition-all ${
+                  navMode === 'timeline' ? 'bg-cyan-500/15 text-cyan-400' : 'bg-slate-900/40 text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <Clock className="w-3 h-3" />
+                TIME
+              </button>
+              <button
+                onClick={() => setNavMode('similar')}
+                className={`px-2.5 py-1 text-[10px] font-mono font-bold flex items-center gap-1 transition-all ${
+                  navMode === 'similar' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-900/40 text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <GitBranch className="w-3 h-3" />
+                SIMILAR
+              </button>
+            </div>
+
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-300 transition-colors p-1 hover:bg-white/5 rounded">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {navMode === 'similar' && simScore !== undefined && (
+          <div className="px-6 py-1.5 bg-emerald-500/5 border-b border-emerald-500/20 flex items-center gap-2">
+            <GitBranch className="w-3 h-3 text-emerald-400" />
+            <span className="text-[10px] font-mono text-emerald-400">
+              VECTOR SIMILARITY: {(simScore * 100).toFixed(1)}%
+            </span>
+            <div className="flex-1 h-1 bg-slate-800/60 rounded-full ml-2 max-w-[200px]">
+              <div
+                className="h-full rounded-full bg-emerald-500/60 transition-all duration-300"
+                style={{ width: `${simScore * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="px-6 py-3 border-b border-slate-800/30">
           <h2 className={`text-lg font-semibold ${sc.text} mb-1`}>{event.title}</h2>
@@ -431,10 +593,14 @@ const EventDrilldownModal = ({ isOpen, onClose, eventId, category }: EventDrilld
             <Network className="w-3 h-3 text-slate-600" />
             <span className="text-[9px] font-mono text-slate-600">Correlation Engine v4.2</span>
           </div>
-          <div className="flex items-center gap-2 text-[9px] font-mono text-slate-600">
-            <span>OCSF v1.1</span>
-            <span>|</span>
-            <span className="flex items-center gap-1 text-cyan-500/60 cursor-pointer hover:text-cyan-400">
+          <div className="flex items-center gap-3">
+            <span className="text-[9px] font-mono text-slate-600 flex items-center gap-1">
+              <ChevronLeft className="w-2.5 h-2.5" /> <ChevronRight className="w-2.5 h-2.5" /> Navigate
+            </span>
+            <span className="text-slate-700">|</span>
+            <span className="text-[9px] font-mono text-slate-600">OCSF v1.1</span>
+            <span className="text-slate-700">|</span>
+            <span className="flex items-center gap-1 text-[9px] font-mono text-cyan-500/60 cursor-pointer hover:text-cyan-400">
               <ExternalLink className="w-3 h-3" /> Export
             </span>
           </div>

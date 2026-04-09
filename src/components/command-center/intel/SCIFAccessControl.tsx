@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Fingerprint, MapPin, Shield, Clock, AlertTriangle, Check, Smartphone } from 'lucide-react';
 
-interface SCIFZone {
+interface SecureZone {
   id: string;
   name: string;
   location: string;
@@ -11,7 +11,7 @@ interface SCIFZone {
   maxOccupancy: number;
   lastSweep: string;
   rfShielding: number;
-  tempestRating: string;
+  securityRating: string;
 }
 
 interface AccessLog {
@@ -23,26 +23,26 @@ interface AccessLog {
   deviceCheck: 'clean' | 'device_detected' | 'n/a';
 }
 
-const SCIF_ZONES: SCIFZone[] = [
-  { id: 'SCIF-A1', name: 'Situation Room Alpha', location: 'Sub-Level 3, Wing A', classification: 'TS/SCI', status: 'occupied', occupancy: 4, maxOccupancy: 12, lastSweep: '14:00 UTC', rfShielding: 99.7, tempestRating: 'Zone A' },
-  { id: 'SCIF-B2', name: 'SIGINT Analysis Center', location: 'Sub-Level 2, Wing B', classification: 'TS/SCI', status: 'occupied', occupancy: 7, maxOccupancy: 20, lastSweep: '13:30 UTC', rfShielding: 99.9, tempestRating: 'Zone A' },
-  { id: 'SCIF-C1', name: 'HUMINT Briefing Room', location: 'Level 1, Wing C', classification: 'TS/SCI', status: 'secure', occupancy: 0, maxOccupancy: 8, lastSweep: '14:15 UTC', rfShielding: 99.5, tempestRating: 'Zone B' },
-  { id: 'SCIF-D3', name: 'Cyber Operations Vault', location: 'Sub-Level 4, Wing D', classification: 'TS/SCI', status: 'occupied', occupancy: 3, maxOccupancy: 6, lastSweep: '12:00 UTC', rfShielding: 99.8, tempestRating: 'Zone A' },
-  { id: 'SCIF-E1', name: 'Executive Brief Room', location: 'Level 2, Executive Wing', classification: 'TOP SECRET', status: 'secure', occupancy: 0, maxOccupancy: 16, lastSweep: '14:30 UTC', rfShielding: 98.2, tempestRating: 'Zone B' },
-  { id: 'SCIF-F2', name: 'Counter-Intel Vault', location: 'Sub-Level 5, Wing F', classification: 'TS/SCI', status: 'alert', occupancy: 1, maxOccupancy: 4, lastSweep: '11:00 UTC', rfShielding: 99.9, tempestRating: 'Zone A' },
+const SECURE_ZONES: SecureZone[] = [
+  { id: 'SZ-A1', name: 'SOC War Room', location: 'Floor 3, Wing A', classification: 'RESTRICTED', status: 'occupied', occupancy: 4, maxOccupancy: 12, lastSweep: '14:00 UTC', rfShielding: 99.7, securityRating: 'Tier 1' },
+  { id: 'SZ-B2', name: 'Threat Analysis Lab', location: 'Floor 2, Wing B', classification: 'RESTRICTED', status: 'occupied', occupancy: 7, maxOccupancy: 20, lastSweep: '13:30 UTC', rfShielding: 99.9, securityRating: 'Tier 1' },
+  { id: 'SZ-C1', name: 'Incident Response Center', location: 'Floor 1, Wing C', classification: 'RESTRICTED', status: 'secure', occupancy: 0, maxOccupancy: 8, lastSweep: '14:15 UTC', rfShielding: 99.5, securityRating: 'Tier 2' },
+  { id: 'SZ-D3', name: 'Network Operations Center', location: 'Floor 4, Wing D', classification: 'RESTRICTED', status: 'occupied', occupancy: 3, maxOccupancy: 6, lastSweep: '12:00 UTC', rfShielding: 99.8, securityRating: 'Tier 1' },
+  { id: 'SZ-E1', name: 'Executive Briefing Room', location: 'Floor 2, Executive Wing', classification: 'INTERNAL', status: 'secure', occupancy: 0, maxOccupancy: 16, lastSweep: '14:30 UTC', rfShielding: 98.2, securityRating: 'Tier 2' },
+  { id: 'SZ-F2', name: 'Digital Forensics Lab', location: 'Floor 5, Wing F', classification: 'RESTRICTED', status: 'alert', occupancy: 1, maxOccupancy: 4, lastSweep: '11:00 UTC', rfShielding: 99.9, securityRating: 'Tier 1' },
 ];
 
 const ACCESS_LOG: AccessLog[] = [
-  { timestamp: '14:47:33', person: 'ADM. Richardson', zone: 'SCIF-A1', action: 'entry', method: 'badge+bio', deviceCheck: 'clean' },
-  { timestamp: '14:45:11', person: 'COL. Chen', zone: 'SCIF-D3', action: 'entry', method: 'badge+bio', deviceCheck: 'clean' },
-  { timestamp: '14:42:08', person: 'UNKNOWN', zone: 'SCIF-F2', action: 'tailgate_alert', method: 'unauthorized', deviceCheck: 'n/a' },
-  { timestamp: '14:38:55', person: 'Mr. Volkov', zone: 'SCIF-B2', action: 'denied', method: 'badge+pin', deviceCheck: 'device_detected' },
-  { timestamp: '14:35:22', person: 'LCDR. Petrov', zone: 'SCIF-B2', action: 'exit', method: 'badge+bio', deviceCheck: 'clean' },
-  { timestamp: '14:30:44', person: 'Dr. Nakamura', zone: 'SCIF-A1', action: 'entry', method: 'badge+bio', deviceCheck: 'clean' },
-  { timestamp: '14:28:19', person: 'SAC Williams', zone: 'SCIF-C1', action: 'exit', method: 'badge+bio', deviceCheck: 'clean' },
-  { timestamp: '14:22:03', person: 'Agt. Park', zone: 'SCIF-C1', action: 'entry', method: 'escort', deviceCheck: 'clean' },
-  { timestamp: '14:15:41', person: 'SSA. Murphy', zone: 'SCIF-D3', action: 'denied', method: 'badge+pin', deviceCheck: 'n/a' },
-  { timestamp: '14:10:09', person: 'CAPT. Zhang', zone: 'SCIF-B2', action: 'entry', method: 'badge+bio', deviceCheck: 'clean' },
+  { timestamp: '14:47:33', person: 'J. Richardson', zone: 'SZ-A1', action: 'entry', method: 'badge+bio', deviceCheck: 'clean' },
+  { timestamp: '14:45:11', person: 'S. Chen', zone: 'SZ-D3', action: 'entry', method: 'badge+bio', deviceCheck: 'clean' },
+  { timestamp: '14:42:08', person: 'UNKNOWN', zone: 'SZ-F2', action: 'tailgate_alert', method: 'unauthorized', deviceCheck: 'n/a' },
+  { timestamp: '14:38:55', person: 'A. Volkov', zone: 'SZ-B2', action: 'denied', method: 'badge+pin', deviceCheck: 'device_detected' },
+  { timestamp: '14:35:22', person: 'V. Petrov', zone: 'SZ-B2', action: 'exit', method: 'badge+bio', deviceCheck: 'clean' },
+  { timestamp: '14:30:44', person: 'Dr. Nakamura', zone: 'SZ-A1', action: 'entry', method: 'badge+bio', deviceCheck: 'clean' },
+  { timestamp: '14:28:19', person: 'M. Williams', zone: 'SZ-C1', action: 'exit', method: 'badge+bio', deviceCheck: 'clean' },
+  { timestamp: '14:22:03', person: 'D. Park', zone: 'SZ-C1', action: 'entry', method: 'escort', deviceCheck: 'clean' },
+  { timestamp: '14:15:41', person: 'T. Murphy', zone: 'SZ-D3', action: 'denied', method: 'badge+pin', deviceCheck: 'n/a' },
+  { timestamp: '14:10:09', person: 'L. Zhang', zone: 'SZ-B2', action: 'entry', method: 'badge+bio', deviceCheck: 'clean' },
 ];
 
 const statusColor = (s: string) => {
@@ -55,10 +55,10 @@ const statusColor = (s: string) => {
   }
 };
 
-const SCIFAccessControl = () => {
+const SecureZoneAccessControl = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
-  const [selectedZone, setSelectedZone] = useState<SCIFZone | null>(null);
+  const [selectedZone, setSelectedZone] = useState<SecureZone | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -79,7 +79,7 @@ const SCIFAccessControl = () => {
     resize();
     window.addEventListener('resize', resize);
 
-    const zones = SCIF_ZONES.map((z, i) => ({
+    const zones = SECURE_ZONES.map((z, i) => ({
       ...z,
       cx: 0,
       cy: 0,
@@ -115,7 +115,7 @@ const SCIFAccessControl = () => {
       ctx.fillStyle = '#10b98130';
       ctx.font = 'bold 9px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('FACILITY FLOOR PLAN - SCIF ZONES', w / 2, 18);
+      ctx.fillText('FACILITY FLOOR PLAN - SECURE ZONES', w / 2, 18);
 
       for (const zone of zones) {
         const x = padding + zone.col * (cellW + gap);
@@ -202,7 +202,7 @@ const SCIFAccessControl = () => {
         <div className="absolute top-3 left-4 z-10 flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-black/70 rounded-lg border border-emerald-500/20">
             <Fingerprint className="w-3 h-3 text-emerald-400" />
-            <span className="text-emerald-400 text-[10px] font-mono font-bold tracking-wider">SCIF ACCESS CONTROL</span>
+            <span className="text-emerald-400 text-[10px] font-mono font-bold tracking-wider">SECURE ZONE ACCESS CONTROL</span>
           </div>
         </div>
         <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
@@ -220,7 +220,7 @@ const SCIFAccessControl = () => {
             <span className="text-xs font-mono font-bold text-slate-300 tracking-wider">ZONE STATUS</span>
           </div>
           <div className="divide-y divide-slate-800/20 max-h-[300px] overflow-y-auto custom-scrollbar">
-            {SCIF_ZONES.map(zone => {
+            {SECURE_ZONES.map(zone => {
               const sc = statusColor(zone.status);
               return (
                 <div
@@ -243,8 +243,8 @@ const SCIFAccessControl = () => {
                         <div className="text-[10px] font-mono text-emerald-400">{zone.rfShielding}%</div>
                       </div>
                       <div className="bg-slate-900/40 rounded p-1.5 border border-slate-800/30">
-                        <div className="text-[7px] font-mono text-slate-600">TEMPEST</div>
-                        <div className="text-[10px] font-mono text-cyan-400">{zone.tempestRating}</div>
+                        <div className="text-[7px] font-mono text-slate-600">SECURITY RATING</div>
+                        <div className="text-[10px] font-mono text-cyan-400">{zone.securityRating}</div>
                       </div>
                       <div className="bg-slate-900/40 rounded p-1.5 border border-slate-800/30">
                         <div className="text-[7px] font-mono text-slate-600">LAST SWEEP</div>
@@ -300,4 +300,4 @@ const SCIFAccessControl = () => {
   );
 };
 
-export default SCIFAccessControl;
+export default SecureZoneAccessControl;
