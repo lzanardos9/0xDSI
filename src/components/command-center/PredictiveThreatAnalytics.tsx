@@ -446,7 +446,7 @@ const PredictiveThreatAnalytics: React.FC = () => {
       ctx.font = 'bold 10px monospace';
       ctx.fillStyle = 'rgba(148,163,184,0.6)';
       ctx.textAlign = 'left';
-      ctx.fillText('PRECOGNITION ENGINE v4.2', 16, 24);
+      ctx.fillText('PRE-COMPROMISE ENGINE v4.2', 16, 24);
 
       ctx.font = '9px monospace';
       ctx.fillStyle = 'rgba(148,163,184,0.4)';
@@ -493,7 +493,7 @@ const PredictiveThreatAnalytics: React.FC = () => {
           </div>
           <div>
             <h2 className="text-sm font-semibold text-slate-200 tracking-wide">PREDICTIVE THREAT ANALYTICS</h2>
-            <p className="text-[10px] font-mono text-slate-500 tracking-widest">PRE-CRIME FORECASTING MODULE</p>
+            <p className="text-[10px] font-mono text-slate-500 tracking-widest">PRE-COMPROMISE INTELLIGENCE ENGINE</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -562,7 +562,7 @@ const PredictiveThreatAnalytics: React.FC = () => {
 
               <div className="mb-2">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Crystallization</span>
+                  <span className="text-[9px] font-mono text-slate-500 uppercase tracking-wider">Materialization</span>
                   <span className={`text-[9px] font-mono ${getSeverityTailwind(pred.severity)}`}>{pred.probability}%</span>
                 </div>
                 <div className={`h-1.5 rounded-full ${getBarTrackColor(pred.severity)} overflow-hidden`}>

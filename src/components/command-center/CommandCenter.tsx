@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ThreatRadar from './ThreatRadar';
 import ThreatHeartbeat from './ThreatHeartbeat';
 import KillChainWaterfall from './KillChainWaterfall';
@@ -13,8 +13,10 @@ import RealtimeCEPGraph from './RealtimeCEPGraph';
 import EventDrilldownModal from './EventDrilldownModal';
 import IntelligenceMonitoring from './IntelligenceMonitoring';
 import PredictiveThreatAnalytics from './PredictiveThreatAnalytics';
+import MonteCarloForecasting from './MonteCarloForecasting';
+import AgentCommsPanel from './AgentCommsPanel';
 import ThreatGlobe from '../ThreatGlobe';
-import { Globe, Shield } from 'lucide-react';
+import { Globe, Maximize2, Minimize2, Shield } from 'lucide-react';
 
 interface SelectedCamera {
   id: string;
@@ -43,6 +45,7 @@ const CommandCenter = () => {
   const [drilldownEventId, setDrilldownEventId] = useState<string | undefined>();
   const [drilldownCategory, setDrilldownCategory] = useState<string | undefined>();
   const [cepExpanded, setCepExpanded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const handleCameraClick = (node: { id: string; name: string; location: string; status: 'secure' | 'alert' | 'warning' }) => {
     setSelectedCamera(node);
@@ -55,11 +58,73 @@ const CommandCenter = () => {
     setDrilldownOpen(true);
   };
 
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [toggleFullscreen]);
+
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 relative ${isFullscreen ? 'bg-[#060a14] p-6 overflow-y-auto h-screen' : ''}`}>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Shield className="w-5 h-5 text-emerald-400" />
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          </div>
+          <div>
+            <h1 className="text-sm font-semibold text-slate-200 tracking-wide">SECURITY COMMAND CENTER</h1>
+            <p className="text-[10px] font-mono text-slate-500">UNIFIED THREAT OPERATIONS</p>
+          </div>
+        </div>
+        <button
+          onClick={toggleFullscreen}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/40 text-slate-400 hover:text-white hover:bg-slate-700/60 hover:border-cyan-500/30 transition-all text-xs font-mono"
+        >
+          {isFullscreen ? (
+            <>
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>EXIT FULLSCREEN</span>
+              <kbd className="px-1 py-0.5 text-[9px] bg-slate-700/50 rounded border border-slate-600/40 text-slate-500">F11</kbd>
+            </>
+          ) : (
+            <>
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>FULLSCREEN</span>
+              <kbd className="px-1 py-0.5 text-[9px] bg-slate-700/50 rounded border border-slate-600/40 text-slate-500">F11</kbd>
+            </>
+          )}
+        </button>
+      </div>
+
       <DefconAlert />
 
       <PredictiveThreatAnalytics />
+
+      <MonteCarloForecasting />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <div className="lg:col-span-3 h-[420px] cursor-pointer" onClick={() => handleEventDrilldown('radar')}>
@@ -74,6 +139,8 @@ const CommandCenter = () => {
           </div>
         </div>
       </div>
+
+      <AgentCommsPanel />
 
       {cepExpanded ? (
         <div className="h-[600px]">
