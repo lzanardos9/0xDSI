@@ -37,7 +37,8 @@ import {
   FileText,
   BookOpen,
   Eye,
-  LayoutGrid
+  LayoutGrid,
+  Radar
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThreatGlobe from './ThreatGlobe';
@@ -83,6 +84,7 @@ import LLMGuardrailsControl from './LLMGuardrailsControl';
 import GlasswingPanel from './glasswing/GlasswingPanel';
 import NegativeCorrelationPanel from './negative-correlation/NegativeCorrelationPanel';
 import DashboardMigrationsTab from './dashboard-builder/DashboardMigrationsTab';
+import CommandCenter from './command-center/CommandCenter';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -98,6 +100,7 @@ const Dashboard = () => {
 
   const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
+  const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userRole, setUserRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -482,6 +485,32 @@ const Dashboard = () => {
                 </p>
               </div>
               <div className="flex items-center space-x-2">
+                {selectedView === 'overview' && (
+                  <div className="flex items-center bg-slate-800/50 rounded-lg p-0.5 border border-slate-700/40">
+                    <button
+                      onClick={() => setDashboardMode('analytics')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                        dashboardMode === 'analytics'
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <BarChart3 className="w-3.5 h-3.5" />
+                      <span>Analytics</span>
+                    </button>
+                    <button
+                      onClick={() => setDashboardMode('commandcenter')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                        dashboardMode === 'commandcenter'
+                          ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Radar className="w-3.5 h-3.5" />
+                      <span>Command Center</span>
+                    </button>
+                  </div>
+                )}
                 <button
                   onClick={() => setCommandPaletteOpen(true)}
                   className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/40 hover:bg-slate-700/50 rounded-lg border border-slate-700/30 transition-all group"
@@ -524,7 +553,11 @@ const Dashboard = () => {
 
         {/* Main Content Area */}
         <main className="p-8 custom-scrollbar min-w-0 overflow-x-hidden">
-          {selectedView === 'overview' && (
+          {selectedView === 'overview' && dashboardMode === 'commandcenter' && (
+            <CommandCenter />
+          )}
+
+          {selectedView === 'overview' && dashboardMode === 'analytics' && (
             <>
               <div className="mb-8">
                 <div className="h-[600px]">
