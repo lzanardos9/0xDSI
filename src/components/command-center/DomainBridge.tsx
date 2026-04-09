@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Camera, Server, Monitor, Wifi, Shield, MapPin, Lock, Eye } from 'lucide-react';
+import { Camera, Server, Monitor, Wifi, Shield, MapPin, Lock, Eye, Layers } from 'lucide-react';
 
 interface PhysicalNode {
   id: string;
@@ -23,22 +23,22 @@ interface LogicalNode {
 }
 
 const LOGICAL_NODES: LogicalNode[] = [
-  { id: 'l1', name: 'DC-CORE-01', type: 'server', ip: '10.0.1.10', status: 'active', x: 0.2, y: 0.2 },
-  { id: 'l2', name: 'DC-CORE-02', type: 'server', ip: '10.0.1.11', status: 'active', x: 0.2, y: 0.45 },
-  { id: 'l3', name: 'DC-DB-01', type: 'database', ip: '10.0.2.20', status: 'suspicious', x: 0.15, y: 0.7 },
-  { id: 'l4', name: 'FW-EDGE-01', type: 'network', ip: '10.0.0.1', status: 'active', x: 0.35, y: 0.15 },
-  { id: 'l5', name: 'WS-ADMIN-07', type: 'endpoint', ip: '10.0.5.107', status: 'compromised', x: 0.35, y: 0.55 },
-  { id: 'l6', name: 'CLOUD-AWS-01', type: 'cloud', ip: '172.31.0.10', status: 'active', x: 0.3, y: 0.85 },
-  { id: 'l7', name: 'SW-CORE-01', type: 'network', ip: '10.0.0.2', status: 'active', x: 0.1, y: 0.35 },
+  { id: 'l1', name: 'DC-CORE-01', type: 'server', ip: '10.0.1.10', status: 'active', x: 0.12, y: 0.18 },
+  { id: 'l2', name: 'DC-CORE-02', type: 'server', ip: '10.0.1.11', status: 'active', x: 0.25, y: 0.38 },
+  { id: 'l3', name: 'DC-DB-01', type: 'database', ip: '10.0.2.20', status: 'suspicious', x: 0.10, y: 0.58 },
+  { id: 'l4', name: 'FW-EDGE-01', type: 'network', ip: '10.0.0.1', status: 'active', x: 0.30, y: 0.15 },
+  { id: 'l5', name: 'WS-ADMIN-07', type: 'endpoint', ip: '10.0.5.107', status: 'compromised', x: 0.22, y: 0.72 },
+  { id: 'l6', name: 'CLOUD-AWS-01', type: 'cloud', ip: '172.31.0.10', status: 'active', x: 0.15, y: 0.88 },
+  { id: 'l7', name: 'SW-CORE-01', type: 'network', ip: '10.0.0.2', status: 'active', x: 0.08, y: 0.38 },
 ];
 
 const PHYSICAL_NODES: PhysicalNode[] = [
-  { id: 'p1', name: 'CAM-DC-07', type: 'camera', location: 'Server Room A', status: 'secure', x: 0.65, y: 0.15, linkedLogicalId: 'l1' },
-  { id: 'p2', name: 'CAM-DC-12', type: 'camera', location: 'Server Room B', status: 'alert', x: 0.85, y: 0.3, linkedLogicalId: 'l2' },
-  { id: 'p3', name: 'RACK-A3', type: 'server', location: 'Row A, Rack 3', status: 'secure', x: 0.7, y: 0.45, linkedLogicalId: 'l3' },
-  { id: 'p4', name: 'DOOR-SR-01', type: 'door', location: 'Server Room Entry', status: 'warning', x: 0.9, y: 0.55, linkedLogicalId: 'l4' },
-  { id: 'p5', name: 'WS-FL3-07', type: 'workstation', location: 'Floor 3, Desk 7', status: 'alert', x: 0.75, y: 0.7, linkedLogicalId: 'l5' },
-  { id: 'p6', name: 'AP-FL3-02', type: 'access_point', location: 'Floor 3 WiFi', status: 'secure', x: 0.6, y: 0.85, linkedLogicalId: 'l6' },
+  { id: 'p1', name: 'CAM-DC-07', type: 'camera', location: 'Server Room A', status: 'secure', x: 0.70, y: 0.18, linkedLogicalId: 'l1' },
+  { id: 'p2', name: 'CAM-DC-12', type: 'camera', location: 'Server Room B', status: 'alert', x: 0.88, y: 0.35, linkedLogicalId: 'l2' },
+  { id: 'p3', name: 'RACK-A3', type: 'server', location: 'Row A, Rack 3', status: 'secure', x: 0.75, y: 0.52, linkedLogicalId: 'l3' },
+  { id: 'p4', name: 'DOOR-SR-01', type: 'door', location: 'Server Room Entry', status: 'warning', x: 0.90, y: 0.62, linkedLogicalId: 'l4' },
+  { id: 'p5', name: 'WS-FL3-07', type: 'workstation', location: 'Floor 3, Desk 7', status: 'alert', x: 0.78, y: 0.78, linkedLogicalId: 'l5' },
+  { id: 'p6', name: 'AP-FL3-02', type: 'access_point', location: 'Floor 3 WiFi', status: 'secure', x: 0.68, y: 0.88, linkedLogicalId: 'l6' },
 ];
 
 interface DomainBridgeProps {
@@ -87,30 +87,46 @@ const DomainBridge = ({ onCameraClick }: DomainBridgeProps) => {
       if (!rect) { animRef.current = requestAnimationFrame(animate); return; }
       const w = rect.width;
       const h = rect.height;
+      const elapsed = Date.now() / 1000;
 
       ctx.clearRect(0, 0, w, h);
 
-      const midX = w * 0.48;
-      const bridgeGrad = ctx.createLinearGradient(midX - 30, 0, midX + 30, 0);
-      bridgeGrad.addColorStop(0, 'rgba(34, 211, 238, 0.03)');
-      bridgeGrad.addColorStop(0.5, 'rgba(34, 211, 238, 0.08)');
-      bridgeGrad.addColorStop(1, 'rgba(34, 211, 238, 0.03)');
-      ctx.fillStyle = bridgeGrad;
-      ctx.fillRect(midX - 30, 0, 60, h);
+      const midX = w * 0.50;
 
-      ctx.strokeStyle = 'rgba(34, 211, 238, 0.15)';
+      const bridgeWidth = 50;
+      const bridgeGrad = ctx.createLinearGradient(midX - bridgeWidth, 0, midX + bridgeWidth, 0);
+      bridgeGrad.addColorStop(0, 'rgba(34, 211, 238, 0.0)');
+      bridgeGrad.addColorStop(0.2, 'rgba(34, 211, 238, 0.04)');
+      bridgeGrad.addColorStop(0.5, 'rgba(34, 211, 238, 0.1)');
+      bridgeGrad.addColorStop(0.8, 'rgba(34, 211, 238, 0.04)');
+      bridgeGrad.addColorStop(1, 'rgba(34, 211, 238, 0.0)');
+      ctx.fillStyle = bridgeGrad;
+      ctx.fillRect(midX - bridgeWidth, 0, bridgeWidth * 2, h);
+
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.2)';
       ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
+      ctx.setLineDash([6, 4]);
       ctx.beginPath();
       ctx.moveTo(midX, 0);
       ctx.lineTo(midX, h);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.fillStyle = 'rgba(34, 211, 238, 0.5)';
-      ctx.font = 'bold 9px monospace';
+      const pulseY = (elapsed * 40) % h;
+      const pulseGrad = ctx.createRadialGradient(midX, pulseY, 0, midX, pulseY, 30);
+      pulseGrad.addColorStop(0, 'rgba(34, 211, 238, 0.25)');
+      pulseGrad.addColorStop(1, 'rgba(34, 211, 238, 0)');
+      ctx.fillStyle = pulseGrad;
+      ctx.fillRect(midX - 30, pulseY - 30, 60, 60);
+
+      ctx.fillStyle = 'rgba(34, 211, 238, 0.6)';
+      ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('CONVERGENCE BRIDGE', midX, 16);
+      ctx.fillText('CONVERGENCE BRIDGE', midX, 18);
+
+      ctx.font = '8px monospace';
+      ctx.fillStyle = 'rgba(34, 211, 238, 0.3)';
+      ctx.fillText('CYBER-PHYSICAL LINK', midX, 30);
 
       for (const pNode of PHYSICAL_NODES) {
         const lNode = LOGICAL_NODES.find(l => l.id === pNode.linkedLogicalId);
@@ -123,16 +139,25 @@ const DomainBridge = ({ onCameraClick }: DomainBridgeProps) => {
 
         const isHighlighted = selectedLink === pNode.id || hoveredNode === pNode.id || hoveredNode === lNode.id;
         const linkColor = pNode.status === 'alert' ? '#ef4444' : pNode.status === 'warning' ? '#eab308' : '#22d3ee';
-        const alpha = isHighlighted ? '60' : '15';
+        const alpha = isHighlighted ? '70' : '18';
 
         ctx.strokeStyle = linkColor + alpha;
-        ctx.lineWidth = isHighlighted ? 2 : 1;
+        ctx.lineWidth = isHighlighted ? 2.5 : 1;
         ctx.beginPath();
         ctx.moveTo(lx, ly);
-        const cp1x = midX - 20;
-        const cp2x = midX + 20;
+        const cp1x = midX - 25;
+        const cp2x = midX + 25;
         ctx.bezierCurveTo(cp1x, ly, cp2x, py, px, py);
         ctx.stroke();
+
+        if (isHighlighted) {
+          ctx.strokeStyle = linkColor + '15';
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.moveTo(lx, ly);
+          ctx.bezierCurveTo(cp1x, ly, cp2x, py, px, py);
+          ctx.stroke();
+        }
       }
 
       particlesRef.current.forEach(p => {
@@ -150,8 +175,8 @@ const DomainBridge = ({ onCameraClick }: DomainBridgeProps) => {
         const ly = lNode.y * h;
         const px = pNode.x * w;
         const py = pNode.y * h;
-        const cp1x = midX - 20;
-        const cp2x = midX + 20;
+        const cp1x = midX - 25;
+        const cp2x = midX + 25;
 
         const t = p.progress;
         const mt = 1 - t;
@@ -160,11 +185,11 @@ const DomainBridge = ({ onCameraClick }: DomainBridgeProps) => {
 
         const color = pNode.status === 'alert' ? '#ef4444' : pNode.status === 'warning' ? '#eab308' : '#22d3ee';
         ctx.fillStyle = color;
-        ctx.globalAlpha = 0.7;
+        ctx.globalAlpha = 0.8;
         ctx.shadowColor = color;
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = 8;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1;
@@ -212,15 +237,33 @@ const DomainBridge = ({ onCameraClick }: DomainBridgeProps) => {
   return (
     <div className="relative w-full h-full bg-[#060810] rounded-xl overflow-hidden border border-slate-800/50">
       <div className="absolute top-3 left-4 z-20 flex items-center gap-3">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-black/60 rounded-lg border border-cyan-500/20">
-          <Eye className="w-3 h-3 text-cyan-400" />
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-black/60 rounded-lg border border-cyan-500/20 backdrop-blur-sm">
+          <Layers className="w-3.5 h-3.5 text-cyan-400" />
           <span className="text-cyan-400 text-xs font-mono font-bold tracking-wider">DOMAIN BRIDGE</span>
         </div>
       </div>
 
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex gap-8">
-        <span className="text-blue-400 text-[10px] font-mono font-bold tracking-widest">LOGICAL DOMAIN</span>
-        <span className="text-orange-400 text-[10px] font-mono font-bold tracking-widest">PHYSICAL DOMAIN</span>
+      <div className="absolute top-3 z-20 flex items-center gap-0" style={{ left: '50%', transform: 'translateX(-50%)' }}>
+        <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 rounded-l-lg border border-blue-500/20">
+          <Monitor className="w-3 h-3 text-blue-400" />
+          <span className="text-blue-400 text-[10px] font-mono font-bold tracking-widest">LOGICAL DOMAIN</span>
+        </div>
+        <div className="w-px h-6 bg-cyan-500/30" />
+        <div className="flex items-center gap-2 px-3 py-1 bg-orange-500/10 rounded-r-lg border border-orange-500/20">
+          <span className="text-orange-400 text-[10px] font-mono font-bold tracking-widest">PHYSICAL DOMAIN</span>
+          <Camera className="w-3 h-3 text-orange-400" />
+        </div>
+      </div>
+
+      <div className="absolute top-3 right-4 z-20">
+        <div className="flex items-center gap-2 px-2.5 py-1 bg-black/60 rounded-lg border border-slate-700/40">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[9px] font-mono text-emerald-400">LINKED</span>
+          </div>
+          <span className="text-slate-600 text-[9px]">|</span>
+          <span className="text-[9px] font-mono text-slate-500">{PHYSICAL_NODES.length} BRIDGES</span>
+        </div>
       </div>
 
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />

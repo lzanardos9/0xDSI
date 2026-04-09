@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Users, Shield, Camera, Wifi, UserX, Bug, TrendingUp, TrendingDown, Minus, Activity, Zap, Clock } from 'lucide-react';
+import { Users, Shield, Camera, Wifi, UserX, Bug, Mail, Radar, Cloud, Fingerprint, TrendingUp, TrendingDown, Minus, Activity, Zap, Clock } from 'lucide-react';
 
 interface SignalVariable {
   name: string;
@@ -16,12 +16,16 @@ interface SignalVariable {
 }
 
 const VARIABLES: SignalVariable[] = [
-  { name: 'User Behavior Analytics', shortName: 'User Behavior', weight: 18, value: 72, trend: 'rising', contribution: 14.2, color: 'cyan', canvasColor: '#22d3ee', lastSignal: '2m ago', history: [55, 60, 65, 68, 72], icon: Users },
-  { name: 'Threat Intel Feeds', shortName: 'Threat Intel', weight: 24, value: 88, trend: 'rising', contribution: 22.8, color: 'red', canvasColor: '#ef4444', lastSignal: '45s ago', history: [70, 75, 80, 85, 88], icon: Shield },
-  { name: 'Physical Security Sensors', shortName: 'Physical Sec', weight: 10, value: 45, trend: 'stable', contribution: 4.8, color: 'yellow', canvasColor: '#eab308', lastSignal: '8m ago', history: [42, 44, 43, 45, 45], icon: Camera },
-  { name: 'Network Anomaly Detection', shortName: 'Net Anomaly', weight: 22, value: 81, trend: 'rising', contribution: 19.4, color: 'orange', canvasColor: '#f97316', lastSignal: '1m ago', history: [60, 65, 72, 78, 81], icon: Wifi },
-  { name: 'Insider Threat Indicators', shortName: 'Insider Threat', weight: 14, value: 56, trend: 'declining', contribution: 8.4, color: 'blue', canvasColor: '#3b82f6', lastSignal: '15m ago', history: [62, 60, 59, 57, 56], icon: UserX },
-  { name: 'Vulnerability Surface Score', shortName: 'Vuln Surface', weight: 12, value: 67, trend: 'rising', contribution: 8.6, color: 'emerald', canvasColor: '#10b981', lastSignal: '5m ago', history: [55, 58, 61, 64, 67], icon: Bug },
+  { name: 'User Behavior Analytics', shortName: 'User Behavior', weight: 14, value: 72, trend: 'rising', contribution: 10.08, color: 'cyan', canvasColor: '#22d3ee', lastSignal: '2m ago', history: [55, 60, 65, 68, 72], icon: Users },
+  { name: 'Threat Intel Feeds', shortName: 'Threat Intel', weight: 18, value: 88, trend: 'rising', contribution: 15.84, color: 'red', canvasColor: '#ef4444', lastSignal: '45s ago', history: [70, 75, 80, 85, 88], icon: Shield },
+  { name: 'Physical Security Sensors', shortName: 'Physical Sec', weight: 6, value: 45, trend: 'stable', contribution: 2.7, color: 'yellow', canvasColor: '#eab308', lastSignal: '8m ago', history: [42, 44, 43, 45, 45], icon: Camera },
+  { name: 'Network Anomaly Detection', shortName: 'Net Anomaly', weight: 16, value: 81, trend: 'rising', contribution: 12.96, color: 'orange', canvasColor: '#f97316', lastSignal: '1m ago', history: [60, 65, 72, 78, 81], icon: Wifi },
+  { name: 'Insider Threat Indicators', shortName: 'Insider Threat', weight: 8, value: 56, trend: 'declining', contribution: 4.48, color: 'blue', canvasColor: '#3b82f6', lastSignal: '15m ago', history: [62, 60, 59, 57, 56], icon: UserX },
+  { name: 'Vulnerability Surface Score', shortName: 'Vuln Surface', weight: 8, value: 67, trend: 'rising', contribution: 5.36, color: 'emerald', canvasColor: '#10b981', lastSignal: '5m ago', history: [55, 58, 61, 64, 67], icon: Bug },
+  { name: 'Email Security Gateway', shortName: 'Email Security', weight: 6, value: 63, trend: 'rising', contribution: 3.78, color: 'teal', canvasColor: '#14b8a6', lastSignal: '3m ago', history: [48, 52, 55, 59, 63], icon: Mail },
+  { name: 'Endpoint Detection & Response', shortName: 'EDR', weight: 10, value: 79, trend: 'rising', contribution: 7.9, color: 'rose', canvasColor: '#f43f5e', lastSignal: '30s ago', history: [65, 68, 72, 75, 79], icon: Radar },
+  { name: 'Cloud Workload Protection', shortName: 'Cloud Workload', weight: 8, value: 52, trend: 'stable', contribution: 4.16, color: 'sky', canvasColor: '#0ea5e9', lastSignal: '12m ago', history: [50, 51, 52, 51, 52], icon: Cloud },
+  { name: 'Identity & Access Analytics', shortName: 'Identity & Access', weight: 6, value: 71, trend: 'declining', contribution: 4.26, color: 'amber', canvasColor: '#f59e0b', lastSignal: '7m ago', history: [78, 76, 74, 72, 71], icon: Fingerprint },
 ];
 
 const TOTAL_SIMULATIONS = 10000;
@@ -52,17 +56,17 @@ function getRiskColorRGBA(value: number, alpha: number): string {
   return `rgba(34, 211, 238, ${alpha})`;
 }
 
-function computeCompoundRisk(): number {
+function computeCompoundRisk(vars: SignalVariable[]): number {
   let total = 0;
-  for (const v of VARIABLES) {
+  for (const v of vars) {
     total += (v.value * v.weight) / 100;
   }
   return Math.round(total * 10) / 10;
 }
 
-function computeDrift(): number {
+function computeDrift(vars: SignalVariable[]): number {
   let weightedTrend = 0;
-  for (const v of VARIABLES) {
+  for (const v of vars) {
     const trendFactor = v.trend === 'rising' ? 1 : v.trend === 'declining' ? -1 : 0;
     weightedTrend += trendFactor * (v.weight / 100) * (v.value / 100);
   }
@@ -100,6 +104,10 @@ const colorMap: Record<string, { text: string; bg: string; border: string; bar: 
   orange: { text: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30', bar: 'bg-orange-500' },
   blue: { text: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30', bar: 'bg-blue-500' },
   emerald: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', bar: 'bg-emerald-500' },
+  teal: { text: 'text-teal-400', bg: 'bg-teal-500/10', border: 'border-teal-500/30', bar: 'bg-teal-500' },
+  rose: { text: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/30', bar: 'bg-rose-500' },
+  sky: { text: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/30', bar: 'bg-sky-500' },
+  amber: { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', bar: 'bg-amber-500' },
 };
 
 const MonteCarloForecasting: React.FC = () => {
@@ -107,10 +115,14 @@ const MonteCarloForecasting: React.FC = () => {
   const animRef = useRef<number>(0);
   const pathsRef = useRef<number[][]>([]);
   const frameRef = useRef<number>(0);
+  const scanLineRef = useRef<number>(0);
   const [currentTime, setCurrentTime] = useState<string>('');
+  const [animatedVariables, setAnimatedVariables] = useState<SignalVariable[]>(() =>
+    VARIABLES.map(v => ({ ...v, history: [...v.history] }))
+  );
 
-  const compoundRisk = computeCompoundRisk();
-  const drift = computeDrift();
+  const compoundRisk = computeCompoundRisk(animatedVariables);
+  const drift = computeDrift(animatedVariables);
 
   const initPaths = useCallback(() => {
     const paths: number[][] = [];
@@ -129,6 +141,39 @@ const MonteCarloForecasting: React.FC = () => {
       const now = new Date();
       setCurrentTime(now.toLocaleTimeString('en-US', { hour12: false }));
     }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAnimatedVariables(prev => {
+        const next = prev.map(v => ({ ...v, history: [...v.history] }));
+        const count = 2 + Math.floor(Math.random() * 2);
+        const indices = new Set<number>();
+        while (indices.size < count) {
+          indices.add(Math.floor(Math.random() * next.length));
+        }
+        const timeLabels = ['just now', '5s ago', '10s ago', '15s ago', '20s ago', '30s ago'];
+        indices.forEach(idx => {
+          const v = next[idx];
+          const delta = Math.floor(Math.random() * 7) - 3;
+          v.value = Math.max(0, Math.min(100, v.value + delta));
+          v.history.shift();
+          v.history.push(v.value);
+          v.contribution = Math.round((v.value * v.weight) / 100 * 100) / 100;
+          const len = v.history.length;
+          if (len >= 2) {
+            const last = v.history[len - 1];
+            const prev = v.history[len - 2];
+            if (last > prev) v.trend = 'rising';
+            else if (last < prev) v.trend = 'declining';
+            else v.trend = 'stable';
+          }
+          v.lastSignal = timeLabels[Math.floor(Math.random() * timeLabels.length)];
+        });
+        return next;
+      });
+    }, 4000);
     return () => clearInterval(interval);
   }, []);
 
@@ -174,21 +219,42 @@ const MonteCarloForecasting: React.FC = () => {
       ctx.fillStyle = '#060a14';
       ctx.fillRect(0, 0, w, h);
 
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.08)';
+      const hexSize = 20;
+      const hexH = hexSize * Math.sqrt(3);
+      const hexW = hexSize * 2;
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.06)';
       ctx.lineWidth = 0.5;
-      const gridSpacing = 30;
-      for (let x = sidebarWidth; x < w; x += gridSpacing) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
+      for (let row = 0; row < h / hexH + 1; row++) {
+        for (let col = sidebarWidth / (hexW * 0.75) - 1; col < w / (hexW * 0.75) + 1; col++) {
+          const cx = col * hexW * 0.75;
+          const cy = row * hexH + (col % 2 === 1 ? hexH / 2 : 0);
+          if (cx < sidebarWidth - hexSize) continue;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const angle = (Math.PI / 3) * i + Math.PI / 6;
+            const hx = cx + hexSize * Math.cos(angle);
+            const hy = cy + hexSize * Math.sin(angle);
+            if (i === 0) ctx.moveTo(hx, hy);
+            else ctx.lineTo(hx, hy);
+          }
+          ctx.closePath();
+          ctx.stroke();
+        }
       }
-      for (let y = 0; y < h; y += gridSpacing) {
-        ctx.beginPath();
-        ctx.moveTo(sidebarWidth, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
-      }
+
+      scanLineRef.current = (scanLineRef.current + 0.3) % h;
+      const scanY = scanLineRef.current;
+      const scanGrad = ctx.createLinearGradient(sidebarWidth, scanY, w, scanY);
+      scanGrad.addColorStop(0, 'rgba(34, 211, 238, 0)');
+      scanGrad.addColorStop(0.3, 'rgba(34, 211, 238, 0.06)');
+      scanGrad.addColorStop(0.7, 'rgba(34, 211, 238, 0.06)');
+      scanGrad.addColorStop(1, 'rgba(34, 211, 238, 0)');
+      ctx.strokeStyle = scanGrad;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sidebarWidth, scanY);
+      ctx.lineTo(w, scanY);
+      ctx.stroke();
 
       ctx.fillStyle = 'rgba(6, 10, 20, 0.95)';
       ctx.fillRect(0, 0, sidebarWidth, h);
@@ -200,13 +266,13 @@ const MonteCarloForecasting: React.FC = () => {
       ctx.stroke();
 
       const barWidth = 10;
-      const barMaxH = 45;
-      const startY = 55;
-      const barSpacing = 55;
+      const barMaxH = 32;
+      const startY = 40;
+      const barSpacing = 36;
       const barX = 15;
 
-      for (let i = 0; i < VARIABLES.length; i++) {
-        const v = VARIABLES[i];
+      for (let i = 0; i < animatedVariables.length; i++) {
+        const v = animatedVariables[i];
         const by = startY + i * barSpacing;
         const fillH = (v.value / 100) * barMaxH;
 
@@ -219,20 +285,20 @@ const MonteCarloForecasting: React.FC = () => {
         ctx.globalAlpha = 1.0;
 
         ctx.fillStyle = 'rgba(148, 163, 184, 0.8)';
-        ctx.font = '9px monospace';
+        ctx.font = '8px monospace';
         ctx.textAlign = 'left';
         ctx.fillText(v.shortName, barX + barWidth + 6, by + 10);
 
         ctx.fillStyle = v.canvasColor;
-        ctx.font = 'bold 11px monospace';
-        ctx.fillText(v.value.toString(), barX + barWidth + 6, by + 24);
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(v.value.toString(), barX + barWidth + 6, by + 22);
       }
 
       ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
       ctx.font = '8px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('SIGNAL', sidebarWidth / 2, 20);
-      ctx.fillText('SOURCES', sidebarWidth / 2, 30);
+      ctx.fillText('SIGNAL', sidebarWidth / 2, 16);
+      ctx.fillText('SOURCES', sidebarWidth / 2, 26);
 
       const chartX = sidebarWidth + 20;
       const chartY = chartPaddingTop;
@@ -333,13 +399,20 @@ const MonteCarloForecasting: React.FC = () => {
 
         const nowX = toCanvasX(0);
         const nowY = toCanvasY(compoundRisk);
-        const pulseSize = 4 + Math.sin(frameRef.current * 0.08) * 2;
-        const pulseAlpha = 0.3 + Math.sin(frameRef.current * 0.08) * 0.2;
+        const ripplePhase = (frameRef.current * 0.04) % 1;
 
-        ctx.beginPath();
-        ctx.arc(nowX, nowY, pulseSize + 6, 0, Math.PI * 2);
-        ctx.fillStyle = getRiskColorRGBA(compoundRisk, pulseAlpha);
-        ctx.fill();
+        for (let r = 2; r >= 0; r--) {
+          const rPhase = (ripplePhase + r * 0.33) % 1;
+          const radius = 6 + rPhase * 18;
+          const alpha = 0.35 * (1 - rPhase);
+          ctx.beginPath();
+          ctx.arc(nowX, nowY, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = getRiskColorRGBA(compoundRisk, alpha);
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+
+        const pulseSize = 4 + Math.sin(frameRef.current * 0.08) * 2;
 
         ctx.beginPath();
         ctx.arc(nowX, nowY, pulseSize, 0, Math.PI * 2);
@@ -424,7 +497,7 @@ const MonteCarloForecasting: React.FC = () => {
       cancelAnimationFrame(animRef.current);
       window.removeEventListener('resize', resize);
     };
-  }, [compoundRisk, drift]);
+  }, [compoundRisk, drift, animatedVariables]);
 
   const forecast24 = Math.min(100, Math.max(0, compoundRisk + drift * 24));
   const forecast48 = Math.min(100, Math.max(0, compoundRisk + drift * 48));
@@ -448,6 +521,7 @@ const MonteCarloForecasting: React.FC = () => {
     const dotColorMap: Record<string, string> = {
       cyan: '#22d3ee', red: '#ef4444', yellow: '#eab308',
       orange: '#f97316', blue: '#3b82f6', emerald: '#10b981',
+      teal: '#14b8a6', rose: '#f43f5e', sky: '#0ea5e9', amber: '#f59e0b',
     };
     const c = dotColorMap[color] || '#94a3b8';
     return (
@@ -484,45 +558,45 @@ const MonteCarloForecasting: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {VARIABLES.map((v) => {
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+        {animatedVariables.map((v) => {
           const cm = colorMap[v.color];
           const IconComp = v.icon;
           return (
-            <div key={v.name} className={`enterprise-card border ${cm.border} p-4`}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className={`w-8 h-8 rounded flex items-center justify-center ${cm.bg}`}>
-                    <IconComp size={16} className={cm.text} />
+            <div key={v.name} className={`enterprise-card border ${cm.border} p-3`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-7 h-7 rounded flex items-center justify-center ${cm.bg}`}>
+                    <IconComp size={14} className={cm.text} />
                   </div>
                   <div>
-                    <div className={`text-xs font-semibold ${cm.text}`}>{v.name}</div>
-                    <div className="text-[10px] text-slate-500 font-mono">Weight: {v.weight}%</div>
+                    <div className={`text-[10px] font-semibold leading-tight ${cm.text}`}>{v.name}</div>
+                    <div className="text-[9px] text-slate-500 font-mono">W: {v.weight}%</div>
                   </div>
                 </div>
                 <TrendIcon trend={v.trend} />
               </div>
 
-              <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-2 mb-2">
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] text-slate-500 font-mono uppercase">Signal Strength</span>
-                    <span className={`text-sm font-bold font-mono ${cm.text}`}>{v.value}</span>
+                    <span className="text-[9px] text-slate-500 font-mono uppercase">Signal</span>
+                    <span className={`text-xs font-bold font-mono ${cm.text}`}>{v.value}</span>
                   </div>
-                  <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
                     <div className={`h-full ${cm.bar} rounded-full transition-all`} style={{ width: `${v.value}%`, opacity: 0.8 }} />
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mb-2">
-                <span>Contribution: <span className={cm.text}>{v.contribution}%</span></span>
-                <span>Trend: <span className={v.trend === 'rising' ? 'text-red-400' : v.trend === 'declining' ? 'text-green-400' : 'text-slate-400'}>{v.trend}</span></span>
+              <div className="flex items-center justify-between text-[9px] font-mono text-slate-500 mb-1.5">
+                <span>C: <span className={cm.text}>{v.contribution}%</span></span>
+                <span className={v.trend === 'rising' ? 'text-red-400' : v.trend === 'declining' ? 'text-green-400' : 'text-slate-400'}>{v.trend}</span>
               </div>
 
-              <div className="flex items-center justify-between border-t border-slate-700/30 pt-2">
-                <div className="flex items-center gap-1 text-[10px] text-slate-500 font-mono">
-                  <Clock size={10} className="text-slate-600" />
+              <div className="flex items-center justify-between border-t border-slate-700/30 pt-1.5">
+                <div className="flex items-center gap-1 text-[9px] text-slate-500 font-mono">
+                  <Clock size={9} className="text-slate-600" />
                   {v.lastSignal}
                 </div>
                 <Sparkline values={v.history} color={v.color} />
