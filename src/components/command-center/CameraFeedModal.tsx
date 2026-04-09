@@ -430,10 +430,10 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
                 <div
                   className="absolute pointer-events-none transition-all duration-500"
                   style={{
-                    left: '37%',
-                    top: '15%',
-                    width: '13%',
-                    height: '55%',
+                    left: '52%',
+                    top: '10%',
+                    width: '16%',
+                    height: '62%',
                     transform: `scale(${faceBoxScale})`,
                     opacity: faceBoxScale,
                   }}

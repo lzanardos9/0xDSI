@@ -232,14 +232,29 @@ interface EventDrilldownModalProps {
   isOpen: boolean;
   onClose: () => void;
   eventId?: string;
+  category?: string;
 }
+
+const CATEGORY_MAP: Record<string, string[]> = {
+  'radar': ['EVT-2024-0847', 'EVT-2024-0852', 'EVT-2024-0861'],
+  'heartbeat': ['EVT-2024-0855', 'EVT-2024-0866'],
+  'killchain': ['EVT-2024-0852', 'EVT-2024-0861'],
+  'weather': ['EVT-2024-0870', 'EVT-2024-0847'],
+  'lowslow': ['EVT-2024-0866', 'EVT-2024-0855'],
+  'embedding': ['EVT-2024-0847', 'EVT-2024-0870'],
+};
 
 export const getRandomEvent = (): DrilldownEvent => MOCK_EVENTS[Math.floor(Math.random() * MOCK_EVENTS.length)];
 export const getEventById = (id: string): DrilldownEvent | undefined => MOCK_EVENTS.find(e => e.id === id);
+export const getEventByCategory = (cat: string): DrilldownEvent => {
+  const ids = CATEGORY_MAP[cat] || [];
+  const id = ids[Math.floor(Math.random() * ids.length)];
+  return getEventById(id) || MOCK_EVENTS[0];
+};
 
-const EventDrilldownModal = ({ isOpen, onClose, eventId }: EventDrilldownModalProps) => {
+const EventDrilldownModal = ({ isOpen, onClose, eventId, category }: EventDrilldownModalProps) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'raw' | 'response'>('overview');
-  const event = eventId ? getEventById(eventId) : getRandomEvent();
+  const event = eventId ? getEventById(eventId) : category ? getEventByCategory(category) : getRandomEvent();
 
   if (!isOpen || !event) return null;
 

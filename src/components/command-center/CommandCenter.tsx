@@ -11,8 +11,9 @@ import DefconAlert from './DefconAlert';
 import LowAndSlowTracker from './LowAndSlowTracker';
 import RealtimeCEPGraph from './RealtimeCEPGraph';
 import EventDrilldownModal from './EventDrilldownModal';
+import IntelligenceMonitoring from './IntelligenceMonitoring';
 import ThreatGlobe from '../ThreatGlobe';
-import { Globe } from 'lucide-react';
+import { Globe, Shield } from 'lucide-react';
 
 interface SelectedCamera {
   id: string;
@@ -39,14 +40,17 @@ const CommandCenter = () => {
   const [selectedCamera, setSelectedCamera] = useState<SelectedCamera | null>(null);
   const [drilldownOpen, setDrilldownOpen] = useState(false);
   const [drilldownEventId, setDrilldownEventId] = useState<string | undefined>();
+  const [drilldownCategory, setDrilldownCategory] = useState<string | undefined>();
+  const [cepExpanded, setCepExpanded] = useState(false);
 
   const handleCameraClick = (node: { id: string; name: string; location: string; status: 'secure' | 'alert' | 'warning' }) => {
     setSelectedCamera(node);
     setCameraModalOpen(true);
   };
 
-  const handleEventDrilldown = (eventId?: string) => {
+  const handleEventDrilldown = (category: string, eventId?: string) => {
     setDrilldownEventId(eventId);
+    setDrilldownCategory(category);
     setDrilldownOpen(true);
   };
 
@@ -55,11 +59,11 @@ const CommandCenter = () => {
       <DefconAlert />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <div className="lg:col-span-3 h-[420px] cursor-pointer" onClick={() => handleEventDrilldown()}>
+        <div className="lg:col-span-3 h-[420px] cursor-pointer" onClick={() => handleEventDrilldown('radar')}>
           <ThreatRadar />
         </div>
         <div className="lg:col-span-2 flex flex-col gap-4">
-          <div className="h-[200px] cursor-pointer" onClick={() => handleEventDrilldown()}>
+          <div className="h-[200px] cursor-pointer" onClick={() => handleEventDrilldown('heartbeat')}>
             <ThreatHeartbeat />
           </div>
           <div className="h-[200px]">
@@ -68,38 +72,45 @@ const CommandCenter = () => {
         </div>
       </div>
 
-      <div className="h-[400px]">
-        <RealtimeCEPGraph />
-      </div>
-
-      <div className="enterprise-card overflow-hidden">
-        <div className="bg-slate-800/30 px-6 py-3 border-b border-slate-700/50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Globe className="w-5 h-5 text-blue-400" />
-              <h3 className="text-base font-semibold text-slate-100">Global Threat Intelligence</h3>
+      {cepExpanded ? (
+        <div className="h-[600px]">
+          <RealtimeCEPGraph expanded={true} onToggleExpand={() => setCepExpanded(false)} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="h-[450px]">
+            <RealtimeCEPGraph expanded={false} onToggleExpand={() => setCepExpanded(true)} />
+          </div>
+          <div className="enterprise-card overflow-hidden h-[450px]">
+            <div className="bg-slate-800/30 px-6 py-3 border-b border-slate-700/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Globe className="w-5 h-5 text-blue-400" />
+                  <h3 className="text-base font-semibold text-slate-100">Global Threat Intelligence</h3>
+                </div>
+                <div className="flex space-x-2">
+                  <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded text-[10px] font-medium border border-red-500/20">Critical</span>
+                  <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded text-[10px] font-medium border border-orange-500/20">High</span>
+                  <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded text-[10px] font-medium border border-amber-500/20">Medium</span>
+                </div>
+              </div>
             </div>
-            <div className="flex space-x-2">
-              <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded text-[10px] font-medium border border-red-500/20">Critical</span>
-              <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded text-[10px] font-medium border border-orange-500/20">High</span>
-              <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded text-[10px] font-medium border border-amber-500/20">Medium</span>
+            <div className="h-[calc(100%-48px)]">
+              <ThreatGlobe threats={mockThreats} />
             </div>
           </div>
         </div>
-        <div className="h-[450px]">
-          <ThreatGlobe threats={mockThreats} />
-        </div>
-      </div>
+      )}
 
-      <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown()}>
+      <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('lowslow')}>
         <LowAndSlowTracker />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown()}>
+        <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('killchain')}>
           <KillChainWaterfall />
         </div>
-        <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown()}>
+        <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('weather')}>
           <ThreatWeatherMap />
         </div>
       </div>
@@ -108,9 +119,11 @@ const CommandCenter = () => {
         <DomainBridge onCameraClick={handleCameraClick} />
       </div>
 
-      <div className="h-[420px] cursor-pointer" onClick={() => handleEventDrilldown()}>
+      <div className="h-[420px] cursor-pointer" onClick={() => handleEventDrilldown('embedding')}>
         <EmbeddingConstellation />
       </div>
+
+      <IntelligenceMonitoring />
 
       <CameraFeedModal
         isOpen={cameraModalOpen}
@@ -122,6 +135,7 @@ const CommandCenter = () => {
         isOpen={drilldownOpen}
         onClose={() => setDrilldownOpen(false)}
         eventId={drilldownEventId}
+        category={drilldownCategory}
       />
     </div>
   );

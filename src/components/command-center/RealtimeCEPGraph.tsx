@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, Zap, Play, Pause } from 'lucide-react';
+import { Activity, Zap, Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
 
 interface CEPNode {
   id: string;
@@ -49,7 +49,12 @@ const SOURCES = [
   { label: 'FW', type: 'source' as const, color: '#10b981' },
 ];
 
-const RealtimeCEPGraph = () => {
+interface RealtimeCEPGraphProps {
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+}
+
+const RealtimeCEPGraph = ({ expanded, onToggleExpand }: RealtimeCEPGraphProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const nodesRef = useRef<CEPNode[]>([]);
@@ -84,12 +89,16 @@ const RealtimeCEPGraph = () => {
     resize();
     window.addEventListener('resize', resize);
 
+    const rect0 = canvas.parentElement?.getBoundingClientRect();
+    const initW = rect0?.width || 600;
+    const srcSpacing = 80;
+    const srcStartX = (initW - (SOURCES.length - 1) * srcSpacing) / 2;
     SOURCES.forEach((s, i) => {
       nodesRef.current.push({
         id: `src-${i}`,
         label: s.label,
         type: s.type,
-        x: 60 + i * 70,
+        x: srcStartX + i * srcSpacing,
         y: 30,
         vx: 0,
         vy: 0,
@@ -389,6 +398,15 @@ const RealtimeCEPGraph = () => {
           {streaming ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
           {streaming ? 'LIVE' : 'PAUSED'}
         </button>
+        {onToggleExpand && (
+          <button
+            onClick={onToggleExpand}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-slate-700/30 bg-slate-500/10 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30 text-[10px] font-mono font-bold transition-all"
+          >
+            {expanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+            {expanded ? 'COLLAPSE' : 'EXPAND'}
+          </button>
+        )}
       </div>
 
       <canvas ref={canvasRef} className="w-full h-full" />
