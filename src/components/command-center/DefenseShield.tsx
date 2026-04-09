@@ -55,8 +55,10 @@ const DefenseShield = () => {
 
     const buildHexGrid = (w: number, h: number) => {
       hexesRef.current = [];
-      const offsetX = w / 2 - (cols * hexRadius * 1.5) / 2;
-      const offsetY = h / 2 - (rows * hexHeight) / 2;
+      const topPadding = 40;
+      const availH = h - topPadding;
+      const offsetX = w / 2 - (cols * hexRadius * 1.6) / 2;
+      const offsetY = topPadding + availH / 2 - (rows * hexHeight * 0.9) / 2;
       let idx = 0;
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
@@ -202,8 +204,8 @@ const DefenseShield = () => {
       }
 
       const cx = w / 2;
-      const cy = h / 2;
-      const shieldRadius = Math.min(w, h) * 0.45;
+      const cy = 40 + (h - 40) / 2;
+      const shieldRadius = Math.min(w, h - 40) * 0.45;
       ctx.strokeStyle = 'rgba(34, 211, 238, 0.06)';
       ctx.lineWidth = 1;
       ctx.beginPath();

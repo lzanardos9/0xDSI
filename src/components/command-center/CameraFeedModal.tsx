@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Camera, AlertTriangle, CheckCircle2, Clock, MapPin, Fingerprint, Shield, Radio, Lock, Crosshair, Wifi } from 'lucide-react';
+import { X, Camera, AlertTriangle, CheckCircle2, Clock, MapPin, Fingerprint, Shield, Radio, Lock, Crosshair, Wifi, Activity, Footprints } from 'lucide-react';
 
 interface CameraFeedModalProps {
   isOpen: boolean;
@@ -12,7 +12,9 @@ interface CameraFeedModalProps {
   } | null;
 }
 
-type ScanPhase = 'booting' | 'connecting' | 'streaming' | 'detecting' | 'tracking' | 'extracting' | 'comparing' | 'result';
+type ScanPhase = 'booting' | 'connecting' | 'streaming' | 'detecting' | 'tracking' | 'extracting' | 'comparing' | 'gait' | 'result';
+
+const PHASE_LIST: ScanPhase[] = ['booting', 'connecting', 'streaming', 'detecting', 'tracking', 'extracting', 'comparing', 'gait', 'result'];
 
 const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
   const [phase, setPhase] = useState<ScanPhase>('booting');
@@ -22,18 +24,23 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
   const [sirenFlash, setSirenFlash] = useState(false);
   const [faceBoxScale, setFaceBoxScale] = useState(0);
   const [extractProgress, setExtractProgress] = useState(0);
+  const [gaitScore, setGaitScore] = useState(0);
+  const [gaitPhase, setGaitPhase] = useState(0);
+  const [walkFrame, setWalkFrame] = useState(0);
   const [biometricPoints, setBiometricPoints] = useState<{x: number; y: number; delay: number}[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const walkCanvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const isAlert = node?.status === 'alert';
   const targetScore = isAlert ? 34 : 96;
+  const targetGaitScore = isAlert ? 28 : 91;
 
   const generateBiometricPoints = useCallback(() => {
     const points = [];
     for (let i = 0; i < 24; i++) {
       points.push({
-        x: 30 + Math.random() * 40,
-        y: 15 + Math.random() * 50,
+        x: 20 + Math.random() * 60,
+        y: 10 + Math.random() * 60,
         delay: Math.random() * 800,
       });
     }
@@ -49,6 +56,9 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
       setSirenFlash(false);
       setFaceBoxScale(0);
       setExtractProgress(0);
+      setGaitScore(0);
+      setGaitPhase(0);
+      setWalkFrame(0);
       return;
     }
 
@@ -61,6 +71,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
       '[VID] H.265 codec initialized',
       '[GPU] Neural engine loaded',
       '[AI ] Face detection model v4.2 ready',
+      '[AI ] Gait analysis module loaded',
       '[SYS] Stream active',
     ];
 
@@ -72,7 +83,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
       } else {
         clearInterval(bootInterval);
       }
-    }, 200);
+    }, 180);
 
     const timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -82,7 +93,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
       setPhase('detecting');
       setGlitchActive(true);
       setTimeout(() => setGlitchActive(false), 150);
-    }, 2500));
+    }, 2200));
     timers.push(setTimeout(() => {
       setPhase('tracking');
       let s = 0;
@@ -91,19 +102,32 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
         if (s >= 1) { s = 1; clearInterval(scaleInterval); }
         setFaceBoxScale(s);
       }, 20);
-    }, 3200));
+    }, 2900));
     timers.push(setTimeout(() => {
       setPhase('extracting');
       let p = 0;
       const extractInterval = setInterval(() => {
-        p += 1.5;
+        p += 2;
         if (p >= 100) { p = 100; clearInterval(extractInterval); }
         setExtractProgress(p);
-      }, 30);
-    }, 4200));
+      }, 25);
+    }, 3800));
+    timers.push(setTimeout(() => setPhase('comparing'), 5500));
     timers.push(setTimeout(() => {
-      setPhase('comparing');
-    }, 6500));
+      setPhase('gait');
+      let g = 0;
+      const gaitInterval = setInterval(() => {
+        g += 1;
+        if (g >= targetGaitScore) { g = targetGaitScore; clearInterval(gaitInterval); }
+        setGaitScore(g);
+      }, 25);
+      let gp = 0;
+      const gaitPhaseInterval = setInterval(() => {
+        gp++;
+        if (gp >= 4) clearInterval(gaitPhaseInterval);
+        setGaitPhase(gp);
+      }, 400);
+    }, 7000));
     timers.push(setTimeout(() => {
       setPhase('result');
       let score = 0;
@@ -119,22 +143,92 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
           }
         }
         setMatchScore(score);
-      }, 20);
-    }, 8000));
+      }, 18);
+    }, 9000));
 
     return () => {
       clearInterval(bootInterval);
       timers.forEach(clearTimeout);
     };
-  }, [isOpen, targetScore, isAlert, generateBiometricPoints]);
+  }, [isOpen, targetScore, targetGaitScore, isAlert, generateBiometricPoints]);
 
   useEffect(() => {
     if (!sirenFlash) return;
-    const interval = setInterval(() => {
-      setSirenFlash(prev => !prev);
-    }, 500);
+    const interval = setInterval(() => setSirenFlash(prev => !prev), 500);
     return () => clearInterval(interval);
   }, [sirenFlash]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => setWalkFrame(f => (f + 1) % 60), 50);
+    return () => clearInterval(interval);
+  }, [isOpen]);
+
+  useEffect(() => {
+    const canvas = walkCanvasRef.current;
+    if (!canvas || !isOpen || PHASE_LIST.indexOf(phase) < PHASE_LIST.indexOf('gait')) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const drawStickFigure = (x: number, frame: number, color: string, label: string) => {
+      const legPhase = Math.sin(frame * 0.15) * 0.4;
+      const armPhase = Math.sin(frame * 0.15 + Math.PI) * 0.3;
+      const bodyBob = Math.abs(Math.sin(frame * 0.15)) * 2;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+
+      const headY = 20 - bodyBob;
+      ctx.beginPath();
+      ctx.arc(x, headY, 6, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(x, headY + 6);
+      ctx.lineTo(x, headY + 28 - bodyBob);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(x, headY + 12);
+      ctx.lineTo(x - 12 * Math.cos(armPhase), headY + 22 + 5 * Math.sin(armPhase));
+      ctx.moveTo(x, headY + 12);
+      ctx.lineTo(x + 12 * Math.cos(armPhase), headY + 22 - 5 * Math.sin(armPhase));
+      ctx.stroke();
+
+      const hipY = headY + 28 - bodyBob;
+      ctx.beginPath();
+      ctx.moveTo(x, hipY);
+      ctx.lineTo(x - 10 * Math.sin(legPhase), hipY + 18);
+      ctx.lineTo(x - 10 * Math.sin(legPhase) + 5 * Math.sin(legPhase), hipY + 30);
+      ctx.moveTo(x, hipY);
+      ctx.lineTo(x + 10 * Math.sin(legPhase), hipY + 18);
+      ctx.lineTo(x + 10 * Math.sin(legPhase) - 5 * Math.sin(legPhase), hipY + 30);
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.font = 'bold 7px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, x, h - 4);
+    };
+
+    drawStickFigure(w * 0.25, walkFrame, '#22d3ee', 'REFERENCE');
+    drawStickFigure(w * 0.75, walkFrame + (isAlert ? 15 : 2), isAlert ? '#ef4444' : '#22d3ee', 'CAPTURED');
+
+    const midX = w / 2;
+    ctx.strokeStyle = 'rgba(100,116,139,0.3)';
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    ctx.moveTo(midX, 0);
+    ctx.lineTo(midX, h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+  }, [walkFrame, phase, isOpen, isAlert]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -183,37 +277,16 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
         ctx.fillRect(0, glitchY, w, glitchH);
       }
 
-      ctx.strokeStyle = 'rgba(34, 211, 238, 0.08)';
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.06)';
       ctx.lineWidth = 0.5;
       for (let i = 0; i < w; i += 60) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i, h);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, h); ctx.stroke();
       }
       for (let j = 0; j < h; j += 60) {
-        ctx.beginPath();
-        ctx.moveTo(0, j);
-        ctx.lineTo(w, j);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(w, j); ctx.stroke();
       }
 
-      ctx.strokeStyle = 'rgba(34, 211, 238, 0.12)';
-      ctx.lineWidth = 0.5;
-      const cx = w * 0.48;
-      const cy = h * 0.42;
-      ctx.beginPath();
-      ctx.moveTo(cx - 15, cy);
-      ctx.lineTo(cx + 15, cy);
-      ctx.moveTo(cx, cy - 15);
-      ctx.lineTo(cx, cy + 15);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(34, 211, 238, 0.06)';
-      ctx.beginPath();
-      ctx.arc(cx, cy, 40 + Math.sin(now * 0.002) * 5, 0, Math.PI * 2);
-      ctx.stroke();
-
+      const phaseIdx = PHASE_LIST.indexOf(phase);
       const statusText = (() => {
         switch (phase) {
           case 'booting': return 'INITIALIZING...';
@@ -223,6 +296,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
           case 'tracking': return 'TRACKING TARGET';
           case 'extracting': return 'EXTRACTING BIOMETRICS';
           case 'comparing': return 'COMPARING DATABASE';
+          case 'gait': return 'GAIT ANALYSIS...';
           case 'result': return isAlert ? 'MISMATCH DETECTED' : 'IDENTITY CONFIRMED';
         }
       })();
@@ -232,7 +306,6 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
       ctx.textAlign = 'left';
       ctx.fillText(statusText, 12, h - 12);
 
-      const phaseIdx = ['booting', 'connecting', 'streaming', 'detecting', 'tracking', 'extracting', 'comparing', 'result'].indexOf(phase);
       const barW = 80;
       const barH = 3;
       const barX = 12;
@@ -240,7 +313,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
       ctx.fillStyle = 'rgba(51, 65, 85, 0.4)';
       ctx.fillRect(barX, barY, barW, barH);
       ctx.fillStyle = '#22d3ee';
-      ctx.fillRect(barX, barY, barW * ((phaseIdx + 1) / 8), barH);
+      ctx.fillRect(barX, barY, barW * ((phaseIdx + 1) / PHASE_LIST.length), barH);
 
       animRef.current = requestAnimationFrame(animate);
     };
@@ -251,8 +324,8 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
 
   if (!isOpen || !node) return null;
 
-  const now = new Date();
-  const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+  const now2 = new Date();
+  const timestamp = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(now2.getDate()).padStart(2, '0')} ${String(now2.getHours()).padStart(2, '0')}:${String(now2.getMinutes()).padStart(2, '0')}:${String(now2.getSeconds()).padStart(2, '0')}`;
 
   const accessLogs = [
     { time: '14:32:47', event: 'Badge scan detected', user: 'ID-4821', status: 'authorized' },
@@ -261,11 +334,9 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
     { time: '14:28:55', event: isAlert ? 'Unauthorized access attempt' : 'Badge scan detected', user: isAlert ? 'UNKNOWN' : 'ID-3392', status: isAlert ? 'denied' : 'authorized' },
     { time: '14:25:03', event: 'Thermal anomaly cleared', user: 'System', status: 'info' },
     { time: '14:22:41', event: 'Perimeter check OK', user: 'System', status: 'authorized' },
-    { time: '14:19:18', event: 'Tailgate attempt blocked', user: 'N/A', status: 'denied' },
-    { time: '14:15:02', event: 'Badge scan detected', user: 'ID-7734', status: 'authorized' },
   ];
 
-  const phaseNum = ['booting', 'connecting', 'streaming', 'detecting', 'tracking', 'extracting', 'comparing', 'result'].indexOf(phase);
+  const phaseNum = PHASE_LIST.indexOf(phase);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md" onClick={onClose}>
@@ -278,17 +349,17 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
           phase === 'result' && isAlert ? 'border-red-500/40 shadow-red-500/10' : 'border-slate-700/40 shadow-cyan-500/5'
         }`}
         onClick={e => e.stopPropagation()}
-        style={{ animation: isOpen ? 'modalSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)' : undefined }}
+        style={{ animation: isOpen ? 'camModalIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)' : undefined }}
       >
         <style>{`
-          @keyframes modalSlideIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+          @keyframes camModalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
           @keyframes scanPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
-          @keyframes sirenRotate { 0% { box-shadow: -2px 0 15px rgba(239,68,68,0.4); } 50% { box-shadow: 2px 0 15px rgba(239,68,68,0.6); } 100% { box-shadow: -2px 0 15px rgba(239,68,68,0.4); } }
-          @keyframes pointAppear { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
-          @keyframes lineConnect { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
-          @keyframes compareSlide { 0% { transform: translateX(-20px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
-          @keyframes alertBorder { 0%, 100% { border-color: rgba(239,68,68,0.3); } 50% { border-color: rgba(239,68,68,0.7); } }
-          @keyframes glitchShift { 0% { transform: translate(0); } 25% { transform: translate(2px, -1px); } 50% { transform: translate(-2px, 1px); } 75% { transform: translate(1px, 2px); } 100% { transform: translate(0); } }
+          @keyframes sirenGlow { 0% { box-shadow: -2px 0 15px rgba(239,68,68,0.4); } 50% { box-shadow: 2px 0 15px rgba(239,68,68,0.6); } 100% { box-shadow: -2px 0 15px rgba(239,68,68,0.4); } }
+          @keyframes ptAppear { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: scale(1); } }
+          @keyframes slideIn { 0% { transform: translateX(-20px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
+          @keyframes alertBdr { 0%, 100% { border-color: rgba(239,68,68,0.3); } 50% { border-color: rgba(239,68,68,0.7); } }
+          @keyframes glitch { 0% { transform: translate(0); } 25% { transform: translate(2px, -1px); } 50% { transform: translate(-2px, 1px); } 75% { transform: translate(1px, 2px); } 100% { transform: translate(0); } }
+          @keyframes walkBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
         `}</style>
 
         <div className={`flex items-center justify-between px-5 py-2.5 border-b transition-colors duration-300 ${
@@ -311,7 +382,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
               node.status === 'warning' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
               'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
             }`}
-            style={isAlert && phase === 'result' ? { animation: 'alertBorder 1s infinite' } : undefined}
+            style={isAlert && phase === 'result' ? { animation: 'alertBdr 1s infinite' } : undefined}
             >
               {isAlert && phase === 'result' ? 'ALERT - INTRUDER' : node.status.toUpperCase()}
             </div>
@@ -329,7 +400,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
 
         <div className="grid grid-cols-5 gap-0">
           <div className="col-span-3 relative">
-            <div className="relative aspect-video bg-black overflow-hidden" style={glitchActive ? { animation: 'glitchShift 0.1s linear infinite' } : undefined}>
+            <div className="relative aspect-video bg-black overflow-hidden" style={glitchActive ? { animation: 'glitch 0.1s linear infinite' } : undefined}>
               <img
                 src="/datacenter-cctv.webp"
                 alt="CCTV Feed"
@@ -359,10 +430,10 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
                 <div
                   className="absolute pointer-events-none transition-all duration-500"
                   style={{
-                    left: '30%',
-                    top: '12%',
-                    width: '140px',
-                    height: '180px',
+                    left: '37%',
+                    top: '15%',
+                    width: '13%',
+                    height: '55%',
                     transform: `scale(${faceBoxScale})`,
                     opacity: faceBoxScale,
                   }}
@@ -374,7 +445,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
                       boxShadow: isAlert && phase === 'result'
                         ? '0 0 30px rgba(239,68,68,0.3), inset 0 0 30px rgba(239,68,68,0.05)'
                         : '0 0 30px rgba(34,211,238,0.2), inset 0 0 30px rgba(34,211,238,0.03)',
-                      animation: phase === 'result' && isAlert ? 'alertBorder 1s infinite' : undefined,
+                      animation: phase === 'result' && isAlert ? 'alertBdr 1s infinite' : undefined,
                     }}
                   >
                     <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 rounded-tl" style={{ borderColor: isAlert && phase === 'result' ? '#ef4444' : '#22d3ee' }} />
@@ -388,10 +459,11 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
                           ? isAlert ? 'text-red-400 bg-red-500/20' : 'text-emerald-400 bg-emerald-500/20'
                           : 'text-cyan-400 bg-cyan-500/20'
                       }`}>
-                        {phase === 'detecting' ? 'FACE DETECTED' :
+                        {phase === 'detecting' ? 'PERSON DETECTED' :
                          phase === 'tracking' ? 'LOCKING ON...' :
-                         phase === 'extracting' ? `EXTRACTING ${Math.round(extractProgress)}%` :
+                         phase === 'extracting' ? `BIOMETRICS ${Math.round(extractProgress)}%` :
                          phase === 'comparing' ? 'COMPARING...' :
+                         phase === 'gait' ? 'GAIT SCAN...' :
                          phase === 'result' ? (isAlert ? 'MISMATCH' : 'VERIFIED') : ''}
                       </span>
                     </div>
@@ -404,7 +476,7 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
                           left: `${pt.x}%`,
                           top: `${pt.y}%`,
                           backgroundColor: isAlert && phase === 'result' ? '#ef4444' : '#22d3ee',
-                          animation: `pointAppear 0.3s ${pt.delay}ms both`,
+                          animation: `ptAppear 0.3s ${pt.delay}ms both`,
                           boxShadow: `0 0 4px ${isAlert && phase === 'result' ? '#ef4444' : '#22d3ee'}`,
                         }}
                       />
@@ -415,18 +487,22 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
                         {biometricPoints.slice(0, 12).map((pt, i) => {
                           const nextPt = biometricPoints[(i + 1) % 12];
                           return (
-                            <line
-                              key={i}
-                              x1={pt.x} y1={pt.y}
-                              x2={nextPt.x} y2={nextPt.y}
+                            <line key={i} x1={pt.x} y1={pt.y} x2={nextPt.x} y2={nextPt.y}
                               stroke={isAlert && phase === 'result' ? 'rgba(239,68,68,0.3)' : 'rgba(34,211,238,0.2)'}
-                              strokeWidth="0.3"
-                              strokeDasharray="4 3"
-                              style={{ animation: `lineConnect 0.5s ${pt.delay + 300}ms both` }}
+                              strokeWidth="0.3" strokeDasharray="4 3"
                             />
                           );
                         })}
                       </svg>
+                    )}
+
+                    {phaseNum >= 7 && (
+                      <div className="absolute -bottom-8 left-0 right-0 flex justify-center">
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-black/60 border border-cyan-500/20">
+                          <Footprints className="w-2.5 h-2.5 text-cyan-400" />
+                          <span className="text-[8px] font-mono text-cyan-400">GAIT TRACKING</span>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -451,46 +527,38 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
             </div>
           </div>
 
-          <div className="col-span-2 border-l border-slate-800/40 flex flex-col bg-[#070b16]">
+          <div className="col-span-2 border-l border-slate-800/40 flex flex-col bg-[#070b16] max-h-[calc(56.25vw*3/5)] overflow-y-auto custom-scrollbar">
             <div className="p-4 border-b border-slate-800/30">
-              <div className="flex items-center justify-center gap-2 mb-4">
+              <div className="flex items-center justify-center gap-2 mb-3">
                 <Fingerprint className={`w-4 h-4 ${phase === 'result' && isAlert ? 'text-red-400' : 'text-cyan-400'}`} />
                 <span className="text-slate-300 text-xs font-mono font-bold tracking-[0.2em]">BIOMETRIC ANALYSIS</span>
               </div>
 
               <div className="flex items-start justify-center gap-3">
-                <div className="flex flex-col items-center" style={phaseNum >= 5 ? { animation: 'compareSlide 0.5s both' } : { opacity: phaseNum >= 3 ? 1 : 0.3 }}>
-                  <div className={`relative w-[88px] h-[88px] rounded-lg overflow-hidden border-2 transition-all duration-500 ${
+                <div className="flex flex-col items-center" style={phaseNum >= 5 ? { animation: 'slideIn 0.5s both' } : { opacity: phaseNum >= 3 ? 1 : 0.3 }}>
+                  <div className={`relative w-[80px] h-[80px] rounded-lg overflow-hidden border-2 transition-all duration-500 ${
                     phase === 'result'
                       ? isAlert ? 'border-red-500/70 shadow-lg shadow-red-500/20' : 'border-emerald-500/70 shadow-lg shadow-emerald-500/20'
                       : 'border-cyan-500/40'
                   }`}>
                     <img
-                      src="/datacenter-cctv.webp"
+                      src={isAlert ? '/captured-intruder-face.webp' : '/captured-authorized-face.webp'}
                       alt="Captured"
                       className="w-full h-full object-cover"
-                      style={{ objectPosition: '38% 18%', transform: 'scale(2.8)' }}
                     />
                     {phaseNum >= 5 && phaseNum < 7 && (
                       <div className="absolute inset-0 bg-cyan-500/10" style={{ animation: 'scanPulse 1s infinite' }} />
                     )}
-                    <div className="absolute inset-0 border border-white/5 rounded-lg" />
                   </div>
-                  <span className="text-[9px] font-mono text-slate-500 mt-1.5 tracking-wider">CAPTURED</span>
-                  {phaseNum >= 3 && (
-                    <span className="text-[8px] font-mono text-slate-600 mt-0.5">14:32:47 UTC</span>
-                  )}
+                  <span className="text-[9px] font-mono text-slate-500 mt-1 tracking-wider">CAPTURED</span>
                 </div>
 
-                <div className="flex flex-col items-center justify-center pt-4 min-w-[80px]">
-                  {phaseNum < 7 ? (
+                <div className="flex flex-col items-center justify-center pt-3 min-w-[70px]">
+                  {phaseNum < 8 ? (
                     <div className="flex flex-col items-center gap-1">
                       <Crosshair className="w-5 h-5 text-cyan-400 animate-spin" style={{ animationDuration: '3s' }} />
                       <span className="text-[9px] font-mono text-cyan-400/60">
-                        {phase === 'detecting' ? 'DETECTING' :
-                         phase === 'tracking' ? 'TRACKING' :
-                         phase === 'extracting' ? 'EXTRACTING' :
-                         phase === 'comparing' ? 'COMPARING' : 'WAITING'}
+                        {phase === 'gait' ? 'GAIT' : phase === 'comparing' ? 'COMPARING' : phase === 'extracting' ? 'EXTRACTING' : 'ANALYZING'}
                       </span>
                       {phase === 'extracting' && (
                         <div className="w-12 h-1 bg-slate-800 rounded-full overflow-hidden mt-1">
@@ -499,62 +567,102 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
                       )}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center gap-1">
-                      <div className={`text-3xl font-mono font-black tracking-tight ${
+                    <div className="flex flex-col items-center gap-0.5">
+                      <div className={`text-2xl font-mono font-black tracking-tight ${
                         matchScore > 80 ? 'text-emerald-400' : matchScore > 50 ? 'text-yellow-400' : 'text-red-400'
                       }`}>
                         {matchScore}%
                       </div>
-                      <span className={`text-[9px] font-mono font-bold tracking-wider ${
-                        isAlert ? 'text-red-400' : 'text-emerald-400'
-                      }`}>
+                      <span className={`text-[9px] font-mono font-bold tracking-wider ${isAlert ? 'text-red-400' : 'text-emerald-400'}`}>
                         {isAlert ? 'NO MATCH' : 'MATCHED'}
                       </span>
                     </div>
                   )}
                 </div>
 
-                <div className="flex flex-col items-center" style={phaseNum >= 6 ? { animation: 'compareSlide 0.5s both' } : { opacity: 0.3 }}>
-                  <div className={`relative w-[88px] h-[88px] rounded-lg overflow-hidden border-2 transition-all duration-500 ${
+                <div className="flex flex-col items-center" style={phaseNum >= 6 ? { animation: 'slideIn 0.5s both' } : { opacity: 0.3 }}>
+                  <div className={`relative w-[80px] h-[80px] rounded-lg overflow-hidden border-2 transition-all duration-500 ${
                     phase === 'result'
                       ? isAlert ? 'border-red-500/40' : 'border-emerald-500/70 shadow-lg shadow-emerald-500/20'
                       : 'border-slate-600/40'
                   }`}>
                     <img
-                      src="/badge-photo-authorized.webp"
+                      src="/badge-photo-different.webp"
                       alt="Badge Photo"
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 border border-white/5 rounded-lg" />
                   </div>
-                  <span className="text-[9px] font-mono text-slate-500 mt-1.5 tracking-wider">BADGE PHOTO</span>
-                  <span className="text-[8px] font-mono text-slate-600 mt-0.5">ID-4821</span>
+                  <span className="text-[9px] font-mono text-slate-500 mt-1 tracking-wider">BADGE PHOTO</span>
+                  <span className="text-[8px] font-mono text-slate-600">ID-4821</span>
                 </div>
               </div>
 
               {phase === 'result' && (
-                <div className={`mt-4 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border transition-all ${
-                  isAlert
-                    ? 'bg-red-500/10 border-red-500/30'
-                    : 'bg-emerald-500/10 border-emerald-500/30'
+                <div className={`mt-3 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                  isAlert ? 'bg-red-500/10 border-red-500/30' : 'bg-emerald-500/10 border-emerald-500/30'
                 }`}
-                style={isAlert ? { animation: 'alertBorder 1.5s infinite, sirenRotate 2s infinite' } : undefined}
+                style={isAlert ? { animation: 'alertBdr 1.5s infinite, sirenGlow 2s infinite' } : undefined}
                 >
                   {isAlert ? (
                     <>
                       <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
-                      <span className="text-red-400 text-xs font-mono font-bold tracking-wider">IDENTITY MISMATCH -- ALERT RAISED</span>
+                      <span className="text-red-400 text-[11px] font-mono font-bold tracking-wider">IDENTITY MISMATCH</span>
                       <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span className="text-emerald-400 text-xs font-mono font-bold tracking-wider">IDENTITY VERIFIED -- AUTHORIZED</span>
+                      <span className="text-emerald-400 text-[11px] font-mono font-bold tracking-wider">IDENTITY VERIFIED</span>
                     </>
                   )}
                 </div>
               )}
             </div>
+
+            {phaseNum >= 7 && (
+              <div className={`px-4 py-3 border-b transition-colors duration-300 ${
+                phase === 'result' && isAlert ? 'border-red-500/20 bg-red-950/10' : 'border-slate-800/30 bg-[#060a14]'
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <Footprints className={`w-3.5 h-3.5 ${isAlert && phase === 'result' ? 'text-red-400' : 'text-cyan-400'}`} />
+                  <span className="text-slate-300 text-[10px] font-mono font-bold tracking-[0.15em]">GAIT ANALYSIS</span>
+                  <div className="flex-1 h-px bg-slate-800/50" />
+                  <span className={`text-[10px] font-mono font-bold ${
+                    gaitScore > 80 ? 'text-emerald-400' : gaitScore > 50 ? 'text-yellow-400' : 'text-red-400'
+                  }`}>
+                    {gaitScore}%
+                  </span>
+                </div>
+
+                <div className="bg-black/40 rounded-lg border border-slate-800/30 p-2 mb-2">
+                  <canvas ref={walkCanvasRef} width={260} height={65} className="w-full" />
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5 text-center">
+                  {['Stride Length', 'Cadence', 'Hip Angle', 'Arm Swing'].map((label, i) => {
+                    const vals = isAlert ? [62, 45, 38, 51] : [94, 89, 92, 88];
+                    const v = gaitPhase > i ? vals[i] : 0;
+                    return (
+                      <div key={label} className="bg-slate-900/50 rounded px-1 py-1.5 border border-slate-800/30">
+                        <div className={`text-[10px] font-mono font-bold ${v > 80 ? 'text-emerald-400' : v > 50 ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {v > 0 ? `${v}%` : '--'}
+                        </div>
+                        <div className="text-[7px] font-mono text-slate-600 mt-0.5">{label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {phase === 'result' && (
+                  <div className={`mt-2 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded border text-[9px] font-mono font-bold ${
+                    isAlert ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                  }`}>
+                    <Activity className="w-3 h-3" />
+                    {isAlert ? 'GAIT PATTERN MISMATCH -- DIFFERENT PERSON' : 'GAIT PATTERN MATCHES REGISTERED PROFILE'}
+                  </div>
+                )}
+              </div>
+            )}
 
             {phase === 'result' && isAlert && (
               <div className="px-4 py-2.5 border-b border-red-500/20 bg-red-950/20">
@@ -576,19 +684,19 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
             )}
 
             <div className="flex-1 overflow-hidden p-4">
-              <div className="flex items-center gap-2 mb-2.5">
+              <div className="flex items-center gap-2 mb-2">
                 <Clock className="w-3 h-3 text-slate-500" />
                 <span className="text-slate-400 text-[10px] font-mono font-bold tracking-[0.15em]">ACCESS LOG</span>
                 <div className="flex-1 h-px bg-slate-800/50" />
               </div>
-              <div className="space-y-1.5 max-h-[230px] overflow-y-auto custom-scrollbar pr-1">
+              <div className="space-y-1.5 max-h-[140px] overflow-y-auto custom-scrollbar pr-1">
                 {accessLogs.map((log, i) => (
-                  <div key={i} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-[10px] font-mono border transition-all ${
+                  <div key={i} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[10px] font-mono border ${
                     log.status === 'denied' ? 'bg-red-500/5 border-red-500/20 text-red-300' :
                     log.status === 'authorized' ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-300' :
                     'bg-slate-500/5 border-slate-700/20 text-slate-400'
                   }`}
-                  style={{ animation: `compareSlide 0.3s ${i * 50}ms both` }}
+                  style={{ animation: `slideIn 0.3s ${i * 50}ms both` }}
                   >
                     <span className="text-slate-600 w-14 flex-shrink-0">{log.time}</span>
                     <span className="flex-1 truncate">{log.event}</span>
@@ -604,14 +712,14 @@ const CameraFeedModal = ({ isOpen, onClose, node }: CameraFeedModalProps) => {
               </div>
             </div>
 
-            <div className="px-4 py-2.5 border-t border-slate-800/30 bg-[#060a14]">
+            <div className="px-4 py-2 border-t border-slate-800/30 bg-[#060a14]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Shield className="w-3 h-3 text-cyan-400/60" />
                   <span className="text-[9px] font-mono text-slate-600">0xDSI LAKEWATCH v4.2.1</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-[9px] font-mono text-slate-600">FEED LATENCY: 12ms</span>
+                  <span className="text-[9px] font-mono text-slate-600">LATENCY: 12ms</span>
                   <span className="text-[9px] font-mono text-emerald-500/60">AES-256</span>
                 </div>
               </div>

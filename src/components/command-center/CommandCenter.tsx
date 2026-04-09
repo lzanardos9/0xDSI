@@ -9,6 +9,8 @@ import ThreatWeatherMap from './ThreatWeatherMap';
 import DefenseShield from './DefenseShield';
 import DefconAlert from './DefconAlert';
 import LowAndSlowTracker from './LowAndSlowTracker';
+import RealtimeCEPGraph from './RealtimeCEPGraph';
+import EventDrilldownModal from './EventDrilldownModal';
 import ThreatGlobe from '../ThreatGlobe';
 import { Globe } from 'lucide-react';
 
@@ -35,10 +37,17 @@ const mockThreats = [
 const CommandCenter = () => {
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState<SelectedCamera | null>(null);
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownEventId, setDrilldownEventId] = useState<string | undefined>();
 
   const handleCameraClick = (node: { id: string; name: string; location: string; status: 'secure' | 'alert' | 'warning' }) => {
     setSelectedCamera(node);
     setCameraModalOpen(true);
+  };
+
+  const handleEventDrilldown = (eventId?: string) => {
+    setDrilldownEventId(eventId);
+    setDrilldownOpen(true);
   };
 
   return (
@@ -46,17 +55,21 @@ const CommandCenter = () => {
       <DefconAlert />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <div className="lg:col-span-3 h-[420px]">
+        <div className="lg:col-span-3 h-[420px] cursor-pointer" onClick={() => handleEventDrilldown()}>
           <ThreatRadar />
         </div>
         <div className="lg:col-span-2 flex flex-col gap-4">
-          <div className="h-[200px]">
+          <div className="h-[200px] cursor-pointer" onClick={() => handleEventDrilldown()}>
             <ThreatHeartbeat />
           </div>
           <div className="h-[200px]">
             <DefenseShield />
           </div>
         </div>
+      </div>
+
+      <div className="h-[400px]">
+        <RealtimeCEPGraph />
       </div>
 
       <div className="enterprise-card overflow-hidden">
@@ -78,15 +91,15 @@ const CommandCenter = () => {
         </div>
       </div>
 
-      <div className="h-[380px]">
+      <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown()}>
         <LowAndSlowTracker />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="h-[380px]">
+        <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown()}>
           <KillChainWaterfall />
         </div>
-        <div className="h-[380px]">
+        <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown()}>
           <ThreatWeatherMap />
         </div>
       </div>
@@ -95,7 +108,7 @@ const CommandCenter = () => {
         <DomainBridge onCameraClick={handleCameraClick} />
       </div>
 
-      <div className="h-[420px]">
+      <div className="h-[420px] cursor-pointer" onClick={() => handleEventDrilldown()}>
         <EmbeddingConstellation />
       </div>
 
@@ -103,6 +116,12 @@ const CommandCenter = () => {
         isOpen={cameraModalOpen}
         onClose={() => setCameraModalOpen(false)}
         node={selectedCamera}
+      />
+
+      <EventDrilldownModal
+        isOpen={drilldownOpen}
+        onClose={() => setDrilldownOpen(false)}
+        eventId={drilldownEventId}
       />
     </div>
   );
