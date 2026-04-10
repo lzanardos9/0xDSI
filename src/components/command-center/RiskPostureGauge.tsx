@@ -43,13 +43,24 @@ const easeInOutCubic = (t: number): number => {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 };
 
-const RiskPostureGauge = () => {
+interface RiskPostureGaugeProps {
+  metrics?: Metric[];
+  compositeScore?: number;
+  trending?: 'up' | 'down' | 'flat';
+}
+
+const RiskPostureGauge = ({ metrics: externalMetrics, compositeScore: externalScore, trending: externalTrending }: RiskPostureGaugeProps = {}) => {
+  const isControlled = externalMetrics !== undefined;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
-  const [metrics, setMetrics] = useState<Metric[]>(INITIAL_METRICS);
-  const [compositeScore, setCompositeScore] = useState(() => computeComposite(INITIAL_METRICS));
+  const [internalMetrics, setInternalMetrics] = useState<Metric[]>(INITIAL_METRICS);
+  const [internalScore, setInternalScore] = useState(() => computeComposite(INITIAL_METRICS));
   const [prevScore, setPrevScore] = useState(() => computeComposite(INITIAL_METRICS));
-  const [trending, setTrending] = useState<'up' | 'down' | 'flat'>('flat');
+  const [internalTrending, setInternalTrending] = useState<'up' | 'down' | 'flat'>('flat');
+
+  const metrics = isControlled ? externalMetrics : internalMetrics;
+  const compositeScore = externalScore !== undefined ? externalScore : internalScore;
+  const trending = externalTrending !== undefined ? externalTrending : internalTrending;
 
   const displayedValueRef = useRef(computeComposite(INITIAL_METRICS));
   const targetValueRef = useRef(computeComposite(INITIAL_METRICS));
@@ -59,7 +70,8 @@ const RiskPostureGauge = () => {
   const pulsePhaseRef = useRef(0);
 
   const updateMetrics = useCallback(() => {
-    setMetrics(prev => {
+    if (isControlled) return;
+    setInternalMetrics(prev => {
       const next = prev.map(m => ({ ...m }));
       const indices = Array.from({ length: 5 }, (_, i) => i);
       for (let i = indices.length - 1; i > 0; i--) {
@@ -74,26 +86,29 @@ const RiskPostureGauge = () => {
       }
       const newComposite = computeComposite(next);
       setPrevScore(computeComposite(prev));
-      setCompositeScore(newComposite);
+      setInternalScore(newComposite);
       return next;
     });
-  }, []);
+  }, [isControlled]);
 
   useEffect(() => {
-    const diff = compositeScore - prevScore;
-    if (Math.abs(diff) < 0.3) setTrending('flat');
-    else if (diff > 0) setTrending('up');
-    else setTrending('down');
+    if (!isControlled) {
+      const diff = internalScore - prevScore;
+      if (Math.abs(diff) < 0.3) setInternalTrending('flat');
+      else if (diff > 0) setInternalTrending('up');
+      else setInternalTrending('down');
+    }
 
     animFromRef.current = displayedValueRef.current;
     targetValueRef.current = compositeScore;
     animStartRef.current = performance.now();
-  }, [compositeScore, prevScore]);
+  }, [compositeScore, prevScore, internalScore, isControlled]);
 
   useEffect(() => {
+    if (isControlled) return;
     const id = setInterval(updateMetrics, 5000);
     return () => clearInterval(id);
-  }, [updateMetrics]);
+  }, [updateMetrics, isControlled]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

@@ -18,7 +18,8 @@ import AgentCommsPanel from './AgentCommsPanel';
 import ThreatGlobe from '../ThreatGlobe';
 import RiskPostureGauge from './RiskPostureGauge';
 import EventProcessingFunnel from './EventProcessingFunnel';
-import { Globe, Maximize2, Minimize2, Shield, Activity, Radio, Cpu, Clock, Wifi, Eye, Layers } from 'lucide-react';
+import useSharedThreatState from './useSharedThreatState';
+import { Globe, Maximize2, Minimize2, Shield, Activity, Radio, Cpu, Clock, Wifi, Eye, Layers, TrendingUp } from 'lucide-react';
 
 interface SelectedCamera {
   id: string;
@@ -64,6 +65,7 @@ const LiveClock = () => {
 };
 
 const CommandCenter = () => {
+  const threatState = useSharedThreatState();
   const [cameraModalOpen, setCameraModalOpen] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState<SelectedCamera | null>(null);
   const [drilldownOpen, setDrilldownOpen] = useState(false);
@@ -72,6 +74,7 @@ const CommandCenter = () => {
   const [cepExpanded, setCepExpanded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [uptime, setUptime] = useState(0);
+  const [timePerspective, setTimePerspective] = useState<'all' | 'past' | 'present' | 'future'>('all');
 
   useEffect(() => {
     const id = setInterval(() => setUptime(u => u + 1), 1000);
@@ -176,6 +179,30 @@ const CommandCenter = () => {
           </div>
         </div>
 
+        <div className="flex items-center justify-center mb-4 px-1">
+          <div className="inline-flex items-center bg-slate-800/60 border border-slate-700/40 rounded-lg p-0.5 gap-0.5">
+            {([
+              { key: 'all' as const, label: 'ALL', icon: Layers, activeBg: 'bg-cyan-600' },
+              { key: 'past' as const, label: 'PAST', icon: Clock, activeBg: 'bg-amber-600' },
+              { key: 'present' as const, label: 'PRESENT', icon: Radio, activeBg: 'bg-emerald-600' },
+              { key: 'future' as const, label: 'FUTURE', icon: TrendingUp, activeBg: 'bg-blue-600' },
+            ]).map(({ key, label, icon: SegIcon, activeBg }) => (
+              <button
+                key={key}
+                onClick={() => setTimePerspective(key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-mono font-bold tracking-wider transition-all ${
+                  timePerspective === key
+                    ? `${activeBg} text-white shadow-lg`
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
+                }`}
+              >
+                <SegIcon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-center gap-3 mb-4 px-1 py-2 bg-slate-900/40 rounded-lg border border-slate-800/40">
           <div className="flex items-center gap-1.5 px-2">
             <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -209,109 +236,135 @@ const CommandCenter = () => {
         </div>
 
         <div className="space-y-2">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2">
-              <DefconAlert />
-            </div>
-            <div>
-              <RiskPostureGauge />
-            </div>
-          </div>
-
-          <SectionDivider label="Predictive Intelligence" icon={Eye} />
-
-          <PredictiveThreatAnalytics />
-
-          <SectionDivider label="Attack Forecasting" icon={Activity} />
-
-          <MonteCarloForecasting />
-
-          <SectionDivider label="Real-Time Threat Detection" icon={Radio} />
-
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-            <div className="lg:col-span-3 h-[420px] cursor-pointer group" onClick={() => handleEventDrilldown('radar')}>
-              <ThreatRadar />
-            </div>
-            <div className="lg:col-span-2 flex flex-col gap-4">
-              <div className="h-[200px] cursor-pointer" onClick={() => handleEventDrilldown('heartbeat')}>
-                <ThreatHeartbeat />
+          {(timePerspective === 'all' || timePerspective === 'present') && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2">
+                <DefconAlert defconLevel={threatState.defconLevel} onLevelChange={threatState.setDefconLevel} />
               </div>
-              <div className="h-[200px]">
-                <DefenseShield />
-              </div>
-            </div>
-          </div>
-
-          <SectionDivider label="Agent Operations" icon={Cpu} />
-
-          <AgentCommsPanel />
-
-          <SectionDivider label="Event Processing & Global Intel" icon={Globe} />
-
-          {cepExpanded ? (
-            <div className="h-[600px]">
-              <RealtimeCEPGraph expanded={true} onToggleExpand={() => setCepExpanded(false)} />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="h-[450px]">
-                <RealtimeCEPGraph expanded={false} onToggleExpand={() => setCepExpanded(true)} />
-              </div>
-              <div className="enterprise-card overflow-hidden h-[450px]">
-                <div className="bg-slate-800/30 px-6 py-3 border-b border-slate-700/50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Globe className="w-5 h-5 text-blue-400" />
-                      <h3 className="text-base font-semibold text-slate-100">Global Threat Intelligence</h3>
-                    </div>
-                    <div className="flex space-x-2">
-                      <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded text-[10px] font-medium border border-red-500/20">Critical</span>
-                      <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded text-[10px] font-medium border border-orange-500/20">High</span>
-                      <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded text-[10px] font-medium border border-amber-500/20">Medium</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="h-[calc(100%-48px)]">
-                  <ThreatGlobe threats={mockThreats} />
-                </div>
+              <div>
+                <RiskPostureGauge metrics={threatState.metrics} compositeScore={threatState.compositeRiskScore} trending={threatState.trending} />
               </div>
             </div>
           )}
 
-          <SectionDivider label="Advanced Threat Analytics" icon={Shield} />
+          {(timePerspective === 'all' || timePerspective === 'future') && (
+            <>
+              <SectionDivider label="Predictive Intelligence" icon={Eye} />
 
-          <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('lowslow')}>
-            <LowAndSlowTracker />
-          </div>
+              <PredictiveThreatAnalytics />
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('killchain')}>
-              <KillChainWaterfall />
-            </div>
-            <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('weather')}>
-              <ThreatWeatherMap />
-            </div>
-          </div>
+              <SectionDivider label="Attack Forecasting" icon={Activity} />
 
-          <SectionDivider label="Cyber-Physical Convergence" icon={Wifi} />
+              <MonteCarloForecasting />
+            </>
+          )}
 
-          <div className="h-[400px]">
-            <DomainBridge onCameraClick={handleCameraClick} />
-          </div>
+          {(timePerspective === 'all' || timePerspective === 'present') && (
+            <>
+              <SectionDivider label="Real-Time Threat Detection" icon={Radio} />
 
-          <SectionDivider label="Embedding Analysis" icon={Activity} />
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+                <div className="lg:col-span-3 h-[420px] cursor-pointer group" onClick={() => handleEventDrilldown('radar')}>
+                  <ThreatRadar />
+                </div>
+                <div className="lg:col-span-2 flex flex-col gap-4">
+                  <div className="h-[200px] cursor-pointer" onClick={() => handleEventDrilldown('heartbeat')}>
+                    <ThreatHeartbeat />
+                  </div>
+                  <div className="h-[200px]">
+                    <DefenseShield />
+                  </div>
+                </div>
+              </div>
 
-          <div className="h-[420px] cursor-pointer" onClick={() => handleEventDrilldown('embedding')}>
-            <EmbeddingConstellation />
-          </div>
+              <SectionDivider label="Agent Operations" icon={Cpu} />
 
-          <SectionDivider label="Intelligence Monitoring" icon={Eye} />
+              <AgentCommsPanel />
 
-          <IntelligenceMonitoring />
+              <SectionDivider label="Event Processing & Global Intel" icon={Globe} />
 
-          <SectionDivider label="Event Processing Pipeline" icon={Layers} />
+              {cepExpanded ? (
+                <div className="h-[600px]">
+                  <RealtimeCEPGraph expanded={true} onToggleExpand={() => setCepExpanded(false)} />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="h-[450px]">
+                    <RealtimeCEPGraph expanded={false} onToggleExpand={() => setCepExpanded(true)} />
+                  </div>
+                  <div className="enterprise-card overflow-hidden h-[450px]">
+                    <div className="bg-slate-800/30 px-6 py-3 border-b border-slate-700/50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <Globe className="w-5 h-5 text-blue-400" />
+                          <h3 className="text-base font-semibold text-slate-100">Global Threat Intelligence</h3>
+                        </div>
+                        <div className="flex space-x-2">
+                          <span className="px-2 py-0.5 bg-red-500/10 text-red-400 rounded text-[10px] font-medium border border-red-500/20">Critical</span>
+                          <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded text-[10px] font-medium border border-orange-500/20">High</span>
+                          <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded text-[10px] font-medium border border-amber-500/20">Medium</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="h-[calc(100%-48px)]">
+                      <ThreatGlobe threats={mockThreats} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
-          <EventProcessingFunnel />
+          {(timePerspective === 'all' || timePerspective === 'past') && (
+            <>
+              <SectionDivider label="Advanced Threat Analytics" icon={Shield} />
+
+              <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('lowslow')}>
+                <LowAndSlowTracker />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('killchain')}>
+                  <KillChainWaterfall />
+                </div>
+                <div className="h-[380px] cursor-pointer" onClick={() => handleEventDrilldown('weather')}>
+                  <ThreatWeatherMap />
+                </div>
+              </div>
+            </>
+          )}
+
+          {(timePerspective === 'all' || timePerspective === 'present') && (
+            <>
+              <SectionDivider label="Cyber-Physical Convergence" icon={Wifi} />
+
+              <div className="h-[400px]">
+                <DomainBridge onCameraClick={handleCameraClick} />
+              </div>
+            </>
+          )}
+
+          {(timePerspective === 'all' || timePerspective === 'past') && (
+            <>
+              <SectionDivider label="Embedding Analysis" icon={Activity} />
+
+              <div className="h-[420px] cursor-pointer" onClick={() => handleEventDrilldown('embedding')}>
+                <EmbeddingConstellation />
+              </div>
+
+              <SectionDivider label="Intelligence Monitoring" icon={Eye} />
+
+              <IntelligenceMonitoring />
+            </>
+          )}
+
+          {(timePerspective === 'all' || timePerspective === 'present') && (
+            <>
+              <SectionDivider label="Event Processing Pipeline" icon={Layers} />
+
+              <EventProcessingFunnel />
+            </>
+          )}
 
           <div className="flex items-center justify-center py-6 mt-4 border-t border-slate-800/40">
             <div className="flex items-center gap-4 text-[10px] font-mono text-slate-600">

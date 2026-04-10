@@ -1,0 +1,1254 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Crosshair, Zap, Shield, AlertTriangle, Clock, Target, Brain,
+  Users, ChevronRight, X, Check, Download, Plus, Cpu, Activity,
+  Layers, ArrowRight, Search, FileText, GitBranch, Gauge, Radar,
+  ShieldAlert, ShieldCheck, Lock, Unlock, Server,
+  Network, CircleDot, ChevronDown, Minus, Play
+} from 'lucide-react';
+
+interface AgentResult {
+  name: string;
+  icon: any;
+  status: 'waiting' | 'processing' | 'done';
+  result: string;
+  color: string;
+}
+
+interface MitreMapping {
+  id: string;
+  name: string;
+}
+
+interface Countermeasure {
+  text: string;
+  priority: 'Critical' | 'High' | 'Medium';
+}
+
+interface SimulationData {
+  feasibility: number;
+  mitre: MitreMapping[];
+  killChainStage: number;
+  killChainLabel: string;
+  detectionTimeCurrent: string;
+  detectionTimeRecommended: string;
+  defenseEffectiveness: number;
+  countermeasures: Countermeasure[];
+  detectionGaps: string[];
+  correlationRule: {
+    name: string;
+    logic: string;
+    severity: string;
+    mitre: string;
+  };
+  microPattern: {
+    name: string;
+    type: string;
+    conditions: string[];
+    timeWindow: string;
+    minOccurrences: number;
+  };
+}
+
+const TEMPLATES: Record<string, { label: string; scenario: string; data: SimulationData }> = {
+  insider: {
+    label: 'Insider Data Exfiltration',
+    scenario: 'An insider with admin access exfiltrates sensitive data via encrypted DNS tunneling while disabling endpoint monitoring',
+    data: {
+      feasibility: 72,
+      mitre: [
+        { id: 'T1048', name: 'Exfiltration Over Alternative Protocol' },
+        { id: 'T1071.004', name: 'Application Layer Protocol: DNS' },
+        { id: 'T1078', name: 'Valid Accounts' },
+        { id: 'T1562.001', name: 'Impair Defenses: Disable or Modify Tools' },
+      ],
+      killChainStage: 7,
+      killChainLabel: 'Actions on Objectives',
+      detectionTimeCurrent: '6h 12m',
+      detectionTimeRecommended: '18m',
+      defenseEffectiveness: 31,
+      countermeasures: [
+        { text: 'Enable DLP monitoring on DNS traffic with entropy analysis', priority: 'Critical' },
+        { text: 'Monitor admin after-hours access patterns with behavioral baselines', priority: 'Critical' },
+        { text: 'Enforce MFA for all data access and export operations', priority: 'High' },
+        { text: 'Add DNS entropy analysis correlation rule', priority: 'High' },
+        { text: 'Deploy canary tokens in sensitive data repositories', priority: 'Medium' },
+      ],
+      detectionGaps: [
+        'No DNS payload inspection for encrypted tunneling',
+        'Admin accounts bypass DLP policies',
+        'No correlation between endpoint status changes and data access',
+        'After-hours access not flagged for privileged accounts',
+      ],
+      correlationRule: {
+        name: 'Insider DNS Exfiltration Detection',
+        logic: "IF dns_query_entropy > 4.5 AND user_role = 'admin' AND time = 'after_hours' AND endpoint_monitoring_status = 'disabled' THEN alert = CRITICAL",
+        severity: 'Critical',
+        mitre: 'T1048, T1071.004, T1078, T1562.001',
+      },
+      microPattern: {
+        name: 'Admin DNS Exfil Behavioral Cluster',
+        type: 'Composite',
+        conditions: [
+          'High-entropy DNS queries > 50 per minute',
+          'Admin account active outside business hours',
+          'Endpoint monitoring service stopped',
+          'Large volume data access preceding DNS spike',
+        ],
+        timeWindow: '15 minutes',
+        minOccurrences: 3,
+      },
+    },
+  },
+  ransomware: {
+    label: 'Ransomware via Supply Chain',
+    scenario: 'A trusted software vendor update is compromised to deliver ransomware that encrypts critical systems while evading detection through signed binaries',
+    data: {
+      feasibility: 58,
+      mitre: [
+        { id: 'T1195.002', name: 'Supply Chain Compromise: Software Supply Chain' },
+        { id: 'T1059', name: 'Command and Scripting Interpreter' },
+        { id: 'T1486', name: 'Data Encrypted for Impact' },
+        { id: 'T1036.001', name: 'Masquerading: Invalid Code Signature' },
+      ],
+      killChainStage: 6,
+      killChainLabel: 'Command & Control',
+      detectionTimeCurrent: '2h 45m',
+      detectionTimeRecommended: '8m',
+      defenseEffectiveness: 44,
+      countermeasures: [
+        { text: 'Implement binary allowlisting with hash verification', priority: 'Critical' },
+        { text: 'Supply chain integrity verification via SBOM analysis', priority: 'Critical' },
+        { text: 'Network segmentation to limit lateral movement', priority: 'High' },
+        { text: 'Immutable backup strategy with air-gapped copies', priority: 'High' },
+        { text: 'Behavioral analysis for anomalous process execution chains', priority: 'Medium' },
+      ],
+      detectionGaps: [
+        'Signed binaries bypass application control policies',
+        'No SBOM verification for third-party updates',
+        'Lateral movement detection limited to known patterns',
+      ],
+      correlationRule: {
+        name: 'Supply Chain Ransomware Detection',
+        logic: "IF process_signer = 'trusted_vendor' AND child_process IN ('cmd.exe','powershell.exe') AND file_encryption_rate > threshold AND network_beacon_interval < 60s THEN alert = CRITICAL",
+        severity: 'Critical',
+        mitre: 'T1195.002, T1059, T1486',
+      },
+      microPattern: {
+        name: 'Supply Chain Execution Anomaly',
+        type: 'Temporal',
+        conditions: [
+          'Trusted vendor process spawns scripting interpreter',
+          'File encryption operations detected on multiple volumes',
+          'Network beaconing to unclassified external host',
+        ],
+        timeWindow: '10 minutes',
+        minOccurrences: 2,
+      },
+    },
+  },
+  physical: {
+    label: 'Physical Breach + Cyber Attack',
+    scenario: 'An attacker clones an employee badge to gain physical access, then connects a rogue device to the internal network to perform man-in-the-middle attacks',
+    data: {
+      feasibility: 45,
+      mitre: [
+        { id: 'T1200', name: 'Hardware Additions' },
+        { id: 'T1078', name: 'Valid Accounts' },
+        { id: 'T1557', name: 'Adversary-in-the-Middle' },
+        { id: 'T1040', name: 'Network Sniffing' },
+      ],
+      killChainStage: 5,
+      killChainLabel: 'Installation',
+      detectionTimeCurrent: '1h 30m',
+      detectionTimeRecommended: '5m',
+      defenseEffectiveness: 52,
+      countermeasures: [
+        { text: 'Badge-to-network correlation: match physical access to network auth', priority: 'Critical' },
+        { text: 'Physical access monitoring with camera-badge event fusion', priority: 'High' },
+        { text: 'Network anomaly detection for unauthorized device fingerprints', priority: 'High' },
+        { text: '802.1X port-based authentication enforcement', priority: 'High' },
+        { text: 'Deploy network access control with device profiling', priority: 'Medium' },
+      ],
+      detectionGaps: [
+        'No correlation between physical badge swipes and network authentication events',
+        'Rogue device detection relies on MAC address which can be spoofed',
+        'ARP poisoning detection not active on all VLANs',
+      ],
+      correlationRule: {
+        name: 'Physical-Cyber Hybrid Breach Detection',
+        logic: "IF badge_access = 'granted' AND network_new_device = true AND arp_anomaly = true AND badge_owner != device_user THEN alert = CRITICAL",
+        severity: 'Critical',
+        mitre: 'T1200, T1078, T1557',
+      },
+      microPattern: {
+        name: 'Badge-Network Correlation Anomaly',
+        type: 'Behavioral',
+        conditions: [
+          'Badge access event at physical entry point',
+          'New device appears on network within proximity window',
+          'ARP table changes detected on local switch',
+          'Credential mismatch between badge holder and network session',
+        ],
+        timeWindow: '5 minutes',
+        minOccurrences: 2,
+      },
+    },
+  },
+  zeroday: {
+    label: 'Zero-Day Exploitation',
+    scenario: 'An unknown vulnerability in a public-facing web application is exploited to gain initial access, followed by privilege escalation through kernel exploitation',
+    data: {
+      feasibility: 34,
+      mitre: [
+        { id: 'T1190', name: 'Exploit Public-Facing Application' },
+        { id: 'T1210', name: 'Exploitation of Remote Services' },
+        { id: 'T1068', name: 'Exploitation for Privilege Escalation' },
+      ],
+      killChainStage: 5,
+      killChainLabel: 'Installation',
+      detectionTimeCurrent: '8h+',
+      detectionTimeRecommended: '35m',
+      defenseEffectiveness: 22,
+      countermeasures: [
+        { text: 'Deploy WAF with behavioral anomaly detection', priority: 'Critical' },
+        { text: 'Enable runtime application self-protection (RASP)', priority: 'Critical' },
+        { text: 'Network microsegmentation around public-facing assets', priority: 'High' },
+        { text: 'Kernel integrity monitoring on critical servers', priority: 'High' },
+        { text: 'Establish baseline syscall patterns for anomaly detection', priority: 'Medium' },
+      ],
+      detectionGaps: [
+        'Signature-based WAF cannot detect zero-day payloads',
+        'No behavioral baseline for web application process activity',
+        'Kernel-level exploitation bypasses user-space monitoring',
+        'No memory corruption detection for runtime exploitation',
+      ],
+      correlationRule: {
+        name: 'Zero-Day Exploitation Chain Detection',
+        logic: "IF web_request_anomaly_score > 0.85 AND process_spawn_from_webserver = true AND privilege_escalation_indicator = true THEN alert = CRITICAL",
+        severity: 'Critical',
+        mitre: 'T1190, T1210, T1068',
+      },
+      microPattern: {
+        name: 'Exploitation Chain Behavioral Pattern',
+        type: 'Temporal',
+        conditions: [
+          'Anomalous HTTP request pattern to public application',
+          'Web server process spawns unexpected child process',
+          'Privilege context change detected',
+          'Unusual kernel syscall sequence',
+        ],
+        timeWindow: '3 minutes',
+        minOccurrences: 1,
+      },
+    },
+  },
+  cloud: {
+    label: 'Cloud Account Takeover',
+    scenario: 'An attacker uses stolen OAuth tokens to take over a cloud admin account, modifies IAM policies, and exfiltrates data from S3 buckets',
+    data: {
+      feasibility: 61,
+      mitre: [
+        { id: 'T1078.004', name: 'Valid Accounts: Cloud Accounts' },
+        { id: 'T1528', name: 'Steal Application Access Token' },
+        { id: 'T1098', name: 'Account Manipulation' },
+        { id: 'T1530', name: 'Data from Cloud Storage Object' },
+      ],
+      killChainStage: 6,
+      killChainLabel: 'Command & Control',
+      detectionTimeCurrent: '3h 15m',
+      detectionTimeRecommended: '12m',
+      defenseEffectiveness: 38,
+      countermeasures: [
+        { text: 'Enforce short-lived tokens with automatic rotation', priority: 'Critical' },
+        { text: 'Implement impossible travel detection for cloud logins', priority: 'Critical' },
+        { text: 'Monitor IAM policy changes with mandatory approval workflow', priority: 'High' },
+        { text: 'Enable S3 access logging with anomaly detection', priority: 'High' },
+        { text: 'Deploy cloud security posture management (CSPM)', priority: 'Medium' },
+      ],
+      detectionGaps: [
+        'Long-lived OAuth tokens persist beyond session',
+        'IAM policy changes not monitored in real-time',
+        'No geolocation correlation for cloud API calls',
+      ],
+      correlationRule: {
+        name: 'Cloud Account Takeover Detection',
+        logic: "IF cloud_login_location != user_baseline AND iam_policy_modified = true AND s3_bulk_download = true AND token_age > expected_ttl THEN alert = CRITICAL",
+        severity: 'Critical',
+        mitre: 'T1078.004, T1528, T1098, T1530',
+      },
+      microPattern: {
+        name: 'Cloud Takeover Sequence',
+        type: 'Temporal',
+        conditions: [
+          'Cloud authentication from anomalous location',
+          'IAM policy modification by recently authenticated session',
+          'Bulk data access from cloud storage',
+        ],
+        timeWindow: '30 minutes',
+        minOccurrences: 1,
+      },
+    },
+  },
+  aipoison: {
+    label: 'AI Model Poisoning',
+    scenario: 'An attacker with access to the training pipeline injects adversarial samples to poison a production ML model, causing systematic misclassification of threats',
+    data: {
+      feasibility: 28,
+      mitre: [
+        { id: 'T1565.001', name: 'Data Manipulation: Stored Data Manipulation' },
+        { id: 'T1195', name: 'Supply Chain Compromise' },
+        { id: 'T1059', name: 'Command and Scripting Interpreter' },
+      ],
+      killChainStage: 4,
+      killChainLabel: 'Exploitation',
+      detectionTimeCurrent: '48h+',
+      detectionTimeRecommended: '4h',
+      defenseEffectiveness: 18,
+      countermeasures: [
+        { text: 'Implement training data integrity validation with checksums', priority: 'Critical' },
+        { text: 'Deploy model drift detection with statistical monitoring', priority: 'Critical' },
+        { text: 'Enforce access controls on ML pipeline with audit logging', priority: 'High' },
+        { text: 'A/B test model outputs against known-good baseline', priority: 'High' },
+        { text: 'Implement adversarial sample detection in training pipeline', priority: 'Medium' },
+      ],
+      detectionGaps: [
+        'No integrity verification on training data ingestion',
+        'Model performance degradation not monitored in real-time',
+        'ML pipeline access logs not correlated with model behavior',
+        'Adversarial samples indistinguishable from normal data without specialized detection',
+      ],
+      correlationRule: {
+        name: 'AI Model Poisoning Detection',
+        logic: "IF training_data_modified = true AND model_accuracy_drift > 0.05 AND pipeline_access_anomaly = true THEN alert = HIGH",
+        severity: 'High',
+        mitre: 'T1565.001, T1195',
+      },
+      microPattern: {
+        name: 'ML Pipeline Integrity Violation',
+        type: 'Behavioral',
+        conditions: [
+          'Training dataset modification outside scheduled window',
+          'Model accuracy metric deviation beyond threshold',
+          'Unauthorized access to ML pipeline components',
+        ],
+        timeWindow: '24 hours',
+        minOccurrences: 2,
+      },
+    },
+  },
+  badge: {
+    label: 'Badge Cloning + Lateral Movement',
+    scenario: 'An attacker clones an RFID badge to access restricted areas, then uses harvested credentials from a compromised workstation to move laterally through the network',
+    data: {
+      feasibility: 52,
+      mitre: [
+        { id: 'T1200', name: 'Hardware Additions' },
+        { id: 'T1078', name: 'Valid Accounts' },
+        { id: 'T1021', name: 'Remote Services' },
+        { id: 'T1550', name: 'Use Alternate Authentication Material' },
+      ],
+      killChainStage: 5,
+      killChainLabel: 'Installation',
+      detectionTimeCurrent: '45m',
+      detectionTimeRecommended: '3m',
+      defenseEffectiveness: 55,
+      countermeasures: [
+        { text: 'Deploy anti-cloning badge technology with rolling codes', priority: 'Critical' },
+        { text: 'Correlate physical access events with network authentications', priority: 'Critical' },
+        { text: 'Implement network segmentation with jump-box requirements', priority: 'High' },
+        { text: 'Deploy credential guard on all workstations', priority: 'High' },
+        { text: 'Enable lateral movement detection via honeytokens', priority: 'Medium' },
+      ],
+      detectionGaps: [
+        'Legacy RFID badges susceptible to cloning',
+        'Physical and logical access systems not correlated',
+        'Lateral movement using valid credentials difficult to distinguish',
+      ],
+      correlationRule: {
+        name: 'Badge Clone Lateral Movement Detection',
+        logic: "IF badge_duplicate_read = true AND network_auth_from_new_device = true AND lateral_connection_count > 3 AND time_between_badge_network < 120s THEN alert = CRITICAL",
+        severity: 'Critical',
+        mitre: 'T1200, T1078, T1021, T1550',
+      },
+      microPattern: {
+        name: 'Physical-to-Lateral Movement Chain',
+        type: 'Composite',
+        conditions: [
+          'Duplicate badge read from different proximity reader',
+          'Network authentication from previously unseen device',
+          'Multiple remote service connections in rapid succession',
+          'Credential usage pattern inconsistent with user baseline',
+        ],
+        timeWindow: '10 minutes',
+        minOccurrences: 2,
+      },
+    },
+  },
+  ddos: {
+    label: 'DDoS + Data Theft Diversion',
+    scenario: 'A coordinated DDoS attack is launched as a smokescreen while a secondary team exfiltrates sensitive data through a previously established backdoor',
+    data: {
+      feasibility: 65,
+      mitre: [
+        { id: 'T1498', name: 'Network Denial of Service' },
+        { id: 'T1048', name: 'Exfiltration Over Alternative Protocol' },
+        { id: 'T1036', name: 'Masquerading' },
+        { id: 'T1572', name: 'Protocol Tunneling' },
+      ],
+      killChainStage: 7,
+      killChainLabel: 'Actions on Objectives',
+      detectionTimeCurrent: '15m',
+      detectionTimeRecommended: '2m',
+      defenseEffectiveness: 48,
+      countermeasures: [
+        { text: 'Maintain full monitoring during DDoS mitigation', priority: 'Critical' },
+        { text: 'Separate DDoS response from security monitoring teams', priority: 'Critical' },
+        { text: 'Monitor all egress channels during volumetric attacks', priority: 'High' },
+        { text: 'Deploy automated exfiltration detection on all egress points', priority: 'High' },
+        { text: 'Implement bandwidth anomaly detection for non-DDoS traffic', priority: 'Medium' },
+      ],
+      detectionGaps: [
+        'DDoS response diverts SOC attention from other alerts',
+        'Exfiltration hidden within high-volume traffic noise',
+        'Backdoor channels not detected by perimeter monitoring',
+        'Alert fatigue during volumetric attack overwhelms analysts',
+      ],
+      correlationRule: {
+        name: 'DDoS Diversion Data Theft Detection',
+        logic: "IF ddos_active = true AND egress_anomaly = true AND data_transfer_volume > baseline AND destination NOT IN approved_list THEN alert = CRITICAL",
+        severity: 'Critical',
+        mitre: 'T1498, T1048, T1572',
+      },
+      microPattern: {
+        name: 'Diversion Attack Coordination',
+        type: 'Temporal',
+        conditions: [
+          'Volumetric DDoS attack detected on perimeter',
+          'Simultaneous anomalous egress traffic to unknown destination',
+          'Data access patterns inconsistent with DDoS incident response',
+        ],
+        timeWindow: '5 minutes',
+        minOccurrences: 1,
+      },
+    },
+  },
+};
+
+const KILL_CHAIN_STAGES = [
+  'Reconnaissance',
+  'Weaponization',
+  'Delivery',
+  'Exploitation',
+  'Installation',
+  'Command & Control',
+  'Actions on Objectives',
+];
+
+const ATTACKER_PROFILES = ['Script Kiddie', 'Insider', 'APT Group', 'Nation-State'];
+
+function getFeasibilityColor(score: number): string {
+  if (score <= 20) return '#22d3ee';
+  if (score <= 40) return '#3b82f6';
+  if (score <= 60) return '#eab308';
+  if (score <= 80) return '#f97316';
+  return '#ef4444';
+}
+
+function getFeasibilityLabel(score: number): string {
+  if (score <= 20) return 'Very Low';
+  if (score <= 40) return 'Low';
+  if (score <= 60) return 'Moderate';
+  if (score <= 80) return 'High';
+  return 'Critical';
+}
+
+function getPriorityColor(priority: string): string {
+  switch (priority) {
+    case 'Critical': return 'bg-red-500/20 text-red-400 border-red-500/30';
+    case 'High': return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+    case 'Medium': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    default: return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+  }
+}
+
+export default function ThreatSimulator() {
+  const [scenario, setScenario] = useState('');
+  const [attackDomain, setAttackDomain] = useState<'Logical' | 'Physical' | 'Hybrid'>('Logical');
+  const [attackerProfile, setAttackerProfile] = useState('APT Group');
+  const [targetAssets, setTargetAssets] = useState<string[]>(['Domain Controller']);
+  const [targetInput, setTargetInput] = useState('');
+  const [simulationDepth, setSimulationDepth] = useState(5);
+  const [isRunning, setIsRunning] = useState(false);
+  const [simulationComplete, setSimulationComplete] = useState(false);
+  const [activeData, setActiveData] = useState<SimulationData | null>(null);
+  const [agents, setAgents] = useState<AgentResult[]>([]);
+  const [animatedFeasibility, setAnimatedFeasibility] = useState(0);
+  const [showCorrelationRule, setShowCorrelationRule] = useState(false);
+  const [showMicroPattern, setShowMicroPattern] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [editableRule, setEditableRule] = useState({ name: '', logic: '', severity: '', mitre: '' });
+  const [editablePattern, setEditablePattern] = useState({ name: '', type: '', conditions: [] as string[], timeWindow: '', minOccurrences: 1 });
+  const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const feasibilityRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      timerRefs.current.forEach(clearTimeout);
+      if (feasibilityRef.current) cancelAnimationFrame(feasibilityRef.current);
+    };
+  }, []);
+
+  const getDefaultData = useCallback((): SimulationData => {
+    const lowerScenario = scenario.toLowerCase();
+    for (const [key, template] of Object.entries(TEMPLATES)) {
+      if (lowerScenario.includes(key) || lowerScenario.includes(template.label.toLowerCase().split(' ')[0])) {
+        return template.data;
+      }
+    }
+    return TEMPLATES.insider.data;
+  }, [scenario]);
+
+  const runSimulation = useCallback((data?: SimulationData) => {
+    const simData = data || getDefaultData();
+    setIsRunning(true);
+    setSimulationComplete(false);
+    setShowCorrelationRule(false);
+    setShowMicroPattern(false);
+    setAnimatedFeasibility(0);
+
+    const initialAgents: AgentResult[] = [
+      { name: 'Threat Modeler', icon: Brain, status: 'waiting', result: '', color: 'text-cyan-400' },
+      { name: 'Red Team Agent', icon: Target, status: 'waiting', result: '', color: 'text-red-400' },
+      { name: 'Blue Team Agent', icon: Shield, status: 'waiting', result: '', color: 'text-blue-400' },
+      { name: 'Risk Assessor', icon: Gauge, status: 'waiting', result: '', color: 'text-amber-400' },
+      { name: 'Countermeasure Planner', icon: ShieldCheck, status: 'waiting', result: '', color: 'text-emerald-400' },
+      { name: 'Forensics Agent', icon: Search, status: 'waiting', result: '', color: 'text-orange-400' },
+    ];
+    setAgents(initialAgents);
+
+    const agentResults = [
+      `Mapped to ${simData.mitre.length} MITRE ATT&CK techniques. Primary vector: ${simData.mitre[0]?.name || 'Unknown'}.`,
+      `Attack reaches ${simData.killChainLabel} (stage ${simData.killChainStage}/7). ${simData.feasibility > 50 ? 'High success probability with current defenses.' : 'Partial success likely, blocked at key chokepoints.'}`,
+      `Current defense stack catches ${simData.defenseEffectiveness}% of attack chain. ${simData.detectionGaps.length} critical gaps identified.`,
+      `Feasibility score: ${simData.feasibility}% (${getFeasibilityLabel(simData.feasibility)}). ${simData.feasibility > 60 ? 'Immediate action recommended.' : 'Monitoring enhancement advised.'}`,
+      `${simData.countermeasures.filter(c => c.priority === 'Critical').length} critical countermeasures identified. Priority: ${simData.countermeasures[0]?.text.substring(0, 60)}...`,
+      `Estimated detection: ${simData.detectionTimeCurrent} current vs ${simData.detectionTimeRecommended} with recommendations. Evidence artifacts mapped.`,
+    ];
+
+    timerRefs.current.forEach(clearTimeout);
+    timerRefs.current = [];
+
+    initialAgents.forEach((_, i) => {
+      const startDelay = i * 400;
+      const t1 = setTimeout(() => {
+        setAgents(prev => prev.map((a, idx) => idx === i ? { ...a, status: 'processing' } : a));
+      }, startDelay);
+      timerRefs.current.push(t1);
+
+      const t2 = setTimeout(() => {
+        setAgents(prev => prev.map((a, idx) => idx === i ? { ...a, status: 'done', result: agentResults[i] } : a));
+      }, startDelay + 350);
+      timerRefs.current.push(t2);
+    });
+
+    const completionTimer = setTimeout(() => {
+      setActiveData(simData);
+      setIsRunning(false);
+      setSimulationComplete(true);
+      setEditableRule({ ...simData.correlationRule });
+      setEditablePattern({ ...simData.microPattern });
+
+      let current = 0;
+      const targetVal = simData.feasibility;
+      const duration = 1200;
+      const startTime = performance.now();
+
+      const animate = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        current = Math.round(eased * targetVal);
+        setAnimatedFeasibility(current);
+        if (progress < 1) {
+          feasibilityRef.current = requestAnimationFrame(animate);
+        }
+      };
+      feasibilityRef.current = requestAnimationFrame(animate);
+    }, 2800);
+    timerRefs.current.push(completionTimer);
+  }, [getDefaultData]);
+
+  const handleTemplateClick = (key: string) => {
+    const template = TEMPLATES[key];
+    setScenario(template.scenario);
+    runSimulation(template.data);
+  };
+
+  const addTargetAsset = () => {
+    if (targetInput.trim() && !targetAssets.includes(targetInput.trim())) {
+      setTargetAssets(prev => [...prev, targetInput.trim()]);
+      setTargetInput('');
+    }
+  };
+
+  const removeTargetAsset = (asset: string) => {
+    setTargetAssets(prev => prev.filter(a => a !== asset));
+  };
+
+  const depthLabel = simulationDepth <= 3 ? 'Quick' : simulationDepth <= 7 ? 'Standard' : 'Deep';
+
+  const gaugeCircumference = 2 * Math.PI * 54;
+  const gaugeOffset = gaugeCircumference - (gaugeCircumference * animatedFeasibility) / 100;
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden bg-[#0A1628]">
+      <div className="flex-shrink-0 px-6 py-4 border-b border-slate-700/50 bg-slate-900/80 backdrop-blur-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+              <Crosshair className="w-6 h-6 text-cyan-400" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-wide text-slate-100">THREAT SCENARIO SIMULATOR</h1>
+              <p className="text-xs text-slate-400 mt-0.5">AI-Powered Attack Simulation & Defense Planning</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+              <span className="text-xs font-semibold text-cyan-400 tracking-wider">SIMULATION ENGINE</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/50">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span className="text-xs font-medium text-slate-300">6 AGENTS READY</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-hidden flex gap-4 p-4">
+        <div className="w-[40%] flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
+          <div className="enterprise-card p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <FileText className="w-4 h-4 text-cyan-400" />
+              <span className="text-sm font-semibold text-slate-200">Scenario Description</span>
+            </div>
+            <textarea
+              value={scenario}
+              onChange={(e) => setScenario(e.target.value)}
+              placeholder="Describe a hypothetical threat scenario... e.g., 'An insider with admin access exfiltrates sensitive data via encrypted DNS tunneling while disabling endpoint monitoring'"
+              className="w-full h-32 bg-slate-800/60 border border-slate-700/50 rounded-lg px-3.5 py-2.5 text-sm text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+            />
+          </div>
+
+          <div className="enterprise-card p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Layers className="w-4 h-4 text-cyan-400" />
+              <span className="text-sm font-semibold text-slate-200">Quick Scenario Templates</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(TEMPLATES).map(([key, template]) => (
+                <button
+                  key={key}
+                  onClick={() => handleTemplateClick(key)}
+                  className="px-3 py-1.5 text-xs font-medium bg-slate-800/60 border border-slate-700/50 rounded-full text-slate-300 hover:bg-cyan-500/10 hover:border-cyan-500/30 hover:text-cyan-300 transition-all"
+                >
+                  {template.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="enterprise-card p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span className="text-sm font-semibold text-slate-200">Configuration</span>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-2 block">Attack Domain</label>
+                <div className="flex gap-2">
+                  {(['Logical', 'Physical', 'Hybrid'] as const).map(domain => (
+                    <button
+                      key={domain}
+                      onClick={() => setAttackDomain(domain)}
+                      className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
+                        attackDomain === domain
+                          ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                          : 'bg-slate-800/40 border-slate-700/50 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      {domain === 'Logical' && <Network className="w-3.5 h-3.5 inline mr-1.5" />}
+                      {domain === 'Physical' && <Lock className="w-3.5 h-3.5 inline mr-1.5" />}
+                      {domain === 'Hybrid' && <GitBranch className="w-3.5 h-3.5 inline mr-1.5" />}
+                      {domain}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-2 block">Attacker Profile</label>
+                <div className="relative">
+                  <button
+                    onClick={() => setProfileOpen(!profileOpen)}
+                    className="w-full flex items-center justify-between px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-lg text-sm text-slate-200 hover:border-slate-600 transition-all"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-slate-400" />
+                      {attackerProfile}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${profileOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {profileOpen && (
+                    <div className="absolute z-20 w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden">
+                      {ATTACKER_PROFILES.map(profile => (
+                        <button
+                          key={profile}
+                          onClick={() => { setAttackerProfile(profile); setProfileOpen(false); }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-700/60 transition-colors ${
+                            attackerProfile === profile ? 'text-cyan-400 bg-cyan-500/10' : 'text-slate-300'
+                          }`}
+                        >
+                          {profile}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-400 mb-2 block">Target Assets</label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {targetAssets.map(asset => (
+                    <span key={asset} className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-slate-800/60 border border-slate-700/50 rounded-full text-slate-300">
+                      <Server className="w-3 h-3 text-slate-500" />
+                      {asset}
+                      <button onClick={() => removeTargetAsset(asset)} className="ml-0.5 hover:text-red-400 transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={targetInput}
+                    onChange={(e) => setTargetInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addTargetAsset()}
+                    placeholder="Add target asset..."
+                    className="flex-1 px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/40 transition-all"
+                  />
+                  <button onClick={addTargetAsset} className="px-2.5 py-1.5 bg-slate-700/60 border border-slate-600/50 rounded-lg hover:bg-slate-600/60 transition-all">
+                    <Plus className="w-3.5 h-3.5 text-slate-300" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-medium text-slate-400">Simulation Depth</label>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                    depthLabel === 'Quick' ? 'bg-cyan-500/15 text-cyan-400' :
+                    depthLabel === 'Standard' ? 'bg-blue-500/15 text-blue-400' :
+                    'bg-amber-500/15 text-amber-400'
+                  }`}>
+                    {depthLabel} ({simulationDepth}/10)
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  value={simulationDepth}
+                  onChange={(e) => setSimulationDepth(Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-700 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-cyan-300 [&::-webkit-slider-thumb]:shadow-[0_0_8px_rgba(34,211,238,0.4)]"
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => runSimulation()}
+            disabled={isRunning || !scenario.trim()}
+            className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-bold text-sm tracking-wider transition-all ${
+              isRunning || !scenario.trim()
+                ? 'bg-slate-800/60 border border-slate-700/50 text-slate-500 cursor-not-allowed'
+                : 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 hover:shadow-[0_0_25px_rgba(34,211,238,0.2)] active:scale-[0.98]'
+            }`}
+          >
+            {isRunning ? (
+              <>
+                <Cpu className="w-5 h-5 animate-spin" />
+                SIMULATING...
+              </>
+            ) : (
+              <>
+                <Zap className="w-5 h-5" />
+                RUN SIMULATION
+              </>
+            )}
+          </button>
+        </div>
+
+        <div className="w-[35%] flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
+          {!isRunning && !simulationComplete && (
+            <div className="flex-1 flex flex-col items-center justify-center enterprise-card">
+              <div className="relative w-32 h-32 mb-6">
+                <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20 animate-ping" style={{ animationDuration: '3s' }} />
+                <div className="absolute inset-3 rounded-full border border-cyan-500/15 animate-ping" style={{ animationDuration: '2.5s', animationDelay: '0.5s' }} />
+                <div className="absolute inset-6 rounded-full border border-cyan-500/10 animate-ping" style={{ animationDuration: '2s', animationDelay: '1s' }} />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Radar className="w-10 h-10 text-cyan-500/40" />
+                </div>
+                <svg className="absolute inset-0 w-full h-full animate-spin" style={{ animationDuration: '8s' }}>
+                  <line x1="64" y1="64" x2="64" y2="8" stroke="rgba(34,211,238,0.3)" strokeWidth="1" />
+                </svg>
+              </div>
+              <p className="text-sm font-medium text-slate-400">Awaiting Scenario Input</p>
+              <p className="text-xs text-slate-500 mt-1">Describe a threat or select a template</p>
+            </div>
+          )}
+
+          {(isRunning || simulationComplete) && (
+            <>
+              <div className="enterprise-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Cpu className="w-4 h-4 text-cyan-400" />
+                  <span className="text-sm font-semibold text-slate-200">Agent Processing</span>
+                  {isRunning && (
+                    <span className="ml-auto flex items-center gap-1.5 text-xs text-cyan-400">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      Processing
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {agents.map((agent, i) => {
+                    const Icon = agent.icon;
+                    return (
+                      <div
+                        key={agent.name}
+                        className={`p-2.5 rounded-lg border transition-all duration-300 ${
+                          agent.status === 'done'
+                            ? 'bg-slate-800/40 border-slate-700/40'
+                            : agent.status === 'processing'
+                            ? 'bg-slate-800/60 border-cyan-500/30 shadow-[0_0_12px_rgba(34,211,238,0.08)]'
+                            : 'bg-slate-800/20 border-slate-700/20 opacity-50'
+                        }`}
+                        style={{ transitionDelay: `${i * 50}ms` }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`p-1.5 rounded-md ${
+                            agent.status === 'processing' ? 'bg-cyan-500/15' :
+                            agent.status === 'done' ? 'bg-slate-700/40' : 'bg-slate-800/30'
+                          }`}>
+                            <Icon className={`w-3.5 h-3.5 ${
+                              agent.status === 'processing' ? 'text-cyan-400 animate-pulse' : agent.color
+                            }`} />
+                          </div>
+                          <span className="text-xs font-semibold text-slate-300 flex-1">{agent.name}</span>
+                          <span className={`w-2 h-2 rounded-full ${
+                            agent.status === 'done' ? 'bg-emerald-400' :
+                            agent.status === 'processing' ? 'bg-amber-400 animate-pulse' :
+                            'bg-slate-600'
+                          }`} />
+                        </div>
+                        {agent.status === 'processing' && (
+                          <div className="mt-2 flex gap-1">
+                            <div className="h-0.5 w-full bg-slate-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-cyan-500/60 rounded-full animate-pulse" style={{ width: '60%' }} />
+                            </div>
+                          </div>
+                        )}
+                        {agent.status === 'done' && agent.result && (
+                          <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">{agent.result}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {simulationComplete && activeData && (
+                <>
+                  <div className="enterprise-card p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Gauge className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-semibold text-slate-200">Feasibility Score</span>
+                    </div>
+                    <div className="flex items-center justify-center">
+                      <div className="relative w-32 h-32">
+                        <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+                          <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(51,65,85,0.5)" strokeWidth="8" />
+                          <circle
+                            cx="60" cy="60" r="54" fill="none"
+                            stroke={getFeasibilityColor(animatedFeasibility)}
+                            strokeWidth="8"
+                            strokeLinecap="round"
+                            strokeDasharray={gaugeCircumference}
+                            strokeDashoffset={gaugeOffset}
+                            style={{ transition: 'stroke 0.3s ease' }}
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-2xl font-bold" style={{ color: getFeasibilityColor(activeData.feasibility) }}>
+                            {animatedFeasibility}%
+                          </span>
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                            {getFeasibilityLabel(activeData.feasibility)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="enterprise-card p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Target className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-semibold text-slate-200">MITRE ATT&CK Mapping</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {activeData.mitre.map(technique => (
+                        <div key={technique.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-slate-800/40 border border-slate-700/30">
+                          <span className="text-[10px] font-mono font-bold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">{technique.id}</span>
+                          <span className="text-xs text-slate-300">{technique.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="enterprise-card p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <ArrowRight className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-semibold text-slate-200">Kill Chain Progression</span>
+                    </div>
+                    <div className="flex gap-1 mb-2">
+                      {KILL_CHAIN_STAGES.map((stage, i) => (
+                        <div
+                          key={stage}
+                          className={`flex-1 h-2 rounded-full transition-all ${
+                            i < activeData.killChainStage
+                              ? i < activeData.killChainStage - 1
+                                ? 'bg-red-500/60'
+                                : 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.4)]'
+                              : 'bg-slate-700/50'
+                          }`}
+                          title={stage}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500">Reconnaissance</span>
+                      <span className="text-xs font-semibold text-red-400">
+                        Reaches: {activeData.killChainLabel} ({activeData.killChainStage}/7)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="enterprise-card p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Clock className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-semibold text-slate-200">Detection Timeline</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20 text-center">
+                        <p className="text-[10px] font-medium text-red-400/70 uppercase tracking-wider mb-1">Current Rules</p>
+                        <p className="text-lg font-bold text-red-400">{activeData.detectionTimeCurrent}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 text-center">
+                        <p className="text-[10px] font-medium text-emerald-400/70 uppercase tracking-wider mb-1">Recommended</p>
+                        <p className="text-lg font-bold text-emerald-400">{activeData.detectionTimeRecommended}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="enterprise-card p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <ShieldAlert className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-semibold text-slate-200">Current Defenses Effectiveness</span>
+                    </div>
+                    <div className="relative h-3 bg-slate-700/50 rounded-full overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full transition-all duration-1000"
+                        style={{
+                          width: `${activeData.defenseEffectiveness}%`,
+                          background: activeData.defenseEffectiveness > 60
+                            ? 'linear-gradient(90deg, #10b981, #34d399)'
+                            : activeData.defenseEffectiveness > 35
+                            ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+                            : 'linear-gradient(90deg, #ef4444, #f87171)',
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <span className="text-[10px] text-slate-500">Attack coverage by current defenses</span>
+                      <span className={`text-xs font-bold ${
+                        activeData.defenseEffectiveness > 60 ? 'text-emerald-400' :
+                        activeData.defenseEffectiveness > 35 ? 'text-amber-400' : 'text-red-400'
+                      }`}>
+                        {activeData.defenseEffectiveness}%
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="w-[25%] flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
+          {simulationComplete && activeData ? (
+            <>
+              <div className="enterprise-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span className="text-sm font-semibold text-slate-200">Countermeasures</span>
+                </div>
+                <div className="space-y-2">
+                  {activeData.countermeasures.map((cm, i) => (
+                    <div key={i} className="flex gap-2.5 p-2 rounded-lg bg-slate-800/30 border border-slate-700/20">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-700/50 flex items-center justify-center text-[10px] font-bold text-slate-400">
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-300 leading-relaxed">{cm.text}</p>
+                        <span className={`inline-block mt-1 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded border ${getPriorityColor(cm.priority)}`}>
+                          {cm.priority}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="enterprise-card p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm font-semibold text-slate-200">Detection Gaps</span>
+                </div>
+                <div className="space-y-1.5">
+                  {activeData.detectionGaps.map((gap, i) => (
+                    <div key={i} className="flex items-start gap-2 p-2 rounded-md bg-amber-500/5 border border-amber-500/10">
+                      <Unlock className="w-3.5 h-3.5 text-amber-400/60 flex-shrink-0 mt-0.5" />
+                      <span className="text-[11px] text-slate-400 leading-relaxed">{gap}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => { setShowCorrelationRule(!showCorrelationRule); setShowMicroPattern(false); }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border text-xs font-semibold transition-all ${
+                    showCorrelationRule
+                      ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
+                      : 'bg-slate-800/40 border-slate-700/40 text-slate-300 hover:border-cyan-500/20 hover:text-cyan-400'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <GitBranch className="w-4 h-4" />
+                    Create Correlation Rule
+                  </span>
+                  <ChevronRight className={`w-4 h-4 transition-transform ${showCorrelationRule ? 'rotate-90' : ''}`} />
+                </button>
+
+                <button
+                  onClick={() => { setShowMicroPattern(!showMicroPattern); setShowCorrelationRule(false); }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border text-xs font-semibold transition-all ${
+                    showMicroPattern
+                      ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
+                      : 'bg-slate-800/40 border-slate-700/40 text-slate-300 hover:border-cyan-500/20 hover:text-cyan-400'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <CircleDot className="w-4 h-4" />
+                    Create Micro-Pattern
+                  </span>
+                  <ChevronRight className={`w-4 h-4 transition-transform ${showMicroPattern ? 'rotate-90' : ''}`} />
+                </button>
+
+                <button className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-800/40 border border-slate-700/40 text-xs font-semibold text-slate-300 hover:border-slate-600 transition-all">
+                  <Download className="w-4 h-4" />
+                  Export Report
+                </button>
+              </div>
+
+              {showCorrelationRule && (
+                <div className="enterprise-card p-4 animate-fade-in">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <GitBranch className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-semibold text-slate-200">Correlation Rule Builder</span>
+                    </div>
+                    <button onClick={() => setShowCorrelationRule(false)} className="text-slate-500 hover:text-slate-300 transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">Rule Name</label>
+                      <input
+                        value={editableRule.name}
+                        onChange={(e) => setEditableRule(prev => ({ ...prev, name: e.target.value }))}
+                        className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-md text-xs text-slate-200 focus:outline-none focus:border-cyan-500/40 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">Conditions Logic</label>
+                      <textarea
+                        value={editableRule.logic}
+                        onChange={(e) => setEditableRule(prev => ({ ...prev, logic: e.target.value }))}
+                        rows={3}
+                        className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-md text-xs text-cyan-300 font-mono leading-relaxed resize-none focus:outline-none focus:border-cyan-500/40 transition-all"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">Severity</label>
+                        <input
+                          value={editableRule.severity}
+                          onChange={(e) => setEditableRule(prev => ({ ...prev, severity: e.target.value }))}
+                          className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-md text-xs text-slate-200 focus:outline-none focus:border-cyan-500/40 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">MITRE Mapping</label>
+                        <input
+                          value={editableRule.mitre}
+                          onChange={(e) => setEditableRule(prev => ({ ...prev, mitre: e.target.value }))}
+                          className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-md text-xs text-slate-200 focus:outline-none focus:border-cyan-500/40 transition-all"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/25 transition-all">
+                        <Play className="w-3.5 h-3.5" />
+                        Deploy to Correlation Engine
+                      </button>
+                      <button className="px-3 py-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-xs font-medium text-slate-400 hover:text-slate-300 hover:border-slate-600 transition-all">
+                        Save Draft
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showMicroPattern && (
+                <div className="enterprise-card p-4 animate-fade-in">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <CircleDot className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-semibold text-slate-200">Micro-Pattern Builder</span>
+                    </div>
+                    <button onClick={() => setShowMicroPattern(false)} className="text-slate-500 hover:text-slate-300 transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">Pattern Name</label>
+                      <input
+                        value={editablePattern.name}
+                        onChange={(e) => setEditablePattern(prev => ({ ...prev, name: e.target.value }))}
+                        className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-md text-xs text-slate-200 focus:outline-none focus:border-cyan-500/40 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">Pattern Type</label>
+                      <div className="flex gap-2">
+                        {['Temporal', 'Behavioral', 'Composite'].map(type => (
+                          <button
+                            key={type}
+                            onClick={() => setEditablePattern(prev => ({ ...prev, type }))}
+                            className={`flex-1 px-2 py-1.5 text-[10px] font-medium rounded-md border transition-all ${
+                              editablePattern.type === type
+                                ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
+                                : 'bg-slate-800/40 border-slate-700/50 text-slate-400 hover:border-slate-600'
+                            }`}
+                          >
+                            {type}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">Event Conditions</label>
+                      <div className="space-y-1.5">
+                        {editablePattern.conditions.map((cond, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="w-4 h-4 rounded-full bg-cyan-500/10 flex items-center justify-center text-[9px] font-bold text-cyan-400 flex-shrink-0">{i + 1}</span>
+                            <input
+                              value={cond}
+                              onChange={(e) => {
+                                const newConds = [...editablePattern.conditions];
+                                newConds[i] = e.target.value;
+                                setEditablePattern(prev => ({ ...prev, conditions: newConds }));
+                              }}
+                              className="flex-1 px-2.5 py-1 bg-slate-800/60 border border-slate-700/50 rounded-md text-[11px] text-slate-300 focus:outline-none focus:border-cyan-500/40 transition-all"
+                            />
+                            <button
+                              onClick={() => {
+                                setEditablePattern(prev => ({
+                                  ...prev,
+                                  conditions: prev.conditions.filter((_, idx) => idx !== i),
+                                }));
+                              }}
+                              className="text-slate-600 hover:text-red-400 transition-colors"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => setEditablePattern(prev => ({ ...prev, conditions: [...prev.conditions, ''] }))}
+                        className="mt-2 flex items-center gap-1 text-[10px] font-medium text-cyan-400/70 hover:text-cyan-400 transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Add Condition
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">Time Window</label>
+                        <input
+                          value={editablePattern.timeWindow}
+                          onChange={(e) => setEditablePattern(prev => ({ ...prev, timeWindow: e.target.value }))}
+                          className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-md text-xs text-slate-200 focus:outline-none focus:border-cyan-500/40 transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1 block">Min Occurrences</label>
+                        <input
+                          type="number"
+                          value={editablePattern.minOccurrences}
+                          onChange={(e) => setEditablePattern(prev => ({ ...prev, minOccurrences: Number(e.target.value) }))}
+                          className="w-full px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-md text-xs text-slate-200 focus:outline-none focus:border-cyan-500/40 transition-all"
+                        />
+                      </div>
+                    </div>
+                    <button className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-xs font-semibold text-cyan-300 hover:bg-cyan-500/25 transition-all">
+                      <Check className="w-3.5 h-3.5" />
+                      Create Pattern
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center enterprise-card">
+              <Shield className="w-10 h-10 text-slate-600 mb-3" />
+              <p className="text-sm font-medium text-slate-500">Countermeasures & Actions</p>
+              <p className="text-xs text-slate-600 mt-1">Run a simulation to see results</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

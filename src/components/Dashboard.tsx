@@ -85,6 +85,8 @@ import GlasswingPanel from './glasswing/GlasswingPanel';
 import NegativeCorrelationPanel from './negative-correlation/NegativeCorrelationPanel';
 import DashboardMigrationsTab from './dashboard-builder/DashboardMigrationsTab';
 import CommandCenter from './command-center/CommandCenter';
+import EventProcessingFunnel from './command-center/EventProcessingFunnel';
+import ThreatSimulator from './ThreatSimulator';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -98,9 +100,9 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
-  const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter'>('analytics');
+  const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userRole, setUserRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -302,6 +304,7 @@ const Dashboard = () => {
         { id: 'threatmodeling', label: 'Smart Threat Modeling', icon: Scan },
         { id: 'correlationrules', label: 'Correlation Rules', icon: Zap },
         { id: 'negcorrelation', label: 'Negative Correlation', icon: AlertTriangle },
+        { id: 'simulations', label: 'Simulations', icon: Crosshair },
       ]
     },
     {
@@ -509,6 +512,17 @@ const Dashboard = () => {
                       <Radar className="w-3.5 h-3.5" />
                       <span>Command Center</span>
                     </button>
+                    <button
+                      onClick={() => setDashboardMode('eventpipeline')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                        dashboardMode === 'eventpipeline'
+                          ? 'bg-teal-600 text-white shadow-lg shadow-teal-600/20'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>Event Pipeline</span>
+                    </button>
                   </div>
                 )}
                 <button
@@ -555,6 +569,10 @@ const Dashboard = () => {
         <main className="p-8 custom-scrollbar min-w-0 overflow-x-hidden">
           {selectedView === 'overview' && dashboardMode === 'commandcenter' && (
             <CommandCenter />
+          )}
+
+          {selectedView === 'overview' && dashboardMode === 'eventpipeline' && (
+            <EventProcessingFunnel />
           )}
 
           {selectedView === 'overview' && dashboardMode === 'analytics' && (
@@ -989,6 +1007,7 @@ const Dashboard = () => {
           {selectedView === 'notebooks' && <DatabricksNotebooksPanel />}
           {selectedView === 'correlationrules' && <CorrelationRulesPanel />}
           {selectedView === 'dashboardstudio' && <DashboardMigrationsTab />}
+          {selectedView === 'simulations' && <ThreatSimulator />}
           {selectedView === 'glasswing' && <GlasswingPanel />}
           {selectedView === 'negcorrelation' && (
             <div className="h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">

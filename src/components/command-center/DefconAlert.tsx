@@ -72,14 +72,29 @@ const DEFCON_CONFIG: Record<DefconLevel, {
   },
 };
 
-const DefconAlert = () => {
-  const [level, setLevel] = useState<DefconLevel>(3);
+interface DefconAlertProps {
+  defconLevel?: DefconLevel;
+  onLevelChange?: (level: DefconLevel) => void;
+}
+
+const DefconAlert = ({ defconLevel: externalLevel }: DefconAlertProps = {}) => {
+  const [internalLevel, setInternalLevel] = useState<DefconLevel>(3);
+  const isControlled = externalLevel !== undefined;
+  const level = isControlled ? externalLevel : internalLevel;
   const [transitioning, setTransitioning] = useState(false);
   const [events, setEvents] = useState<ThreatEvent[]>([]);
   const [tickerOffset, setTickerOffset] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const flashRef = useRef(0);
+  const prevLevelRef = useRef<DefconLevel>(level);
+
+  useEffect(() => {
+    if (prevLevelRef.current !== level) {
+      setTransitioning(true);
+      prevLevelRef.current = level;
+    }
+  }, [level]);
 
   useEffect(() => {
     const initialEvents: ThreatEvent[] = [
@@ -117,20 +132,26 @@ const DefconAlert = () => {
       }, ...prev].slice(0, 8));
     }, 4000);
 
-    const levelInterval = setInterval(() => {
-      setLevel(prev => {
-        const delta = Math.random() > 0.6 ? -1 : Math.random() > 0.3 ? 1 : 0;
-        const next = Math.max(1, Math.min(5, prev + delta)) as DefconLevel;
-        if (next !== prev) setTransitioning(true);
-        return next;
-      });
-    }, 8000);
+    if (!isControlled) {
+      const levelInterval = setInterval(() => {
+        setInternalLevel(prev => {
+          const delta = Math.random() > 0.6 ? -1 : Math.random() > 0.3 ? 1 : 0;
+          const next = Math.max(1, Math.min(5, prev + delta)) as DefconLevel;
+          if (next !== prev) setTransitioning(true);
+          return next;
+        });
+      }, 8000);
+
+      return () => {
+        clearInterval(eventInterval);
+        clearInterval(levelInterval);
+      };
+    }
 
     return () => {
       clearInterval(eventInterval);
-      clearInterval(levelInterval);
     };
-  }, []);
+  }, [isControlled]);
 
   useEffect(() => {
     if (transitioning) {
