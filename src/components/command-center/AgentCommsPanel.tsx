@@ -27,18 +27,18 @@ const agents: Agent[] = [
 ];
 
 const conversationScript = [
-  { agent: 'SENTINEL', text: 'Anomalous beacon pattern detected on WKS-FIN-042. Interval 120s with 15s jitter. Flagging for correlation.', type: 'alert' as MessageType },
-  { agent: 'NEXUS', text: 'Correlating with 3 additional signals. Pattern matches APT-29 TTP cluster with 94% confidence. Pulling IOC database.', type: 'analysis' as MessageType },
-  { agent: 'CIPHER', text: 'Decrypted C2 channel headers. JA3 fingerprint e7d705a3 matches known Cozy Bear toolkit. Extracting payload signatures.', type: 'finding' as MessageType },
-  { agent: 'PHANTOM', text: 'Proactive hunt initiated across east subnet. Found 2 additional compromised endpoints with similar beacon patterns.', type: 'hunt' as MessageType },
-  { agent: 'ORACLE', text: 'Monte Carlo simulation projects 87% probability of lateral movement within 4h. Recommending preemptive isolation.', type: 'prediction' as MessageType },
-  { agent: 'AEGIS', text: 'Executing containment playbook ALPHA-7. Isolating affected segment. Deploying EDR sweep across VLAN 42.', type: 'action' as MessageType },
-  { agent: 'SENTINEL', text: 'Secondary alert: Mimikatz signature detected on SRV-DC-01. LSASS memory access from injected process.', type: 'alert' as MessageType },
-  { agent: 'NEXUS', text: 'Linking credential dump to initial C2 beacon. Attack chain reconstruction: Initial Access \u2192 Execution \u2192 Credential Access. Kill chain stage 5.', type: 'analysis' as MessageType },
-  { agent: 'AEGIS', text: 'Emergency: Initiating forced password rotation for 14 compromised accounts. Revoking Kerberos tickets.', type: 'action' as MessageType },
-  { agent: 'PHANTOM', text: 'Deep scan complete. No additional lateral movement detected. Perimeter holds intact. Continuing surveillance.', type: 'hunt' as MessageType },
-  { agent: 'ORACLE', text: 'Updated forecast: Containment effectiveness at 96.2%. Residual risk declining. Estimated full remediation in 2.4h.', type: 'prediction' as MessageType },
-  { agent: 'CIPHER', text: 'Extracted 4 unique IOCs from payload analysis. Pushing to threat feed for enterprise-wide blocking.', type: 'finding' as MessageType },
+  { agent: 'SENTINEL', text: "I'm picking up a weird beacon pattern on WKS-FIN-042 -- every 120 seconds with about 15 seconds of jitter. Flagging it for correlation.", type: 'alert' as MessageType },
+  { agent: 'NEXUS', text: "Got it. I'm seeing three other signals that line up with this. Pattern's matching the APT-29 TTP cluster at 94% confidence. Let me pull the IOC database.", type: 'analysis' as MessageType },
+  { agent: 'CIPHER', text: "Just cracked the C2 channel headers. The JA3 fingerprint e7d705a3 is a match for the Cozy Bear toolkit -- working on extracting payload signatures now.", type: 'finding' as MessageType },
+  { agent: 'PHANTOM', text: "I went hunting across the east subnet proactively and found two more endpoints with the same beacon behavior. This is wider than we thought.", type: 'hunt' as MessageType },
+  { agent: 'ORACLE', text: "Ran the Monte Carlo sim -- 87% chance of lateral movement within four hours at current trajectory. I'd strongly recommend preemptive isolation.", type: 'prediction' as MessageType },
+  { agent: 'AEGIS', text: "On it. Kicking off containment playbook ALPHA-7 right now. Isolating the affected segment and deploying an EDR sweep across VLAN 42.", type: 'action' as MessageType },
+  { agent: 'SENTINEL', text: "Heads up, second alert just fired -- Mimikatz signature on SRV-DC-01. Something's accessing LSASS memory through an injected process.", type: 'alert' as MessageType },
+  { agent: 'NEXUS', text: "That credential dump ties directly back to the original C2 beacon. I've reconstructed the chain: Initial Access, then Execution, then Credential Access. We're at kill chain stage five.", type: 'analysis' as MessageType },
+  { agent: 'AEGIS', text: "This just escalated. I'm forcing password rotation on fourteen accounts and revoking all Kerberos tickets for the affected scope.", type: 'action' as MessageType },
+  { agent: 'PHANTOM', text: "Deep scan's finished. Good news -- no additional lateral movement beyond what we already found. Perimeter's holding. I'll keep watching.", type: 'hunt' as MessageType },
+  { agent: 'ORACLE', text: "Updated the forecast. Containment effectiveness is at 96.2% and residual risk is dropping. Should have full remediation wrapped up in about two and a half hours.", type: 'prediction' as MessageType },
+  { agent: 'CIPHER', text: "Pulled four unique IOCs out of the payload analysis. Pushing them to the threat feed now so they get blocked enterprise-wide.", type: 'finding' as MessageType },
 ];
 
 const typeBorderColors: Record<MessageType, string> = {

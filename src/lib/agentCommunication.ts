@@ -39,34 +39,40 @@ export const communicationBus = new AgentCommunicationBus();
 
 const narrativeTemplates = {
   triage_to_enrichment: [
-    '🔍 Detected {severity} priority threat. Forwarding IP {ip} to Enrichment Agent for intel lookup.',
-    '⚠️ Alert classified as {severity}. Requesting threat intelligence on {ip} from Enrichment Agent.',
-    '🎯 Suspicious activity identified. Sending {ip} for enrichment analysis.'
+    "Hey Enrichment, I've got a {severity} priority hit here. Can you run intel on {ip}? Something doesn't look right.",
+    "Flagged {ip} as {severity} -- sending it your way for a deeper look. Let me know what the feeds say.",
+    "Heads up, suspicious traffic from {ip}. I've classified it but I need you to pull the threat context on this one.",
+    "Got another one for you -- {ip} triggered a {severity} alert. Kicking it over for enrichment before I escalate."
   ],
   enrichment_to_investigation: [
-    '📊 Threat intel gathered on {ip}. Confirmed malicious. Escalating to Investigation Agent for deep analysis.',
-    '🌐 OSINT completed: {ip} linked to known botnet. Investigation Agent requested for full scope.',
-    '💡 Enrichment complete: High-confidence threat. Passing to Investigation for behavioral analysis.'
+    "Investigation, I've got bad news on {ip}. Intel confirms it's malicious. You'll want to take a closer look at this.",
+    "OSINT came back and {ip} is tied to a known botnet. Sending the full context over -- this needs a deep dive.",
+    "Enrichment's done and it's not pretty. High-confidence threat on {ip}. Handing off to you for behavioral analysis.",
+    "Multiple feeds are flagging {ip} now. I've packaged up everything I found -- over to you for the investigation."
   ],
   investigation_to_response: [
-    '🔎 Investigation confirmed: Active C2 communication detected. Triggering Response Agent for containment.',
-    '🚨 Critical findings: Lateral movement attempt identified. Response Agent executing isolation protocols.',
-    '⚡ Attack chain reconstructed. Multiple compromised endpoints. Response Agent initiating automated remediation.'
+    "Response, we've confirmed active C2 comms on the affected host. Need you to move on containment now.",
+    "Found lateral movement -- this is spreading. Can you get isolation protocols running while I finish the timeline?",
+    "I've mapped out the full attack chain and it's hitting multiple endpoints. We need automated remediation on this ASAP.",
+    "The investigation's painting a clear picture and it's not good. Triggering containment -- please lock this down."
   ],
   response_to_orchestrator: [
-    '✅ Containment successful: IP blocked at firewall. Endpoint quarantined. Reporting back to Orchestrator.',
-    '🛡️ Automated response executed: Threat neutralized in {time}s. Status update sent to Orchestrator.',
-    '⚡ Emergency response complete: Systems secured. Full incident report transmitted to Orchestrator.'
+    "Containment's done -- blocked the IP at the firewall and quarantined the endpoint. Sending the full report your way.",
+    "Threat neutralized in {time} seconds. Everything's locked down and I'm writing up the incident summary now.",
+    "All clear on my end. Systems are secured and the forensic capture is running. Updating you with the full details.",
+    "Response complete. I've verified all the containment actions and nothing slipped through. Case is yours to close."
   ],
   orchestrator_to_triage: [
-    '🎯 New alert batch received from SIEM. Assigning {count} alerts to Triage Agent for classification.',
-    '📋 Orchestrating workflow: High-priority alerts detected. Dispatching to Triage Agent Alpha.',
-    '🔄 Continuous monitoring active. Routing new security events to Triage for initial assessment.'
+    "Atlas, new batch just came in from the SIEM -- {count} alerts need classification. Take a look when you're ready.",
+    "We've got high-priority alerts stacking up. Sending them to Triage now -- let's get these sorted.",
+    "Routing a fresh set of security events your way. Nothing flagged as critical yet, but give them a good look.",
+    "Another {count} alerts in the queue. I've pre-sorted by source -- should make your triage pass faster."
   ],
   triage_to_orchestrator: [
-    '📊 Triage complete: {processed} alerts processed, {filtered} false positives filtered. Awaiting next batch.',
-    '✅ Classification finished: {critical} critical, {high} high priority alerts escalated. Ready for more.',
-    '🎯 Auto-triage cycle complete. {confidence}% confidence. Reporting metrics to Orchestrator.'
+    "Triage is done -- processed {processed} alerts and filtered out {filtered} false positives. Ready for the next batch.",
+    "Classification's wrapped up. Escalated {critical} criticals and {high} highs. The rest were noise.",
+    "Cycle complete at {confidence}% confidence. Metrics are looking solid -- send me more whenever you've got them.",
+    "Just cleared the queue. {processed} alerts processed, nothing got stuck. Standing by for the next round."
   ]
 };
 

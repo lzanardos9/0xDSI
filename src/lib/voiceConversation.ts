@@ -12,49 +12,59 @@ export type VoiceEventListener = (utterance: AgentUtterance) => void;
 
 const AGENT_ACTIVITY_LINES: Record<string, string[]> = {
   triage: [
-    'Incoming batch of 14 alerts. Running classification now.',
-    'Severity scoring complete. Three criticals flagged for immediate review.',
-    'False positive confidence is high on the port scan cluster. Filtering.',
-    'Escalating alert 2847 to enrichment. MITRE mapping suggests credential access.',
-    'Triage queue is clear. Monitoring for new events.',
-    'Detected a burst of authentication failures from Eastern Europe.',
-    'Correlating this phishing cluster with last weeks campaign.',
+    "Alright, I've got a fresh batch of fourteen alerts coming in -- let me run them through classification real quick.",
+    "Okay, severity scoring's done. Three criticals jumped out, so I'm flagging those for immediate review.",
+    "That port scan cluster looks like noise to me. High false-positive confidence, so I'm filtering it out.",
+    "Alert twenty-eight forty-seven is interesting. The MITRE mapping's pointing toward credential access, so I'm kicking it over to enrichment.",
+    "Triage queue is clear for now. I'll keep watching, but things are pretty quiet at the moment.",
+    "Heads up -- I'm seeing a burst of auth failures coming out of Eastern Europe. Could be something, could be nothing.",
+    "This phishing cluster looks a lot like what we saw last week. Let me pull up that campaign and cross-reference.",
+    "Got a weird one here -- SSH brute force attempts, but they're rotating through known leaked credentials. Escalating.",
+    "Just finished re-scoring the backlog. Moved two alerts up to high priority based on the latest threat context.",
   ],
   enrichment: [
-    'Cross-referencing indicators against 12 threat intel feeds.',
-    'Match found in AlienVault OTX. IP is associated with APT41 infrastructure.',
-    'Enrichment complete. Adding WHOIS data and geo-location context.',
-    'No hits on VirusTotal for this hash. Could be a zero-day sample.',
-    'Pulling OSINT data on the registrant of this suspicious domain.',
-    'Threat Fox confirms this C2 server. Tagging all related events.',
-    'CIRCL feed just updated. Checking for new matches in our telemetry.',
+    "Running this indicator against all twelve of our threat intel feeds now. Give me a second.",
+    "Okay, got a hit in AlienVault OTX. This IP's been tied to APT41 infrastructure -- that's not good.",
+    "Enrichment's wrapped up. I've added WHOIS records and geo context so Investigation has the full picture.",
+    "Nothing on VirusTotal for this hash, which honestly makes me more suspicious. Could be a zero-day sample.",
+    "I'm pulling OSINT on the domain registrant. The WHOIS data looks intentionally obscured.",
+    "ThreatFox just confirmed this is a known C2 server. I'm tagging every event that touched it.",
+    "CIRCL pushed an update to their feed a few minutes ago. Let me check if anything matches our telemetry.",
+    "Cross-referencing this domain against passive DNS -- it's been resolving to three different IPs in the past week.",
+    "The reputation score on this IP is tanking fast. Multiple feeds are flagging it now.",
   ],
   orchestrator: [
-    'Dispatching investigation task to Nova. Attack chain needs deep analysis.',
-    'All agents reporting healthy. Pipeline throughput is nominal.',
-    'Re-prioritizing queue. The lateral movement finding takes precedence.',
-    'Coordinating response across triage and investigation teams.',
-    'Sending enrichment request for the new DNS tunneling indicators.',
-    'Workflow complete. Updating the case with all agent findings.',
-    'Adjusting agent workload. Atlas is at 92% capacity.',
+    "I'm sending this one over to Nova. The attack chain's complex enough that it needs a deep dive.",
+    "All agents are healthy and throughput looks good. Nothing bottlenecked right now.",
+    "I need to re-prioritize the queue. That lateral movement finding should jump to the front.",
+    "Coordinating between triage and investigation on this one -- there are overlapping signals.",
+    "Just dispatched an enrichment request for those DNS tunneling indicators we spotted earlier.",
+    "Workflow's wrapped up. I've updated the case file with findings from all the agents.",
+    "Atlas is running at ninety-two percent capacity. I might need to redistribute some of that workload.",
+    "Shifting priorities -- we've got two concurrent investigations now, so I'm balancing the load across the team.",
+    "Good news -- the pipeline cleared a backlog of forty events in the last cycle without any drops.",
   ],
   investigation: [
-    'Building attack graph for the lateral movement chain.',
-    'Confirmed. The attacker moved from workstation to domain controller.',
-    'Analyzing process tree. PowerShell spawned from a Word macro.',
-    'Network analysis shows beaconing every 60 seconds to the C2 server.',
-    'Persistence mechanism found. Scheduled task registered in SYSTEM context.',
-    'Data exfiltration path identified. 400 megabytes over DNS tunneling.',
-    'Investigation complete. Packaging findings for the response team.',
+    "I'm building out the attack graph for this lateral movement chain. The picture's getting clearer.",
+    "Yeah, confirmed -- the attacker pivoted from a workstation straight to the domain controller.",
+    "Looking at the process tree now. PowerShell got spawned from a Word macro, which is classic.",
+    "Network analysis is showing a beacon every sixty seconds back to the C2. Pretty textbook interval.",
+    "Found the persistence mechanism. They registered a scheduled task under the SYSTEM context.",
+    "I've traced the exfiltration path. Looks like about four hundred megs went out over DNS tunneling.",
+    "Investigation's done on my end. I'm packaging everything up for the response team.",
+    "There's something off about this process lineage. Let me dig deeper into the parent chain.",
+    "Reconstructed the full attack timeline. Initial access was about three hours before we caught it.",
   ],
   response: [
-    'Executing IP block on 185.220.101.34. Firewall rule pushed.',
-    'Host isolation initiated for the compromised endpoint.',
-    'Containment confirmed. The C2 beacon has stopped.',
-    'Rolling out emergency firewall rules across all edge devices.',
-    'Account disabled for the compromised service account.',
-    'Quarantine complete. Forensic image is being captured.',
-    'Response actions verified. Generating incident summary.',
+    "Pushing an IP block on one-eighty-five-two-twenty-one-oh-one-thirty-four now. Firewall rule's going out.",
+    "I'm isolating the compromised endpoint. Should be cut off from the network in a few seconds.",
+    "Containment's confirmed -- the C2 beacon has gone silent. That's what I like to see.",
+    "Rolling emergency firewall rules out across all the edge devices. This should close the gap.",
+    "Disabled the compromised service account. They won't be able to use those creds anymore.",
+    "Quarantine's complete and I've kicked off a forensic image capture for the investigation record.",
+    "All response actions are verified. Generating the incident summary now.",
+    "Just pushed updated block rules to the proxy tier as well. Belt and suspenders on this one.",
+    "Recovery playbook's running. I'll have the affected systems back in production within the hour.",
   ],
 };
 
@@ -279,17 +289,17 @@ class VoiceConversationEngine {
     }
 
     if (lower.includes('status') || lower.includes('how are') || lower.includes('report')) {
-      response = `${agent.name} here. I'm currently ${agent.status}. ${agent.task}. My accuracy is at ${agent.metrics.accuracy}% with ${agent.metrics.tasksCompleted} tasks completed.`;
+      response = `Hey, it's ${agent.name}. I'm ${agent.status} right now -- ${agent.task}. Accuracy's sitting at ${agent.metrics.accuracy}% and I've knocked out ${agent.metrics.tasksCompleted} tasks so far. Everything's running smooth on my end.`;
     } else if (lower.includes('threat') || lower.includes('critical') || lower.includes('danger')) {
-      response = `${agent.name} reporting. We have active threat indicators across multiple vectors. The triage queue has high-severity items and our correlation engine flagged several cross-domain patterns. I recommend escalating the investigation.`;
+      response = `${agent.name} here. So yeah, we've got active threat indicators lighting up across multiple vectors right now. The triage queue has some high-severity items and the correlation engine picked up a few cross-domain patterns that are worth digging into. I'd recommend we escalate the investigation.`;
     } else if (lower.includes('block') || lower.includes('isolat') || lower.includes('contain') || lower.includes('stop')) {
-      response = `Understood. Vanguard here. I can execute containment actions immediately. Ready to block IPs, isolate hosts, or disable accounts on your command. Awaiting explicit authorization.`;
+      response = `Copy that. Vanguard here -- I can move on containment right away. I'm ready to block IPs, isolate hosts, or disable accounts, just say the word. Standing by for your go-ahead.`;
     } else if (lower.includes('summary') || lower.includes('overview') || lower.includes('brief')) {
-      response = `Commander here. All five agents are operational. We've processed over ${(AGENT_DEFS.reduce((s, a) => s + a.metrics.tasksCompleted, 0)).toLocaleString()} tasks with an average accuracy above 97%. Current threat level is elevated. Three investigation items require your attention.`;
+      response = `Commander here. Quick rundown -- all five agents are up and running. We've pushed through over ${(AGENT_DEFS.reduce((s, a) => s + a.metrics.tasksCompleted, 0)).toLocaleString()} tasks with accuracy holding above ninety-seven percent. Threat level's elevated at the moment, and there are three investigation items that could use your eyes.`;
     } else if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-      response = `${agent.name} here. Welcome to the SOC Operations Center. All agents are at your service. How can I assist you?`;
+      response = `Hey there, ${agent.name} here. Welcome to the SOC. The whole team's online and ready to go -- what can I help you with?`;
     } else {
-      response = `${agent.name} acknowledging. I'm processing your request regarding "${userText.slice(0, 50)}". Let me coordinate with the team and surface relevant findings.`;
+      response = `Got it -- ${agent.name} here. I'm looking into that now. Let me loop in the rest of the team and pull together whatever we've got on "${userText.slice(0, 50)}".`;
     }
 
     return { agent, response };
