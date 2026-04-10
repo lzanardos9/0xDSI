@@ -799,7 +799,7 @@ export default function ThreatSimulator() {
     setSimulationComplete(false);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/simulate-threat`;
@@ -852,7 +852,7 @@ export default function ThreatSimulator() {
     } catch (err: any) {
       clearTimeout(timeoutId);
       const errorMsg = err?.name === 'AbortError'
-        ? 'Request timed out after 20s'
+        ? 'Request timed out after 60s'
         : err?.message || 'Unknown error connecting to AI engine';
       setLlmError(errorMsg);
       setLlmLoading(false);
