@@ -795,11 +795,17 @@ export default function ThreatSimulator() {
     setLlmLoading(true);
     setLlmError(null);
     setIsLlmGenerated(false);
+    setIsRunning(false);
+    setSimulationComplete(false);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/simulate-threat`;
       const response = await fetch(apiUrl, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
@@ -813,25 +819,28 @@ export default function ThreatSimulator() {
         }),
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        throw new Error(`API returned ${response.status}: ${response.statusText}`);
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`API returned ${response.status}: ${errBody || response.statusText}`);
       }
 
       const llmResult = await response.json();
 
       const simData: SimulationData = {
         feasibility: llmResult.feasibility ?? 50,
-        mitre: llmResult.mitre ?? [],
+        mitre: Array.isArray(llmResult.mitre) ? llmResult.mitre : [],
         killChainStage: llmResult.killChainStage ?? 4,
         killChainLabel: llmResult.killChainLabel ?? 'Exploitation',
         detectionTimeCurrent: llmResult.detectionTimeCurrent ?? '2h',
         detectionTimeRecommended: llmResult.detectionTimeRecommended ?? '15m',
         defenseEffectiveness: llmResult.defenseEffectiveness ?? 40,
-        countermeasures: llmResult.countermeasures ?? [],
-        detectionGaps: llmResult.detectionGaps ?? [],
+        countermeasures: Array.isArray(llmResult.countermeasures) ? llmResult.countermeasures : [],
+        detectionGaps: Array.isArray(llmResult.detectionGaps) ? llmResult.detectionGaps : [],
         correlationRule: llmResult.correlationRule ?? { name: '', logic: '', severity: 'High', mitre: '' },
         microPattern: llmResult.microPattern ?? { name: '', type: 'Behavioral', conditions: [], timeWindow: '10 minutes', minOccurrences: 1 },
-        monteCarloRuns: llmResult.monteCarloRuns && llmResult.monteCarloRuns.length > 0
+        monteCarloRuns: Array.isArray(llmResult.monteCarloRuns) && llmResult.monteCarloRuns.length > 0
           ? llmResult.monteCarloRuns
           : generateMonteCarloRuns(llmResult.feasibility ?? 50, llmResult.defenseEffectiveness ?? 40),
         scenarioNarrative: llmResult.scenarioNarrative ?? '',
@@ -841,7 +850,10 @@ export default function ThreatSimulator() {
       setIsLlmGenerated(true);
       runAgentAnimation(simData);
     } catch (err: any) {
-      const errorMsg = err?.message || 'Unknown error connecting to AI engine';
+      clearTimeout(timeoutId);
+      const errorMsg = err?.name === 'AbortError'
+        ? 'Request timed out after 20s'
+        : err?.message || 'Unknown error connecting to AI engine';
       setLlmError(errorMsg);
       setLlmLoading(false);
       setIsLlmGenerated(false);
