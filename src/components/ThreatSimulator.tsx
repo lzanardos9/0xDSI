@@ -862,6 +862,139 @@ export default function ThreatSimulator() {
     }
   }, [scenario, attackDomain, attackerProfile, targetAssets, simulationDepth, getDefaultData, runAgentAnimation]);
 
+  const exportReport = useCallback(() => {
+    if (!activeData) return;
+    const d = activeData;
+    const now = new Date().toISOString();
+    const avgSuccess = d.monteCarloRuns.length > 0
+      ? (d.monteCarloRuns.reduce((s, r) => s + r.attackSuccessRate, 0) / d.monteCarloRuns.length * 100).toFixed(1)
+      : 'N/A';
+    const avgDefense = d.monteCarloRuns.length > 0
+      ? (d.monteCarloRuns.reduce((s, r) => s + r.defenseHoldRate, 0) / d.monteCarloRuns.length * 100).toFixed(1)
+      : 'N/A';
+
+    const lines = [
+      '═══════════════════════════════════════════════════════════════',
+      '                  THREAT SIMULATION REPORT',
+      '              Converged SOC — AEGIS Engine',
+      '═══════════════════════════════════════════════════════════════',
+      '',
+      `Generated: ${now}`,
+      `Source: ${isLlmGenerated ? 'AI-Generated (GPT-4o-mini)' : 'Template / Fallback'}`,
+      '',
+      '───────────────────────────────────────────────────────────────',
+      '  SCENARIO PARAMETERS',
+      '───────────────────────────────────────────────────────────────',
+      `  Scenario:         ${scenario || '(template)'}`,
+      `  Attack Domain:    ${attackDomain}`,
+      `  Attacker Profile: ${attackerProfile}`,
+      `  Target Assets:    ${targetAssets.join(', ')}`,
+      `  Simulation Depth: ${simulationDepth}/10`,
+      '',
+      '───────────────────────────────────────────────────────────────',
+      '  EXECUTIVE SUMMARY',
+      '───────────────────────────────────────────────────────────────',
+      `  Feasibility Score:        ${d.feasibility}/100`,
+      `  Defense Effectiveness:     ${d.defenseEffectiveness}/100`,
+      `  Kill Chain Stage:          ${d.killChainStage} — ${d.killChainLabel}`,
+      `  Detection Time (Current):  ${d.detectionTimeCurrent}`,
+      `  Detection Time (Target):   ${d.detectionTimeRecommended}`,
+      '',
+    ];
+
+    if (d.scenarioNarrative) {
+      lines.push(
+        '───────────────────────────────────────────────────────────────',
+        '  SCENARIO NARRATIVE',
+        '───────────────────────────────────────────────────────────────',
+        `  ${d.scenarioNarrative}`,
+        ''
+      );
+    }
+
+    lines.push(
+      '───────────────────────────────────────────────────────────────',
+      '  MITRE ATT&CK MAPPING',
+      '───────────────────────────────────────────────────────────────',
+    );
+    d.mitre.forEach(m => lines.push(`  [${m.id}] ${m.name}`));
+    lines.push('');
+
+    lines.push(
+      '───────────────────────────────────────────────────────────────',
+      '  COUNTERMEASURES',
+      '───────────────────────────────────────────────────────────────',
+    );
+    d.countermeasures.forEach((c, i) => lines.push(`  ${i + 1}. [${c.priority}] ${c.text}`));
+    lines.push('');
+
+    lines.push(
+      '───────────────────────────────────────────────────────────────',
+      '  DETECTION GAPS',
+      '───────────────────────────────────────────────────────────────',
+    );
+    d.detectionGaps.forEach((g, i) => lines.push(`  ${i + 1}. ${g}`));
+    lines.push('');
+
+    lines.push(
+      '───────────────────────────────────────────────────────────────',
+      '  CORRELATION RULE',
+      '───────────────────────────────────────────────────────────────',
+      `  Name:     ${d.correlationRule.name}`,
+      `  Severity: ${d.correlationRule.severity}`,
+      `  MITRE:    ${d.correlationRule.mitre}`,
+      `  Logic:    ${d.correlationRule.logic}`,
+      ''
+    );
+
+    lines.push(
+      '───────────────────────────────────────────────────────────────',
+      '  MICRO-PATTERN',
+      '───────────────────────────────────────────────────────────────',
+      `  Name:            ${d.microPattern.name}`,
+      `  Type:            ${d.microPattern.type}`,
+      `  Time Window:     ${d.microPattern.timeWindow}`,
+      `  Min Occurrences: ${d.microPattern.minOccurrences}`,
+      `  Conditions:`,
+    );
+    d.microPattern.conditions.forEach(c => lines.push(`    - ${c}`));
+    lines.push('');
+
+    lines.push(
+      '───────────────────────────────────────────────────────────────',
+      '  MONTE CARLO ANALYSIS  (' + d.monteCarloRuns.length + ' runs)',
+      '───────────────────────────────────────────────────────────────',
+      `  Avg Attack Success Rate:  ${avgSuccess}%`,
+      `  Avg Defense Hold Rate:    ${avgDefense}%`,
+      '',
+      '  Run | Feasibility | Detection(min) | Attack% | Defense%',
+      '  ----+-----------+----------------+---------+---------',
+    );
+    d.monteCarloRuns.forEach(r => {
+      lines.push(
+        `  ${String(r.runId).padStart(3)} |  ${String(r.feasibilityScore).padStart(8)} | ${String(r.detectionTimeMinutes).padStart(14)} | ${(r.attackSuccessRate * 100).toFixed(1).padStart(6)}% | ${(r.defenseHoldRate * 100).toFixed(1).padStart(6)}%`
+      );
+    });
+
+    lines.push(
+      '',
+      '═══════════════════════════════════════════════════════════════',
+      '                      END OF REPORT',
+      '═══════════════════════════════════════════════════════════════',
+    );
+
+    const text = lines.join('\n');
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `threat-simulation-report-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [activeData, scenario, attackDomain, attackerProfile, targetAssets, simulationDepth, isLlmGenerated]);
+
   const handleTemplateClick = (key: string) => {
     const template = TEMPLATES[key];
     setScenario(template.scenario);
@@ -1484,7 +1617,11 @@ export default function ThreatSimulator() {
                   <ChevronRight className={`w-4 h-4 transition-transform ${showMicroPattern ? 'rotate-90' : ''}`} />
                 </button>
 
-                <button className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-800/40 border border-slate-700/40 text-xs font-semibold text-slate-300 hover:border-slate-600 transition-all">
+                <button
+                  onClick={exportReport}
+                  disabled={!activeData}
+                  className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-800/40 border border-slate-700/40 text-xs font-semibold text-slate-300 hover:border-slate-600 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
                   <Download className="w-4 h-4" />
                   Export Report
                 </button>
