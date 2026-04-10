@@ -7,6 +7,7 @@ import {
   Network, CircleDot, ChevronDown, Minus, Play, BarChart3
 } from 'lucide-react';
 import PSOEnginePanels from './PSOEnginePanels';
+import { PSO_TEMPLATES } from '../lib/psoTemplateData';
 
 interface AgentResult {
   name: string;
@@ -221,7 +222,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 3,
       },
       monteCarloRuns: generateMonteCarloRuns(72, 31),
-      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
+      ...PSO_TEMPLATES.insider,
       scenarioNarrative: 'A trusted administrator turns rogue under the cover of night, weaponizing their privileged access to siphon terabytes through encrypted DNS channels. As endpoint sensors go dark one by one, the data bleeds out in a stream of high-entropy queries invisible to traditional monitoring.',
     },
   },
@@ -271,7 +272,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 2,
       },
       monteCarloRuns: generateMonteCarloRuns(58, 44),
-      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
+      ...PSO_TEMPLATES.ransomware,
       scenarioNarrative: 'The poison arrives disguised as medicine. A routine software update from a trusted vendor carries a devastating payload, its malicious code hidden behind legitimate digital signatures. By the time the encryption begins, the kill chain has already bypassed every checkpoint in the defense perimeter.',
     },
   },
@@ -322,7 +323,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 2,
       },
       monteCarloRuns: generateMonteCarloRuns(45, 52),
-      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
+      ...PSO_TEMPLATES.physical,
       scenarioNarrative: 'The attacker walks through the front door wearing a cloned identity, blending seamlessly with the morning rush. Within minutes, a tiny device plugged into an under-desk port begins intercepting credentials, turning the trusted internal network into a hunting ground.',
     },
   },
@@ -373,7 +374,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 1,
       },
       monteCarloRuns: generateMonteCarloRuns(34, 22),
-      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
+      ...PSO_TEMPLATES.zeroday,
       scenarioNarrative: 'An invisible blade strikes at the heart of the perimeter. A zero-day vulnerability, unknown to every signature database on earth, is exploited with surgical precision. The attacker escalates from web shell to kernel root in under ninety seconds, leaving no trace in conventional logs.',
     },
   },
@@ -423,7 +424,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 1,
       },
       monteCarloRuns: generateMonteCarloRuns(61, 38),
-      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
+      ...PSO_TEMPLATES.cloud,
       scenarioNarrative: 'Stolen tokens become skeleton keys to the kingdom in the cloud. The attacker silently rewrites IAM policies to grant themselves god-mode access, then methodically drains S3 buckets while the security team chases phantom alerts from a continent away.',
     },
   },
@@ -473,7 +474,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 2,
       },
       monteCarloRuns: generateMonteCarloRuns(28, 18),
-      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
+      ...PSO_TEMPLATES.aipoison,
       scenarioNarrative: 'The most insidious attack targets the mind itself. Carefully crafted adversarial samples slip into the training pipeline, subtly corrupting the ML model until it learns to see threats as benign. The poisoned guardian now holds the gate open for the enemy.',
     },
   },
@@ -524,7 +525,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 2,
       },
       monteCarloRuns: generateMonteCarloRuns(52, 55),
-      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
+      ...PSO_TEMPLATES.badge,
       scenarioNarrative: 'A cloned badge grants passage into the fortress. The attacker harvests credentials from an unattended workstation and begins hopping laterally through the network, each jump bringing them closer to the crown jewels while appearing as a legitimate employee.',
     },
   },
@@ -575,7 +576,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 1,
       },
       monteCarloRuns: generateMonteCarloRuns(65, 48),
-      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
+      ...PSO_TEMPLATES.ddos,
       scenarioNarrative: 'A wall of traffic crashes against the perimeter like a tidal wave, consuming every analyst and every resource. But the flood is merely a distraction. Behind the noise, a second team moves with precision, draining sensitive data through a backdoor while the SOC fights the wrong battle.',
     },
   },
