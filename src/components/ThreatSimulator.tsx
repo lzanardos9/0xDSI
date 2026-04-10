@@ -6,6 +6,7 @@ import {
   ShieldAlert, ShieldCheck, Lock, Unlock, Server,
   Network, CircleDot, ChevronDown, Minus, Play, BarChart3
 } from 'lucide-react';
+import PSOEnginePanels from './PSOEnginePanels';
 
 interface AgentResult {
   name: string;
@@ -33,6 +34,66 @@ interface MonteCarloRun {
   defenseHoldRate: number;
 }
 
+interface AttackPath {
+  id: number;
+  name: string;
+  steps: string[];
+  likelihood: number;
+  impact: number;
+  riskScore: number;
+  timeToCompromiseMinutes: number;
+  detectionProbability: number;
+}
+
+interface HighRiskNode {
+  node: string;
+  type: 'identity' | 'endpoint' | 'service' | 'cloud' | 'data';
+  riskCentrality: number;
+  vulnerabilityScore: number;
+  exposureLevel: 'Critical' | 'High' | 'Medium' | 'Low';
+  simulationAppearanceRate: string;
+  controlCoverage: number;
+}
+
+interface CoverageAnalysis {
+  overallCoverage: number;
+  coveredPaths: number;
+  totalPaths: number;
+  coverageByStage: {
+    reconnaissance: number;
+    initialAccess: number;
+    execution: number;
+    persistence: number;
+    lateralMovement: number;
+    exfiltration: number;
+  };
+  improvementPotential: string;
+}
+
+interface ControlFailure {
+  control: string;
+  currentEffectiveness: number;
+  failureImpact: string;
+  attackSuccessIncrease: number;
+  recommendation: string;
+}
+
+interface PredictedStep {
+  step: string;
+  probability: number;
+  mitreTechnique: string;
+  timeframeMinutes: number;
+  indicator: string;
+}
+
+interface GraphEdge {
+  from: string;
+  to: string;
+  edgeType: 'lateral_movement' | 'privilege_escalation' | 'data_access' | 'trust_relationship' | 'network_path';
+  transitionProbability: number;
+  modifiers: string[];
+}
+
 interface SimulationData {
   feasibility: number;
   mitre: MitreMapping[];
@@ -58,6 +119,12 @@ interface SimulationData {
   };
   monteCarloRuns: MonteCarloRun[];
   scenarioNarrative: string;
+  topAttackPaths: AttackPath[];
+  highRiskNodes: HighRiskNode[];
+  coverageAnalysis: CoverageAnalysis | null;
+  controlFailureSensitivity: ControlFailure[];
+  predictedNextSteps: PredictedStep[];
+  graphEdges: GraphEdge[];
 }
 
 function boxMullerRandom(): number {
@@ -154,6 +221,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 3,
       },
       monteCarloRuns: generateMonteCarloRuns(72, 31),
+      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
       scenarioNarrative: 'A trusted administrator turns rogue under the cover of night, weaponizing their privileged access to siphon terabytes through encrypted DNS channels. As endpoint sensors go dark one by one, the data bleeds out in a stream of high-entropy queries invisible to traditional monitoring.',
     },
   },
@@ -203,6 +271,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 2,
       },
       monteCarloRuns: generateMonteCarloRuns(58, 44),
+      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
       scenarioNarrative: 'The poison arrives disguised as medicine. A routine software update from a trusted vendor carries a devastating payload, its malicious code hidden behind legitimate digital signatures. By the time the encryption begins, the kill chain has already bypassed every checkpoint in the defense perimeter.',
     },
   },
@@ -253,6 +322,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 2,
       },
       monteCarloRuns: generateMonteCarloRuns(45, 52),
+      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
       scenarioNarrative: 'The attacker walks through the front door wearing a cloned identity, blending seamlessly with the morning rush. Within minutes, a tiny device plugged into an under-desk port begins intercepting credentials, turning the trusted internal network into a hunting ground.',
     },
   },
@@ -303,6 +373,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 1,
       },
       monteCarloRuns: generateMonteCarloRuns(34, 22),
+      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
       scenarioNarrative: 'An invisible blade strikes at the heart of the perimeter. A zero-day vulnerability, unknown to every signature database on earth, is exploited with surgical precision. The attacker escalates from web shell to kernel root in under ninety seconds, leaving no trace in conventional logs.',
     },
   },
@@ -352,6 +423,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 1,
       },
       monteCarloRuns: generateMonteCarloRuns(61, 38),
+      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
       scenarioNarrative: 'Stolen tokens become skeleton keys to the kingdom in the cloud. The attacker silently rewrites IAM policies to grant themselves god-mode access, then methodically drains S3 buckets while the security team chases phantom alerts from a continent away.',
     },
   },
@@ -401,6 +473,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 2,
       },
       monteCarloRuns: generateMonteCarloRuns(28, 18),
+      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
       scenarioNarrative: 'The most insidious attack targets the mind itself. Carefully crafted adversarial samples slip into the training pipeline, subtly corrupting the ML model until it learns to see threats as benign. The poisoned guardian now holds the gate open for the enemy.',
     },
   },
@@ -451,6 +524,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 2,
       },
       monteCarloRuns: generateMonteCarloRuns(52, 55),
+      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
       scenarioNarrative: 'A cloned badge grants passage into the fortress. The attacker harvests credentials from an unattended workstation and begins hopping laterally through the network, each jump bringing them closer to the crown jewels while appearing as a legitimate employee.',
     },
   },
@@ -501,6 +575,7 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         minOccurrences: 1,
       },
       monteCarloRuns: generateMonteCarloRuns(65, 48),
+      topAttackPaths: [], highRiskNodes: [], coverageAnalysis: null, controlFailureSensitivity: [], predictedNextSteps: [], graphEdges: [],
       scenarioNarrative: 'A wall of traffic crashes against the perimeter like a tidal wave, consuming every analyst and every resource. But the flood is merely a distraction. Behind the noise, a second team moves with precision, draining sensitive data through a backdoor while the SOC fights the wrong battle.',
     },
   },
@@ -844,6 +919,12 @@ export default function ThreatSimulator() {
           ? llmResult.monteCarloRuns
           : generateMonteCarloRuns(llmResult.feasibility ?? 50, llmResult.defenseEffectiveness ?? 40),
         scenarioNarrative: llmResult.scenarioNarrative ?? '',
+        topAttackPaths: Array.isArray(llmResult.topAttackPaths) ? llmResult.topAttackPaths : [],
+        highRiskNodes: Array.isArray(llmResult.highRiskNodes) ? llmResult.highRiskNodes : [],
+        coverageAnalysis: llmResult.coverageAnalysis ?? null,
+        controlFailureSensitivity: Array.isArray(llmResult.controlFailureSensitivity) ? llmResult.controlFailureSensitivity : [],
+        predictedNextSteps: Array.isArray(llmResult.predictedNextSteps) ? llmResult.predictedNextSteps : [],
+        graphEdges: Array.isArray(llmResult.graphEdges) ? llmResult.graphEdges : [],
       };
 
       setLlmLoading(false);
@@ -876,7 +957,7 @@ export default function ThreatSimulator() {
     const lines = [
       '═══════════════════════════════════════════════════════════════',
       '                  THREAT SIMULATION REPORT',
-      '              Converged SOC — AEGIS Engine',
+      '         PSO Engine — 0xDSI Converged SOC Platform',
       '═══════════════════════════════════════════════════════════════',
       '',
       `Generated: ${now}`,
@@ -976,10 +1057,101 @@ export default function ThreatSimulator() {
       );
     });
 
+    if (d.topAttackPaths.length > 0) {
+      lines.push(
+        '───────────────────────────────────────────────────────────────',
+        '  PSO ENGINE — TOP ATTACK PATHS',
+        '───────────────────────────────────────────────────────────────',
+      );
+      d.topAttackPaths.forEach((p, i) => {
+        lines.push(`  Path #${p.id}: ${p.name}`);
+        lines.push(`    Risk Score: ${p.riskScore}  |  Likelihood: ${p.likelihood}%  |  Impact: ${p.impact}%`);
+        lines.push(`    Time to Compromise: ${p.timeToCompromiseMinutes}min  |  Detection Probability: ${(p.detectionProbability * 100).toFixed(0)}%`);
+        lines.push(`    Steps:`);
+        p.steps.forEach((s, j) => lines.push(`      ${j + 1}. ${s}`));
+        if (i < d.topAttackPaths.length - 1) lines.push('');
+      });
+      lines.push('');
+    }
+
+    if (d.highRiskNodes.length > 0) {
+      lines.push(
+        '───────────────────────────────────────────────────────────────',
+        '  PSO ENGINE — HIGH-RISK NODES (Graph Centrality)',
+        '───────────────────────────────────────────────────────────────',
+      );
+      d.highRiskNodes.forEach(n => {
+        lines.push(`  ${n.node} (${n.type})`);
+        lines.push(`    Risk Centrality: ${n.riskCentrality}%  |  Vuln: ${n.vulnerabilityScore}/10  |  Exposure: ${n.exposureLevel}`);
+        lines.push(`    Appears in: ${n.simulationAppearanceRate}  |  Control Coverage: ${n.controlCoverage}%`);
+      });
+      lines.push('');
+    }
+
+    if (d.coverageAnalysis) {
+      const ca = d.coverageAnalysis;
+      lines.push(
+        '───────────────────────────────────────────────────────────────',
+        '  PSO ENGINE — DETECTION COVERAGE ANALYSIS',
+        '───────────────────────────────────────────────────────────────',
+        `  Overall Coverage: ${ca.overallCoverage}% (${ca.coveredPaths}/${ca.totalPaths} paths)`,
+        `  Coverage by Stage:`,
+        `    Reconnaissance:    ${ca.coverageByStage.reconnaissance}%`,
+        `    Initial Access:    ${ca.coverageByStage.initialAccess}%`,
+        `    Execution:         ${ca.coverageByStage.execution}%`,
+        `    Persistence:       ${ca.coverageByStage.persistence}%`,
+        `    Lateral Movement:  ${ca.coverageByStage.lateralMovement}%`,
+        `    Exfiltration:      ${ca.coverageByStage.exfiltration}%`,
+        `  Improvement: ${ca.improvementPotential}`,
+        '',
+      );
+    }
+
+    if (d.controlFailureSensitivity.length > 0) {
+      lines.push(
+        '───────────────────────────────────────────────────────────────',
+        '  PSO ENGINE — CONTROL FAILURE SENSITIVITY',
+        '───────────────────────────────────────────────────────────────',
+      );
+      d.controlFailureSensitivity.forEach(c => {
+        lines.push(`  ${c.control} [${c.failureImpact}]`);
+        lines.push(`    Effectiveness: ${c.currentEffectiveness}%  |  If fails: +${c.attackSuccessIncrease}% attack success`);
+        lines.push(`    Recommendation: ${c.recommendation}`);
+      });
+      lines.push('');
+    }
+
+    if (d.predictedNextSteps.length > 0) {
+      lines.push(
+        '───────────────────────────────────────────────────────────────',
+        '  PSO ENGINE — PREDICTED NEXT STEPS',
+        '───────────────────────────────────────────────────────────────',
+      );
+      d.predictedNextSteps.forEach((s, i) => {
+        lines.push(`  ${i + 1}. ${s.step}`);
+        lines.push(`     Probability: ${s.probability}%  |  MITRE: ${s.mitreTechnique}  |  ETA: ${s.timeframeMinutes}min`);
+        lines.push(`     Indicator: ${s.indicator}`);
+      });
+      lines.push('');
+    }
+
+    if (d.graphEdges.length > 0) {
+      lines.push(
+        '───────────────────────────────────────────────────────────────',
+        '  PSO ENGINE — ATTACK GRAPH EDGES',
+        '───────────────────────────────────────────────────────────────',
+      );
+      d.graphEdges.forEach(e => {
+        lines.push(`  ${e.from} -> ${e.to} [${e.edgeType}] P=${(e.transitionProbability * 100).toFixed(0)}%`);
+        if (e.modifiers.length > 0) lines.push(`    Modifiers: ${e.modifiers.join(', ')}`);
+      });
+      lines.push('');
+    }
+
     lines.push(
-      '',
       '═══════════════════════════════════════════════════════════════',
       '                      END OF REPORT',
+      '              PSO Engine — 0xDSI Converged SOC',
       '═══════════════════════════════════════════════════════════════',
     );
 
@@ -1049,13 +1221,13 @@ export default function ThreatSimulator() {
               <Crosshair className="w-6 h-6 text-cyan-400" />
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-wide text-slate-100">THREAT SCENARIO SIMULATOR</h1>
-              <p className="text-xs text-slate-400 mt-0.5">AI-Powered Attack Simulation & Defense Planning</p>
+              <h1 className="text-lg font-bold tracking-wide text-slate-100">PSO ENGINE — THREAT SIMULATOR</h1>
+              <p className="text-xs text-slate-400 mt-0.5">Predictive Security Operations — Monte Carlo Simulation & Graph-Based Attack Modeling</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-              <span className="text-xs font-semibold text-cyan-400 tracking-wider">SIMULATION ENGINE</span>
+              <span className="text-xs font-semibold text-cyan-400 tracking-wider">PSO ENGINE v2.0</span>
             </div>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/50">
               <span className="relative flex h-2 w-2">
@@ -1484,7 +1656,7 @@ export default function ThreatSimulator() {
                           <BarChart3 className="w-4 h-4 text-cyan-400" />
                           <span className="text-sm font-semibold text-slate-200">MONTE CARLO ANALYSIS</span>
                           <span className="ml-auto px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-slate-700/60 border border-slate-600/40 rounded text-slate-400">
-                            100 RUNS
+                            10 RUNS
                           </span>
                         </div>
                         <canvas
@@ -1539,6 +1711,17 @@ export default function ThreatSimulator() {
                         </div>
                       </div>
                     </>
+                  )}
+
+                  {activeData && (
+                    <PSOEnginePanels
+                      topAttackPaths={activeData.topAttackPaths}
+                      highRiskNodes={activeData.highRiskNodes}
+                      coverageAnalysis={activeData.coverageAnalysis}
+                      controlFailureSensitivity={activeData.controlFailureSensitivity}
+                      predictedNextSteps={activeData.predictedNextSteps}
+                      graphEdges={activeData.graphEdges}
+                    />
                   )}
                 </>
               )}
