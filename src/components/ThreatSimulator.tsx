@@ -506,222 +506,6 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
   },
 };
 
-const MITRE_LIBRARY: Record<string, MitreMapping[]> = {
-  network: [
-    { id: 'T1046', name: 'Network Service Discovery' },
-    { id: 'T1040', name: 'Network Sniffing' },
-    { id: 'T1557', name: 'Adversary-in-the-Middle' },
-    { id: 'T1498', name: 'Network Denial of Service' },
-    { id: 'T1571', name: 'Non-Standard Port' },
-  ],
-  credential: [
-    { id: 'T1110', name: 'Brute Force' },
-    { id: 'T1003', name: 'OS Credential Dumping' },
-    { id: 'T1555', name: 'Credentials from Password Stores' },
-    { id: 'T1556', name: 'Modify Authentication Process' },
-    { id: 'T1528', name: 'Steal Application Access Token' },
-  ],
-  malware: [
-    { id: 'T1059', name: 'Command and Scripting Interpreter' },
-    { id: 'T1204', name: 'User Execution' },
-    { id: 'T1027', name: 'Obfuscated Files or Information' },
-    { id: 'T1547', name: 'Boot or Logon Autostart Execution' },
-    { id: 'T1055', name: 'Process Injection' },
-  ],
-  exfiltration: [
-    { id: 'T1048', name: 'Exfiltration Over Alternative Protocol' },
-    { id: 'T1567', name: 'Exfiltration Over Web Service' },
-    { id: 'T1041', name: 'Exfiltration Over C2 Channel' },
-    { id: 'T1030', name: 'Data Transfer Size Limits' },
-    { id: 'T1537', name: 'Transfer Data to Cloud Account' },
-  ],
-  lateral: [
-    { id: 'T1021', name: 'Remote Services' },
-    { id: 'T1570', name: 'Lateral Tool Transfer' },
-    { id: 'T1550', name: 'Use Alternate Authentication Material' },
-    { id: 'T1210', name: 'Exploitation of Remote Services' },
-  ],
-  physical: [
-    { id: 'T1200', name: 'Hardware Additions' },
-    { id: 'T1078', name: 'Valid Accounts' },
-    { id: 'T1091', name: 'Replication Through Removable Media' },
-  ],
-  cloud: [
-    { id: 'T1078.004', name: 'Valid Accounts: Cloud Accounts' },
-    { id: 'T1098', name: 'Account Manipulation' },
-    { id: 'T1530', name: 'Data from Cloud Storage Object' },
-    { id: 'T1580', name: 'Cloud Infrastructure Discovery' },
-  ],
-  social: [
-    { id: 'T1566.001', name: 'Spearphishing Attachment' },
-    { id: 'T1566.002', name: 'Spearphishing Link' },
-    { id: 'T1598', name: 'Phishing for Information' },
-    { id: 'T1204.001', name: 'User Execution: Malicious Link' },
-  ],
-  persistence: [
-    { id: 'T1136', name: 'Create Account' },
-    { id: 'T1505', name: 'Server Software Component' },
-    { id: 'T1053', name: 'Scheduled Task/Job' },
-    { id: 'T1546', name: 'Event Triggered Execution' },
-  ],
-};
-
-const KEYWORD_MAP: Record<string, string[]> = {
-  network: ['network', 'firewall', 'router', 'switch', 'vlan', 'traffic', 'packet', 'port', 'tcp', 'udp', 'dns', 'sniff', 'mitm', 'man-in-the-middle', 'arp', 'scan'],
-  credential: ['password', 'credential', 'brute', 'login', 'auth', 'ldap', 'kerberos', 'hash', 'token', 'oauth', 'sso', 'mfa'],
-  malware: ['malware', 'virus', 'trojan', 'worm', 'ransomware', 'encrypt', 'payload', 'dropper', 'loader', 'c2', 'beacon', 'backdoor', 'rat', 'keylogger'],
-  exfiltration: ['exfil', 'steal', 'leak', 'extract', 'copy', 'transfer', 'upload', 'siphon', 'tunnel', 'data theft'],
-  lateral: ['lateral', 'pivot', 'spread', 'move', 'hop', 'rdp', 'smb', 'wmi', 'psexec', 'remote'],
-  physical: ['physical', 'badge', 'door', 'camera', 'cctv', 'usb', 'device', 'rfid', 'tailgat', 'building', 'server room', 'datacenter'],
-  cloud: ['cloud', 'aws', 'azure', 'gcp', 's3', 'iam', 'lambda', 'kubernetes', 'container', 'docker', 'saas', 'api key'],
-  social: ['phish', 'social', 'email', 'spear', 'pretex', 'vish', 'smish', 'impersonat', 'bec', 'whaling'],
-  persistence: ['persist', 'backdoor', 'maintain', 'cron', 'scheduled', 'implant', 'rootkit', 'web shell'],
-};
-
-function generateLocalSimulation(
-  lowerScenario: string,
-  attackDomain: string,
-  attackerProfile: string,
-  targetAssets: string[],
-  depth: number,
-): SimulationData {
-  const matchedCategories: string[] = [];
-  for (const [category, keywords] of Object.entries(KEYWORD_MAP)) {
-    if (keywords.some(kw => lowerScenario.includes(kw))) {
-      matchedCategories.push(category);
-    }
-  }
-  if (attackDomain === 'Physical' || attackDomain === 'Hybrid') {
-    if (!matchedCategories.includes('physical')) matchedCategories.push('physical');
-  }
-  if (matchedCategories.length === 0) {
-    matchedCategories.push('network', 'lateral');
-  }
-
-  const mitre: MitreMapping[] = [];
-  const seen = new Set<string>();
-  for (const cat of matchedCategories) {
-    const techniques = MITRE_LIBRARY[cat] || [];
-    for (const t of techniques) {
-      if (!seen.has(t.id) && mitre.length < 6) {
-        mitre.push(t);
-        seen.add(t.id);
-      }
-    }
-  }
-  if (mitre.length < 3) {
-    for (const t of MITRE_LIBRARY.network) {
-      if (!seen.has(t.id) && mitre.length < 4) {
-        mitre.push(t);
-        seen.add(t.id);
-      }
-    }
-  }
-
-  const profileMultiplier: Record<string, number> = {
-    'Script Kiddie': 0.6,
-    'Insider': 1.0,
-    'APT Group': 1.3,
-    'Nation-State': 1.5,
-  };
-  const pMul = profileMultiplier[attackerProfile] || 1.0;
-  const baseFeasibility = Math.round(clamp(35 + (depth * 3) + (pMul * 10) + (matchedCategories.length * 4) + (Math.random() * 15 - 7), 15, 92));
-  const baseDefense = Math.round(clamp(70 - baseFeasibility * 0.5 + (Math.random() * 10 - 5), 10, 75));
-
-  const killChainStage = clamp(Math.round(3 + depth * 0.4 + (pMul - 0.6) * 2), 1, 7);
-  const killChainLabels = ['Reconnaissance', 'Weaponization', 'Delivery', 'Exploitation', 'Installation', 'Command & Control', 'Actions on Objectives'];
-
-  const detCurrentH = Math.max(0, Math.floor((100 - baseDefense) * 0.08));
-  const detCurrentM = Math.round(((100 - baseDefense) * 0.08 - detCurrentH) * 60) || Math.round(10 + Math.random() * 50);
-  const detRecommendedM = Math.max(2, Math.round(detCurrentH * 60 + detCurrentM) * 0.15);
-  const detectionTimeCurrent = detCurrentH > 0 ? `${detCurrentH}h ${detCurrentM}m` : `${detCurrentM}m`;
-  const detectionTimeRecommended = detRecommendedM >= 60 ? `${Math.floor(detRecommendedM / 60)}h ${detRecommendedM % 60}m` : `${detRecommendedM}m`;
-
-  const countermeasurePool: Countermeasure[] = [];
-  if (matchedCategories.includes('network')) {
-    countermeasurePool.push({ text: 'Deploy network segmentation and micro-segmentation controls', priority: 'Critical' });
-    countermeasurePool.push({ text: 'Enable deep packet inspection on all critical segments', priority: 'High' });
-  }
-  if (matchedCategories.includes('credential')) {
-    countermeasurePool.push({ text: 'Enforce MFA across all privileged and standard accounts', priority: 'Critical' });
-    countermeasurePool.push({ text: 'Implement credential rotation and vault management', priority: 'High' });
-  }
-  if (matchedCategories.includes('malware')) {
-    countermeasurePool.push({ text: 'Deploy EDR with behavioral analysis on all endpoints', priority: 'Critical' });
-    countermeasurePool.push({ text: 'Implement application allowlisting and code signing verification', priority: 'High' });
-  }
-  if (matchedCategories.includes('exfiltration')) {
-    countermeasurePool.push({ text: 'Deploy DLP on all egress points with content inspection', priority: 'Critical' });
-    countermeasurePool.push({ text: 'Monitor DNS and HTTPS traffic for covert channel indicators', priority: 'High' });
-  }
-  if (matchedCategories.includes('physical')) {
-    countermeasurePool.push({ text: 'Correlate physical access events with network authentications', priority: 'Critical' });
-    countermeasurePool.push({ text: 'Deploy anti-cloning badge technology with challenge-response', priority: 'High' });
-  }
-  if (matchedCategories.includes('cloud')) {
-    countermeasurePool.push({ text: 'Enable CSPM with continuous IAM policy drift detection', priority: 'Critical' });
-    countermeasurePool.push({ text: 'Enforce short-lived tokens and just-in-time access', priority: 'High' });
-  }
-  if (matchedCategories.includes('social')) {
-    countermeasurePool.push({ text: 'Deploy AI-based email security with impersonation detection', priority: 'Critical' });
-    countermeasurePool.push({ text: 'Implement URL sandboxing and link rewriting for all inbound mail', priority: 'High' });
-  }
-  countermeasurePool.push({ text: 'Enhance SOC monitoring with targeted correlation rules for this scenario', priority: 'High' });
-  countermeasurePool.push({ text: 'Conduct tabletop exercises simulating this specific attack path', priority: 'Medium' });
-  countermeasurePool.push({ text: 'Review and update incident response playbooks for this threat category', priority: 'Medium' });
-  const countermeasures = countermeasurePool.slice(0, 6);
-
-  const gapPool: string[] = [];
-  if (matchedCategories.includes('network')) gapPool.push('Limited east-west traffic visibility between segments');
-  if (matchedCategories.includes('credential')) gapPool.push('No real-time detection of credential stuffing or spraying attacks');
-  if (matchedCategories.includes('malware')) gapPool.push('Signature-based detection cannot identify novel malware variants');
-  if (matchedCategories.includes('exfiltration')) gapPool.push('Encrypted exfiltration channels bypass content inspection');
-  if (matchedCategories.includes('lateral')) gapPool.push('Lateral movement using legitimate admin tools evades detection');
-  if (matchedCategories.includes('physical')) gapPool.push('Physical and logical access systems operate in isolation');
-  if (matchedCategories.includes('cloud')) gapPool.push('Cloud API activity not correlated with on-premises events');
-  if (matchedCategories.includes('social')) gapPool.push('User awareness training does not cover latest social engineering tactics');
-  gapPool.push('Alert fatigue reduces analyst response to true positives');
-  gapPool.push('Insufficient correlation between data sources for this attack pattern');
-  const detectionGaps = gapPool.slice(0, 5);
-
-  const primaryMitre = mitre.map(m => m.id).join(', ');
-  const correlationRule = {
-    name: `Custom Scenario Detection: ${matchedCategories.slice(0, 2).join(' + ')} attack`,
-    logic: `IF ${matchedCategories.map(c => `${c}_indicator = true`).join(' AND ')} AND risk_score > ${Math.round(baseFeasibility * 0.7)} THEN alert = ${baseFeasibility > 60 ? 'CRITICAL' : 'HIGH'}`,
-    severity: baseFeasibility > 60 ? 'Critical' : 'High',
-    mitre: primaryMitre,
-  };
-
-  const microPattern = {
-    name: `${matchedCategories[0]?.charAt(0).toUpperCase()}${matchedCategories[0]?.slice(1) || 'Threat'} Behavioral Cluster`,
-    type: matchedCategories.length > 2 ? 'Composite' : matchedCategories.includes('persistence') ? 'Behavioral' : 'Temporal',
-    conditions: detectionGaps.slice(0, 3).map(g => g.replace(/^No |^Limited |^Insufficient /, 'Detect ')),
-    timeWindow: depth > 7 ? '5 minutes' : depth > 4 ? '15 minutes' : '30 minutes',
-    minOccurrences: Math.max(1, Math.min(4, Math.round(depth * 0.3))),
-  };
-
-  const assetsStr = targetAssets.length > 0 ? targetAssets.join(', ') : 'critical infrastructure';
-  const scenarioNarrative = `The attack targets ${assetsStr} through a ${matchedCategories.join('/')} vector, leveraging ${attackerProfile.toLowerCase()}-level capabilities. ` +
-    `With a depth rating of ${depth}/10, the adversary progresses to the ${killChainLabels[killChainStage - 1]} phase, exploiting ${detectionGaps[0]?.toLowerCase() || 'gaps in monitoring coverage'}. ` +
-    `Current defenses achieve ${baseDefense}% effectiveness, with detection estimated at ${detectionTimeCurrent} under standard SOC operations.`;
-
-  return {
-    feasibility: baseFeasibility,
-    mitre,
-    killChainStage,
-    killChainLabel: killChainLabels[killChainStage - 1],
-    detectionTimeCurrent,
-    detectionTimeRecommended,
-    defenseEffectiveness: baseDefense,
-    countermeasures,
-    detectionGaps,
-    correlationRule,
-    microPattern,
-    monteCarloRuns: generateMonteCarloRuns(baseFeasibility, baseDefense),
-    scenarioNarrative,
-  };
-}
-
 const KILL_CHAIN_STAGES = [
   'Reconnaissance',
   'Weaponization',
@@ -918,8 +702,8 @@ export default function ThreatSimulator() {
         return template.data;
       }
     }
-    return generateLocalSimulation(lowerScenario, attackDomain, attackerProfile, targetAssets, simulationDepth);
-  }, [scenario, attackDomain, attackerProfile, targetAssets, simulationDepth]);
+    return TEMPLATES.insider.data;
+  }, [scenario]);
 
   const runAgentAnimation = useCallback((simData: SimulationData) => {
     setIsRunning(true);
@@ -998,10 +782,84 @@ export default function ThreatSimulator() {
       return;
     }
 
-    const simData = getDefaultData();
-    setIsLlmGenerated(false);
+    const isTemplateScenario = Object.values(TEMPLATES).some(t => t.scenario === scenario);
+
+    if (isTemplateScenario) {
+      const simData = getDefaultData();
+      setIsLlmGenerated(false);
+      setLlmError(null);
+      runAgentAnimation(simData);
+      return;
+    }
+
+    setLlmLoading(true);
     setLlmError(null);
-    runAgentAnimation(simData);
+    setIsLlmGenerated(false);
+    setIsRunning(false);
+    setSimulationComplete(false);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/simulate-threat`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          scenario,
+          attackDomain,
+          attackerProfile,
+          targetAssets,
+          depth: simulationDepth,
+        }),
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`API returned ${response.status}: ${errBody || response.statusText}`);
+      }
+
+      const llmResult = await response.json();
+
+      const simData: SimulationData = {
+        feasibility: llmResult.feasibility ?? 50,
+        mitre: Array.isArray(llmResult.mitre) ? llmResult.mitre : [],
+        killChainStage: llmResult.killChainStage ?? 4,
+        killChainLabel: llmResult.killChainLabel ?? 'Exploitation',
+        detectionTimeCurrent: llmResult.detectionTimeCurrent ?? '2h',
+        detectionTimeRecommended: llmResult.detectionTimeRecommended ?? '15m',
+        defenseEffectiveness: llmResult.defenseEffectiveness ?? 40,
+        countermeasures: Array.isArray(llmResult.countermeasures) ? llmResult.countermeasures : [],
+        detectionGaps: Array.isArray(llmResult.detectionGaps) ? llmResult.detectionGaps : [],
+        correlationRule: llmResult.correlationRule ?? { name: '', logic: '', severity: 'High', mitre: '' },
+        microPattern: llmResult.microPattern ?? { name: '', type: 'Behavioral', conditions: [], timeWindow: '10 minutes', minOccurrences: 1 },
+        monteCarloRuns: Array.isArray(llmResult.monteCarloRuns) && llmResult.monteCarloRuns.length > 0
+          ? llmResult.monteCarloRuns
+          : generateMonteCarloRuns(llmResult.feasibility ?? 50, llmResult.defenseEffectiveness ?? 40),
+        scenarioNarrative: llmResult.scenarioNarrative ?? '',
+      };
+
+      setLlmLoading(false);
+      setIsLlmGenerated(true);
+      runAgentAnimation(simData);
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      const errorMsg = err?.name === 'AbortError'
+        ? 'Request timed out after 20s'
+        : err?.message || 'Unknown error connecting to AI engine';
+      setLlmError(errorMsg);
+      setLlmLoading(false);
+      setIsLlmGenerated(false);
+      const fallback = getDefaultData();
+      runAgentAnimation(fallback);
+    }
   }, [scenario, attackDomain, attackerProfile, targetAssets, simulationDepth, getDefaultData, runAgentAnimation]);
 
   const handleTemplateClick = (key: string) => {
