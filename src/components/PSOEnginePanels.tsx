@@ -3,6 +3,7 @@ import {
   ChevronDown, ChevronUp, TrendingUp, Crosshair, Zap
 } from 'lucide-react';
 import { useState } from 'react';
+import AttackGraphVisualization from './AttackGraphVisualization';
 
 interface AttackPath {
   id: number;
@@ -392,7 +393,8 @@ function PredictedNextPanel({ steps }: { steps: PredictedStep[] }) {
   );
 }
 
-function GraphEdgesPanel({ edges }: { edges: GraphEdge[] }) {
+function GraphEdgesPanel({ edges, highRiskNodes }: { edges: GraphEdge[]; highRiskNodes: HighRiskNode[] }) {
+  const [showDetails, setShowDetails] = useState(false);
   if (edges.length === 0) return null;
 
   const edgeLabels: Record<string, string> = {
@@ -407,39 +409,57 @@ function GraphEdgesPanel({ edges }: { edges: GraphEdge[] }) {
     <div className="enterprise-card p-4">
       <div className="flex items-center gap-2 mb-3">
         <Network className="w-4 h-4 text-blue-400" />
-        <span className="text-sm font-semibold text-slate-200">ATTACK GRAPH EDGES</span>
+        <span className="text-sm font-semibold text-slate-200">ATTACK GRAPH</span>
+        <span className="ml-auto px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-blue-500/10 border border-blue-500/20 rounded text-blue-400">
+          {edges.length} EDGES | {new Set(edges.flatMap(e => [e.from, e.to])).size} NODES
+        </span>
       </div>
-      <div className="space-y-2">
-        {edges.map((edge, i) => (
-          <div key={i} className={`p-2.5 rounded-lg border ${getEdgeColor(edge.edgeType)}`}>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[11px] font-semibold text-slate-200">{edge.from}</span>
-              <span className="text-slate-600">→</span>
-              <span className="text-[11px] font-semibold text-slate-200">{edge.to}</span>
-              <span className="ml-auto text-[9px] font-bold uppercase tracking-wider text-slate-500">
-                {edgeLabels[edge.edgeType] || edge.edgeType}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[10px] text-slate-500">Transition P:</span>
-              <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-blue-500/60"
-                  style={{ width: `${edge.transitionProbability * 100}%` }}
-                />
+
+      <AttackGraphVisualization edges={edges} highRiskNodes={highRiskNodes} />
+
+      <button
+        onClick={() => setShowDetails(!showDetails)}
+        className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-slate-700/30 bg-slate-800/20 hover:bg-slate-700/30 transition-colors"
+      >
+        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+          {showDetails ? 'Hide' : 'Show'} Edge Details
+        </span>
+        {showDetails ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
+      </button>
+
+      {showDetails && (
+        <div className="space-y-2 mt-3">
+          {edges.map((edge, i) => (
+            <div key={i} className={`p-2.5 rounded-lg border ${getEdgeColor(edge.edgeType)}`}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[11px] font-semibold text-slate-200">{edge.from}</span>
+                <span className="text-slate-600">&rarr;</span>
+                <span className="text-[11px] font-semibold text-slate-200">{edge.to}</span>
+                <span className="ml-auto text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                  {edgeLabels[edge.edgeType] || edge.edgeType}
+                </span>
               </div>
-              <span className="text-[10px] font-semibold text-blue-400">{(edge.transitionProbability * 100).toFixed(0)}%</span>
-            </div>
-            {edge.modifiers.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {edge.modifiers.map((mod, j) => (
-                  <span key={j} className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800/60 border border-slate-700/40 text-slate-500">{mod}</span>
-                ))}
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] text-slate-500">Transition P:</span>
+                <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-blue-500/60"
+                    style={{ width: `${edge.transitionProbability * 100}%` }}
+                  />
+                </div>
+                <span className="text-[10px] font-semibold text-blue-400">{(edge.transitionProbability * 100).toFixed(0)}%</span>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+              {edge.modifiers.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {edge.modifiers.map((mod, j) => (
+                    <span key={j} className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800/60 border border-slate-700/40 text-slate-500">{mod}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -467,7 +487,7 @@ export default function PSOEnginePanels({
       <HighRiskNodesPanel nodes={highRiskNodes} />
       <PredictedNextPanel steps={predictedNextSteps} />
       <ControlSensitivityPanel controls={controlFailureSensitivity} />
-      <GraphEdgesPanel edges={graphEdges} />
+      <GraphEdgesPanel edges={graphEdges} highRiskNodes={highRiskNodes} />
     </div>
   );
 }
