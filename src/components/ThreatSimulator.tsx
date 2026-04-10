@@ -73,7 +73,7 @@ function clamp(val: number, min: number, max: number): number {
 
 function generateMonteCarloRuns(baseFeasibility: number, baseDefenseEff: number): MonteCarloRun[] {
   const runs: MonteCarloRun[] = [];
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 10; i++) {
     const feasibilityScore = clamp(
       baseFeasibility + boxMullerRandom() * 12,
       0,
