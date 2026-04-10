@@ -120,12 +120,12 @@ function EventProcessingFunnel() {
   const mousePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const canvasWidth = 900;
-  const canvasHeight = 700;
-  const funnelTop = 30;
-  const funnelBottom = canvasHeight - 30;
+  const canvasHeight = 440;
+  const funnelTop = 20;
+  const funnelBottom = canvasHeight - 20;
   const phaseSpacing = (funnelBottom - funnelTop) / (FUNNEL_PHASES.length - 1);
   const maxPipeWidth = canvasWidth * 0.72;
-  const minPipeWidth = canvasWidth * 0.12;
+  const minPipeWidth = canvasWidth * 0.15;
   const centerX = canvasWidth / 2;
 
   const filteredPhases = useMemo(() => {
@@ -283,7 +283,7 @@ function EventProcessingFunnel() {
       const y = getPhaseY(i);
       const pipeW = getPipeWidth(i);
       const halfPipe = pipeW / 2;
-      const pipeHeight = phaseSpacing * 0.35;
+      const pipeHeight = phaseSpacing * 0.45;
 
       const gradient = ctx.createLinearGradient(centerX - halfPipe, y, centerX + halfPipe, y);
       gradient.addColorStop(0, 'rgba(0,0,0,0)');
@@ -321,36 +321,36 @@ function EventProcessingFunnel() {
       ctx.textBaseline = 'middle';
 
       ctx.beginPath();
-      ctx.arc(centerX - halfPipe - 28, y, 11, 0, Math.PI * 2);
+      ctx.arc(centerX - halfPipe - 24, y, 9, 0, Math.PI * 2);
       ctx.fillStyle = hexToRgba(phase.color, 0.15);
       ctx.fill();
       ctx.strokeStyle = hexToRgba(phase.color, 0.5);
       ctx.lineWidth = 1;
       ctx.stroke();
       ctx.fillStyle = hexToRgba(phase.color, 0.95);
-      ctx.fillText(`${phase.id}`, centerX - halfPipe - 28, y);
+      ctx.fillText(`${phase.id}`, centerX - halfPipe - 24, y);
 
       ctx.textAlign = 'left';
-      ctx.font = 'bold 9px monospace';
+      ctx.font = 'bold 8px monospace';
       ctx.fillStyle = hexToRgba(phase.color, 0.8);
-      ctx.fillText(phase.shortName, centerX - halfPipe - 28 + 16, y - 5);
+      ctx.fillText(phase.shortName, centerX - halfPipe - 24 + 14, y - 4);
 
-      ctx.font = '9px monospace';
+      ctx.font = '8px monospace';
       ctx.fillStyle = '#94a3b8';
-      ctx.fillText(`${formatNumber(phase.activeEvents)} active`, centerX - halfPipe - 28 + 16, y + 7);
+      ctx.fillText(`${formatNumber(phase.activeEvents)} active`, centerX - halfPipe - 24 + 14, y + 6);
 
       if (phase.droppedEvents > 0) {
         ctx.textAlign = 'right';
-        ctx.font = '9px monospace';
+        ctx.font = '8px monospace';
         ctx.fillStyle = '#ef4444';
-        ctx.fillText(`-${formatNumber(phase.droppedEvents)}`, centerX + halfPipe + 50, y - 4);
+        ctx.fillText(`-${formatNumber(phase.droppedEvents)}`, centerX + halfPipe + 45, y - 3);
         ctx.fillStyle = '#64748b';
-        ctx.fillText(`${phase.avgLatencyMs}ms`, centerX + halfPipe + 50, y + 8);
+        ctx.fillText(`${phase.avgLatencyMs}ms`, centerX + halfPipe + 45, y + 7);
       } else {
         ctx.textAlign = 'right';
-        ctx.font = '9px monospace';
+        ctx.font = '8px monospace';
         ctx.fillStyle = '#64748b';
-        ctx.fillText(`${phase.avgLatencyMs}ms`, centerX + halfPipe + 50, y + 2);
+        ctx.fillText(`${phase.avgLatencyMs}ms`, centerX + halfPipe + 45, y + 2);
       }
 
       if (i < filteredPhases.length - 1) {
@@ -581,7 +581,7 @@ function EventProcessingFunnel() {
     <div
       ref={containerRef}
       className="relative w-full bg-[#0a0e1a] border border-[#1e293b] rounded-xl overflow-hidden"
-      style={{ minHeight: 960 }}
+      style={{ minHeight: 700 }}
     >
       <div className="absolute inset-0 pointer-events-none" style={{
         background: 'radial-gradient(ellipse at 50% 0%, rgba(34,211,238,0.03) 0%, transparent 60%)',
@@ -768,7 +768,7 @@ function EventProcessingFunnel() {
           onMouseMove={handleCanvasMouseMove}
           onMouseLeave={handleCanvasMouseLeave}
           className="w-full cursor-crosshair"
-          style={{ height: 700, imageRendering: 'auto' }}
+          style={{ height: 440, imageRendering: 'auto' }}
         />
       </div>
 
