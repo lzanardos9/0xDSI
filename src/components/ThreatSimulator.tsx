@@ -920,25 +920,113 @@ export default function ThreatSimulator() {
       setLlmStep(3);
       const step3 = await callSimulationStep(3, basePayload, step1Context, controller.signal);
 
+      const safeFeasibility = clamp(Number(step1.feasibility) || 50, 0, 100);
+      const safeDefense = clamp(Number(step1.defenseEffectiveness) || 40, 0, 100);
+      const safeKillChain = clamp(Number(step1.killChainStage) || 4, 1, 7);
+
+      const sanitizeMonteCarloRuns = (raw: unknown[]): MonteCarloRun[] => {
+        if (!Array.isArray(raw) || raw.length === 0) return generateMonteCarloRuns(safeFeasibility, safeDefense);
+        const runs = raw.slice(0, 10).map((r: unknown, i: number) => {
+          const run = r as Record<string, unknown>;
+          const fs = Number(run.feasibilityScore) || safeFeasibility;
+          const asr = Number(run.attackSuccessRate) || 0;
+          const dhr = Number(run.defenseHoldRate) || 0;
+          return {
+            runId: i + 1,
+            feasibilityScore: clamp(fs, 0, 100),
+            detectionTimeMinutes: clamp(Math.round(Number(run.detectionTimeMinutes) || 60), 1, 1440),
+            attackSuccessRate: clamp(asr > 1 ? asr : asr * 100, 0, 100),
+            defenseHoldRate: clamp(dhr > 1 ? dhr : dhr * 100, 0, 100),
+          };
+        });
+        while (runs.length < 10) {
+          const base = runs[runs.length - 1];
+          runs.push({
+            ...base,
+            runId: runs.length + 1,
+            feasibilityScore: clamp(base.feasibilityScore + boxMullerRandom() * 5, 0, 100),
+          });
+        }
+        return runs;
+      };
+
+      const sanitizeAttackPaths = (raw: unknown[]): AttackPath[] => {
+        if (!Array.isArray(raw)) return [];
+        return raw.slice(0, 5).map((p: unknown, i: number) => {
+          const path = p as Record<string, unknown>;
+          const lk = Number(path.likelihood) || 0;
+          const imp = Number(path.impact) || 0;
+          const likelihood = lk > 1 ? lk / 100 : lk;
+          const impact = imp > 1 ? imp / 100 : imp;
+          return {
+            id: i + 1,
+            name: String(path.name || `Path ${i + 1}`),
+            steps: Array.isArray(path.steps) ? (path.steps as string[]).map(String) : [],
+            likelihood: clamp(likelihood, 0, 1),
+            impact: clamp(impact, 0, 1),
+            riskScore: clamp(likelihood * impact * 100, 0, 100),
+            timeToCompromiseMinutes: clamp(Math.round(Number(path.timeToCompromiseMinutes) || 60), 1, 10000),
+            detectionProbability: clamp(Number(path.detectionProbability) || 0.5, 0, 1),
+          };
+        });
+      };
+
+      const sanitizeHighRiskNodes = (raw: unknown[]): HighRiskNode[] => {
+        if (!Array.isArray(raw)) return [];
+        const validTypes = ['identity', 'endpoint', 'service', 'cloud', 'data'];
+        const validExposure = ['Critical', 'High', 'Medium', 'Low'];
+        return raw.slice(0, 6).map((n: unknown) => {
+          const node = n as Record<string, unknown>;
+          const vs = Number(node.vulnerabilityScore) || 5;
+          return {
+            node: String(node.node || 'Unknown'),
+            type: validTypes.includes(String(node.type)) ? String(node.type) as HighRiskNode['type'] : 'service',
+            riskCentrality: clamp(Number(node.riskCentrality) || 50, 0, 100),
+            vulnerabilityScore: clamp(vs > 10 ? vs / 10 : vs, 0, 10),
+            exposureLevel: validExposure.includes(String(node.exposureLevel)) ? String(node.exposureLevel) as HighRiskNode['exposureLevel'] : 'Medium',
+            simulationAppearanceRate: String(node.simulationAppearanceRate || '50%'),
+            controlCoverage: clamp(Number(node.controlCoverage) || 50, 0, 100),
+          };
+        });
+      };
+
+      const sanitizeCoverage = (raw: unknown): CoverageAnalysis | null => {
+        if (!raw || typeof raw !== 'object') return null;
+        const cov = raw as Record<string, unknown>;
+        const stage = (cov.coverageByStage || {}) as Record<string, unknown>;
+        return {
+          overallCoverage: clamp(Number(cov.overallCoverage) || 50, 0, 100),
+          coveredPaths: Math.max(0, Math.round(Number(cov.coveredPaths) || 0)),
+          totalPaths: Math.max(1, Math.round(Number(cov.totalPaths) || 10)),
+          coverageByStage: {
+            reconnaissance: clamp(Number(stage.reconnaissance) || 50, 0, 100),
+            initialAccess: clamp(Number(stage.initialAccess) || 50, 0, 100),
+            execution: clamp(Number(stage.execution) || 50, 0, 100),
+            persistence: clamp(Number(stage.persistence) || 50, 0, 100),
+            lateralMovement: clamp(Number(stage.lateralMovement) || 50, 0, 100),
+            exfiltration: clamp(Number(stage.exfiltration) || 50, 0, 100),
+          },
+          improvementPotential: String(cov.improvementPotential || ''),
+        };
+      };
+
       const merged: SimulationData = {
-        feasibility: (step1.feasibility as number) ?? 50,
-        mitre: Array.isArray(step1.mitre) ? step1.mitre as MitreMapping[] : [],
-        killChainStage: (step1.killChainStage as number) ?? 4,
+        feasibility: safeFeasibility,
+        mitre: Array.isArray(step1.mitre) ? (step1.mitre as MitreMapping[]).slice(0, 8) : [],
+        killChainStage: safeKillChain,
         killChainLabel: (step1.killChainLabel as string) ?? 'Exploitation',
         detectionTimeCurrent: (step1.detectionTimeCurrent as string) ?? '2h',
         detectionTimeRecommended: (step1.detectionTimeRecommended as string) ?? '15m',
-        defenseEffectiveness: (step1.defenseEffectiveness as number) ?? 40,
+        defenseEffectiveness: safeDefense,
         scenarioNarrative: (step1.scenarioNarrative as string) ?? '',
         countermeasures: Array.isArray(step2.countermeasures) ? step2.countermeasures as Countermeasure[] : [],
         detectionGaps: Array.isArray(step2.detectionGaps) ? step2.detectionGaps as string[] : [],
         correlationRule: (step2.correlationRule as SimulationData['correlationRule']) ?? { name: '', logic: '', severity: 'High', mitre: '' },
         microPattern: (step2.microPattern as SimulationData['microPattern']) ?? { name: '', type: 'Behavioral', conditions: [], timeWindow: '10 minutes', minOccurrences: 1 },
-        monteCarloRuns: Array.isArray(step2.monteCarloRuns) && step2.monteCarloRuns.length > 0
-          ? step2.monteCarloRuns as MonteCarloRun[]
-          : generateMonteCarloRuns((step1.feasibility as number) ?? 50, (step1.defenseEffectiveness as number) ?? 40),
-        topAttackPaths: Array.isArray(step3.topAttackPaths) ? step3.topAttackPaths as AttackPath[] : [],
-        highRiskNodes: Array.isArray(step3.highRiskNodes) ? step3.highRiskNodes as HighRiskNode[] : [],
-        coverageAnalysis: (step3.coverageAnalysis as CoverageAnalysis) ?? null,
+        monteCarloRuns: sanitizeMonteCarloRuns(step2.monteCarloRuns as unknown[]),
+        topAttackPaths: sanitizeAttackPaths(step3.topAttackPaths as unknown[]),
+        highRiskNodes: sanitizeHighRiskNodes(step3.highRiskNodes as unknown[]),
+        coverageAnalysis: sanitizeCoverage(step3.coverageAnalysis),
         controlFailureSensitivity: Array.isArray(step3.controlFailureSensitivity) ? step3.controlFailureSensitivity as ControlFailure[] : [],
         predictedNextSteps: Array.isArray(step3.predictedNextSteps) ? step3.predictedNextSteps as PredictedStep[] : [],
         graphEdges: Array.isArray(step3.graphEdges) ? step3.graphEdges as GraphEdge[] : [],
