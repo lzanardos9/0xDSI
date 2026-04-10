@@ -4,7 +4,7 @@ import {
   Users, ChevronRight, X, Check, Download, Plus, Cpu, Activity,
   Layers, ArrowRight, Search, FileText, GitBranch, Gauge, Radar,
   ShieldAlert, ShieldCheck, Lock, Unlock, Server,
-  Network, CircleDot, ChevronDown, Minus, Play
+  Network, CircleDot, ChevronDown, Minus, Play, BarChart3
 } from 'lucide-react';
 
 interface AgentResult {
@@ -23,6 +23,14 @@ interface MitreMapping {
 interface Countermeasure {
   text: string;
   priority: 'Critical' | 'High' | 'Medium';
+}
+
+interface MonteCarloRun {
+  runId: number;
+  feasibilityScore: number;
+  detectionTimeMinutes: number;
+  attackSuccessRate: number;
+  defenseHoldRate: number;
 }
 
 interface SimulationData {
@@ -48,6 +56,53 @@ interface SimulationData {
     timeWindow: string;
     minOccurrences: number;
   };
+  monteCarloRuns: MonteCarloRun[];
+  scenarioNarrative: string;
+}
+
+function boxMullerRandom(): number {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+function clamp(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+}
+
+function generateMonteCarloRuns(baseFeasibility: number, baseDefenseEff: number): MonteCarloRun[] {
+  const runs: MonteCarloRun[] = [];
+  for (let i = 0; i < 100; i++) {
+    const feasibilityScore = clamp(
+      baseFeasibility + boxMullerRandom() * 12,
+      0,
+      100
+    );
+    const detectionTimeMinutes = clamp(
+      Math.round((feasibilityScore / 100) * 450 + 30 + boxMullerRandom() * 40),
+      2,
+      480
+    );
+    const attackSuccessRate = clamp(
+      feasibilityScore * 0.85 + boxMullerRandom() * 10,
+      0,
+      100
+    );
+    const defenseHoldRate = clamp(
+      baseDefenseEff + (100 - feasibilityScore) * 0.3 + boxMullerRandom() * 8,
+      0,
+      100
+    );
+    runs.push({
+      runId: i + 1,
+      feasibilityScore: Math.round(feasibilityScore * 10) / 10,
+      detectionTimeMinutes,
+      attackSuccessRate: Math.round(attackSuccessRate * 10) / 10,
+      defenseHoldRate: Math.round(defenseHoldRate * 10) / 10,
+    });
+  }
+  return runs;
 }
 
 const TEMPLATES: Record<string, { label: string; scenario: string; data: SimulationData }> = {
@@ -98,6 +153,8 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         timeWindow: '15 minutes',
         minOccurrences: 3,
       },
+      monteCarloRuns: generateMonteCarloRuns(72, 31),
+      scenarioNarrative: 'A trusted administrator turns rogue under the cover of night, weaponizing their privileged access to siphon terabytes through encrypted DNS channels. As endpoint sensors go dark one by one, the data bleeds out in a stream of high-entropy queries invisible to traditional monitoring.',
     },
   },
   ransomware: {
@@ -145,6 +202,8 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         timeWindow: '10 minutes',
         minOccurrences: 2,
       },
+      monteCarloRuns: generateMonteCarloRuns(58, 44),
+      scenarioNarrative: 'The poison arrives disguised as medicine. A routine software update from a trusted vendor carries a devastating payload, its malicious code hidden behind legitimate digital signatures. By the time the encryption begins, the kill chain has already bypassed every checkpoint in the defense perimeter.',
     },
   },
   physical: {
@@ -193,6 +252,8 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         timeWindow: '5 minutes',
         minOccurrences: 2,
       },
+      monteCarloRuns: generateMonteCarloRuns(45, 52),
+      scenarioNarrative: 'The attacker walks through the front door wearing a cloned identity, blending seamlessly with the morning rush. Within minutes, a tiny device plugged into an under-desk port begins intercepting credentials, turning the trusted internal network into a hunting ground.',
     },
   },
   zeroday: {
@@ -241,6 +302,8 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         timeWindow: '3 minutes',
         minOccurrences: 1,
       },
+      monteCarloRuns: generateMonteCarloRuns(34, 22),
+      scenarioNarrative: 'An invisible blade strikes at the heart of the perimeter. A zero-day vulnerability, unknown to every signature database on earth, is exploited with surgical precision. The attacker escalates from web shell to kernel root in under ninety seconds, leaving no trace in conventional logs.',
     },
   },
   cloud: {
@@ -288,6 +351,8 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         timeWindow: '30 minutes',
         minOccurrences: 1,
       },
+      monteCarloRuns: generateMonteCarloRuns(61, 38),
+      scenarioNarrative: 'Stolen tokens become skeleton keys to the kingdom in the cloud. The attacker silently rewrites IAM policies to grant themselves god-mode access, then methodically drains S3 buckets while the security team chases phantom alerts from a continent away.',
     },
   },
   aipoison: {
@@ -335,6 +400,8 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         timeWindow: '24 hours',
         minOccurrences: 2,
       },
+      monteCarloRuns: generateMonteCarloRuns(28, 18),
+      scenarioNarrative: 'The most insidious attack targets the mind itself. Carefully crafted adversarial samples slip into the training pipeline, subtly corrupting the ML model until it learns to see threats as benign. The poisoned guardian now holds the gate open for the enemy.',
     },
   },
   badge: {
@@ -383,6 +450,8 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         timeWindow: '10 minutes',
         minOccurrences: 2,
       },
+      monteCarloRuns: generateMonteCarloRuns(52, 55),
+      scenarioNarrative: 'A cloned badge grants passage into the fortress. The attacker harvests credentials from an unattended workstation and begins hopping laterally through the network, each jump bringing them closer to the crown jewels while appearing as a legitimate employee.',
     },
   },
   ddos: {
@@ -431,6 +500,8 @@ const TEMPLATES: Record<string, { label: string; scenario: string; data: Simulat
         timeWindow: '5 minutes',
         minOccurrences: 1,
       },
+      monteCarloRuns: generateMonteCarloRuns(65, 48),
+      scenarioNarrative: 'A wall of traffic crashes against the perimeter like a tidal wave, consuming every analyst and every resource. But the flood is merely a distraction. Behind the noise, a second team moves with precision, draining sensitive data through a backdoor while the SOC fights the wrong battle.',
     },
   },
 };
@@ -472,6 +543,20 @@ function getPriorityColor(priority: string): string {
   }
 }
 
+function getHistogramBinColor(binCenter: number): string {
+  if (binCenter <= 25) return '#22d3ee';
+  if (binCenter <= 50) return '#3b82f6';
+  if (binCenter <= 75) return '#f59e0b';
+  return '#ef4444';
+}
+
+function formatMinutes(minutes: number): string {
+  if (minutes < 60) return `${Math.round(minutes)}m`;
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
 export default function ThreatSimulator() {
   const [scenario, setScenario] = useState('');
   const [attackDomain, setAttackDomain] = useState<'Logical' | 'Physical' | 'Hybrid'>('Logical');
@@ -489,15 +574,126 @@ export default function ThreatSimulator() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [editableRule, setEditableRule] = useState({ name: '', logic: '', severity: '', mitre: '' });
   const [editablePattern, setEditablePattern] = useState({ name: '', type: '', conditions: [] as string[], timeWindow: '', minOccurrences: 1 });
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmError, setLlmError] = useState<string | null>(null);
+  const [isLlmGenerated, setIsLlmGenerated] = useState(false);
   const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
   const feasibilityRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const monteCarloCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const monteCarloAnimRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       timerRefs.current.forEach(clearTimeout);
       if (feasibilityRef.current) cancelAnimationFrame(feasibilityRef.current);
+      if (monteCarloAnimRef.current) clearTimeout(monteCarloAnimRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!simulationComplete || !activeData || !monteCarloCanvasRef.current) return;
+    const canvas = monteCarloCanvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const w = rect.width;
+    const h = rect.height;
+
+    const runs = activeData.monteCarloRuns;
+    const numBins = 20;
+    const bins = new Array(numBins).fill(0);
+    runs.forEach(run => {
+      const binIdx = Math.min(Math.floor(run.feasibilityScore / (100 / numBins)), numBins - 1);
+      bins[binIdx]++;
+    });
+    const maxBin = Math.max(...bins, 1);
+
+    const padding = { top: 10, bottom: 28, left: 32, right: 10 };
+    const chartW = w - padding.left - padding.right;
+    const chartH = h - padding.top - padding.bottom;
+    const barW = chartW / numBins;
+
+    const meanFeasibility = runs.reduce((s, r) => s + r.feasibilityScore, 0) / runs.length;
+
+    ctx.clearRect(0, 0, w, h);
+
+    let barsDrawn = 0;
+    const drawNextBar = () => {
+      if (barsDrawn >= numBins) return;
+      const i = barsDrawn;
+      const binCenter = (i + 0.5) * (100 / numBins);
+      const barH = (bins[i] / maxBin) * chartH;
+      const x = padding.left + i * barW;
+      const y = padding.top + chartH - barH;
+
+      ctx.fillStyle = getHistogramBinColor(binCenter);
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      const radius = 2;
+      ctx.moveTo(x + 1 + radius, y);
+      ctx.lineTo(x + barW - 1 - radius, y);
+      ctx.quadraticCurveTo(x + barW - 1, y, x + barW - 1, y + radius);
+      ctx.lineTo(x + barW - 1, y + barH);
+      ctx.lineTo(x + 1, y + barH);
+      ctx.lineTo(x + 1, y + radius);
+      ctx.quadraticCurveTo(x + 1, y, x + 1 + radius, y);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      barsDrawn++;
+      if (barsDrawn < numBins) {
+        monteCarloAnimRef.current = setTimeout(drawNextBar, 25);
+      } else {
+        drawOverlays();
+      }
+    };
+
+    const drawOverlays = () => {
+      const meanX = padding.left + (meanFeasibility / 100) * chartW;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = '#f8fafc';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(meanX, padding.top);
+      ctx.lineTo(meanX, padding.top + chartH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '9px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`Mean: ${meanFeasibility.toFixed(1)}%`, meanX, padding.top - 1);
+
+      ctx.fillStyle = '#64748b';
+      ctx.font = '9px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      for (let i = 0; i <= 4; i++) {
+        const val = i * 25;
+        const x = padding.left + (val / 100) * chartW;
+        ctx.fillText(`${val}`, x, h - 6);
+      }
+      ctx.fillText('100', padding.left + chartW, h - 6);
+
+      ctx.textAlign = 'right';
+      const ySteps = 4;
+      for (let i = 0; i <= ySteps; i++) {
+        const val = Math.round((maxBin / ySteps) * i);
+        const y = padding.top + chartH - (i / ySteps) * chartH;
+        ctx.fillText(`${val}`, padding.left - 4, y + 3);
+      }
+    };
+
+    drawNextBar();
+
+    return () => {
+      if (monteCarloAnimRef.current) clearTimeout(monteCarloAnimRef.current);
+    };
+  }, [simulationComplete, activeData]);
 
   const getDefaultData = useCallback((): SimulationData => {
     const lowerScenario = scenario.toLowerCase();
@@ -509,8 +705,7 @@ export default function ThreatSimulator() {
     return TEMPLATES.insider.data;
   }, [scenario]);
 
-  const runSimulation = useCallback((data?: SimulationData) => {
-    const simData = data || getDefaultData();
+  const runAgentAnimation = useCallback((simData: SimulationData) => {
     setIsRunning(true);
     setSimulationComplete(false);
     setShowCorrelationRule(false);
@@ -577,7 +772,83 @@ export default function ThreatSimulator() {
       feasibilityRef.current = requestAnimationFrame(animate);
     }, 2800);
     timerRefs.current.push(completionTimer);
-  }, [getDefaultData]);
+  }, []);
+
+  const runSimulation = useCallback(async (data?: SimulationData) => {
+    if (data) {
+      setIsLlmGenerated(false);
+      setLlmError(null);
+      runAgentAnimation(data);
+      return;
+    }
+
+    const isTemplateScenario = Object.values(TEMPLATES).some(t => t.scenario === scenario);
+
+    if (isTemplateScenario) {
+      const simData = getDefaultData();
+      setIsLlmGenerated(false);
+      setLlmError(null);
+      runAgentAnimation(simData);
+      return;
+    }
+
+    setLlmLoading(true);
+    setLlmError(null);
+    setIsLlmGenerated(false);
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/simulate-threat`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          scenario,
+          attackDomain,
+          attackerProfile,
+          targetAssets,
+          depth: simulationDepth,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}: ${response.statusText}`);
+      }
+
+      const llmResult = await response.json();
+
+      const simData: SimulationData = {
+        feasibility: llmResult.feasibility ?? 50,
+        mitre: llmResult.mitre ?? [],
+        killChainStage: llmResult.killChainStage ?? 4,
+        killChainLabel: llmResult.killChainLabel ?? 'Exploitation',
+        detectionTimeCurrent: llmResult.detectionTimeCurrent ?? '2h',
+        detectionTimeRecommended: llmResult.detectionTimeRecommended ?? '15m',
+        defenseEffectiveness: llmResult.defenseEffectiveness ?? 40,
+        countermeasures: llmResult.countermeasures ?? [],
+        detectionGaps: llmResult.detectionGaps ?? [],
+        correlationRule: llmResult.correlationRule ?? { name: '', logic: '', severity: 'High', mitre: '' },
+        microPattern: llmResult.microPattern ?? { name: '', type: 'Behavioral', conditions: [], timeWindow: '10 minutes', minOccurrences: 1 },
+        monteCarloRuns: llmResult.monteCarloRuns && llmResult.monteCarloRuns.length > 0
+          ? llmResult.monteCarloRuns
+          : generateMonteCarloRuns(llmResult.feasibility ?? 50, llmResult.defenseEffectiveness ?? 40),
+        scenarioNarrative: llmResult.scenarioNarrative ?? '',
+      };
+
+      setLlmLoading(false);
+      setIsLlmGenerated(true);
+      runAgentAnimation(simData);
+    } catch (err: any) {
+      const errorMsg = err?.message || 'Unknown error connecting to AI engine';
+      setLlmError(errorMsg);
+      setLlmLoading(false);
+      setIsLlmGenerated(false);
+      const fallback = getDefaultData();
+      runAgentAnimation(fallback);
+    }
+  }, [scenario, attackDomain, attackerProfile, targetAssets, simulationDepth, getDefaultData, runAgentAnimation]);
 
   const handleTemplateClick = (key: string) => {
     const template = TEMPLATES[key];
@@ -600,6 +871,29 @@ export default function ThreatSimulator() {
 
   const gaugeCircumference = 2 * Math.PI * 54;
   const gaugeOffset = gaugeCircumference - (gaugeCircumference * animatedFeasibility) / 100;
+
+  const monteCarloStats = activeData ? (() => {
+    const runs = activeData.monteCarloRuns;
+    if (!runs || runs.length === 0) return null;
+    const scores = runs.map(r => r.feasibilityScore).sort((a, b) => a - b);
+    const mean = scores.reduce((s, v) => s + v, 0) / scores.length;
+    const median = scores.length % 2 === 0
+      ? (scores[scores.length / 2 - 1] + scores[scores.length / 2]) / 2
+      : scores[Math.floor(scores.length / 2)];
+    const variance = scores.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / scores.length;
+    const stdDev = Math.sqrt(variance);
+    const p95 = scores[Math.floor(scores.length * 0.95)];
+    const successProb = (scores.filter(s => s > 50).length / scores.length) * 100;
+
+    const detTimes = runs.map(r => r.detectionTimeMinutes);
+    const avgDetTime = detTimes.reduce((s, v) => s + v, 0) / detTimes.length;
+    const avgDefHold = runs.reduce((s, r) => s + r.defenseHoldRate, 0) / runs.length;
+
+    const bestRun = runs.reduce((best, r) => r.feasibilityScore < best.feasibilityScore ? r : best, runs[0]);
+    const worstRun = runs.reduce((worst, r) => r.feasibilityScore > worst.feasibilityScore ? r : worst, runs[0]);
+
+    return { mean, median, stdDev, p95, successProb, avgDetTime, avgDefHold, bestRun, worstRun };
+  })() : null;
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-[#0A1628]">
@@ -774,17 +1068,17 @@ export default function ThreatSimulator() {
 
           <button
             onClick={() => runSimulation()}
-            disabled={isRunning || !scenario.trim()}
+            disabled={isRunning || llmLoading || !scenario.trim()}
             className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-bold text-sm tracking-wider transition-all ${
-              isRunning || !scenario.trim()
+              isRunning || llmLoading || !scenario.trim()
                 ? 'bg-slate-800/60 border border-slate-700/50 text-slate-500 cursor-not-allowed'
                 : 'bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 hover:shadow-[0_0_25px_rgba(34,211,238,0.2)] active:scale-[0.98]'
             }`}
           >
-            {isRunning ? (
+            {isRunning || llmLoading ? (
               <>
                 <Cpu className="w-5 h-5 animate-spin" />
-                SIMULATING...
+                {llmLoading ? 'CONNECTING TO AI...' : 'SIMULATING...'}
               </>
             ) : (
               <>
@@ -796,7 +1090,7 @@ export default function ThreatSimulator() {
         </div>
 
         <div className="w-[35%] flex-shrink-0 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar">
-          {!isRunning && !simulationComplete && (
+          {!isRunning && !simulationComplete && !llmLoading && (
             <div className="flex-1 flex flex-col items-center justify-center enterprise-card">
               <div className="relative w-32 h-32 mb-6">
                 <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20 animate-ping" style={{ animationDuration: '3s' }} />
@@ -811,6 +1105,33 @@ export default function ThreatSimulator() {
               </div>
               <p className="text-sm font-medium text-slate-400">Awaiting Scenario Input</p>
               <p className="text-xs text-slate-500 mt-1">Describe a threat or select a template</p>
+            </div>
+          )}
+
+          {llmLoading && !isRunning && (
+            <div className="enterprise-card p-6 animate-pulse">
+              <div className="flex flex-col items-center gap-4">
+                <div className="p-4 rounded-full bg-cyan-500/10 border border-cyan-500/20">
+                  <Brain className="w-8 h-8 text-cyan-400 animate-spin" style={{ animationDuration: '2s' }} />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-cyan-300">Connecting to AI Simulation Engine...</p>
+                  <p className="text-xs text-slate-500 mt-2">Analyzing scenario with advanced threat modeling...</p>
+                </div>
+                <div className="w-full h-1 bg-slate-700 rounded-full overflow-hidden mt-2">
+                  <div className="h-full bg-cyan-500/60 rounded-full animate-pulse" style={{ width: '70%' }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {llmError && (
+            <div className="enterprise-card p-3 border-amber-500/30 bg-amber-500/5">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span className="text-xs font-semibold text-amber-300">AI engine unavailable: using local simulation</span>
+              </div>
+              <p className="text-[10px] text-amber-500/70 mt-1 ml-6">{llmError}</p>
             </div>
           )}
 
@@ -995,6 +1316,85 @@ export default function ThreatSimulator() {
                       </span>
                     </div>
                   </div>
+
+                  {activeData.scenarioNarrative && (
+                    <div className="enterprise-card p-4 border-l-2 border-l-cyan-500/40">
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                        <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Scenario Narrative</span>
+                        {isLlmGenerated && (
+                          <span className="ml-auto px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-cyan-500/15 border border-cyan-500/30 rounded text-cyan-400">
+                            AI GENERATED
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 leading-relaxed italic">{activeData.scenarioNarrative}</p>
+                    </div>
+                  )}
+
+                  {monteCarloStats && (
+                    <>
+                      <div className="enterprise-card p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <BarChart3 className="w-4 h-4 text-cyan-400" />
+                          <span className="text-sm font-semibold text-slate-200">MONTE CARLO ANALYSIS</span>
+                          <span className="ml-auto px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-slate-700/60 border border-slate-600/40 rounded text-slate-400">
+                            100 RUNS
+                          </span>
+                        </div>
+                        <canvas
+                          ref={monteCarloCanvasRef}
+                          className="w-full rounded-lg bg-slate-800/30"
+                          style={{ height: '180px' }}
+                        />
+                        <div className="grid grid-cols-5 gap-2 mt-3">
+                          <div className="text-center">
+                            <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider">Mean</p>
+                            <p className="text-xs font-bold text-slate-200">{monteCarloStats.mean.toFixed(1)}%</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider">Median</p>
+                            <p className="text-xs font-bold text-slate-200">{monteCarloStats.median.toFixed(1)}%</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider">Std Dev</p>
+                            <p className="text-xs font-bold text-slate-200">{monteCarloStats.stdDev.toFixed(1)}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider">95th %</p>
+                            <p className="text-xs font-bold text-slate-200">{monteCarloStats.p95.toFixed(1)}%</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[9px] font-medium text-slate-500 uppercase tracking-wider">P(S{'>'}50%)</p>
+                            <p className="text-xs font-bold text-slate-200">{monteCarloStats.successProb.toFixed(0)}%</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="enterprise-card p-3">
+                          <p className="text-[9px] font-medium text-emerald-400/70 uppercase tracking-wider mb-1">Best Case</p>
+                          <p className="text-sm font-bold text-emerald-400">{monteCarloStats.bestRun.feasibilityScore.toFixed(1)}%</p>
+                          <p className="text-[10px] text-slate-500">Detection: {formatMinutes(monteCarloStats.bestRun.detectionTimeMinutes)}</p>
+                        </div>
+                        <div className="enterprise-card p-3">
+                          <p className="text-[9px] font-medium text-red-400/70 uppercase tracking-wider mb-1">Worst Case</p>
+                          <p className="text-sm font-bold text-red-400">{monteCarloStats.worstRun.feasibilityScore.toFixed(1)}%</p>
+                          <p className="text-[10px] text-slate-500">Detection: {formatMinutes(monteCarloStats.worstRun.detectionTimeMinutes)}</p>
+                        </div>
+                        <div className="enterprise-card p-3">
+                          <p className="text-[9px] font-medium text-blue-400/70 uppercase tracking-wider mb-1">Avg Detection Time</p>
+                          <p className="text-sm font-bold text-blue-400">{formatMinutes(monteCarloStats.avgDetTime)}</p>
+                          <p className="text-[10px] text-slate-500">Across all runs</p>
+                        </div>
+                        <div className="enterprise-card p-3">
+                          <p className="text-[9px] font-medium text-amber-400/70 uppercase tracking-wider mb-1">Defense Hold Rate</p>
+                          <p className="text-sm font-bold text-amber-400">{monteCarloStats.avgDefHold.toFixed(1)}%</p>
+                          <p className="text-[10px] text-slate-500">Average across runs</p>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </>
