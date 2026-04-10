@@ -41,21 +41,21 @@ const ICON_MAP: Record<string, typeof Shield> = {
 };
 
 const STATUS_MESSAGES = [
-  { from: 0, to: 2, msg: 'Forwarding triaged alert batch #2847 to Orchestrator', severity: 'medium' as const },
-  { from: 2, to: 1, msg: 'Requesting IOC enrichment for 185.220.101.34', severity: 'high' as const },
-  { from: 1, to: 3, msg: 'Enriched data ready - APT41 correlation found', severity: 'critical' as const },
-  { from: 3, to: 2, msg: 'Investigation complete - lateral movement confirmed', severity: 'critical' as const },
-  { from: 2, to: 4, msg: 'Dispatching containment action for compromised host', severity: 'critical' as const },
-  { from: 4, to: 2, msg: 'IP block executed successfully - threat contained', severity: 'high' as const },
-  { from: 0, to: 1, msg: 'New phishing IOCs detected - requesting enrichment', severity: 'medium' as const },
-  { from: 3, to: 4, msg: 'Escalating critical finding - immediate response needed', severity: 'critical' as const },
-  { from: 1, to: 3, msg: 'Threat intel match: Lazarus Group TTPs identified', severity: 'high' as const },
-  { from: 4, to: 0, msg: 'Response complete - resuming alert monitoring', severity: 'low' as const },
-  { from: 0, to: 3, msg: 'Suspicious PowerShell execution chain detected', severity: 'high' as const },
-  { from: 2, to: 0, msg: 'Reassigning priority: brute-force cluster identified', severity: 'medium' as const },
-  { from: 1, to: 4, msg: 'C2 beacon identified - recommend immediate isolation', severity: 'critical' as const },
-  { from: 3, to: 1, msg: 'Requesting additional context for DNS tunneling IOCs', severity: 'medium' as const },
-  { from: 4, to: 3, msg: 'Host quarantined - forensic snapshot initiated', severity: 'high' as const },
+  { from: 0, to: 2, msg: 'Hey Commander, batch #2847 is triaged and ready for you', severity: 'medium' as const },
+  { from: 2, to: 1, msg: 'Sage, can you run enrichment on 185.220.101.34? Looks suspicious', severity: 'high' as const },
+  { from: 1, to: 3, msg: 'Nova, enrichment came back hot -- APT41 correlation. Your turn', severity: 'critical' as const },
+  { from: 3, to: 2, msg: 'Investigation\'s done. Confirmed lateral movement across the subnet', severity: 'critical' as const },
+  { from: 2, to: 4, msg: 'Vanguard, we need containment on the compromised host now', severity: 'critical' as const },
+  { from: 4, to: 2, msg: 'IP is blocked and the threat\'s contained. All clear on my end', severity: 'high' as const },
+  { from: 0, to: 1, msg: 'Picked up new phishing IOCs. Sending them over for enrichment', severity: 'medium' as const },
+  { from: 3, to: 4, msg: 'Critical finding here -- need immediate response on this one', severity: 'critical' as const },
+  { from: 1, to: 3, msg: 'Got a threat intel match. TTPs are lining up with Lazarus Group', severity: 'high' as const },
+  { from: 4, to: 0, msg: 'Response is wrapped up. Back to monitoring, Atlas', severity: 'low' as const },
+  { from: 0, to: 3, msg: 'Flagging a suspicious PowerShell chain for you, Nova', severity: 'high' as const },
+  { from: 2, to: 0, msg: 'Atlas, reprioritize -- there\'s a brute-force cluster building up', severity: 'medium' as const },
+  { from: 1, to: 4, msg: 'Found a C2 beacon. I\'d recommend isolating the host right away', severity: 'critical' as const },
+  { from: 3, to: 1, msg: 'Sage, I need more context on these DNS tunneling indicators', severity: 'medium' as const },
+  { from: 4, to: 3, msg: 'Host is quarantined. Forensic snapshot is running now', severity: 'high' as const },
 ];
 
 interface FeedItem { msg: string; color: string; time: string; severity: string }
