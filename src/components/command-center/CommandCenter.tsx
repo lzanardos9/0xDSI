@@ -16,7 +16,9 @@ import PredictiveThreatAnalytics from './PredictiveThreatAnalytics';
 import MonteCarloForecasting from './MonteCarloForecasting';
 import AgentCommsPanel from './AgentCommsPanel';
 import ThreatGlobe from '../ThreatGlobe';
-import { Globe, Maximize2, Minimize2, Shield, Activity, Radio, Cpu, Clock, Wifi, Eye } from 'lucide-react';
+import RiskPostureGauge from './RiskPostureGauge';
+import EventProcessingFunnel from './EventProcessingFunnel';
+import { Globe, Maximize2, Minimize2, Shield, Activity, Radio, Cpu, Clock, Wifi, Eye, Layers } from 'lucide-react';
 
 interface SelectedCamera {
   id: string;
@@ -207,7 +209,14 @@ const CommandCenter = () => {
         </div>
 
         <div className="space-y-2">
-          <DefconAlert />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2">
+              <DefconAlert />
+            </div>
+            <div>
+              <RiskPostureGauge />
+            </div>
+          </div>
 
           <SectionDivider label="Predictive Intelligence" icon={Eye} />
 
@@ -299,6 +308,10 @@ const CommandCenter = () => {
           <SectionDivider label="Intelligence Monitoring" icon={Eye} />
 
           <IntelligenceMonitoring />
+
+          <SectionDivider label="Event Processing Pipeline" icon={Layers} />
+
+          <EventProcessingFunnel />
 
           <div className="flex items-center justify-center py-6 mt-4 border-t border-slate-800/40">
             <div className="flex items-center gap-4 text-[10px] font-mono text-slate-600">
