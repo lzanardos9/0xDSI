@@ -269,7 +269,7 @@ const DefconAlert = ({ defconLevel: externalLevel }: DefconAlertProps = {}) => {
   const tickerText = events.map(e => `[${e.time}] ${e.message}`).join('  ///  ');
 
   return (
-    <div className={`relative w-full rounded-xl overflow-hidden border ${config.borderColor} bg-gradient-to-r ${config.bgFrom} ${config.bgTo} shadow-lg ${config.glowColor}`}>
+    <div className={`relative w-full h-full rounded-xl overflow-hidden border ${config.borderColor} bg-gradient-to-r ${config.bgFrom} ${config.bgTo} shadow-lg ${config.glowColor}`}>
       {transitioning && (
         <div className="absolute inset-0 z-20 pointer-events-none animate-pulse bg-white/5" />
       )}

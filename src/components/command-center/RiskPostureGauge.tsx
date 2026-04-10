@@ -331,7 +331,7 @@ const RiskPostureGauge = ({ metrics: externalMetrics, compositeScore: externalSc
   };
 
   return (
-    <div className="relative w-full bg-[#060a14] rounded-xl overflow-hidden border border-slate-800/50">
+    <div className="relative w-full h-full bg-[#060a14] rounded-xl overflow-hidden border border-slate-800/50">
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-slate-800/40">
         <div className="flex items-center gap-2">
           <Shield className="w-3.5 h-3.5" style={{ color: currentColor }} />
