@@ -27,6 +27,7 @@ export interface FunnelEvent {
   isStructured: boolean;
   domain: 'logical' | 'physical';
   finalVerdict: 'pending' | 'benign' | 'suspicious' | 'threat' | 'critical_threat';
+  resolutionReason: string;
 }
 
 export const FUNNEL_PHASES: FunnelPhase[] = [
@@ -174,6 +175,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'threat',
+    resolutionReason: 'JA3 fingerprint e7d705a3286e matches known Cobalt Strike beacon profile; 10.0.5.107 initiated periodic callbacks to 185.93.2.71 on 443/TCP with fixed interval jitter consistent with C2 heartbeat',
   },
   {
     id: 'EVT-0002',
@@ -191,6 +193,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'NetFlow from 10.0.1.44 shows 24891 bytes exfiltrated to 203.0.113.15 over 12.4s; volume 4x baseline for this host; destination IP in unregistered ASN with no prior communication history',
   },
   {
     id: 'EVT-0003',
@@ -208,6 +211,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'Inbound SYN from known Tor exit node 185.220.101.4 blocked by UFW on eth0; single port probe on 443/TCP awaiting enrichment with threat intel feed correlation',
   },
   {
     id: 'EVT-0004',
@@ -225,6 +229,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'critical_threat',
+    resolutionReason: 'BytecodeWeaver agent detected reflective DLL injection from chrome.exe (PID 4821) into PID 892 with 0.94 confidence; technique matches MITRE T1055.001; host 10.0.3.88 already flagged in active incident IR-2024-0847',
   },
   {
     id: 'EVT-0005',
@@ -242,6 +247,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'AssumeRole call from external IP 198.51.100.23 targeting admin role on account 123456789; source IP not in approved CIDR range; user suspicious-actor has no prior legitimate access pattern',
   },
   {
     id: 'EVT-0006',
@@ -259,6 +265,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'critical_threat',
+    resolutionReason: 'AMSI bypass detected on WKS-FIN-042; powershell.exe executing IEX cradle downloading remote payload from evil.com; ALHF confirmed true positive after analyst review; host isolated per playbook PB-MAL-003',
   },
   {
     id: 'EVT-0007',
@@ -276,6 +283,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'physical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'CCTV CAM-DC-07 detected unauthorized face in SERVER_ROOM_A at 0.89 confidence; no corresponding badge scan within 60s window; automated containment triggered door lock on zone access points',
   },
   {
     id: 'EVT-0008',
@@ -293,6 +301,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'physical',
     finalVerdict: 'threat',
+    resolutionReason: 'Badge EMP-7842 (John.Mitchell) denied at DOOR-SR-01 RESTRICTED zone due to expired clearance; employee clearance lapsed 2024-11-30; 3 consecutive denied attempts in 5 minutes indicates intent to bypass physical access control',
   },
   {
     id: 'EVT-0009',
@@ -310,6 +319,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'threat',
+    resolutionReason: 'Firewall rule APT_C2_DETECT triggered on same src/dst pair as EVT-0001; CVE-2024-3094 exploit signature matched; 10.0.5.107 confirmed compromised host with active C2 channel to 185.93.2.71',
   },
   {
     id: 'EVT-0010',
@@ -327,6 +337,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'DNS query entropy 4.82 for a3q3x.evil-domain.xyz exceeds tunneling threshold of 3.5; subdomain pattern consistent with DNS-over-TXT exfiltration; origin host 10.0.5.107 already linked to C2 activity in EVT-0001',
   },
   {
     id: 'EVT-0011',
@@ -344,6 +355,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'DHCP lease assigned to unknown MAC aa:bb:cc:dd:ee:ff with hostname UNKNOWN-DEVICE on 10.0.5.220; MAC OUI not in approved vendor list; awaiting NAC posture assessment and asset inventory correlation',
   },
   {
     id: 'EVT-0012',
@@ -361,6 +373,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'threat',
+    resolutionReason: 'WAF rule 942100 blocked SQL injection on /api/v2/users from 203.0.113.77; attack score 95/100; UNION-based injection with boolean blind technique; source IP linked to 12 prior SQLi attempts across 3 applications',
   },
   {
     id: 'EVT-0013',
@@ -378,6 +391,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'Standard HTTPS session from 10.0.2.15 to Cloudflare CDN 104.26.10.78; JA3 cd08e31494f9 matches Chrome browser profile; certificate chain valid; traffic volume within normal business hours baseline',
   },
   {
     id: 'EVT-0014',
@@ -395,6 +409,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'SMB lateral movement from 10.0.3.22 to 10.0.3.50 with 189KB transferred over 45.7s; unusual inter-subnet SMB traffic; awaiting triage scoring for repeat-offender and temporal anomaly factors',
   },
   {
     id: 'EVT-0015',
@@ -412,6 +427,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'SSH brute force attempt from 45.33.32.156 targeting root account on auth-gw; single failed attempt ingested; awaiting correlation with additional login failures to determine attack scope',
   },
   {
     id: 'EVT-0016',
@@ -429,6 +445,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'Second SSH brute force from same source 45.33.32.156 now targeting admin account; sequential port increment (54812->54813) indicates automated credential stuffing tool; awaiting correlation window completion',
   },
   {
     id: 'EVT-0017',
@@ -446,6 +463,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'BytecodeWeaver detected process hollowing of lsass.exe (PID 7712) targeting PID 1204 at 0.87 confidence; technique consistent with credential harvesting (MITRE T1003.001); deep enrichment pending for memory forensics',
   },
   {
     id: 'EVT-0018',
@@ -463,6 +481,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'CloudTrail CreateAccessKey by dev-ops-lead from internal IP 10.0.1.5; user is authorized IAM admin; action matches scheduled key rotation policy; no anomalous API calls in surrounding 15-minute window',
   },
   {
     id: 'EVT-0019',
@@ -480,6 +499,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'Certutil LOLBin usage on WKS-HR-019 downloading payload.bin from internal IP 192.168.1.100; certutil -urlcache -split technique is MITRE T1105; awaiting triage to determine if source IP is legitimate staging server',
   },
   {
     id: 'EVT-0020',
@@ -497,6 +517,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'physical',
     finalVerdict: 'pending',
+    resolutionReason: 'CCTV CAM-LOBBY-02 detected 2 persons entering with only 1 badge scan at MAIN_ENTRANCE; tailgating confidence 0.92; awaiting correlation with badge reader logs to identify unauthorized individual',
   },
   {
     id: 'EVT-0021',
@@ -514,6 +535,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'physical',
     finalVerdict: 'pending',
+    resolutionReason: 'Badge EMP-3291 (Sarah.Chen) granted access to DATA_CENTER via DOOR-DC-03 during after-hours; employee has valid clearance but access time deviates from 90-day behavioral baseline; deep enrichment running temporal anomaly scoring',
   },
   {
     id: 'EVT-0022',
@@ -531,6 +553,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'Firewall dropped inbound traffic from 192.0.2.100 at 15000 pps exceeding rate limit threshold; DDoS fragment pattern detected; awaiting enrichment with upstream ISP flow data and BGP anomaly correlation',
   },
   {
     id: 'EVT-0023',
@@ -548,6 +571,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'DNS A-record query for update.microsoft.com from 10.0.3.88 resolved to known Microsoft IP 20.190.160.14; entropy 2.31 well below tunneling threshold; matches scheduled Windows Update check pattern',
   },
   {
     id: 'EVT-0024',
@@ -565,6 +589,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'Standard DHCP lease renewal for WKS-MKT-007 (MAC 11:22:33:44:55:66) on 10.0.6.180; known corporate asset in CMDB; lease extension from 3600s to 7200s consistent with DHCP server policy',
   },
   {
     id: 'EVT-0025',
@@ -582,6 +607,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'WAF rule 941100 blocked reflected XSS via /search endpoint from 198.51.100.44; script tag injection targeting document.cookie; attack score 78/100; source IP has 5 prior WAF violations in last 24h',
   },
   {
     id: 'EVT-0026',
@@ -599,6 +625,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'critical_threat',
+    resolutionReason: 'Persistent C2 beacon from 10.0.5.107 to 185.93.2.71 confirmed via DPI; identical JA3 e7d705a3286e as EVT-0001; PSH/ACK payload hash variant indicates active data staging; ALHF escalated to critical after cross-correlation with 4 related events',
   },
   {
     id: 'EVT-0027',
@@ -616,6 +643,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'Routine internal NetFlow between 10.0.1.44 and 10.0.1.50 on port 8080; 5KB over 2.1s consistent with application health check; both IPs are registered application servers in same VLAN',
   },
   {
     id: 'EVT-0028',
@@ -633,6 +661,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'Syslog rotation event from core-sw-01; logfile turned over at 512K size limit; standard syslogd housekeeping operation; no security relevance',
   },
   {
     id: 'EVT-0029',
@@ -650,6 +679,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'Firewall DROP on RDP port 3389 from DMZ host 172.16.0.55 to internal 10.0.7.30; RDP from DMZ violates segmentation policy; awaiting correlation to determine if source host is compromised or misconfigured',
   },
   {
     id: 'EVT-0030',
@@ -667,6 +697,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'threat',
+    resolutionReason: 'BytecodeWeaver detected APC injection from svchost.exe (PID 2244) into PID 668 at 0.91 confidence; target PID is winlogon.exe; technique matches MITRE T1055.004; automated response isolated host 10.0.4.200 from network',
   },
   {
     id: 'EVT-0031',
@@ -684,6 +715,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'threat',
+    resolutionReason: 'CloudTrail AttachRolePolicy granting AdministratorAccess to compromised-svc from external IP 203.0.113.200; policy escalation from read-only to full admin; source IP geolocated to non-corporate jurisdiction; service account has no change-management ticket',
   },
   {
     id: 'EVT-0032',
@@ -701,6 +733,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'Legitimate software installation on WKS-DEV-103; msiexec.exe running VS Code setup in quiet mode; installer hash matches known Microsoft signature; LEGITIMATE_INSTALL detection tag from EDR confirms approved software catalog entry',
   },
   {
     id: 'EVT-0033',
@@ -718,6 +751,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'physical',
     finalVerdict: 'benign',
+    resolutionReason: 'CCTV motion alert in PARKING_LOT_B from CAM-EXT-14; vehicle detection positive but face match returned NONE; confidence 0.67 below actionable threshold; normal parking lot activity during business hours',
   },
   {
     id: 'EVT-0034',
@@ -735,6 +769,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'physical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'Unknown individual loitering 340 seconds in SERVER_ROOM_B detected by CAM-DC-11 at 0.94 confidence; face not matched in employee database; duration exceeds 120s threshold for restricted zones; investigation initiated for physical security breach',
   },
   {
     id: 'EVT-0035',
@@ -752,6 +787,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'physical',
     finalVerdict: 'benign',
+    resolutionReason: 'Routine badge scan for EMP-1024 (Alice.Wong) at DOOR-MAIN-01 LOBBY zone; valid clearance confirmed; access time within normal business hours; no anomalous access patterns in 30-day history',
   },
   {
     id: 'EVT-0036',
@@ -769,6 +805,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'physical',
     finalVerdict: 'critical_threat',
+    resolutionReason: 'Badge EMP-7842 (John.Mitchell) used simultaneously at DOOR-LAB-02 R_AND_D zone and DOOR-SR-01 (EVT-0008); physical impossibility confirms badge cloning; vector scoring elevated to critical; badge immediately revoked and security dispatch initiated',
   },
   {
     id: 'EVT-0037',
@@ -786,6 +823,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'Internal SMB traffic from 10.0.3.22 to known-compromised host 10.0.5.107 allowed by INTERNAL_SMB rule; 245KB sent with only 12KB received indicates asymmetric transfer; awaiting triage to score against lateral movement kill chain',
   },
   {
     id: 'EVT-0038',
@@ -803,6 +841,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'threat',
+    resolutionReason: 'DNS TXT query to exfil-tunnel.net from 10.0.4.101 with base64-encoded subdomain (decoded: "my secret data"); entropy 5.14 confirms DNS tunneling; host also flagged for credential dump in EVT-0017; active exfiltration channel confirmed',
   },
   {
     id: 'EVT-0039',
@@ -820,6 +859,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'DHCP DISCOVER from MAC de:ad:be:ef:ca:fe with hostname IoT-Sensor-47; MAC OUI prefix maps to unrecognized IoT manufacturer; device not in asset inventory; awaiting parse completion for device fingerprinting',
   },
   {
     id: 'EVT-0040',
@@ -837,6 +877,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'critical_threat',
+    resolutionReason: 'WAF rule 932100 blocked RCE attempt to /api/v1/exec with shell command injection (cat /etc/shadow) from 185.143.172.21; attack score 99/100; source IP in APT-linked infrastructure; ALHF confirmed and escalated to IR team',
   },
   {
     id: 'EVT-0041',
@@ -854,6 +895,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'Standard web browsing from 10.0.6.33 to Reddit CDN 151.101.1.140; JA3 769faa961ec1 matches Firefox browser profile; normal content consumption traffic during business hours; no IOC match on destination',
   },
   {
     id: 'EVT-0042',
@@ -871,6 +913,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'NetFlow shows 1MB exfiltration from compromised host 10.0.5.107 to 45.77.65.211 (Vultr VPS) over 120.3s; 8721 packets indicate sustained bulk transfer; destination in low-reputation ASN; automated containment blocking outbound traffic from source',
   },
   {
     id: 'EVT-0043',
@@ -888,6 +931,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'LDAP bind failure on ldap-srv-01 for cn=admin with invalid credentials; single auth failure from internal host 10.0.0.5; awaiting enrichment with historical failure count and source user context to distinguish typo from attack',
   },
   {
     id: 'EVT-0044',
@@ -905,6 +949,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'Router config change by netadmin on core-rtr-01 enabling GigabitEthernet0/1; change occurred outside scheduled maintenance window; deep enrichment analyzing change management ticket correlation and netadmin session legitimacy',
   },
   {
     id: 'EVT-0045',
@@ -922,6 +967,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'BytecodeWeaver agent reported notepad.exe (PID 11204) start with zero injection indicators and 0.02 confidence; standard user-space application launch; no suspicious parent process chain or command line arguments',
   },
   {
     id: 'EVT-0046',
@@ -939,6 +985,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'CloudTrail GetObject on production-data/reports/2024-q4.csv by data-pipeline role from internal IP 10.0.1.10; IAM role is authorized for S3 read; access pattern matches scheduled ETL pipeline execution window',
   },
   {
     id: 'EVT-0047',
@@ -956,6 +1003,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'threat',
+    resolutionReason: 'Mimikatz.exe executed sekurlsa::logonpasswords on domain controller SRV-AD-01; CREDENTIAL_ACCESS detection confirmed; this is a Tier-1 credential harvesting tool targeting LSASS memory; investigation collecting affected account scope',
   },
   {
     id: 'EVT-0048',
@@ -973,6 +1021,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'physical',
     finalVerdict: 'benign',
+    resolutionReason: 'CCTV health check from CAM-LOBBY-01 in LOBBY zone; camera ONLINE at 4K/30fps with 67% storage utilization; routine telemetry heartbeat with no security-relevant content',
   },
   {
     id: 'EVT-0049',
@@ -990,6 +1039,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'physical',
     finalVerdict: 'threat',
+    resolutionReason: 'CAM-EXT-03 detected person climbing FENCE_NORTH perimeter at 0.96 confidence; breach type CLIMB confirmed by multi-frame analysis; no corresponding badge entry within 300m radius; security dispatch and law enforcement notification triggered',
   },
   {
     id: 'EVT-0050',
@@ -1007,6 +1057,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'physical',
     finalVerdict: 'benign',
+    resolutionReason: 'Routine badge scan for EMP-5510 (Mike.Rodriguez) at DOOR-FL2-05 ENGINEERING zone; valid clearance; access during standard work hours; employee assigned to engineering floor per HR directory',
   },
   {
     id: 'EVT-0051',
@@ -1024,6 +1075,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'Firewall blocked 1247 port scan probes from 91.240.118.44 targeting 10.0.2.10; source IP in known scanning infrastructure ASN; awaiting correlation with threat intel feed to classify as reconnaissance or automated vulnerability scan',
   },
   {
     id: 'EVT-0052',
@@ -1041,6 +1093,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'DNS A-record query for slack.com from 10.0.6.55 resolved to known Slack IP 34.120.16.1; entropy 1.89 indicates standard domain; approved SaaS application in corporate whitelist',
   },
   {
     id: 'EVT-0053',
@@ -1058,6 +1111,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'DHCP pool exhaustion detected with 450 DISCOVER requests/sec from spoofed MAC ff:ff:ff:ff:ff:01; broadcast storm pattern consistent with DHCP starvation attack (MITRE T1557); deep enrichment correlating with rogue device detection',
   },
   {
     id: 'EVT-0054',
@@ -1075,6 +1129,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'pending',
+    resolutionReason: 'WAF rule 930100 blocked path traversal attempt (../../etc/passwd) from internal IP 172.16.0.88; attack score 62/100; source is internal subnet which may indicate compromised host or penetration test; awaiting triage for context',
   },
   {
     id: 'EVT-0055',
@@ -1092,6 +1147,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'DPI captured SMB TREE_CONNECT from 10.0.3.22 to compromised host 10.0.5.107; lateral movement pattern via SMB admin share mapping; source host appeared in EVT-0014 and EVT-0037; deep enrichment building attack graph',
   },
   {
     id: 'EVT-0056',
@@ -1109,6 +1165,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'Routine internal NetFlow between web server 10.0.2.10 and database 10.0.1.5 on MySQL port 3306; 2KB over 0.8s matches standard query/response pattern; both hosts in approved application topology',
   },
   {
     id: 'EVT-0057',
@@ -1126,6 +1183,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'suspicious',
+    resolutionReason: 'Sudo authentication failure on wks-fin-042 (same host as EVT-0006 malware); user jdoe attempted root escalation via sudo; host already under investigation for AMSI bypass; privilege escalation attempt may indicate attacker pivoting to root access',
   },
   {
     id: 'EVT-0058',
@@ -1143,6 +1201,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'physical',
     finalVerdict: 'pending',
+    resolutionReason: 'CCTV CAM-WH-04 detected camera obstruction in WAREHOUSE_C at 0.78 confidence for 15 seconds; tamper type OBSTRUCTION may indicate intentional camera blinding; awaiting enrichment with nearby badge reader and motion sensor correlation',
   },
   {
     id: 'EVT-0059',
@@ -1160,6 +1219,7 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: true,
     domain: 'physical',
     finalVerdict: 'critical_threat',
+    resolutionReason: 'Forced entry at DOOR-EXEC-01 EXECUTIVE_SUITE with unknown badge EMP-0000; door held open alarm triggered; no employee match in directory; ALHF confirmed critical physical breach; security team dispatched and executive floor locked down',
   },
   {
     id: 'EVT-0060',
@@ -1177,5 +1237,6 @@ export const MOCK_EVENTS: FunnelEvent[] = [
     isStructured: false,
     domain: 'logical',
     finalVerdict: 'benign',
+    resolutionReason: 'OpenVPN TLS handshake completed for user remote.worker from residential IP 73.162.45.88; AES-256-GCM cipher negotiated; user in approved remote access group; source IP matches employee registered ISP geo-region',
   },
 ];

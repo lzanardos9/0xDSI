@@ -6,9 +6,17 @@ import {
   Clock,
   X,
   ChevronDown,
+  ChevronUp,
   Activity,
   Shield,
   ArrowRight,
+  Radio,
+  Search,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  HelpCircle,
+  FileText,
 } from 'lucide-react';
 import {
   FUNNEL_PHASES,
@@ -761,15 +769,17 @@ function EventProcessingFunnel() {
       )}
 
       <div className="relative z-10 px-6 py-2">
-        <canvas
-          ref={canvasRef}
-          width={canvasWidth}
-          height={canvasHeight}
-          onMouseMove={handleCanvasMouseMove}
-          onMouseLeave={handleCanvasMouseLeave}
-          className="w-full cursor-crosshair"
-          style={{ height: 440, imageRendering: 'auto' }}
-        />
+        <div style={{ width: '100%', aspectRatio: `${canvasWidth} / ${canvasHeight}`, maxHeight: 480 }}>
+          <canvas
+            ref={canvasRef}
+            width={canvasWidth}
+            height={canvasHeight}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseLeave={handleCanvasMouseLeave}
+            className="w-full h-full cursor-crosshair"
+            style={{ imageRendering: 'auto' }}
+          />
+        </div>
       </div>
 
       <div className="relative z-10 px-6 py-3 border-t border-[#1e293b]">
@@ -881,6 +891,306 @@ function EventProcessingFunnel() {
           })}
         </div>
       </div>
+
+      <LiveEventsPanel
+        events={liveEvents}
+        activeConnectors={activeConnectors}
+        phases={filteredPhases}
+      />
+    </div>
+  );
+}
+
+const VERDICT_ICON: Record<string, React.ReactNode> = {
+  pending: <HelpCircle size={12} className="text-slate-400" />,
+  benign: <CheckCircle size={12} className="text-emerald-400" />,
+  suspicious: <AlertTriangle size={12} className="text-amber-400" />,
+  threat: <XCircle size={12} className="text-orange-400" />,
+  critical_threat: <XCircle size={12} className="text-red-400" />,
+};
+
+function LiveEventsPanel({
+  events,
+  activeConnectors,
+  phases,
+}: {
+  events: FunnelEvent[];
+  activeConnectors: Set<ConnectorType>;
+  phases: FunnelPhase[];
+}) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [verdictFilter, setVerdictFilter] = useState<string>('all');
+  const [selectedEvent, setSelectedEvent] = useState<FunnelEvent | null>(null);
+
+  const filteredEvents = useMemo(() => {
+    let result = events.filter(e => activeConnectors.has(e.connector));
+
+    if (verdictFilter !== 'all') {
+      result = result.filter(e => e.finalVerdict === verdictFilter);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(e =>
+        e.id.toLowerCase().includes(q) ||
+        e.eventType.toLowerCase().includes(q) ||
+        e.sourceIP.includes(q) ||
+        e.destIP.includes(q) ||
+        e.connector.toLowerCase().includes(q) ||
+        e.resolutionReason.toLowerCase().includes(q)
+      );
+    }
+
+    return result.sort((a, b) => {
+      const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+      return (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5);
+    });
+  }, [events, activeConnectors, verdictFilter, searchQuery]);
+
+  const verdictCounts = useMemo(() => {
+    const visible = events.filter(e => activeConnectors.has(e.connector));
+    const counts: Record<string, number> = { all: visible.length, pending: 0, benign: 0, suspicious: 0, threat: 0, critical_threat: 0 };
+    visible.forEach(e => { counts[e.finalVerdict] = (counts[e.finalVerdict] || 0) + 1; });
+    return counts;
+  }, [events, activeConnectors]);
+
+  const verdictButtons: { key: string; label: string; color: string }[] = [
+    { key: 'all', label: 'ALL', color: '#94a3b8' },
+    { key: 'critical_threat', label: 'CRITICAL', color: '#ef4444' },
+    { key: 'threat', label: 'THREAT', color: '#f97316' },
+    { key: 'suspicious', label: 'SUSPICIOUS', color: '#eab308' },
+    { key: 'pending', label: 'PENDING', color: '#64748b' },
+    { key: 'benign', label: 'BENIGN', color: '#22c55e' },
+  ];
+
+  return (
+    <div className="relative z-10 border-t border-[#1e293b]">
+      <button
+        onClick={() => setIsExpanded(prev => !prev)}
+        className="w-full px-6 py-3 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+            <Radio size={12} className="text-cyan-400" />
+          </div>
+          <span className="text-xs font-bold tracking-widest text-cyan-300 font-mono">LIVE EVENTS</span>
+          <span className="text-[10px] font-mono text-slate-500 ml-1">
+            {filteredEvents.length} events
+          </span>
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[9px] font-bold font-mono text-emerald-400 tracking-wider">STREAMING</span>
+          </span>
+        </div>
+        {isExpanded ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+      </button>
+
+      {isExpanded && (
+        <div className="px-6 pb-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="relative flex-1 max-w-xs">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search events, IPs, types..."
+                className="w-full pl-8 pr-3 py-1.5 rounded bg-[#0f1629] border border-[#1e293b] text-[11px] font-mono text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/40 transition-colors"
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              {verdictButtons.map(vb => (
+                <button
+                  key={vb.key}
+                  onClick={() => setVerdictFilter(vb.key)}
+                  className="px-2 py-1 rounded text-[9px] font-mono font-bold tracking-wider border transition-all duration-200"
+                  style={verdictFilter === vb.key ? {
+                    backgroundColor: hexToRgba(vb.color, 0.12),
+                    color: vb.color,
+                    borderColor: hexToRgba(vb.color, 0.4),
+                  } : {
+                    backgroundColor: 'transparent',
+                    color: '#475569',
+                    borderColor: '#1e293b',
+                  }}
+                >
+                  {vb.label}
+                  <span className="ml-1 opacity-60">{verdictCounts[vb.key] || 0}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#1e293b] overflow-hidden">
+            <div className="grid grid-cols-[60px_80px_90px_120px_1fr_140px_90px] gap-0 text-[9px] font-mono font-bold tracking-wider text-slate-500 bg-[#0a0e1a] border-b border-[#1e293b]">
+              <div className="px-3 py-2">ID</div>
+              <div className="px-2 py-2">CONNECTOR</div>
+              <div className="px-2 py-2">TYPE</div>
+              <div className="px-2 py-2">SOURCE / DEST</div>
+              <div className="px-2 py-2">RESOLUTION REASON</div>
+              <div className="px-2 py-2">RESOLVED AT</div>
+              <div className="px-2 py-2">VERDICT</div>
+            </div>
+
+            <div className="max-h-[400px] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#1e293b #0a0e1a' }}>
+              {filteredEvents.length === 0 ? (
+                <div className="px-6 py-10 text-center">
+                  <FileText size={20} className="mx-auto mb-2 text-slate-600" />
+                  <p className="text-xs font-mono text-slate-500">No events match current filters</p>
+                </div>
+              ) : (
+                filteredEvents.map((evt, idx) => {
+                  const phaseMeta = phases[evt.currentPhase - 1] || phases[0];
+                  const connMeta = CONNECTOR_META[evt.connector];
+                  const isSelected = selectedEvent?.id === evt.id;
+                  return (
+                    <React.Fragment key={evt.id}>
+                      <button
+                        onClick={() => setSelectedEvent(isSelected ? null : evt)}
+                        className="w-full grid grid-cols-[60px_80px_90px_120px_1fr_140px_90px] gap-0 text-[10px] font-mono text-left transition-all duration-150 hover:bg-white/[0.03]"
+                        style={{
+                          backgroundColor: isSelected
+                            ? hexToRgba(phaseMeta.color, 0.06)
+                            : idx % 2 === 0 ? 'transparent' : 'rgba(15, 22, 41, 0.3)',
+                          borderLeft: isSelected ? `2px solid ${phaseMeta.color}` : '2px solid transparent',
+                        }}
+                      >
+                        <div className="px-3 py-2 text-slate-400 truncate">{evt.id.replace('EVT-', '')}</div>
+                        <div className="px-2 py-2 truncate">
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold"
+                            style={{
+                              backgroundColor: hexToRgba(connMeta.color, 0.1),
+                              color: connMeta.color,
+                            }}
+                          >
+                            <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: connMeta.color }} />
+                            {evt.connector}
+                          </span>
+                        </div>
+                        <div className="px-2 py-2 text-slate-300 truncate">{evt.eventType}</div>
+                        <div className="px-2 py-2 text-slate-500 truncate">
+                          <span className="text-slate-400">{evt.sourceIP.split('.').slice(-1)}</span>
+                          <span className="text-slate-600 mx-0.5">→</span>
+                          <span className="text-slate-400">{evt.destIP.split('.').slice(-1)}</span>
+                        </div>
+                        <div className="px-2 py-2 text-slate-500 truncate">{evt.resolutionReason}</div>
+                        <div className="px-2 py-2">
+                          <span
+                            className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold"
+                            style={{
+                              backgroundColor: hexToRgba(phaseMeta.color, 0.12),
+                              color: phaseMeta.color,
+                            }}
+                          >
+                            P{evt.currentPhase} {phaseMeta.shortName}
+                          </span>
+                        </div>
+                        <div className="px-2 py-2">
+                          <span className="inline-flex items-center gap-1">
+                            {VERDICT_ICON[evt.finalVerdict]}
+                            <span style={{ color: VERDICT_COLORS[evt.finalVerdict] }} className="text-[9px] font-bold">
+                              {VERDICT_LABELS[evt.finalVerdict]}
+                            </span>
+                          </span>
+                        </div>
+                      </button>
+
+                      {isSelected && (
+                        <div
+                          className="border-t border-b px-4 py-3"
+                          style={{
+                            backgroundColor: hexToRgba(phaseMeta.color, 0.04),
+                            borderColor: hexToRgba(phaseMeta.color, 0.15),
+                          }}
+                        >
+                          <div className="grid grid-cols-[1fr_1fr] gap-4">
+                            <div>
+                              <div className="text-[9px] font-mono font-bold tracking-wider text-slate-500 mb-1.5">RESOLUTION ANALYSIS</div>
+                              <p className="text-[11px] font-mono text-slate-300 leading-relaxed">{evt.resolutionReason}</p>
+                              <div className="mt-3 flex items-center gap-4 text-[10px] font-mono">
+                                <div>
+                                  <span className="text-slate-500">Severity: </span>
+                                  <span className={`font-bold ${
+                                    evt.severity === 'critical' ? 'text-red-400' :
+                                    evt.severity === 'high' ? 'text-orange-400' :
+                                    evt.severity === 'medium' ? 'text-amber-400' :
+                                    evt.severity === 'low' ? 'text-cyan-400' : 'text-slate-400'
+                                  }`}>
+                                    {evt.severity.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500">Protocol: </span>
+                                  <span className="text-slate-300">{evt.protocol}:{evt.port}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500">Bytes: </span>
+                                  <span className="text-slate-300">{evt.bytes.toLocaleString()}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500">Domain: </span>
+                                  <span className={evt.domain === 'physical' ? 'text-orange-400' : 'text-blue-400'}>
+                                    {evt.domain.toUpperCase()}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2 text-[10px] font-mono">
+                                <span className="text-slate-500">Flow:</span>
+                                <span className="text-slate-300">{evt.sourceIP}</span>
+                                <ArrowRight size={10} className="text-slate-600" />
+                                <span className="text-slate-300">{evt.destIP}</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-[9px] font-mono font-bold tracking-wider text-slate-500 mb-1.5">PIPELINE PROGRESSION</div>
+                              <div className="flex flex-wrap gap-1">
+                                {FUNNEL_PHASES.map(p => {
+                                  const reached = evt.currentPhase >= p.id;
+                                  const isCurrent = evt.currentPhase === p.id;
+                                  return (
+                                    <div
+                                      key={p.id}
+                                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border"
+                                      style={{
+                                        backgroundColor: isCurrent
+                                          ? hexToRgba(p.color, 0.2)
+                                          : reached
+                                            ? hexToRgba(p.color, 0.08)
+                                            : 'transparent',
+                                        borderColor: isCurrent
+                                          ? hexToRgba(p.color, 0.5)
+                                          : reached
+                                            ? hexToRgba(p.color, 0.15)
+                                            : '#1e293b',
+                                        color: reached ? p.color : '#334155',
+                                      }}
+                                    >
+                                      {p.id}
+                                      {isCurrent && <span className="w-1 h-1 rounded-full animate-pulse" style={{ backgroundColor: p.color }} />}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="mt-3">
+                                <div className="text-[9px] font-mono font-bold tracking-wider text-slate-500 mb-1">RAW PAYLOAD</div>
+                                <div className="rounded border border-[#1e293b] p-2 max-h-[80px] overflow-auto" style={{ backgroundColor: 'rgba(10, 14, 26, 0.8)' }}>
+                                  <pre className="text-[9px] font-mono text-slate-400 whitespace-pre-wrap break-all leading-relaxed">{evt.rawData}</pre>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
