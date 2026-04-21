@@ -98,11 +98,67 @@ const ATTACK_PATTERNS: {
   { tag: 'BANDWIDTH_ABUSE', layers: [1, 2], severity: 'medium', verdict: 'suspicious', eventTypes: ['bandwidth_spike', 'jumbo_frame', 'phy_anomaly'], descriptions: ['Unusual bandwidth consumption on physical interface eth0/3', 'Jumbo frame flood detected on non-jumbo-enabled segment', 'Physical layer CRC error rate spike indicating potential tampering'] },
   { tag: 'ICMP_TUNNEL', layers: [3, 4], severity: 'high', verdict: 'threat', eventTypes: ['icmp_tunnel', 'ping_exfil', 'icmp_anomaly'], descriptions: ['ICMP tunneling: oversized echo request payloads carrying encoded data', 'Ping-based data exfiltration: 2.3MB transferred via ICMP in 60 seconds', 'ICMP redirect messages from unauthorized source'] },
   { tag: 'APP_EXPLOIT', layers: [7, 6], severity: 'critical', verdict: 'critical_threat', eventTypes: ['sqli_attempt', 'xss_payload', 'rce_exploit'], descriptions: ['SQL injection attempt in login form: UNION-based extraction of user table', 'Stored XSS payload injected via comment field with encoded script tags', 'Remote code execution via deserialization vulnerability in API endpoint'] },
+  // BytecodeWeaver application-layer attack patterns
+  { tag: 'BW_DECOMPILE_EXFIL', layers: [7, 6, 4], severity: 'critical', verdict: 'critical_threat', eventTypes: ['bytecode_decompile_exfil', 'class_dump_detected', 'jar_extraction_anomaly'], descriptions: ['BytecodeWeaver: decompiled .class files exfiltrated via HTTPS POST to external pastebin', 'BytecodeWeaver: unauthorized class dump of com.core.auth.TokenValidator detected from build server', 'BytecodeWeaver: bulk JAR extraction of 47 internal libraries to unregistered S3 bucket'] },
+  { tag: 'BW_INJECT_MALICIOUS', layers: [7, 5, 4], severity: 'critical', verdict: 'critical_threat', eventTypes: ['bytecode_injection', 'classloader_hijack', 'agent_tampering'], descriptions: ['BytecodeWeaver: malicious bytecode injected into com.payment.ProcessTransaction at runtime via ASM framework', 'BytecodeWeaver: custom ClassLoader replacing signed classes in production JVM - supply chain compromise', 'BytecodeWeaver: Java agent -javaagent flag appended to production JVM args without change approval'] },
+  { tag: 'BW_OBFUSCATION_BYPASS', layers: [7, 6], severity: 'high', verdict: 'threat', eventTypes: ['obfuscation_strip', 'proguard_bypass', 'reflection_abuse'], descriptions: ['BytecodeWeaver: ProGuard obfuscation mapping file accessed and correlated to strip class renaming', 'BytecodeWeaver: obfuscation rules reversed - original method signatures reconstructed for 312 classes', 'BytecodeWeaver: reflection-based access to private fields in obfuscated security module detected'] },
+  { tag: 'BW_DEPENDENCY_POISON', layers: [7, 4, 3], severity: 'critical', verdict: 'critical_threat', eventTypes: ['dependency_confusion', 'maven_hijack', 'gradle_inject'], descriptions: ['BytecodeWeaver: dependency confusion attack - internal package name squatted on public Maven Central', 'BytecodeWeaver: Maven repository poisoned - com.internal:auth-core resolving to attacker-controlled artifact', 'BytecodeWeaver: Gradle build script modified to inject remote repository with typosquatted artifacts'] },
+  { tag: 'BW_HEAP_DUMP_LEAK', layers: [7, 5], severity: 'critical', verdict: 'critical_threat', eventTypes: ['heap_dump_exfil', 'jmx_unauthorized', 'memory_scrape'], descriptions: ['BytecodeWeaver: JVM heap dump containing 2,847 plaintext credentials exfiltrated via JMX remote', 'BytecodeWeaver: unauthorized JMX connection from 10.0.3.7 triggering full heap dump of auth-service', 'BytecodeWeaver: memory scraping detected - string extraction of RSA private keys from JVM process'] },
+  { tag: 'BW_SERIALIZATION_RCE', layers: [7, 6, 4], severity: 'critical', verdict: 'critical_threat', eventTypes: ['deserialization_rce', 'gadget_chain', 'ysoserial_payload'], descriptions: ['BytecodeWeaver: Java deserialization RCE via Apache Commons Collections gadget chain on REST endpoint', 'BytecodeWeaver: ysoserial CommonsCollections7 payload detected in serialized ObjectInputStream', 'BytecodeWeaver: JNDI injection via crafted serialized object triggering remote class loading from LDAP'] },
+  { tag: 'API_ABUSE', layers: [7, 4], severity: 'high', verdict: 'threat', eventTypes: ['api_rate_abuse', 'graphql_introspection', 'api_enum_attack'], descriptions: ['REST API abuse: 12,000 requests/min from single API key targeting /api/v2/users endpoint', 'GraphQL introspection query from external IP mapping entire schema including deprecated mutations', 'API enumeration attack: sequential ID brute-force on /api/v1/invoices/{id} from rotating proxies'] },
+  { tag: 'OAUTH_EXPLOIT', layers: [7, 6, 5], severity: 'critical', verdict: 'critical_threat', eventTypes: ['oauth_redirect_hijack', 'jwt_forgery', 'scope_escalation'], descriptions: ['OAuth redirect URI hijack: authorization code intercepted via open redirect to attacker callback', 'JWT token forged with algorithm confusion attack - RS256 key used as HMAC secret for HS256', 'OAuth scope escalation: client obtained admin:write scope via parameter pollution in token request'] },
+  { tag: 'WEBSOCKET_ABUSE', layers: [7, 4], severity: 'high', verdict: 'threat', eventTypes: ['ws_injection', 'ws_flood', 'ws_hijack'], descriptions: ['WebSocket message injection: crafted frames bypassing origin validation on /ws/live-data', 'WebSocket connection flood: 8,000 concurrent connections from botnet exhausting server threads', 'WebSocket session hijack: connection upgrade token replayed from intercepted HTTP Upgrade header'] },
+  { tag: 'GRPC_EXPLOIT', layers: [7, 6, 4], severity: 'high', verdict: 'threat', eventTypes: ['grpc_reflection_abuse', 'protobuf_overflow', 'grpc_metadata_inject'], descriptions: ['gRPC server reflection enabled in production - full service enumeration by external scanner', 'Protobuf message with oversized repeated field causing 4.2GB memory allocation in deserializer', 'gRPC metadata header injection: authorization token overwritten via duplicate metadata key'] },
+];
+
+// ---------------------------------------------------------------------------
+// Massive application-layer (L7) benign/operational events
+// ---------------------------------------------------------------------------
+
+const APP_LAYER_EVENTS: { eventType: string; description: string; protocol: string; severity: OSIEvent['severity']; connector: ConnectorType; rawDataFn: (src: string, dst: string) => string }[] = [
+  // BytecodeWeaver runtime monitoring
+  { eventType: 'bw_class_load', description: 'BytecodeWeaver: class com.core.service.UserAuthService loaded from verified signed JAR', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'class_load', class: 'com.core.service.UserAuthService', jar: 'auth-service-3.2.1.jar', signature: 'VALID', hash: 'sha256:a4f2e8...', jvm_pid: 28441, src: s, dst: d }) },
+  { eventType: 'bw_class_load', description: 'BytecodeWeaver: class com.payment.gateway.StripeProcessor loaded - bytecode integrity verified', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'class_load', class: 'com.payment.gateway.StripeProcessor', jar: 'payment-gateway-2.8.0.jar', signature: 'VALID', hash: 'sha256:c7d1f3...', jvm_pid: 28441, src: s, dst: d }) },
+  { eventType: 'bw_method_trace', description: 'BytecodeWeaver: method trace on processPayment() - avg 23ms, 0 exceptions in last 1000 calls', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'method_trace', class: 'PaymentProcessor', method: 'processPayment', avg_ms: 23, p99_ms: 89, calls: 1000, exceptions: 0, src: s, dst: d }) },
+  { eventType: 'bw_method_trace', description: 'BytecodeWeaver: method trace on validateToken() - 142 calls/sec, 2 InvalidTokenExceptions caught', protocol: 'HTTPS', severity: 'low', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'method_trace', class: 'TokenValidator', method: 'validateToken', calls_per_sec: 142, exceptions: 2, exception_type: 'InvalidTokenException', src: s, dst: d }) },
+  { eventType: 'bw_dependency_scan', description: 'BytecodeWeaver: dependency scan complete - 234 JARs verified, 0 CVEs above CVSS 7.0', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'dependency_scan', jars_scanned: 234, cves_found: 3, cves_critical: 0, cves_high: 0, cves_medium: 3, scan_duration_ms: 4521, src: s, dst: d }) },
+  { eventType: 'bw_dependency_scan', description: 'BytecodeWeaver: dependency scan flagged log4j-core-2.14.1.jar - CVE-2021-44228 (CVSS 10.0) PATCHED', protocol: 'HTTPS', severity: 'low', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'dependency_scan', artifact: 'log4j-core', version: '2.14.1', cve: 'CVE-2021-44228', cvss: 10.0, status: 'PATCHED_AT_RUNTIME', mitigation: 'JNDI lookup disabled via bytecode transform', src: s, dst: d }) },
+  { eventType: 'bw_bytecode_transform', description: 'BytecodeWeaver: applied security transform to com.api.controllers.AdminController - SQL param binding enforced', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'bytecode_transform', target: 'com.api.controllers.AdminController', transform: 'SQL_PARAM_BINDING', methods_modified: 8, verification: 'PASSED', src: s, dst: d }) },
+  { eventType: 'bw_bytecode_transform', description: 'BytecodeWeaver: runtime patch applied to deserialization filter in ObjectInputStream wrapper', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'bytecode_transform', target: 'java.io.ObjectInputStream', transform: 'DESERIALIZATION_FILTER', blocked_classes: ['org.apache.commons.collections.Transformer', 'com.sun.rowset.JdbcRowSetImpl'], src: s, dst: d }) },
+  { eventType: 'bw_jvm_metrics', description: 'BytecodeWeaver: JVM heap usage 67% (4.2GB/6.3GB), GC pause avg 12ms, 0 OOMEs', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'jvm_metrics', heap_used_gb: 4.2, heap_max_gb: 6.3, gc_pause_avg_ms: 12, gc_pause_p99_ms: 45, thread_count: 312, oome_count: 0, cpu_pct: 34, src: s, dst: d }) },
+  { eventType: 'bw_jvm_metrics', description: 'BytecodeWeaver: GC pressure elevated - 3 full GC cycles in last 5 minutes, old gen 89% utilized', protocol: 'HTTPS', severity: 'medium', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'jvm_metrics', heap_used_gb: 5.6, heap_max_gb: 6.3, gc_type: 'FULL_GC', gc_count_5min: 3, old_gen_pct: 89, warning: 'MEMORY_PRESSURE', src: s, dst: d }) },
+  { eventType: 'bw_classloader_audit', description: 'BytecodeWeaver: classloader hierarchy audit - 4 custom classloaders verified, no unauthorized loaders', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'classloader_audit', system_loaders: 3, custom_loaders: 4, unauthorized: 0, classes_loaded: 18472, loaders: ['AppClassLoader', 'PlatformClassLoader', 'SpringBootClassLoader', 'PluginClassLoader'], src: s, dst: d }) },
+  { eventType: 'bw_thread_analysis', description: 'BytecodeWeaver: thread dump analysis - 312 threads, 4 deadlock candidates in connection pool', protocol: 'HTTPS', severity: 'medium', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'thread_analysis', total_threads: 312, runnable: 89, waiting: 156, blocked: 4, deadlock_candidates: 4, pool: 'HikariPool-1', src: s, dst: d }) },
+  { eventType: 'bw_native_call', description: 'BytecodeWeaver: JNI native method call to libcrypto.so from com.crypto.AESEngine.encryptBlock()', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'native_call_trace', class: 'com.crypto.AESEngine', method: 'encryptBlock', native_lib: 'libcrypto.so', call_count: 44102, avg_ns: 340, status: 'AUTHORIZED', src: s, dst: d }) },
+  { eventType: 'bw_annotation_scan', description: 'BytecodeWeaver: annotation security scan - @Secured, @RolesAllowed verified on 89 controller methods', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'annotation_scan', secured_methods: 89, missing_auth: 0, deprecated_annotations: 2, endpoints_total: 156, src: s, dst: d }) },
+  { eventType: 'bw_reflection_monitor', description: 'BytecodeWeaver: reflection access to private field com.auth.SessionManager.masterKey from authorized module', protocol: 'HTTPS', severity: 'low', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'reflection_monitor', accessor: 'com.audit.SecurityAuditor', target_class: 'com.auth.SessionManager', target_field: 'masterKey', access_type: 'FIELD_GET', authorized: true, src: s, dst: d }) },
+  { eventType: 'bw_hot_reload', description: 'BytecodeWeaver: hot class reload - com.api.v2.SearchController updated from verified build pipeline', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'hot_reload', class: 'com.api.v2.SearchController', build_id: 'build-7842', pipeline: 'ci-main', signature: 'VALID', previous_hash: 'sha256:f8a2...', new_hash: 'sha256:b4c1...', src: s, dst: d }) },
+  { eventType: 'bw_instrumentation', description: 'BytecodeWeaver: APM instrumentation injected into 47 service classes - distributed tracing enabled', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'instrumentation', type: 'APM_TRACE', classes_instrumented: 47, trace_points: 134, overhead_pct: 0.3, tracer: 'OpenTelemetry', src: s, dst: d }) },
+  { eventType: 'bw_jar_integrity', description: 'BytecodeWeaver: JAR integrity check passed - 234/234 artifacts match build manifest checksums', protocol: 'HTTPS', severity: 'info', connector: 'BytecodeWeaver', rawDataFn: (s, d) => JSON.stringify({ engine: 'BytecodeWeaver', action: 'jar_integrity_check', total_jars: 234, verified: 234, tampered: 0, missing: 0, manifest: 'build-manifest-7842.json', src: s, dst: d }) },
+  // Real application protocol traffic
+  { eventType: 'http_api_call', description: 'REST API call: GET /api/v2/users/profile - 200 OK - 12ms response time', protocol: 'HTTPS', severity: 'info', connector: 'WAF', rawDataFn: (s, d) => JSON.stringify({ method: 'GET', path: '/api/v2/users/profile', status: 200, latency_ms: 12, user_agent: 'Mozilla/5.0', content_type: 'application/json', src: s, dst: d }) },
+  { eventType: 'http_api_call', description: 'REST API call: POST /api/v2/transactions - 201 Created - payment processed', protocol: 'HTTPS', severity: 'info', connector: 'WAF', rawDataFn: (s, d) => JSON.stringify({ method: 'POST', path: '/api/v2/transactions', status: 201, latency_ms: 234, body_size: 1024, transaction_id: 'txn_8f2a4b', src: s, dst: d }) },
+  { eventType: 'graphql_query', description: 'GraphQL query: { users(first: 20) { id, name, role } } - 200 OK from internal dashboard', protocol: 'HTTPS', severity: 'info', connector: 'WAF', rawDataFn: (s, d) => JSON.stringify({ type: 'query', operation: 'GetUsers', complexity: 12, depth: 3, latency_ms: 45, src: s, dst: d }) },
+  { eventType: 'grpc_call', description: 'gRPC unary call: auth.AuthService/ValidateToken - 0 OK - 3ms', protocol: 'HTTP', severity: 'info', connector: 'DPI', rawDataFn: (s, d) => JSON.stringify({ service: 'auth.AuthService', method: 'ValidateToken', grpc_status: 0, latency_ms: 3, metadata_size: 128, src: s, dst: d }) },
+  { eventType: 'dns_resolution', description: 'DNS resolution: api.internal.corp -> 10.0.2.118 (A record, 2ms, cached)', protocol: 'DNS', severity: 'info', connector: 'DNS', rawDataFn: (s, d) => JSON.stringify({ query: 'api.internal.corp', type: 'A', answer: '10.0.2.118', ttl: 300, cached: true, latency_ms: 2, src: s, dst: d }) },
+  { eventType: 'dns_resolution', description: 'DNS resolution: kafka-broker-3.internal.corp -> 10.100.0.15 (AAAA record)', protocol: 'DNS', severity: 'info', connector: 'DNS', rawDataFn: (s, d) => JSON.stringify({ query: 'kafka-broker-3.internal.corp', type: 'AAAA', answer: 'fd00::100:f', ttl: 60, cached: false, latency_ms: 8, src: s, dst: d }) },
+  { eventType: 'smtp_send', description: 'SMTP: outbound email from alerts@soc.internal to team-leads@corp.com via relay', protocol: 'SMTP', severity: 'info', connector: 'Syslog', rawDataFn: (s, d) => JSON.stringify({ from: 'alerts@soc.internal', to: 'team-leads@corp.com', subject: 'SOC Daily Summary', size_kb: 45, tls: true, relay: 'mail-relay.internal:587', src: s, dst: d }) },
+  { eventType: 'ssh_session', description: 'SSH session: admin@jump-host -> prod-db-01 via bastion - pubkey auth, session 42min', protocol: 'SSH', severity: 'info', connector: 'EDR', rawDataFn: (s, d) => JSON.stringify({ user: 'admin', src_host: 'jump-host', dst_host: 'prod-db-01', auth: 'pubkey', duration_min: 42, commands: 18, key_fingerprint: 'SHA256:nThb...', src: s, dst: d }) },
+  { eventType: 'ldap_query', description: 'LDAP: search (&(objectClass=user)(memberOf=CN=SOC-Analysts)) returned 23 entries', protocol: 'LDAP', severity: 'info', connector: 'Syslog', rawDataFn: (s, d) => JSON.stringify({ operation: 'search', base_dn: 'OU=Users,DC=corp,DC=com', filter: '(&(objectClass=user)(memberOf=CN=SOC-Analysts))', results: 23, latency_ms: 15, src: s, dst: d }) },
+  { eventType: 'kafka_produce', description: 'Kafka produce: 4,521 messages/sec to topic security.events.raw - partition 12', protocol: 'HTTPS', severity: 'info', connector: 'Syslog', rawDataFn: (s, d) => JSON.stringify({ topic: 'security.events.raw', partition: 12, messages_per_sec: 4521, avg_msg_size: 892, lag: 0, broker: 'kafka-broker-3', src: s, dst: d }) },
+  { eventType: 'redis_op', description: 'Redis: GET session:usr_8f2a4b - 0.3ms - cache HIT for auth token validation', protocol: 'HTTPS', severity: 'info', connector: 'DPI', rawDataFn: (s, d) => JSON.stringify({ operation: 'GET', key: 'session:usr_8f2a4b', result: 'HIT', latency_us: 300, db: 0, memory_used_mb: 2048, src: s, dst: d }) },
+  { eventType: 'postgres_query', description: 'PostgreSQL: SELECT on events table - 1,247 rows returned in 34ms - query plan optimized', protocol: 'HTTPS', severity: 'info', connector: 'DPI', rawDataFn: (s, d) => JSON.stringify({ operation: 'SELECT', table: 'security_events', rows: 1247, latency_ms: 34, plan: 'Index Scan using idx_events_timestamp', db: 'siem_prod', user: 'soc_readonly', src: s, dst: d }) },
+  { eventType: 'elasticsearch_search', description: 'Elasticsearch: search index=security-events-2026.04 - 2,341 hits in 67ms', protocol: 'HTTPS', severity: 'info', connector: 'Syslog', rawDataFn: (s, d) => JSON.stringify({ index: 'security-events-2026.04', query_type: 'bool', hits: 2341, took_ms: 67, shards: { total: 5, successful: 5 }, src: s, dst: d }) },
+  { eventType: 'spark_job', description: 'Databricks Spark job: threat_correlation_hourly completed - 2.1M events processed in 45s', protocol: 'HTTPS', severity: 'info', connector: 'CloudTrail', rawDataFn: (s, d) => JSON.stringify({ job_name: 'threat_correlation_hourly', events_processed: 2100000, duration_sec: 45, cluster: 'soc-analytics-prod', driver_memory: '16g', executors: 8, src: s, dst: d }) },
+  { eventType: 'websocket_stream', description: 'WebSocket: /ws/live-alerts - 42 active subscribers, 127 messages/min', protocol: 'HTTPS', severity: 'info', connector: 'WAF', rawDataFn: (s, d) => JSON.stringify({ path: '/ws/live-alerts', subscribers: 42, messages_per_min: 127, avg_msg_size: 512, uptime_hours: 72, src: s, dst: d }) },
+  { eventType: 'oauth_token_issue', description: 'OAuth2: access token issued for client soc-dashboard, scope: read:events,read:alerts', protocol: 'HTTPS', severity: 'info', connector: 'Syslog', rawDataFn: (s, d) => JSON.stringify({ grant_type: 'client_credentials', client_id: 'soc-dashboard', scope: 'read:events read:alerts', token_type: 'Bearer', expires_in: 3600, src: s, dst: d }) },
+  { eventType: 'snmp_poll', description: 'SNMP: GET sysUpTime.0 from core-switch-01 - response 42d 7h 23m', protocol: 'SNMP', severity: 'info', connector: 'NetFlow', rawDataFn: (s, d) => JSON.stringify({ operation: 'GET', oid: '1.3.6.1.2.1.1.3.0', device: 'core-switch-01', value: '42d 7h 23m', community: 'readonly', version: 'v3', src: s, dst: d }) },
+  { eventType: 'ftp_transfer', description: 'SFTP: upload threat-intel-feed-20260421.csv to /data/feeds/ - 12.4MB - integrity verified', protocol: 'FTP', severity: 'info', connector: 'DPI', rawDataFn: (s, d) => JSON.stringify({ operation: 'PUT', file: 'threat-intel-feed-20260421.csv', path: '/data/feeds/', size_mb: 12.4, hash: 'sha256:e8f1a2...', user: 'feed-ingester', src: s, dst: d }) },
+  { eventType: 'container_event', description: 'Kubernetes: pod soc-api-7f8d4b-xk2lm ready - image sha256:a4f2e8 verified from internal registry', protocol: 'HTTPS', severity: 'info', connector: 'CloudTrail', rawDataFn: (s, d) => JSON.stringify({ event: 'PodReady', pod: 'soc-api-7f8d4b-xk2lm', namespace: 'security', image: 'registry.internal/soc-api:3.2.1', image_hash: 'sha256:a4f2e8...', node: 'worker-03', src: s, dst: d }) },
+  { eventType: 'vault_access', description: 'HashiCorp Vault: secret/data/soc/api-keys read by soc-api service account - audit logged', protocol: 'HTTPS', severity: 'low', connector: 'CloudTrail', rawDataFn: (s, d) => JSON.stringify({ operation: 'read', path: 'secret/data/soc/api-keys', auth_method: 'kubernetes', role: 'soc-api', ttl: 3600, renewable: true, src: s, dst: d }) },
 ];
 
 const BENIGN_EVENTS: { layer: number; eventType: string; description: string; protocol: string; severity: OSIEvent['severity'] }[] = [
-  { layer: 7, eventType: 'http_request', description: 'Standard HTTP GET request to internal application server', protocol: 'HTTP', severity: 'info' },
-  { layer: 7, eventType: 'dns_query', description: 'Recursive DNS query for internal service endpoint', protocol: 'DNS', severity: 'info' },
   { layer: 6, eventType: 'tls_handshake', description: 'TLS 1.3 handshake completed with valid certificate chain', protocol: 'TLS', severity: 'info' },
   { layer: 5, eventType: 'smb_session', description: 'SMB session established for authorized file share access', protocol: 'SMB', severity: 'info' },
   { layer: 5, eventType: 'rpc_call', description: 'Standard RPC call to domain controller for policy refresh', protocol: 'RPC', severity: 'info' },
@@ -113,10 +169,8 @@ const BENIGN_EVENTS: { layer: number; eventType: string; description: string; pr
   { layer: 2, eventType: 'arp_request', description: 'Standard ARP request for gateway MAC resolution', protocol: 'Ethernet', severity: 'info' },
   { layer: 2, eventType: 'stp_bpdu', description: 'STP BPDU received from root bridge - normal topology', protocol: 'STP', severity: 'info' },
   { layer: 1, eventType: 'link_up', description: 'Physical link status change: interface eth0/12 up at 10Gbps', protocol: 'Fiber', severity: 'info' },
-  { layer: 7, eventType: 'ssh_auth', description: 'SSH public key authentication from authorized jump host', protocol: 'SSH', severity: 'low' },
   { layer: 4, eventType: 'quic_stream', description: 'QUIC connection established to CDN endpoint', protocol: 'QUIC', severity: 'info' },
   { layer: 3, eventType: 'bgp_update', description: 'BGP prefix announcement from upstream provider', protocol: 'BGP', severity: 'low' },
-  { layer: 7, eventType: 'ldap_bind', description: 'LDAP bind to Active Directory for group membership query', protocol: 'LDAP', severity: 'info' },
   { layer: 6, eventType: 'compression', description: 'GZIP content encoding applied to API response payload', protocol: 'MIME', severity: 'info' },
   { layer: 2, eventType: 'lldp_frame', description: 'LLDP advertisement from switch port - normal neighbor discovery', protocol: 'LLDP', severity: 'info' },
 ];
@@ -147,14 +201,15 @@ function generateOSIEvent(forceAttack = false): OSIEvent {
   const now = new Date().toISOString();
   const srcIP = RAND_IPS[Math.floor(Math.random() * RAND_IPS.length)];
   const dstIP = RAND_IPS[Math.floor(Math.random() * RAND_IPS.length)];
-  const connector = ALL_CONNECTORS_LIST[Math.floor(Math.random() * ALL_CONNECTORS_LIST.length)];
 
-  if (forceAttack || Math.random() < 0.3) {
+  // Attack patterns (~20% of events, more when forced)
+  if (forceAttack || Math.random() < 0.2) {
     const pattern = ATTACK_PATTERNS[Math.floor(Math.random() * ATTACK_PATTERNS.length)];
     const primaryLayer = pattern.layers[0];
     const evtTypeIdx = Math.floor(Math.random() * pattern.eventTypes.length);
     const layer = OSI_LAYERS.find(l => l.id === primaryLayer)!;
     const protocol = layer.protocols[Math.floor(Math.random() * layer.protocols.length)];
+    const connector = pattern.tag.startsWith('BW_') ? 'BytecodeWeaver' as ConnectorType : ALL_CONNECTORS_LIST[Math.floor(Math.random() * ALL_CONNECTORS_LIST.length)];
 
     return {
       id: `OSI-${eventCounter.toString().padStart(5, '0')}`,
@@ -184,9 +239,9 @@ function generateOSIEvent(forceAttack = false): OSIEvent {
     };
   }
 
-  if (Math.random() < 0.2) {
+  // Suspicious events (~10%)
+  if (Math.random() < 0.12) {
     const susp = SUSPICIOUS_EVENTS[Math.floor(Math.random() * SUSPICIOUS_EVENTS.length)];
-    const layer = OSI_LAYERS.find(l => l.id === susp.layer)!;
     return {
       id: `OSI-${eventCounter.toString().padStart(5, '0')}`,
       timestamp: now,
@@ -197,7 +252,7 @@ function generateOSIEvent(forceAttack = false): OSIEvent {
       destIP: dstIP,
       port: [22, 80, 443, 445, 3389, 53][Math.floor(Math.random() * 6)],
       bytes: Math.floor(Math.random() * 20000) + 50,
-      connector,
+      connector: ALL_CONNECTORS_LIST[Math.floor(Math.random() * ALL_CONNECTORS_LIST.length)],
       eventType: susp.eventType,
       description: susp.description,
       crossLayerLinks: [],
@@ -207,6 +262,30 @@ function generateOSIEvent(forceAttack = false): OSIEvent {
     };
   }
 
+  // Application-layer (L7) rich events - ~55% of benign traffic
+  if (Math.random() < 0.7) {
+    const appEvt = APP_LAYER_EVENTS[Math.floor(Math.random() * APP_LAYER_EVENTS.length)];
+    return {
+      id: `OSI-${eventCounter.toString().padStart(5, '0')}`,
+      timestamp: now,
+      osiLayer: 7,
+      severity: appEvt.severity,
+      protocol: appEvt.protocol,
+      sourceIP: srcIP,
+      destIP: dstIP,
+      port: [80, 443, 8080, 8443, 9092, 6379, 5432, 9200, 8500, 2181][Math.floor(Math.random() * 10)],
+      bytes: Math.floor(Math.random() * 25000) + 50,
+      connector: appEvt.connector,
+      eventType: appEvt.eventType,
+      description: appEvt.description,
+      crossLayerLinks: [],
+      verdict: appEvt.severity === 'medium' ? 'suspicious' : 'benign',
+      patternTag: null,
+      rawData: appEvt.rawDataFn(srcIP, dstIP),
+    };
+  }
+
+  // Lower-layer benign traffic
   const benign = BENIGN_EVENTS[Math.floor(Math.random() * BENIGN_EVENTS.length)];
   return {
     id: `OSI-${eventCounter.toString().padStart(5, '0')}`,
@@ -218,7 +297,7 @@ function generateOSIEvent(forceAttack = false): OSIEvent {
     destIP: dstIP,
     port: [22, 80, 443, 53, 8080, 25, 110, 993][Math.floor(Math.random() * 8)],
     bytes: Math.floor(Math.random() * 10000) + 20,
-    connector,
+    connector: ALL_CONNECTORS_LIST[Math.floor(Math.random() * ALL_CONNECTORS_LIST.length)],
     eventType: benign.eventType,
     description: benign.description,
     crossLayerLinks: [],
