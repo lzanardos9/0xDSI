@@ -827,6 +827,12 @@ export default function IdentityGraphExplorer() {
   const filteredEdges = useMemo(() => {
     let result = edges;
 
+    if (highlightedNode) {
+      result = result.filter(
+        (e) => e.source_node_id === highlightedNode || e.target_node_id === highlightedNode
+      );
+    }
+
     if (filterSuspicious === 'yes') result = result.filter((e) => e.is_suspicious);
     else if (filterSuspicious === 'no') result = result.filter((e) => !e.is_suspicious);
 
@@ -848,7 +854,7 @@ export default function IdentityGraphExplorer() {
     }
 
     return result;
-  }, [edges, filterSuspicious, filterEdgeType, filterNodeType, searchTerm]);
+  }, [edges, highlightedNode, filterSuspicious, filterEdgeType, filterNodeType, searchTerm]);
 
   // -----------------------------------------------------------------------
   // Render
@@ -1066,6 +1072,18 @@ export default function IdentityGraphExplorer() {
             <span className="text-xs text-slate-500">
               {filteredEdges.length} of {edges.length}
             </span>
+            {highlightedNode && (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[10px] text-cyan-400 font-mono">
+                <Eye className="w-3 h-3" />
+                {truncateId(highlightedNode, 14)}
+                <button
+                  onClick={() => setHighlightedNode(null)}
+                  className="ml-0.5 hover:text-white transition-colors"
+                >
+                  <EyeOff className="w-3 h-3" />
+                </button>
+              </span>
+            )}
           </div>
         </div>
 
