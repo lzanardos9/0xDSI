@@ -1,5 +1,7 @@
-import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { Globe, AlertTriangle } from 'lucide-react';
+import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { Globe, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+
+export type { SelectedNode };
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,9 +26,18 @@ interface DarkWebHit {
   listing_price: number;
 }
 
+interface SelectedNode {
+  id: string;
+  type: NodeType;
+  label: string;
+  caseIds: string[];
+  hitIds: string[];
+}
+
 interface Props {
   cases: CredentialCase[];
   darkWebHits: DarkWebHit[];
+  onNodeSelect?: (selected: SelectedNode | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +128,7 @@ const VELOCITY_CAP = 6;
 // Component
 // ---------------------------------------------------------------------------
 
-export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
+export default function CredentialSellingGraph({ cases, darkWebHits, onNodeSelect }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number>(0);
@@ -125,16 +136,19 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
   const edgesRef = useRef<GraphEdge[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const hoveredRef = useRef<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
   const dragRef = useRef<{ nodeId: string; offsetX: number; offsetY: number } | null>(null);
+  const dragMovedRef = useRef(false);
   const mouseRef = useRef<{ x: number; y: number }>({ x: -1000, y: -1000 });
   const timeRef = useRef(0);
   const sizeRef = useRef<{ w: number; h: number }>({ w: 800, h: 380 });
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   // -----------------------------------------------------------------------
   // Build graph data from cases and hits
   // -----------------------------------------------------------------------
 
-  const { nodes: initialNodes, edges: initialEdges, stats } = useMemo(() => {
+  const { nodes: initialNodes, edges: initialEdges, stats, caseMapping, hitMapping } = useMemo(() => {
     const nodeMap = new Map<string, GraphNode>();
     const edgeList: GraphEdge[] = [];
     const seenEdges = new Set<string>();
@@ -171,6 +185,17 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
     let connectionCount = 0;
 
     const marketplaceSet = new Set<string>();
+    const nodeToCases = new Map<string, Set<string>>();
+    const nodeToHits = new Map<string, Set<string>>();
+
+    const linkCase = (nodeId: string, caseId: string) => {
+      if (!nodeToCases.has(nodeId)) nodeToCases.set(nodeId, new Set());
+      nodeToCases.get(nodeId)!.add(caseId);
+    };
+    const linkHit = (nodeId: string, hitId: string) => {
+      if (!nodeToHits.has(nodeId)) nodeToHits.set(nodeId, new Set());
+      nodeToHits.get(nodeId)!.add(hitId);
+    };
 
     // Build from cases
     for (const c of cases) {
@@ -180,6 +205,7 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
         c.risk_tier === 'high' ? 80 :
         c.risk_tier === 'medium' ? 50 : 25;
       addNode(sellerId, 'seller', c.entity_name, Math.max(riskNum, c.seller_confidence));
+      linkCase(sellerId, c.case_id);
       sellerCount++;
 
       // Dark web intel marketplace
@@ -187,6 +213,7 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
       if (intel?.marketplace) {
         const mpId = `mp_${intel.marketplace.replace(/\s+/g, '_')}`;
         addNode(mpId, 'marketplace', intel.marketplace, 70);
+        linkCase(mpId, c.case_id);
         addEdge(sellerId, mpId, c.seller_confidence / 100, 'listed_on');
         marketplaceSet.add(mpId);
         connectionCount++;
@@ -207,6 +234,7 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
         const connId = `conn_${nc.entity.replace(/\s+/g, '_')}_${nc.type}`;
         const connRisk = nc.confidence * 100;
         addNode(connId, connType, nc.entity, connRisk);
+        linkCase(connId, c.case_id);
         addEdge(sellerId, connId, nc.confidence, nc.relationship);
         connectionCount++;
 
@@ -229,6 +257,8 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
         addNode(sellerFromHit, 'seller', hit.seller_handle, 65);
         sellerCount++;
       }
+      linkHit(sellerFromHit, hit.hit_id);
+      linkHit(mpId, hit.hit_id);
       addEdge(sellerFromHit, mpId, 0.8, 'sells_on');
       connectionCount++;
 
@@ -237,6 +267,7 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
         if (!nodeMap.has(victimId)) {
           addNode(victimId, 'victim_account', hit.entity_id, 60);
         }
+        linkHit(victimId, hit.hit_id);
         addEdge(sellerFromHit, victimId, 0.7, 'compromised');
         connectionCount++;
       }
@@ -244,10 +275,19 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
 
     marketplaceCount = marketplaceSet.size;
 
+    const caseMapping = Object.fromEntries(
+      Array.from(nodeToCases.entries()).map(([k, v]) => [k, Array.from(v)])
+    );
+    const hitMapping = Object.fromEntries(
+      Array.from(nodeToHits.entries()).map(([k, v]) => [k, Array.from(v)])
+    );
+
     return {
       nodes: Array.from(nodeMap.values()),
       edges: edgeList,
       stats: { sellers: sellerCount, marketplaces: marketplaceCount, connections: connectionCount },
+      caseMapping,
+      hitMapping,
     };
   }, [cases, darkWebHits]);
 
@@ -331,6 +371,7 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
     mouseRef.current = pos;
 
     if (dragRef.current) {
+      dragMovedRef.current = true;
       const node = nodesRef.current.find(n => n.id === dragRef.current!.nodeId);
       if (node) {
         node.x = pos.x - dragRef.current.offsetX;
@@ -350,6 +391,7 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const pos = getCanvasPos(e);
     const hit = findNodeAt(pos.x, pos.y);
+    dragMovedRef.current = false;
     if (hit) {
       dragRef.current = { nodeId: hit.id, offsetX: pos.x - hit.x, offsetY: pos.y - hit.y };
       hit.pinned = true;
@@ -363,6 +405,41 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
       dragRef.current = null;
     }
   }, []);
+
+  const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (dragMovedRef.current) return;
+    const pos = getCanvasPos(e);
+    const hit = findNodeAt(pos.x, pos.y);
+    if (hit) {
+      const newId = selectedRef.current === hit.id ? null : hit.id;
+      selectedRef.current = newId;
+      setSelectedNodeId(newId);
+      if (newId && onNodeSelect) {
+        const connectedCases = new Set<string>(caseMapping[newId] || []);
+        const connectedHits = new Set<string>(hitMapping[newId] || []);
+        for (const edge of edgesRef.current) {
+          const neighbor = edge.source === newId ? edge.target : edge.target === newId ? edge.source : null;
+          if (neighbor) {
+            for (const cid of (caseMapping[neighbor] || [])) connectedCases.add(cid);
+            for (const hid of (hitMapping[neighbor] || [])) connectedHits.add(hid);
+          }
+        }
+        onNodeSelect({
+          id: newId,
+          type: hit.type,
+          label: hit.label,
+          caseIds: Array.from(connectedCases),
+          hitIds: Array.from(connectedHits),
+        });
+      } else if (onNodeSelect) {
+        onNodeSelect(null);
+      }
+    } else {
+      selectedRef.current = null;
+      setSelectedNodeId(null);
+      if (onNodeSelect) onNodeSelect(null);
+    }
+  }, [getCanvasPos, findNodeAt, onNodeSelect, caseMapping, hitMapping]);
 
   const handleMouseLeave = useCallback(() => {
     hoveredRef.current = null;
@@ -509,13 +586,14 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
         ctx.stroke();
       }
 
-      // -- Connected edges set for hover highlight --
+      // -- Connected edges set for hover/selected highlight --
       const connectedEdgeKeys = new Set<string>();
       const connectedNodeIds = new Set<string>();
-      if (hovered) {
-        connectedNodeIds.add(hovered);
+      const activeHighlight = hovered || selectedRef.current;
+      if (activeHighlight) {
+        connectedNodeIds.add(activeHighlight);
         for (const e of edges) {
-          if (e.source === hovered || e.target === hovered) {
+          if (e.source === activeHighlight || e.target === activeHighlight) {
             connectedEdgeKeys.add(`${e.source}--${e.target}`);
             connectedNodeIds.add(e.source);
             connectedNodeIds.add(e.target);
@@ -530,7 +608,7 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
         if (!a || !b) continue;
 
         const isHighlighted = connectedEdgeKeys.has(`${edge.source}--${edge.target}`);
-        const isDimmed = hovered && !isHighlighted;
+        const isDimmed = activeHighlight && !isHighlighted;
 
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -551,7 +629,7 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
         if (!a || !b) continue;
 
         const isHighlighted = connectedEdgeKeys.has(`${p.edge.source}--${p.edge.target}`);
-        const isDimmed = hovered && !isHighlighted;
+        const isDimmed = activeHighlight && !isHighlighted;
         if (isDimmed) continue;
 
         const px = a.x + (b.x - a.x) * p.t;
@@ -590,9 +668,9 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
       // -- Draw nodes --
       for (const n of nodes) {
         const style = NODE_STYLES[n.type];
-        const isHovered = hovered === n.id;
+        const isHovered = hovered === n.id || selectedRef.current === n.id;
         const isConnected = connectedNodeIds.has(n.id);
-        const isDimmed = hovered && !isConnected;
+        const isDimmed = activeHighlight && !isConnected;
 
         const alpha = isDimmed ? 0.2 : 1;
 
@@ -722,7 +800,35 @@ export default function CredentialSellingGraph({ cases, darkWebHits }: Props) {
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
+        onClick={handleClick}
       />
+
+      {/* Selected node indicator */}
+      {selectedNodeId && (() => {
+        const sn = initialNodes.find(n => n.id === selectedNodeId);
+        if (!sn) return null;
+        return (
+          <div className="absolute top-3 left-3 bg-[#0f1629]/90 border border-cyan-500/30 rounded-lg px-3 py-2 backdrop-blur-sm flex items-center gap-2">
+            <Eye size={12} className="text-cyan-400" />
+            <div
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ backgroundColor: NODE_STYLES[sn.type].fill }}
+            />
+            <span className="text-[10px] font-mono text-cyan-300">{sn.label}</span>
+            <span className="text-[9px] text-slate-500 capitalize">{sn.type.replace('_', ' ')}</span>
+            <button
+              onClick={() => {
+                selectedRef.current = null;
+                setSelectedNodeId(null);
+                if (onNodeSelect) onNodeSelect(null);
+              }}
+              className="ml-1 text-slate-500 hover:text-slate-300 transition-colors"
+            >
+              <EyeOff size={12} />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Stats overlay -- top right */}
       <div className="absolute top-3 right-3 bg-[#0f1629]/90 border border-[#1e293b] rounded-lg px-3 py-2 backdrop-blur-sm pointer-events-none">

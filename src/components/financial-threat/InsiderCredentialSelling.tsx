@@ -3,6 +3,7 @@ import {
   Shield,
   AlertTriangle,
   Eye,
+  EyeOff,
   UserX,
   Key,
   Globe,
@@ -36,7 +37,7 @@ import type {
   NetworkConnection,
   PsychologicalAssessment,
 } from './InsiderCredentialTypes';
-import CredentialSellingGraph from './CredentialSellingGraph';
+import CredentialSellingGraph, { type SelectedNode } from './CredentialSellingGraph';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1125,6 +1126,7 @@ export default function InsiderCredentialSelling() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
+  const [graphSelection, setGraphSelection] = useState<SelectedNode | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1168,6 +1170,9 @@ export default function InsiderCredentialSelling() {
 
   const filteredCases = useMemo(() => {
     return cases.filter(c => {
+      if (graphSelection && graphSelection.caseIds.length > 0) {
+        if (!graphSelection.caseIds.includes(c.case_id)) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         if (!c.case_id.toLowerCase().includes(q) && !c.entity_name.toLowerCase().includes(q) && !c.entity_id.toLowerCase().includes(q)) return false;
@@ -1176,7 +1181,7 @@ export default function InsiderCredentialSelling() {
       if (riskFilter !== 'all' && c.risk_tier !== riskFilter) return false;
       return true;
     });
-  }, [cases, search, statusFilter, riskFilter]);
+  }, [cases, search, statusFilter, riskFilter, graphSelection]);
 
   const dwStats = useMemo(() => {
     const total = hits.length;
@@ -1194,6 +1199,9 @@ export default function InsiderCredentialSelling() {
 
   const filteredHits = useMemo(() => {
     return hits.filter(h => {
+      if (graphSelection && graphSelection.hitIds.length > 0) {
+        if (!graphSelection.hitIds.includes(h.hit_id)) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         if (!h.hit_id.toLowerCase().includes(q) && !h.entity_id.toLowerCase().includes(q) && !h.seller_handle.toLowerCase().includes(q) && !h.marketplace.toLowerCase().includes(q)) return false;
@@ -1202,7 +1210,7 @@ export default function InsiderCredentialSelling() {
       if (riskFilter !== 'all' && h.marketplace !== riskFilter) return false;
       return true;
     });
-  }, [hits, search, statusFilter, riskFilter]);
+  }, [hits, search, statusFilter, riskFilter, graphSelection]);
 
   // ---- Status / Marketplace options for filters ----
 
@@ -1231,6 +1239,7 @@ export default function InsiderCredentialSelling() {
     setSearch('');
     setStatusFilter('all');
     setRiskFilter('all');
+    setGraphSelection(null);
   }, [activeTab]);
 
   // ---- Render ----
@@ -1319,6 +1328,17 @@ export default function InsiderCredentialSelling() {
             className="bg-[#0f1629] border border-[#1e293b] rounded-lg text-xs text-slate-300 px-2.5 py-2 focus:outline-none focus:border-cyan-500/40">
             {(activeTab === 'cases' ? caseRiskOptions : dwMarketplaceOptions).map(o => <option key={o} value={o}>{o === 'all' ? (activeTab === 'cases' ? 'All Risk' : 'All Marketplaces') : o}</option>)}
           </select>
+          {graphSelection && (
+            <span className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-[10px] text-cyan-400 font-mono">
+              <Eye size={11} />
+              <span className="font-semibold">{graphSelection.label}</span>
+              <span className="text-slate-500 capitalize">({graphSelection.type.replace('_', ' ')})</span>
+              <span className="text-slate-600">{graphSelection.caseIds.length} cases / {graphSelection.hitIds.length} hits</span>
+              <button onClick={() => setGraphSelection(null)} className="ml-0.5 text-slate-500 hover:text-slate-300 transition-colors">
+                <EyeOff size={11} />
+              </button>
+            </span>
+          )}
         </div>
 
         {/* ============ SELLING CASES TAB ============ */}
@@ -1326,7 +1346,7 @@ export default function InsiderCredentialSelling() {
           <div className="space-y-5">
             {/* Credential Selling Network Graph */}
             {cases.length > 0 && (
-              <CredentialSellingGraph cases={cases as any} darkWebHits={hits as any} />
+              <CredentialSellingGraph cases={cases as any} darkWebHits={hits as any} onNodeSelect={setGraphSelection} />
             )}
 
             {/* Stats Grid */}
