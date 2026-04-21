@@ -66,7 +66,7 @@ interface AnomalyFlag {
 interface IdentityProfile {
   id: string;
   entity_id: string;
-  name: string;
+  entity_name: string;
   entity_type: 'person' | 'business' | 'api_integration';
   trust_score: number;
   risk_level: 'low' | 'medium' | 'high' | 'critical';
@@ -75,9 +75,8 @@ interface IdentityProfile {
   device_fingerprints: DeviceFingerprint[] | null;
   geo_patterns: GeoPattern | null;
   anomaly_flags: AnomalyFlag[] | null;
-  last_activity: string;
+  last_activity_at: string;
   created_at: string;
-  updated_at: string;
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -479,7 +478,7 @@ const IdentityTrustScores: React.FC = () => {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(
         (p) =>
-          (p.name && p.name.toLowerCase().includes(q)) ||
+          (p.entity_name && p.entity_name.toLowerCase().includes(q)) ||
           (p.entity_id && p.entity_id.toLowerCase().includes(q))
       );
     }
@@ -851,7 +850,7 @@ const IdentityTrustScores: React.FC = () => {
                         />
                         <div className="min-w-0">
                           <p className="text-xs text-slate-200 font-medium truncate">
-                            {profile.name || 'Unknown'}
+                            {profile.entity_name || 'Unknown'}
                           </p>
                           <p className="text-[10px] text-slate-500 font-mono truncate">
                             {truncateId(profile.entity_id, 16)}
@@ -900,7 +899,7 @@ const IdentityTrustScores: React.FC = () => {
                       <div className="text-right">
                         <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1 justify-end">
                           <Clock className="w-3 h-3 text-slate-600" />
-                          {timeAgo(profile.last_activity)}
+                          {timeAgo(profile.last_activity_at)}
                         </span>
                       </div>
                     </div>
