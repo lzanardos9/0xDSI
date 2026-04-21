@@ -113,6 +113,7 @@ function syntaxHighlightJson(raw: string): React.ReactNode[] {
 function EventProcessingFunnel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const dotsRef = useRef<AnimatedDot[]>([]);
   const animFrameRef = useRef<number>(0);
   const lastSpawnRef = useRef<number>(0);
@@ -126,15 +127,34 @@ function EventProcessingFunnel() {
   const [phases, setPhases] = useState<FunnelPhase[]>(() => FUNNEL_PHASES.map(p => ({ ...p })));
   const [liveEvents, setLiveEvents] = useState<FunnelEvent[]>(() => [...MOCK_EVENTS]);
   const mousePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [canvasDims, setCanvasDims] = useState({ w: 900, h: 440 });
 
-  const canvasWidth = 900;
-  const canvasHeight = 440;
-  const funnelTop = 20;
-  const funnelBottom = canvasHeight - 20;
+  useEffect(() => {
+    const wrap = canvasWrapRef.current;
+    if (!wrap) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const w = Math.round(entry.contentRect.width);
+        if (w > 0) {
+          const dpr = window.devicePixelRatio || 1;
+          const h = Math.round(w * 0.49);
+          setCanvasDims({ w: Math.round(w * dpr), h: Math.round(h * dpr) });
+        }
+      }
+    });
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, []);
+
+  const canvasWidth = canvasDims.w;
+  const canvasHeight = canvasDims.h;
+  const funnelTop = 20 * (canvasHeight / 440);
+  const funnelBottom = canvasHeight - 20 * (canvasHeight / 440);
   const phaseSpacing = (funnelBottom - funnelTop) / (FUNNEL_PHASES.length - 1);
   const maxPipeWidth = canvasWidth * 0.72;
   const minPipeWidth = canvasWidth * 0.15;
   const centerX = canvasWidth / 2;
+  const scaleFactor = canvasHeight / 440;
 
   const filteredPhases = useMemo(() => {
     if (activeConnectors.size === ALL_CONNECTORS.length) return phases;
@@ -271,7 +291,7 @@ function EventProcessingFunnel() {
       color: meta.color,
       opacity: 1,
       radius: 2.5 + Math.random() * 2,
-      speed: 0.4 + Math.random() * 0.8,
+      speed: (0.4 + Math.random() * 0.8) * scaleFactor,
       dropped: willDrop,
       dropVelocityX: 0,
       glowIntensity: 0.6 + Math.random() * 0.4,
@@ -281,10 +301,17 @@ function EventProcessingFunnel() {
     };
 
     dots.push(dot);
-  }, [liveEvents, activeConnectors, getPhaseY, getPipeWidth, centerX]);
+  }, [liveEvents, activeConnectors, getPhaseY, getPipeWidth, centerX, scaleFactor]);
 
   const drawFunnel = useCallback((ctx: CanvasRenderingContext2D, time: number) => {
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    const s = scaleFactor;
+    const fs10 = Math.round(10 * s);
+    const fs8 = Math.round(8 * s);
+    const glowR = Math.round(20 * s);
+    const badgeR = Math.round(9 * s);
+    const badgeOff = Math.round(24 * s);
+    const rightOff = Math.round(45 * s);
 
     for (let i = 0; i < filteredPhases.length; i++) {
       const phase = filteredPhases[i];
@@ -302,63 +329,63 @@ function EventProcessingFunnel() {
 
       ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.roundRect(centerX - halfPipe, y - pipeHeight / 2, pipeW, pipeHeight, 4);
+      ctx.roundRect(centerX - halfPipe, y - pipeHeight / 2, pipeW, pipeHeight, 4 * s);
       ctx.fill();
 
       ctx.strokeStyle = hexToRgba(phase.color, 0.25);
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1 * s;
       ctx.beginPath();
-      ctx.roundRect(centerX - halfPipe, y - pipeHeight / 2, pipeW, pipeHeight, 4);
+      ctx.roundRect(centerX - halfPipe, y - pipeHeight / 2, pipeW, pipeHeight, 4 * s);
       ctx.stroke();
 
-      const edgeGlow = ctx.createRadialGradient(centerX - halfPipe, y, 0, centerX - halfPipe, y, 20);
+      const edgeGlow = ctx.createRadialGradient(centerX - halfPipe, y, 0, centerX - halfPipe, y, glowR);
       edgeGlow.addColorStop(0, hexToRgba(phase.color, 0.15));
       edgeGlow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = edgeGlow;
-      ctx.fillRect(centerX - halfPipe - 20, y - 20, 40, 40);
+      ctx.fillRect(centerX - halfPipe - glowR, y - glowR, glowR * 2, glowR * 2);
 
-      const edgeGlow2 = ctx.createRadialGradient(centerX + halfPipe, y, 0, centerX + halfPipe, y, 20);
+      const edgeGlow2 = ctx.createRadialGradient(centerX + halfPipe, y, 0, centerX + halfPipe, y, glowR);
       edgeGlow2.addColorStop(0, hexToRgba(phase.color, 0.15));
       edgeGlow2.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = edgeGlow2;
-      ctx.fillRect(centerX + halfPipe - 20, y - 20, 40, 40);
+      ctx.fillRect(centerX + halfPipe - glowR, y - glowR, glowR * 2, glowR * 2);
 
       ctx.fillStyle = hexToRgba(phase.color, 0.9);
-      ctx.font = 'bold 10px monospace';
+      ctx.font = `bold ${fs10}px monospace`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
       ctx.beginPath();
-      ctx.arc(centerX - halfPipe - 24, y, 9, 0, Math.PI * 2);
+      ctx.arc(centerX - halfPipe - badgeOff, y, badgeR, 0, Math.PI * 2);
       ctx.fillStyle = hexToRgba(phase.color, 0.15);
       ctx.fill();
       ctx.strokeStyle = hexToRgba(phase.color, 0.5);
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1 * s;
       ctx.stroke();
       ctx.fillStyle = hexToRgba(phase.color, 0.95);
-      ctx.fillText(`${phase.id}`, centerX - halfPipe - 24, y);
+      ctx.fillText(`${phase.id}`, centerX - halfPipe - badgeOff, y);
 
       ctx.textAlign = 'left';
-      ctx.font = 'bold 8px monospace';
+      ctx.font = `bold ${fs8}px monospace`;
       ctx.fillStyle = hexToRgba(phase.color, 0.8);
-      ctx.fillText(phase.shortName, centerX - halfPipe - 24 + 14, y - 4);
+      ctx.fillText(phase.shortName, centerX - halfPipe - badgeOff + 14 * s, y - 4 * s);
 
-      ctx.font = '8px monospace';
+      ctx.font = `${fs8}px monospace`;
       ctx.fillStyle = '#94a3b8';
-      ctx.fillText(`${formatNumber(phase.activeEvents)} active`, centerX - halfPipe - 24 + 14, y + 6);
+      ctx.fillText(`${formatNumber(phase.activeEvents)} active`, centerX - halfPipe - badgeOff + 14 * s, y + 6 * s);
 
       if (phase.droppedEvents > 0) {
         ctx.textAlign = 'right';
-        ctx.font = '8px monospace';
+        ctx.font = `${fs8}px monospace`;
         ctx.fillStyle = '#ef4444';
-        ctx.fillText(`-${formatNumber(phase.droppedEvents)}`, centerX + halfPipe + 45, y - 3);
+        ctx.fillText(`-${formatNumber(phase.droppedEvents)}`, centerX + halfPipe + rightOff, y - 3 * s);
         ctx.fillStyle = '#64748b';
-        ctx.fillText(`${phase.avgLatencyMs}ms`, centerX + halfPipe + 45, y + 7);
+        ctx.fillText(`${phase.avgLatencyMs}ms`, centerX + halfPipe + rightOff, y + 7 * s);
       } else {
         ctx.textAlign = 'right';
-        ctx.font = '8px monospace';
+        ctx.font = `${fs8}px monospace`;
         ctx.fillStyle = '#64748b';
-        ctx.fillText(`${phase.avgLatencyMs}ms`, centerX + halfPipe + 45, y + 2);
+        ctx.fillText(`${phase.avgLatencyMs}ms`, centerX + halfPipe + rightOff, y + 2 * s);
       }
 
       if (i < filteredPhases.length - 1) {
@@ -370,7 +397,7 @@ function EventProcessingFunnel() {
         ctx.moveTo(centerX - halfPipe * 0.6, y + pipeHeight / 2);
         ctx.lineTo(centerX - nextHalf * 0.6, nextY - pipeHeight / 2);
         ctx.strokeStyle = hexToRgba(phase.color, 0.1);
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1 * s;
         ctx.stroke();
 
         ctx.beginPath();
@@ -378,10 +405,12 @@ function EventProcessingFunnel() {
         ctx.lineTo(centerX + nextHalf * 0.6, nextY - pipeHeight / 2);
         ctx.stroke();
 
+        const arrowS = 3 * s;
+        const arrowH = 6 * s;
         ctx.beginPath();
-        ctx.moveTo(centerX, y + pipeHeight / 2 + 4);
-        ctx.lineTo(centerX - 3, y + pipeHeight / 2 + 4 + 6);
-        ctx.lineTo(centerX + 3, y + pipeHeight / 2 + 4 + 6);
+        ctx.moveTo(centerX, y + pipeHeight / 2 + 4 * s);
+        ctx.lineTo(centerX - arrowS, y + pipeHeight / 2 + 4 * s + arrowH);
+        ctx.lineTo(centerX + arrowS, y + pipeHeight / 2 + 4 * s + arrowH);
         ctx.closePath();
         ctx.fillStyle = hexToRgba(phase.color, 0.2);
         ctx.fill();
@@ -391,11 +420,12 @@ function EventProcessingFunnel() {
     if (threatFlashRef.current > 0) {
       const flashAlpha = threatFlashRef.current * 0.3;
       const flashY = getPhaseY(10);
-      const flashGrad = ctx.createRadialGradient(centerX, flashY, 0, centerX, flashY, 120);
+      const flashRadius = 120 * s;
+      const flashGrad = ctx.createRadialGradient(centerX, flashY, 0, centerX, flashY, flashRadius);
       flashGrad.addColorStop(0, `rgba(239, 68, 68, ${flashAlpha})`);
       flashGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
       ctx.fillStyle = flashGrad;
-      ctx.fillRect(centerX - 120, flashY - 120, 240, 240);
+      ctx.fillRect(centerX - flashRadius, flashY - flashRadius, flashRadius * 2, flashRadius * 2);
       threatFlashRef.current = Math.max(0, threatFlashRef.current - 0.02);
     }
 
@@ -404,37 +434,39 @@ function EventProcessingFunnel() {
       const dot = dots[d];
       if (dot.opacity <= 0) continue;
 
+      const dotR = dot.radius * s;
+
       if (dot.trail.length > 0) {
         for (let t = 0; t < dot.trail.length; t++) {
           const tp = dot.trail[t];
           if (tp.opacity <= 0) continue;
           ctx.beginPath();
-          ctx.arc(tp.x, tp.y, dot.radius * 0.5 * tp.opacity, 0, Math.PI * 2);
+          ctx.arc(tp.x, tp.y, dotR * 0.5 * tp.opacity, 0, Math.PI * 2);
           ctx.fillStyle = hexToRgba(dot.color, tp.opacity * 0.3);
           ctx.fill();
         }
       }
 
-      const glowSize = dot.radius * 3 * dot.glowIntensity;
-      const glow = ctx.createRadialGradient(dot.x, dot.y, dot.radius * 0.5, dot.x, dot.y, glowSize);
+      const glowSize = dotR * 3 * dot.glowIntensity;
+      const glow = ctx.createRadialGradient(dot.x, dot.y, dotR * 0.5, dot.x, dot.y, glowSize);
       glow.addColorStop(0, hexToRgba(dot.color, 0.4 * dot.opacity));
       glow.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = glow;
       ctx.fillRect(dot.x - glowSize, dot.y - glowSize, glowSize * 2, glowSize * 2);
 
       ctx.beginPath();
-      ctx.arc(dot.x, dot.y, dot.radius, 0, Math.PI * 2);
+      ctx.arc(dot.x, dot.y, dotR, 0, Math.PI * 2);
       ctx.fillStyle = hexToRgba(dot.color, dot.opacity * 0.9);
       ctx.fill();
 
       ctx.beginPath();
-      ctx.arc(dot.x, dot.y, dot.radius * 0.5, 0, Math.PI * 2);
+      ctx.arc(dot.x, dot.y, dotR * 0.5, 0, Math.PI * 2);
       ctx.fillStyle = hexToRgba('#ffffff', dot.opacity * 0.5);
       ctx.fill();
 
       if (dot.flash > 0) {
-        const flashR = dot.radius + dot.flash * 15;
-        const flashGrad = ctx.createRadialGradient(dot.x, dot.y, dot.radius, dot.x, dot.y, flashR);
+        const flashR = dotR + dot.flash * 15 * s;
+        const flashGrad = ctx.createRadialGradient(dot.x, dot.y, dotR, dot.x, dot.y, flashR);
         flashGrad.addColorStop(0, hexToRgba(dot.color, dot.flash * 0.6));
         flashGrad.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = flashGrad;
@@ -445,8 +477,8 @@ function EventProcessingFunnel() {
 
     const scanLineY = (time * 0.03) % canvasHeight;
     ctx.fillStyle = 'rgba(34,211,238,0.02)';
-    ctx.fillRect(0, scanLineY, canvasWidth, 2);
-  }, [filteredPhases, getPhaseY, getPipeWidth, centerX, canvasWidth, canvasHeight, phaseSpacing]);
+    ctx.fillRect(0, scanLineY, canvasWidth, 2 * s);
+  }, [filteredPhases, getPhaseY, getPipeWidth, centerX, canvasWidth, canvasHeight, phaseSpacing, scaleFactor]);
 
   const updateDots = useCallback((time: number) => {
     const dots = dotsRef.current;
@@ -472,7 +504,7 @@ function EventProcessingFunnel() {
       dot.trail = dot.trail.filter(t => t.opacity > 0);
 
       if (dot.dropped && dot.y >= dot.targetY * 0.85) {
-        dot.dropVelocityX += 0.3;
+        dot.dropVelocityX += 0.3 * scaleFactor;
         dot.x += dot.dropVelocityX;
         dot.opacity -= 0.015;
         dot.y += dot.speed * 0.2;
@@ -484,7 +516,7 @@ function EventProcessingFunnel() {
         const halfPipe = pipeW / 2;
         const leftBound = centerX - halfPipe * 0.8;
         const rightBound = centerX + halfPipe * 0.8;
-        dot.x += (Math.random() - 0.5) * 0.5;
+        dot.x += (Math.random() - 0.5) * 0.5 * scaleFactor;
         dot.x = Math.max(leftBound, Math.min(rightBound, dot.x));
 
         dot.glowIntensity = 0.5 + Math.sin(time * 0.003 + i) * 0.3;
@@ -501,7 +533,7 @@ function EventProcessingFunnel() {
         dots.splice(i, 1);
       }
     }
-  }, [activeConnectors, spawnDot, getPipeWidth, centerX, funnelTop, phaseSpacing, canvasWidth]);
+  }, [activeConnectors, spawnDot, getPipeWidth, centerX, funnelTop, phaseSpacing, canvasWidth, scaleFactor]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -543,7 +575,7 @@ function EventProcessingFunnel() {
     }
 
     let closestDot: AnimatedDot | null = null;
-    let closestDist = 20;
+    let closestDist = 20 * scaleFactor;
     const dots = dotsRef.current;
     for (let i = 0; i < dots.length; i++) {
       const dot = dots[i];
@@ -561,7 +593,7 @@ function EventProcessingFunnel() {
     } else {
       setHoveredEvent(null);
     }
-  }, [canvasWidth, canvasHeight, funnelTop, phaseSpacing]);
+  }, [canvasWidth, canvasHeight, funnelTop, phaseSpacing, scaleFactor]);
 
   const handleCanvasMouseLeave = useCallback(() => {
     setHoveredEvent(null);
@@ -768,18 +800,16 @@ function EventProcessingFunnel() {
         </div>
       )}
 
-      <div className="relative z-10 px-6 py-2">
-        <div style={{ width: '100%', aspectRatio: `${canvasWidth} / ${canvasHeight}`, maxHeight: 480 }}>
-          <canvas
-            ref={canvasRef}
-            width={canvasWidth}
-            height={canvasHeight}
-            onMouseMove={handleCanvasMouseMove}
-            onMouseLeave={handleCanvasMouseLeave}
-            className="w-full h-full cursor-crosshair"
-            style={{ imageRendering: 'auto' }}
-          />
-        </div>
+      <div ref={canvasWrapRef} className="relative z-10 px-6 py-2">
+        <canvas
+          ref={canvasRef}
+          width={canvasWidth}
+          height={canvasHeight}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseLeave={handleCanvasMouseLeave}
+          className="w-full cursor-crosshair"
+          style={{ height: `${canvasHeight / (window.devicePixelRatio || 1)}px`, imageRendering: 'auto' }}
+        />
       </div>
 
       <div className="relative z-10 px-6 py-3 border-t border-[#1e293b]">
