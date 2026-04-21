@@ -358,16 +358,18 @@ export default function AttackVectorGraph() {
     });
 
     nodeMeshesRef.current.forEach((mesh, i) => {
+      const node = NETWORK_NODES[i];
+      if (!node) return;
       if (infected.has(i)) {
         const flashRate = 4 + Math.sin(t + i) * 2;
         const flash = Math.sin(t * flashRate) * 0.5 + 0.5;
         (mesh.material as THREE.MeshPhongMaterial).emissive.setHex(
-          flash > 0.5 ? 0xff2200 : NETWORK_NODES[i].color
+          flash > 0.5 ? 0xff2200 : node.color
         );
         (mesh.material as THREE.MeshPhongMaterial).emissiveIntensity = 0.5 + flash * 1.5;
         mesh.scale.setScalar(1 + Math.sin(t * 6 + i) * 0.08);
       } else {
-        (mesh.material as THREE.MeshPhongMaterial).emissive.setHex(NETWORK_NODES[i].color);
+        (mesh.material as THREE.MeshPhongMaterial).emissive.setHex(node.color);
         (mesh.material as THREE.MeshPhongMaterial).emissiveIntensity = 0.5;
         mesh.scale.setScalar(1);
       }
