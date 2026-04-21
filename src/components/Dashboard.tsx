@@ -87,6 +87,7 @@ import DashboardMigrationsTab from './dashboard-builder/DashboardMigrationsTab';
 import CommandCenter from './command-center/CommandCenter';
 import EventProcessingFunnel from './command-center/EventProcessingFunnel';
 import ThreatSimulator from './ThreatSimulator';
+import FinancialThreatIntel from './financial-threat/FinancialThreatIntel';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -100,7 +101,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -287,6 +288,13 @@ const Dashboard = () => {
       roles: ['ciso', 'admin'],
       items: [
         { id: 'executive', label: 'Executive Dashboard', icon: Briefcase },
+      ]
+    },
+    {
+      section: 'Financial Threat Intel',
+      roles: ['analyst', 'engineer', 'admin', 'ciso'],
+      items: [
+        { id: 'financialthreat', label: 'Financial Threats', icon: DollarSign },
       ]
     },
     {
@@ -1008,6 +1016,7 @@ const Dashboard = () => {
           {selectedView === 'correlationrules' && <CorrelationRulesPanel />}
           {selectedView === 'dashboardstudio' && <DashboardMigrationsTab />}
           {selectedView === 'simulations' && <ThreatSimulator />}
+          {selectedView === 'financialthreat' && <FinancialThreatIntel />}
           {selectedView === 'glasswing' && <GlasswingPanel />}
           {selectedView === 'negcorrelation' && (
             <div className="h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
