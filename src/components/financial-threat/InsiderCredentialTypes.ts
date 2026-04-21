@@ -81,6 +81,53 @@ export interface DarkWebIntel {
   listing_type?: string;
 }
 
+export interface PsychBehavioralSignal {
+  signal: string;
+  severity: 'low' | 'medium' | 'high' | 'critical' | 'info';
+  detail: string;
+  confidence: number;
+}
+
+export interface PsychPredictiveFactor {
+  factor: string;
+  level: 'low' | 'medium' | 'high' | 'critical';
+  detail: string;
+}
+
+export interface PsychCrossPlatformPattern {
+  pattern: string;
+  source: string;
+  correlation: number;
+}
+
+export interface PsychologicalAssessment {
+  risk_score: number;
+  risk_label: string;
+  personality_profile: {
+    big_five?: {
+      openness: number;
+      conscientiousness: number;
+      extraversion: number;
+      agreeableness: number;
+      neuroticism: number;
+    };
+    dark_triad?: {
+      narcissism: number;
+      machiavellianism: number;
+      psychopathy: number;
+    };
+    risk_indicators?: Record<string, number>;
+  };
+  behavioral_signals: PsychBehavioralSignal[];
+  llm_narrative: string;
+  predictive_factors: PsychPredictiveFactor[];
+  recommended_interventions: string[];
+  cross_platform_patterns: PsychCrossPlatformPattern[];
+  confidence: number;
+  assessed_at?: string;
+  model_version?: string;
+}
+
 export interface CredentialSellingCase {
   id: string;
   case_id: string;
@@ -99,6 +146,7 @@ export interface CredentialSellingCase {
   multi_operator_evidence: MultiOperatorEvidence | null;
   credential_rotation_events: CredentialRotationEvent[] | null;
   network_connections: NetworkConnection[] | null;
+  psychological_assessment: PsychologicalAssessment | null;
   investigation_notes: string | null;
   created_at: string;
 }

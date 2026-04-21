@@ -20,6 +20,10 @@ import {
   FileWarning,
   Activity,
   RefreshCw,
+  Brain,
+  TrendingUp,
+  Zap,
+  Target,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type {
@@ -30,6 +34,7 @@ import type {
   FinancialIndicator,
   MultiOperatorEvidence,
   NetworkConnection,
+  PsychologicalAssessment,
 } from './InsiderCredentialTypes';
 
 // ---------------------------------------------------------------------------
@@ -309,6 +314,251 @@ const FinancialIndicators: React.FC<{ items: FinancialIndicator[] }> = ({ items 
 );
 
 // ---------------------------------------------------------------------------
+// Psychological Risk Panel
+// ---------------------------------------------------------------------------
+
+const SEVERITY_PSYCH: Record<string, string> = {
+  low: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+  medium: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  high: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+  critical: 'bg-red-500/15 text-red-400 border-red-500/30',
+  info: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+};
+
+const TRAIT_COLOR = (v: number) => {
+  if (v >= 75) return { bar: 'bg-red-500', text: 'text-red-400' };
+  if (v >= 50) return { bar: 'bg-orange-500', text: 'text-orange-400' };
+  if (v >= 30) return { bar: 'bg-amber-500', text: 'text-amber-400' };
+  return { bar: 'bg-emerald-500', text: 'text-emerald-400' };
+};
+
+const PsychologicalRiskPanel: React.FC<{ assessment: PsychologicalAssessment | null; entityName: string }> = ({ assessment, entityName }) => {
+  const [showNarrative, setShowNarrative] = useState(false);
+  const [showPredictive, setShowPredictive] = useState(false);
+
+  if (!assessment || !assessment.risk_score) return null;
+
+  const { personality_profile: pp, behavioral_signals, llm_narrative, predictive_factors, recommended_interventions, cross_platform_patterns, risk_score, risk_label, confidence } = assessment;
+  const bigFive = pp?.big_five;
+  const darkTriad = pp?.dark_triad;
+  const riskIndicators = pp?.risk_indicators;
+
+  const riskColor = risk_score >= 80 ? 'text-red-400' : risk_score >= 60 ? 'text-orange-400' : risk_score >= 40 ? 'text-amber-400' : 'text-emerald-400';
+  const riskBg = risk_score >= 80 ? 'from-red-500/10 to-red-900/5 border-red-500/30' : risk_score >= 60 ? 'from-orange-500/10 to-orange-900/5 border-orange-500/30' : risk_score >= 40 ? 'from-amber-500/10 to-amber-900/5 border-amber-500/30' : 'from-emerald-500/10 to-emerald-900/5 border-emerald-500/30';
+
+  const TraitBar = ({ label, value, maxLabel }: { label: string; value: number; maxLabel?: string }) => {
+    const c = TRAIT_COLOR(value);
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-slate-500 w-24 text-right truncate">{label}</span>
+        <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+          <div className={`h-full ${c.bar} rounded-full transition-all duration-500`} style={{ width: `${value}%` }} />
+        </div>
+        <span className={`text-[10px] font-mono font-bold w-7 ${c.text}`}>{value}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div className={`bg-gradient-to-br ${riskBg} border rounded-xl p-4 space-y-4`}>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[#0b0f1e] flex items-center justify-center border border-[#1e293b]">
+            <Brain size={16} className={riskColor} />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-slate-100">LLM Psychological Risk Assessment</h4>
+            <p className="text-[10px] text-slate-500">Multi-source behavioral + personality analysis</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <div className={`text-lg font-bold font-mono ${riskColor}`}>{risk_score}</div>
+            <div className="text-[9px] text-slate-500 uppercase tracking-wider">risk score</div>
+          </div>
+          <div className="text-right">
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${risk_score >= 80 ? 'bg-red-500/15 text-red-400 border-red-500/30' : risk_score >= 60 ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}`}>
+              {risk_label}
+            </span>
+            <div className="text-[9px] text-slate-600 mt-0.5 font-mono">{(confidence * 100).toFixed(0)}% conf</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Personality Traits Grid */}
+      {(bigFive || darkTriad) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Big Five */}
+          {bigFive && (
+            <div className="bg-[#080c16] rounded-lg p-3 border border-[#1e293b]">
+              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Big Five (OCEAN)</h5>
+              <div className="space-y-1.5">
+                <TraitBar label="Openness" value={bigFive.openness} />
+                <TraitBar label="Conscientiousness" value={bigFive.conscientiousness} />
+                <TraitBar label="Extraversion" value={bigFive.extraversion} />
+                <TraitBar label="Agreeableness" value={bigFive.agreeableness} />
+                <TraitBar label="Neuroticism" value={bigFive.neuroticism} />
+              </div>
+            </div>
+          )}
+
+          {/* Dark Triad */}
+          {darkTriad && (
+            <div className="bg-[#080c16] rounded-lg p-3 border border-[#1e293b]">
+              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <Skull size={10} className="text-red-400" /> Dark Triad
+              </h5>
+              <div className="space-y-1.5">
+                <TraitBar label="Narcissism" value={darkTriad.narcissism} />
+                <TraitBar label="Machiavellianism" value={darkTriad.machiavellianism} />
+                <TraitBar label="Psychopathy" value={darkTriad.psychopathy} />
+              </div>
+              {(darkTriad.machiavellianism >= 70 || darkTriad.psychopathy >= 60) && (
+                <div className="mt-2 flex items-center gap-1 px-2 py-1 rounded bg-red-500/10 border border-red-500/20">
+                  <AlertTriangle size={10} className="text-red-400" />
+                  <span className="text-[9px] text-red-400 font-bold">Elevated Dark Triad -- High manipulation/deception risk</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Risk Indicators */}
+          {riskIndicators && (
+            <div className="bg-[#080c16] rounded-lg p-3 border border-[#1e293b]">
+              <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <Target size={10} className="text-orange-400" /> Risk Indicators
+              </h5>
+              <div className="space-y-1.5">
+                {Object.entries(riskIndicators).map(([key, val]) => (
+                  <TraitBar key={key} label={key.replace(/_/g, ' ')} value={val} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Behavioral Signals */}
+      {behavioral_signals.length > 0 && (
+        <div>
+          <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+            <Zap size={10} className="text-cyan-400" /> Behavioral Signals
+          </h5>
+          <div className="space-y-2">
+            {behavioral_signals.map((sig, i) => (
+              <div key={i} className="flex items-start gap-2 bg-[#080c16] rounded-lg px-3 py-2 border border-[#1e293b]">
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border mt-0.5 shrink-0 ${SEVERITY_PSYCH[sig.severity] || SEVERITY_PSYCH.medium}`}>
+                  {sig.severity.toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <span className="text-[11px] font-semibold text-slate-200">{sig.signal}</span>
+                  <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">{sig.detail}</p>
+                </div>
+                <span className="text-[9px] font-mono text-slate-600 shrink-0 mt-0.5">{(sig.confidence * 100).toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* LLM Narrative */}
+      {llm_narrative && (
+        <div>
+          <button onClick={() => setShowNarrative(!showNarrative)} className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 hover:text-slate-200 transition-colors">
+            <Brain size={10} className="text-cyan-400" />
+            LLM Psychological Narrative
+            {showNarrative ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          </button>
+          {showNarrative && (
+            <div className="mt-2 bg-[#080c16] rounded-lg p-3 border border-cyan-500/20">
+              <p className="text-[11px] text-slate-300 leading-relaxed">{llm_narrative}</p>
+              {assessment.assessed_at && (
+                <div className="mt-2 flex items-center gap-2 text-[9px] text-slate-600">
+                  <Clock size={9} /> Assessed {fmtDate(assessment.assessed_at)}
+                  {assessment.model_version && <span className="font-mono">| {assessment.model_version}</span>}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Predictive Factors + Cross-Platform */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Predictive Factors */}
+        {predictive_factors.length > 0 && (
+          <div>
+            <button onClick={() => setShowPredictive(!showPredictive)} className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 hover:text-slate-200 transition-colors mb-2">
+              <TrendingUp size={10} className="text-amber-400" />
+              Predictive Factors
+              {showPredictive ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+            </button>
+            {showPredictive && (
+              <div className="space-y-1.5">
+                {predictive_factors.map((pf, i) => (
+                  <div key={i} className="bg-[#080c16] rounded-lg px-3 py-2 border border-[#1e293b]">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${SEVERITY_PSYCH[pf.level] || SEVERITY_PSYCH.medium}`}>
+                        {pf.level.toUpperCase()}
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-200">{pf.factor}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1">{pf.detail}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Cross-Platform Patterns */}
+        {cross_platform_patterns.length > 0 && (
+          <div>
+            <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+              <Activity size={10} className="text-emerald-400" /> Cross-Platform Correlations
+            </h5>
+            <div className="space-y-1.5">
+              {cross_platform_patterns.map((cp, i) => (
+                <div key={i} className="flex items-center gap-2 bg-[#080c16] rounded-lg px-3 py-2 border border-[#1e293b]">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] text-slate-200">{cp.pattern}</span>
+                    <div className="text-[9px] text-slate-500 font-mono">{cp.source}</div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="w-16 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${cp.correlation >= 0.9 ? 'bg-red-500' : cp.correlation >= 0.7 ? 'bg-orange-500' : 'bg-amber-500'}`} style={{ width: `${cp.correlation * 100}%` }} />
+                    </div>
+                    <span className="text-[9px] font-mono font-bold text-slate-400">{(cp.correlation * 100).toFixed(0)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Recommended Interventions */}
+      {recommended_interventions.length > 0 && (
+        <div>
+          <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+            <ShieldAlert size={10} className="text-red-400" /> Recommended Interventions
+          </h5>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+            {recommended_interventions.map((ri, i) => (
+              <div key={i} className="flex items-start gap-2 text-[10px] text-slate-300">
+                <span className="text-cyan-500 mt-0.5 shrink-0">{i + 1}.</span>
+                <span>{ri}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Case Card
 // ---------------------------------------------------------------------------
 
@@ -422,6 +672,9 @@ const CaseCard: React.FC<{ c: CredentialSellingCase }> = ({ c }) => {
               </div>
             </div>
           )}
+
+          {/* Psychological Risk Assessment */}
+          <PsychologicalRiskPanel assessment={parseJsonField<PsychologicalAssessment>(c.psychological_assessment)} entityName={c.entity_name} />
 
           {/* Investigation Notes */}
           {c.investigation_notes && (
