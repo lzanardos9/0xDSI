@@ -24,6 +24,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import ResponseTimelineGraph from './ResponseTimelineGraph';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -643,6 +644,11 @@ const ResponseDecisions: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Response Timeline Visualization */}
+      {decisions.length > 0 && (
+        <ResponseTimelineGraph decisions={decisions} />
+      )}
 
       {/* Filters Panel */}
       {showFilters && (

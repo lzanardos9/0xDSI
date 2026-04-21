@@ -36,6 +36,7 @@ import type {
   NetworkConnection,
   PsychologicalAssessment,
 } from './InsiderCredentialTypes';
+import CredentialSellingGraph from './CredentialSellingGraph';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1323,6 +1324,11 @@ export default function InsiderCredentialSelling() {
         {/* ============ SELLING CASES TAB ============ */}
         {activeTab === 'cases' && (
           <div className="space-y-5">
+            {/* Credential Selling Network Graph */}
+            {cases.length > 0 && (
+              <CredentialSellingGraph cases={cases as any} darkWebHits={hits as any} />
+            )}
+
             {/* Stats Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               {[

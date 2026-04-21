@@ -19,6 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import SimulationAttackTreeGraph from './SimulationAttackTreeGraph';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -724,6 +725,11 @@ const ThreatSimulations: React.FC = () => {
           valueClass={getDetectionRateColor(stats.avgDetectionRate)}
         />
       </div>
+
+      {/* Attack Path Flow Visualization */}
+      {simulations.length > 0 && (
+        <SimulationAttackTreeGraph simulations={simulations} />
+      )}
 
       {/* Filters + Sort Controls */}
       <div className="flex items-center justify-between flex-wrap gap-2">

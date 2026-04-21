@@ -32,6 +32,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import ThreatAttackChainGraph from './ThreatAttackChainGraph';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -840,6 +841,11 @@ const ThreatDetections: React.FC = () => {
           valueClass="text-emerald-400"
         />
       </div>
+
+      {/* Attack Chain Visualization */}
+      {detections.length > 0 && (
+        <ThreatAttackChainGraph detections={detections} />
+      )}
 
       {/* Threat Type Distribution */}
       <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-5">
