@@ -19,6 +19,12 @@ import {
   Eye,
   Zap,
   ShieldAlert,
+  Pencil,
+  Save,
+  X,
+  Loader2,
+  Plus,
+  Send,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import CaseEvidenceGraph from './CaseEvidenceGraph';
@@ -604,6 +610,210 @@ const ResponseTab: React.FC<{ c: FinancialCase }> = ({ c }) => {
 };
 
 // ---------------------------------------------------------------------------
+// Edit Form for Case fields
+// ---------------------------------------------------------------------------
+
+interface EditFormData {
+  title: string;
+  description: string;
+  severity: string;
+  status: string;
+  priority: number;
+  assigned_to: string;
+  assigned_team: string;
+  risk_score: number;
+  financial_impact_usd: number;
+  affected_accounts: number;
+  case_type: string;
+}
+
+const EditCaseForm: React.FC<{
+  c: FinancialCase;
+  onSave: (data: EditFormData) => Promise<void>;
+  onCancel: () => void;
+  saving: boolean;
+}> = ({ c, onSave, onCancel, saving }) => {
+  const [form, setForm] = useState<EditFormData>({
+    title: c.title,
+    description: c.description,
+    severity: c.severity,
+    status: c.status,
+    priority: c.priority,
+    assigned_to: c.assigned_to,
+    assigned_team: c.assigned_team,
+    risk_score: c.risk_score,
+    financial_impact_usd: c.financial_impact_usd,
+    affected_accounts: c.affected_accounts,
+    case_type: c.case_type,
+  });
+
+  const set = (key: keyof EditFormData, val: string | number) => setForm(prev => ({ ...prev, [key]: val }));
+
+  const inputClass = 'w-full px-3 py-2 bg-[#0a0e1a] border border-[#1e293b] rounded-lg text-[12px] text-slate-200 focus:outline-none focus:border-cyan-500/50 transition-colors';
+  const selectClass = 'w-full px-3 py-2 bg-[#0a0e1a] border border-[#1e293b] rounded-lg text-[12px] text-slate-200 focus:outline-none focus:border-cyan-500/50';
+  const labelClass = 'text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-1 block';
+
+  return (
+    <div className="border-t border-cyan-500/30 bg-[#0b1020] px-5 py-5 space-y-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Pencil size={14} className="text-cyan-400" />
+          <h3 className="text-sm font-semibold text-slate-100">Edit Case</h3>
+          <span className="text-[10px] font-mono text-slate-500">{c.case_number}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onCancel}
+            disabled={saving}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e293b] text-slate-400 text-[11px] hover:border-slate-500 hover:text-slate-200 transition-colors disabled:opacity-50"
+          >
+            <X size={12} /> Cancel
+          </button>
+          <button
+            onClick={() => onSave(form)}
+            disabled={saving}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-medium transition-colors disabled:opacity-50"
+          >
+            {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+
+      {/* Title */}
+      <div>
+        <label className={labelClass}>Title</label>
+        <input type="text" value={form.title} onChange={e => set('title', e.target.value)} className={inputClass} />
+      </div>
+
+      {/* Description */}
+      <div>
+        <label className={labelClass}>Description</label>
+        <textarea value={form.description} onChange={e => set('description', e.target.value)}
+          rows={3} className={`${inputClass} resize-y`} />
+      </div>
+
+      {/* Row: severity, status, case_type, priority */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div>
+          <label className={labelClass}>Severity</label>
+          <select value={form.severity} onChange={e => set('severity', e.target.value)} className={selectClass}>
+            {ALL_SEVERITIES.map(s => <option key={s} value={s}>{humanizeKey(s)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Status</label>
+          <select value={form.status} onChange={e => set('status', e.target.value)} className={selectClass}>
+            {ALL_STATUSES.map(s => <option key={s} value={s}>{humanizeKey(s)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Case Type</label>
+          <select value={form.case_type} onChange={e => set('case_type', e.target.value)} className={selectClass}>
+            {ALL_CASE_TYPES.map(t => <option key={t} value={t}>{humanizeKey(t)}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Priority (1-5)</label>
+          <input type="number" min={1} max={5} value={form.priority}
+            onChange={e => set('priority', Math.max(1, Math.min(5, Number(e.target.value) || 1)))}
+            className={inputClass} />
+        </div>
+      </div>
+
+      {/* Row: assigned_to, assigned_team */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelClass}>Assigned To</label>
+          <input type="text" value={form.assigned_to} onChange={e => set('assigned_to', e.target.value)} className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Assigned Team</label>
+          <input type="text" value={form.assigned_team} onChange={e => set('assigned_team', e.target.value)} className={inputClass} />
+        </div>
+      </div>
+
+      {/* Row: risk_score, financial_impact, affected_accounts */}
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className={labelClass}>Risk Score (0-100)</label>
+          <input type="number" min={0} max={100} value={form.risk_score}
+            onChange={e => set('risk_score', Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+            className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Financial Impact (USD)</label>
+          <input type="number" min={0} value={form.financial_impact_usd}
+            onChange={e => set('financial_impact_usd', Math.max(0, Number(e.target.value) || 0))}
+            className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Affected Accounts</label>
+          <input type="number" min={0} value={form.affected_accounts}
+            onChange={e => set('affected_accounts', Math.max(0, Number(e.target.value) || 0))}
+            className={inputClass} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Add Comment Form
+// ---------------------------------------------------------------------------
+
+const AddCommentForm: React.FC<{
+  onSubmit: (content: string, commentType: string) => Promise<void>;
+  submitting: boolean;
+}> = ({ onSubmit, submitting }) => {
+  const [content, setContent] = useState('');
+  const [commentType, setCommentType] = useState('note');
+
+  const handleSubmit = async () => {
+    if (!content.trim()) return;
+    await onSubmit(content.trim(), commentType);
+    setContent('');
+  };
+
+  return (
+    <div className="bg-[#0a0e1a] border border-[#1e293b] rounded-lg p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Plus size={12} className="text-cyan-400" />
+        <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Add Comment</span>
+      </div>
+      <textarea
+        value={content}
+        onChange={e => setContent(e.target.value)}
+        placeholder="Write a comment or investigation note..."
+        rows={2}
+        className="w-full px-3 py-2 bg-[#080c16] border border-[#1e293b] rounded-lg text-[12px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/50 resize-y"
+      />
+      <div className="flex items-center justify-between">
+        <select
+          value={commentType}
+          onChange={e => setCommentType(e.target.value)}
+          className="bg-[#080c16] border border-[#1e293b] rounded-lg text-[11px] text-slate-300 px-2 py-1.5 focus:outline-none focus:border-cyan-500/50"
+        >
+          <option value="note">Note</option>
+          <option value="update">Update</option>
+          <option value="escalation">Escalation</option>
+          <option value="analysis">Analysis</option>
+          <option value="resolution">Resolution</option>
+        </select>
+        <button
+          onClick={handleSubmit}
+          disabled={submitting || !content.trim()}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+          {submitting ? 'Sending...' : 'Post'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Expanded Case Card
 // ---------------------------------------------------------------------------
 
@@ -611,8 +821,32 @@ const ExpandedCase: React.FC<{
   c: FinancialCase;
   evidence: CaseEvidence[];
   comments: CaseComment[];
-}> = ({ c, evidence, comments }) => {
+  onSaveCase: (id: string, data: EditFormData) => Promise<void>;
+  onAddComment: (caseId: string, content: string, commentType: string) => Promise<void>;
+}> = ({ c, evidence, comments, onSaveCase, onAddComment }) => {
   const [tab, setTab] = useState<InnerTab>('overview');
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  const handleSave = async (data: EditFormData) => {
+    setSaving(true);
+    try {
+      await onSaveCase(c.id, data);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddComment = async (content: string, commentType: string) => {
+    setSubmittingComment(true);
+    try {
+      await onAddComment(c.id, content, commentType);
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
 
   const tabs: { key: InnerTab; label: string; icon: React.ReactNode }[] = [
     { key: 'overview', label: 'Overview', icon: <Eye size={12} /> },
@@ -621,29 +855,46 @@ const ExpandedCase: React.FC<{
     { key: 'response', label: 'Response', icon: <Zap size={12} /> },
   ];
 
+  if (editing) {
+    return <EditCaseForm c={c} onSave={handleSave} onCancel={() => setEditing(false)} saving={saving} />;
+  }
+
   return (
     <div className="border-t border-[#1e293b] px-4 py-4">
-      {/* Inner Tabs */}
-      <div className="flex items-center gap-1 mb-4 border-b border-[#1e293b] pb-2">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-md text-[11px] font-medium transition-colors ${
-              tab === t.key
-                ? 'bg-[#1e293b] text-slate-100 border-b-2 border-cyan-400'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
+      {/* Inner Tabs + Edit button */}
+      <div className="flex items-center justify-between mb-4 border-b border-[#1e293b] pb-2">
+        <div className="flex items-center gap-1">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-md text-[11px] font-medium transition-colors ${
+                tab === t.key
+                  ? 'bg-[#1e293b] text-slate-100 border-b-2 border-cyan-400'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={() => setEditing(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e293b] text-slate-400 text-[11px] hover:border-cyan-500/40 hover:text-cyan-400 transition-colors"
+        >
+          <Pencil size={11} /> Edit Case
+        </button>
       </div>
 
       {/* Tab Content */}
       {tab === 'overview' && <OverviewTab c={c} />}
       {tab === 'evidence' && <EvidenceTab c={c} evidence={evidence} />}
-      {tab === 'investigation' && <InvestigationTab c={c} comments={comments} />}
+      {tab === 'investigation' && (
+        <div className="space-y-5">
+          <InvestigationTab c={c} comments={comments} />
+          <AddCommentForm onSubmit={handleAddComment} submitting={submittingComment} />
+        </div>
+      )}
       {tab === 'response' && <ResponseTab c={c} />}
     </div>
   );
@@ -659,11 +910,13 @@ const CaseCard: React.FC<{
   comments: CaseComment[];
   expanded: boolean;
   onToggle: () => void;
-}> = ({ c, evidence, comments, expanded, onToggle }) => {
+  onSaveCase: (id: string, data: EditFormData) => Promise<void>;
+  onAddComment: (caseId: string, content: string, commentType: string) => Promise<void>;
+}> = ({ c, evidence, comments, expanded, onToggle, onSaveCase, onAddComment }) => {
   const sla = getSlaStatus(c.sla_deadline);
 
   return (
-    <div className="bg-[#0f1629] border border-[#1e293b] rounded-xl overflow-hidden hover:border-[#2a3a5c] transition-colors">
+    <div className={`bg-[#0f1629] border rounded-xl overflow-hidden transition-colors ${expanded ? 'border-cyan-500/30' : 'border-[#1e293b] hover:border-[#2a3a5c]'}`}>
       {/* Collapsed Header */}
       <button onClick={onToggle} className="w-full text-left px-4 py-3 flex items-center gap-3">
         <div className="flex items-center text-slate-500">
@@ -705,7 +958,15 @@ const CaseCard: React.FC<{
       </button>
 
       {/* Expanded */}
-      {expanded && <ExpandedCase c={c} evidence={evidence} comments={comments} />}
+      {expanded && (
+        <ExpandedCase
+          c={c}
+          evidence={evidence}
+          comments={comments}
+          onSaveCase={onSaveCase}
+          onAddComment={onAddComment}
+        />
+      )}
     </div>
   );
 };
@@ -825,6 +1086,56 @@ export default function FinancialCases() {
 
   const handleToggle = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
+
+  const handleSaveCase = useCallback(async (id: string, data: EditFormData) => {
+    const { error: err } = await supabase
+      .from('financial_cases')
+      .update({
+        title: data.title,
+        description: data.description,
+        severity: data.severity,
+        status: data.status,
+        priority: data.priority,
+        assigned_to: data.assigned_to,
+        assigned_team: data.assigned_team,
+        risk_score: data.risk_score,
+        financial_impact_usd: data.financial_impact_usd,
+        affected_accounts: data.affected_accounts,
+        case_type: data.case_type,
+        updated_at: new Date().toISOString(),
+        resolved_at: data.status === 'resolved' || data.status === 'closed' ? new Date().toISOString() : null,
+      })
+      .eq('id', id);
+
+    if (err) throw err;
+
+    setCases(prev => prev.map(c =>
+      c.id === id
+        ? { ...c, ...data, updated_at: new Date().toISOString(), resolved_at: data.status === 'resolved' || data.status === 'closed' ? new Date().toISOString() : c.resolved_at }
+        : c
+    ));
+  }, []);
+
+  const handleAddComment = useCallback(async (caseId: string, content: string, commentType: string) => {
+    const newComment = {
+      case_id: caseId,
+      author: 'Current User',
+      author_role: 'analyst',
+      content,
+      comment_type: commentType,
+      is_internal: false,
+    };
+    const { data, error: err } = await supabase
+      .from('financial_case_comments')
+      .insert(newComment)
+      .select()
+      .maybeSingle();
+
+    if (err) throw err;
+    if (data) {
+      setAllComments(prev => [...prev, data]);
+    }
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -975,6 +1286,8 @@ export default function FinancialCases() {
               comments={commentsForCase(c.id)}
               expanded={expandedId === c.id}
               onToggle={() => handleToggle(c.id)}
+              onSaveCase={handleSaveCase}
+              onAddComment={handleAddComment}
             />
           ))}
         </div>
