@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   FlaskConical,
   Activity,
+  UserX,
 } from 'lucide-react';
 import IdentityTrustScores from './IdentityTrustScores';
 import TransactionRiskMonitor from './TransactionRiskMonitor';
@@ -14,12 +15,14 @@ import IdentityGraphExplorer from './IdentityGraphExplorer';
 import ThreatDetections from './ThreatDetections';
 import ThreatSimulations from './ThreatSimulations';
 import ResponseDecisions from './ResponseDecisions';
+import InsiderCredentialSelling from './InsiderCredentialSelling';
 
 const TABS = [
   { id: 'identity', label: 'Identity Trust', icon: Fingerprint, description: 'Behavioral identity scoring' },
   { id: 'transactions', label: 'Transaction Risk', icon: CreditCard, description: 'Real-time PIX/transfer monitoring' },
   { id: 'graph', label: 'Identity Graph', icon: Network, description: 'Relationship intelligence' },
   { id: 'detections', label: 'Threat Detections', icon: AlertTriangle, description: 'AI-powered threat analysis' },
+  { id: 'credential-selling', label: 'Credential Selling', icon: UserX, description: 'Insider selling detection' },
   { id: 'simulations', label: 'Simulations', icon: FlaskConical, description: 'Monte Carlo attack modeling' },
   { id: 'responses', label: 'Response Log', icon: ShieldCheck, description: 'Orchestration decisions' },
 ] as const;
@@ -93,6 +96,7 @@ export default function FinancialThreatIntel() {
           {activeTab === 'transactions' && <TransactionRiskMonitor />}
           {activeTab === 'graph' && <IdentityGraphExplorer />}
           {activeTab === 'detections' && <ThreatDetections />}
+          {activeTab === 'credential-selling' && <InsiderCredentialSelling />}
           {activeTab === 'simulations' && <ThreatSimulations />}
           {activeTab === 'responses' && <ResponseDecisions />}
         </div>
