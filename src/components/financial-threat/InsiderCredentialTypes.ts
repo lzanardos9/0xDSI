@@ -147,6 +147,7 @@ export interface CredentialSellingCase {
   credential_rotation_events: CredentialRotationEvent[] | null;
   network_connections: NetworkConnection[] | null;
   psychological_assessment: PsychologicalAssessment | null;
+  typing_biometrics: unknown;
   investigation_notes: string | null;
   created_at: string;
 }

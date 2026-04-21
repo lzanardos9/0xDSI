@@ -314,6 +314,353 @@ const FinancialIndicators: React.FC<{ items: FinancialIndicator[] }> = ({ items 
 );
 
 // ---------------------------------------------------------------------------
+// Typing Fingerprint Panel
+// ---------------------------------------------------------------------------
+
+interface TypingOperator {
+  operator_id: string;
+  label: string;
+  keystrokes_analyzed: number;
+  sessions_analyzed: number;
+  metrics: Record<string, number>;
+  digraph_signature?: Record<string, number>;
+  emotional_inference?: {
+    baseline_stress?: number | null;
+    current_stress?: number;
+    stress_trend?: string;
+    anxiety_markers?: number;
+    confidence_in_typing?: number;
+    coaching_indicators?: number;
+    emotional_state?: string;
+    detail?: string;
+  };
+  temporal_drift?: {
+    wpm_30d_trend?: number[];
+    error_rate_30d_trend?: number[];
+    rhythm_30d_trend?: number[];
+    interpretation?: string;
+  };
+}
+
+interface SimilarityEntry {
+  similarity: number;
+  confidence: number;
+  verdict: string;
+  key_differences: string[];
+}
+
+interface TypingBiometrics {
+  analysis_version?: string;
+  total_keystrokes_analyzed?: number;
+  analysis_period_days?: number;
+  operators?: TypingOperator[];
+  cross_operator_similarity_matrix?: Record<string, SimilarityEntry>;
+  aggregate_insights?: {
+    multi_operator_confirmed?: boolean;
+    distinct_operators?: number;
+    detection_confidence?: number;
+    primary_evidence?: string;
+    psychological_insight?: string;
+  };
+}
+
+const EMOTION_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  cold_and_detached: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
+  calculated_professional: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
+  confident_and_practiced: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  professional_and_practiced: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/30' },
+  experienced_operator: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/30' },
+  mildly_anxious: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
+  cautious_and_methodical: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
+  stressed_and_conflicted: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/30' },
+  rushed_and_unfamiliar: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/30' },
+  coached_and_uncertain: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
+  heavily_coached: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
+};
+
+const Sparkline: React.FC<{ data: number[]; color: string; height?: number; width?: number }> = ({ data, color, height = 24, width = 100 }) => {
+  if (!data || data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return `${x},${y}`;
+  }).join(' ');
+  return (
+    <svg width={width} height={height} className="shrink-0">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={(data.length - 1) / (data.length - 1) * width} cy={height - ((data[data.length - 1] - min) / range) * (height - 4) - 2} r="2" fill={color} />
+    </svg>
+  );
+};
+
+const TypingFingerprintPanel: React.FC<{ biometrics: TypingBiometrics | null }> = ({ biometrics }) => {
+  const [showDetails, setShowDetails] = useState(false);
+
+  if (!biometrics || !biometrics.operators || biometrics.operators.length === 0) return null;
+
+  const { operators, cross_operator_similarity_matrix: simMatrix, aggregate_insights: insights } = biometrics;
+
+  const metricLabels: { key: string; label: string; unit: string; higherIsBad?: boolean }[] = [
+    { key: 'avg_wpm', label: 'WPM', unit: '', higherIsBad: false },
+    { key: 'avg_dwell_time_ms', label: 'Key Dwell', unit: 'ms', higherIsBad: false },
+    { key: 'avg_flight_time_ms', label: 'Flight Time', unit: 'ms', higherIsBad: false },
+    { key: 'key_hold_consistency', label: 'Hold Consistency', unit: '', higherIsBad: false },
+    { key: 'rhythm_regularity', label: 'Rhythm', unit: '', higherIsBad: false },
+    { key: 'error_rate_pct', label: 'Error Rate', unit: '%', higherIsBad: true },
+    { key: 'pause_frequency_per_min', label: 'Pauses/min', unit: '', higherIsBad: true },
+    { key: 'burst_typing_ratio', label: 'Burst Ratio', unit: '', higherIsBad: false },
+  ];
+
+  const getMaxForMetric = (key: string) => {
+    const vals = operators.map(op => op.metrics[key] || 0);
+    return Math.max(...vals, 1);
+  };
+
+  const operatorColors = ['#22d3ee', '#f97316', '#f43f5e', '#a3e635'];
+
+  return (
+    <div className="bg-gradient-to-br from-[#0a1628] to-[#0f1629] border border-cyan-500/20 rounded-xl p-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[#0b0f1e] flex items-center justify-center border border-cyan-500/30">
+            <Fingerprint size={16} className="text-cyan-400" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-slate-100">Keystroke Dynamics Analysis</h4>
+            <p className="text-[10px] text-slate-500">
+              {(biometrics.total_keystrokes_analyzed || 0).toLocaleString()} keystrokes analyzed over {biometrics.analysis_period_days || 0} days
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {insights?.multi_operator_confirmed && (
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">
+              {insights.distinct_operators} DISTINCT OPERATORS
+            </span>
+          )}
+          {insights?.detection_confidence && (
+            <span className="text-[10px] font-mono text-slate-500">{(insights.detection_confidence * 100).toFixed(0)}% conf</span>
+          )}
+          <button onClick={() => setShowDetails(!showDetails)} className="text-slate-500 hover:text-slate-300 transition-colors">
+            {showDetails ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Operator Comparison Bars */}
+      <div>
+        <div className="flex items-center gap-4 mb-3">
+          {operators.map((op, i) => (
+            <div key={op.operator_id} className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: operatorColors[i] || '#94a3b8' }} />
+              <span className="text-[10px] text-slate-400">{op.label}</span>
+              <span className="text-[9px] font-mono text-slate-600">({op.keystrokes_analyzed?.toLocaleString()} keys)</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          {metricLabels.map(ml => {
+            const maxVal = getMaxForMetric(ml.key);
+            return (
+              <div key={ml.key} className="flex items-center gap-2">
+                <span className="text-[9px] text-slate-500 w-24 text-right shrink-0">{ml.label}</span>
+                <div className="flex-1 flex items-center gap-1">
+                  {operators.map((op, i) => {
+                    const val = op.metrics[ml.key] || 0;
+                    const pct = ml.key === 'key_hold_consistency' || ml.key === 'rhythm_regularity' || ml.key === 'burst_typing_ratio'
+                      ? val * 100
+                      : (val / maxVal) * 100;
+                    return (
+                      <div key={op.operator_id} className="flex-1">
+                        <div className="h-2 bg-slate-800/50 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: operatorColors[i] || '#94a3b8', opacity: 0.8 }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  {operators.map((op, i) => (
+                    <span key={op.operator_id} className="text-[8px] font-mono w-8 text-right" style={{ color: operatorColors[i] || '#94a3b8' }}>
+                      {ml.key === 'key_hold_consistency' || ml.key === 'rhythm_regularity' || ml.key === 'burst_typing_ratio'
+                        ? (op.metrics[ml.key] || 0).toFixed(2)
+                        : (op.metrics[ml.key] || 0).toFixed(ml.key.includes('pct') ? 1 : 0)
+                      }
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Emotional State + Similarity Matrix (compact row) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Emotional States */}
+        <div className="space-y-1.5">
+          <h5 className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Emotional State Inference</h5>
+          {operators.map((op, i) => {
+            const em = op.emotional_inference;
+            if (!em) return null;
+            const emotionKey = em.emotional_state || '';
+            const ec = EMOTION_COLORS[emotionKey] || { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/30' };
+            return (
+              <div key={op.operator_id} className={`${ec.bg} border ${ec.border} rounded-lg px-3 py-2`}>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: operatorColors[i] }} />
+                    <span className="text-[10px] font-semibold text-slate-200">{op.label}</span>
+                  </div>
+                  <span className={`text-[9px] font-bold uppercase ${ec.text}`}>
+                    {emotionKey.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 mt-1">
+                  {em.current_stress != null && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[8px] text-slate-500">Stress</span>
+                      <div className="w-10 h-1 bg-slate-800 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${em.current_stress >= 0.6 ? 'bg-red-500' : em.current_stress >= 0.3 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${em.current_stress * 100}%` }} />
+                      </div>
+                      <span className="text-[8px] font-mono text-slate-500">{(em.current_stress * 100).toFixed(0)}%</span>
+                    </div>
+                  )}
+                  {em.coaching_indicators != null && em.coaching_indicators > 0.1 && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[8px] text-red-400">Coaching</span>
+                      <div className="w-10 h-1 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-red-500 rounded-full" style={{ width: `${em.coaching_indicators * 100}%` }} />
+                      </div>
+                      <span className="text-[8px] font-mono text-red-400">{(em.coaching_indicators * 100).toFixed(0)}%</span>
+                    </div>
+                  )}
+                  {em.confidence_in_typing != null && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[8px] text-slate-500">Confidence</span>
+                      <div className="w-10 h-1 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${em.confidence_in_typing * 100}%` }} />
+                      </div>
+                      <span className="text-[8px] font-mono text-slate-500">{(em.confidence_in_typing * 100).toFixed(0)}%</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Similarity Matrix */}
+        {simMatrix && Object.keys(simMatrix).length > 0 && (
+          <div className="space-y-1.5">
+            <h5 className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Cross-Operator Similarity</h5>
+            {Object.entries(simMatrix).map(([pair, entry]) => {
+              const sim = entry as SimilarityEntry;
+              const verdictColor = sim.verdict === 'DIFFERENT_PERSON' ? 'text-red-400 bg-red-500/10 border-red-500/30' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
+              return (
+                <div key={pair} className="bg-[#080c16] border border-[#1e293b] rounded-lg px-3 py-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[9px] font-mono text-slate-400">{pair.replace(/_vs_/g, ' vs ')}</span>
+                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${verdictColor}`}>
+                      {sim.verdict.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[8px] text-slate-500">Similarity</span>
+                    <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${sim.similarity < 0.3 ? 'bg-red-500' : sim.similarity < 0.6 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                        style={{ width: `${sim.similarity * 100}%` }} />
+                    </div>
+                    <span className="text-[9px] font-mono font-bold text-slate-300">{(sim.similarity * 100).toFixed(0)}%</span>
+                    <span className="text-[8px] font-mono text-slate-600">({(sim.confidence * 100).toFixed(0)}% conf)</span>
+                  </div>
+                  {sim.key_differences && showDetails && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {sim.key_differences.map((d, i) => (
+                        <span key={i} className="text-[8px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">{d}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Expanded: Temporal Drift + Insights */}
+      {showDetails && (
+        <div className="space-y-4 pt-2 border-t border-[#1e293b]">
+          {/* Temporal Drift Sparklines */}
+          <div>
+            <h5 className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-2">Temporal Drift (30-day trends)</h5>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {['wpm_30d_trend', 'error_rate_30d_trend', 'rhythm_30d_trend'].map(trendKey => {
+                const label = trendKey === 'wpm_30d_trend' ? 'WPM' : trendKey === 'error_rate_30d_trend' ? 'Error Rate %' : 'Rhythm Score';
+                return (
+                  <div key={trendKey} className="bg-[#080c16] border border-[#1e293b] rounded-lg p-2">
+                    <span className="text-[8px] text-slate-500 uppercase">{label}</span>
+                    <div className="flex items-end gap-2 mt-1">
+                      {operators.map((op, i) => {
+                        const drift = op.temporal_drift;
+                        const data = drift ? (drift as Record<string, number[]>)[trendKey] : null;
+                        if (!data || data.length < 2) return null;
+                        return (
+                          <div key={op.operator_id} className="flex-1 flex flex-col items-center">
+                            <Sparkline data={data} color={operatorColors[i]} width={80} height={20} />
+                            <span className="text-[7px] mt-0.5" style={{ color: operatorColors[i] }}>{op.operator_id}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Operator Emotional Details */}
+          {operators.map((op, i) => {
+            const em = op.emotional_inference;
+            const drift = op.temporal_drift;
+            if (!em?.detail && !drift?.interpretation) return null;
+            return (
+              <div key={op.operator_id} className="bg-[#080c16] border border-[#1e293b] rounded-lg p-3">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: operatorColors[i] }} />
+                  <span className="text-[10px] font-semibold text-slate-200">{op.label}</span>
+                </div>
+                {em?.detail && <p className="text-[10px] text-slate-400 leading-relaxed">{em.detail}</p>}
+                {drift?.interpretation && <p className="text-[10px] text-slate-500 leading-relaxed mt-1 italic">{drift.interpretation}</p>}
+              </div>
+            );
+          })}
+
+          {/* Aggregate Insight */}
+          {insights?.psychological_insight && (
+            <div className="bg-[#080c16] border border-cyan-500/20 rounded-lg p-3">
+              <h5 className="text-[9px] font-bold text-cyan-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                <Brain size={10} /> Keystroke Psychology Insight
+              </h5>
+              <p className="text-[10px] text-slate-300 leading-relaxed">{insights.psychological_insight}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Psychological Risk Panel
 // ---------------------------------------------------------------------------
 
@@ -672,6 +1019,9 @@ const CaseCard: React.FC<{ c: CredentialSellingCase }> = ({ c }) => {
               </div>
             </div>
           )}
+
+          {/* Typing Fingerprint Analysis */}
+          <TypingFingerprintPanel biometrics={parseJsonField<TypingBiometrics>(c.typing_biometrics)} />
 
           {/* Psychological Risk Assessment */}
           <PsychologicalRiskPanel assessment={parseJsonField<PsychologicalAssessment>(c.psychological_assessment)} entityName={c.entity_name} />
