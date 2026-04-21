@@ -17,6 +17,9 @@ import {
   XCircle,
   HelpCircle,
   FileText,
+  ToggleLeft,
+  ToggleRight,
+  Network,
 } from 'lucide-react';
 import {
   FUNNEL_PHASES,
@@ -26,6 +29,7 @@ import {
   FunnelPhase,
   FunnelEvent,
 } from './eventFunnelData';
+import OSILayerView from './OSILayerView';
 
 interface AnimatedDot {
   id: string;
@@ -110,7 +114,7 @@ function syntaxHighlightJson(raw: string): React.ReactNode[] {
   }
 }
 
-function EventProcessingFunnel() {
+function FunnelView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
@@ -1230,6 +1234,44 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+type ViewMode = 'funnel' | 'osi';
+
+function EventProcessingFunnel() {
+  const [viewMode, setViewMode] = useState<ViewMode>('funnel');
+
+  return (
+    <div className="relative">
+      {/* View mode toggle */}
+      <div className="absolute top-4 right-40 z-20 flex items-center gap-1 bg-[#0a0e1a]/90 border border-[#1e293b] rounded-lg p-1 backdrop-blur-sm">
+        <button
+          onClick={() => setViewMode('funnel')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-mono font-bold tracking-wider transition-all duration-200 ${
+            viewMode === 'funnel'
+              ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+              : 'text-slate-500 hover:text-slate-300 border border-transparent'
+          }`}
+        >
+          <Layers size={12} />
+          11-PHASE FUNNEL
+        </button>
+        <button
+          onClick={() => setViewMode('osi')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-mono font-bold tracking-wider transition-all duration-200 ${
+            viewMode === 'osi'
+              ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+              : 'text-slate-500 hover:text-slate-300 border border-transparent'
+          }`}
+        >
+          <Network size={12} />
+          OSI LAYER VIEW
+        </button>
+      </div>
+
+      {viewMode === 'funnel' ? <FunnelView /> : <OSILayerView />}
+    </div>
+  );
 }
 
 export default EventProcessingFunnel;
