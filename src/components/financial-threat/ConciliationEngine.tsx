@@ -50,7 +50,7 @@ interface SimulationScore {
   overallScore: number;
 }
 
-interface MirofishConciliationProps {
+interface ConciliationEngineProps {
   scenarioName: string;
   scenarioType: string;
   scenarioDescription: string;
@@ -121,7 +121,7 @@ const PHASES: PhaseConfig[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-function buildScenarioPrompt(props: MirofishConciliationProps): string {
+function buildScenarioPrompt(props: ConciliationEngineProps): string {
   return `Scenario: ${props.scenarioName}
 Type: ${props.scenarioType}
 Description: ${props.scenarioDescription}
@@ -374,7 +374,7 @@ const PhaseIndicator: React.FC<{ phases: PhaseConfig[]; currentPhase: number; co
 // Main Component
 // ---------------------------------------------------------------------------
 
-const MirofishConciliation: React.FC<MirofishConciliationProps> = (props) => {
+const ConciliationEngine: React.FC<ConciliationEngineProps> = (props) => {
   const [running, setRunning] = useState(false);
   const [currentPhase, setCurrentPhase] = useState(-1);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -383,18 +383,17 @@ const MirofishConciliation: React.FC<MirofishConciliationProps> = (props) => {
   const [completed, setCompleted] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [loadingAgent, setLoadingAgent] = useState<string | null>(null);
-  const messageEndRef = useRef<HTMLDivElement>(null);
+  const messageFeedRef = useRef<HTMLDivElement>(null);
   const startTimeRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
   const abortRef = useRef(false);
 
-  const scrollToBottom = useCallback(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
-
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+    const container = messageFeedRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [messages]);
 
   const callAgent = useCallback(async (agentId: string, phase: string, prevContext: string): Promise<AgentMessage | null> => {
     if (abortRef.current) return null;
@@ -425,7 +424,7 @@ const MirofishConciliation: React.FC<MirofishConciliationProps> = (props) => {
         timestamp: Date.now(),
       };
     } catch (err) {
-      console.error(`Mirofish agent ${agentId} error:`, err);
+      console.error(`Conciliation agent ${agentId} error:`, err);
       return null;
     }
   }, [props]);
@@ -530,7 +529,7 @@ const MirofishConciliation: React.FC<MirofishConciliationProps> = (props) => {
             </div>
             <div>
               <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                Mirofish Conciliation Engine
+                Conciliation Engine
                 <span className="text-[9px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.5 rounded">v2.1</span>
               </h3>
               <p className="text-[10px] text-slate-500 mt-0.5">1MM micro-agent adversarial hypothesis validation</p>
@@ -691,7 +690,7 @@ const MirofishConciliation: React.FC<MirofishConciliationProps> = (props) => {
             </div>
 
             {/* Message Feed */}
-            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3 max-h-[420px] min-h-[280px]">
+            <div ref={messageFeedRef} className="flex-1 overflow-y-auto px-5 py-3 space-y-3 max-h-[420px] min-h-[280px]">
               {PHASES.map((phase, phaseIdx) => {
                 const phaseMessages = messages.filter(m => m.phase.startsWith(phase.label));
                 if (phaseMessages.length === 0 && phaseIdx > currentPhase) return null;
@@ -728,7 +727,7 @@ const MirofishConciliation: React.FC<MirofishConciliationProps> = (props) => {
                   </React.Fragment>
                 );
               })}
-              <div ref={messageEndRef} />
+              <div />
             </div>
 
             {/* Final Score */}
@@ -796,4 +795,4 @@ const MirofishConciliation: React.FC<MirofishConciliationProps> = (props) => {
   );
 };
 
-export default MirofishConciliation;
+export default ConciliationEngine;
