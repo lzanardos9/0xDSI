@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import PSOEnginePanels from './PSOEnginePanels';
 import { PSO_TEMPLATES } from '../lib/psoTemplateData';
+import MirofishConciliation from './financial-threat/MirofishConciliation';
 
 interface AgentResult {
   name: string;
@@ -1862,6 +1863,19 @@ export default function ThreatSimulator() {
                       predictedNextSteps={activeData.predictedNextSteps}
                       graphEdges={activeData.graphEdges}
                     />
+                  )}
+
+                  {/* Mirofish Conciliation Engine */}
+                  {activeData && monteCarloStats && (
+                    <div className="mt-6">
+                      <MirofishConciliation
+                        scenarioName={scenario.slice(0, 80) || 'Threat Simulation'}
+                        scenarioType={attackDomain.toLowerCase()}
+                        scenarioDescription={`${scenario}. Attacker profile: ${attackerProfile}. Target assets: ${targetAssets.join(', ')}. Feasibility: ${activeData.feasibility}%. Defense effectiveness: ${activeData.defenseEffectiveness}%. Detection time: ${activeData.detectionTimeCurrent}. Monte Carlo mean feasibility: ${monteCarloStats.mean.toFixed(1)}%, P95: ${monteCarloStats.p95.toFixed(1)}%, attack success probability: ${monteCarloStats.successProb.toFixed(0)}%. Detection gaps: ${activeData.detectionGaps.join('; ')}.`}
+                        detectionRate={activeData.defenseEffectiveness / 100}
+                        attackPaths={activeData.topAttackPaths?.map(p => p.name) ?? []}
+                      />
+                    </div>
                   )}
                 </>
               )}
