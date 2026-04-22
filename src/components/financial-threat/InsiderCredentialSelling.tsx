@@ -249,7 +249,7 @@ const OperatorCard: React.FC<{ fp: BehavioralFingerprint; isOriginal: boolean }>
 
         <div className="flex items-center justify-between text-[10px]">
           <span className="text-slate-500">Hours</span>
-          <span className="text-slate-300 font-mono">{fp.active_hours[0]}:00 - {fp.active_hours[1]}:00</span>
+          <span className="text-slate-300 font-mono">{fp.active_hours?.[0] ?? 9}:00 - {fp.active_hours?.[1] ?? 17}:00</span>
         </div>
 
         <div className="flex items-center justify-between text-[10px]">
