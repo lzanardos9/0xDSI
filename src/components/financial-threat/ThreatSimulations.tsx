@@ -14,12 +14,14 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Target,
   X,
   Zap,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import SimulationAttackTreeGraph from './SimulationAttackTreeGraph';
+import MirofishConciliation from './MirofishConciliation';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -316,6 +318,7 @@ const AttackPathItem: React.FC<{ attackPath: AttackPath; maxProb: number }> = ({
 
 const SimulationCard: React.FC<{ sim: ThreatSimulation }> = ({ sim }) => {
   const [expanded, setExpanded] = useState(false);
+  const [showMirofish, setShowMirofish] = useState(false);
   const rate = getDetectionRate(sim);
   const scenarioCfg = SCENARIO_TYPE_CONFIG[sim.scenario_type];
   const amountPairs = getAmountPairs(sim.results);
@@ -472,6 +475,41 @@ const SimulationCard: React.FC<{ sim: ThreatSimulation }> = ({ sim }) => {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ---- Mirofish Conciliation ---- */}
+      <div className="px-5 py-3 border-t border-[#1e293b]/40">
+        <button
+          onClick={() => setShowMirofish(!showMirofish)}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg border text-[11px] font-semibold transition-all ${
+            showMirofish
+              ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
+              : 'bg-[#0f1629] border-[#1e293b] text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30'
+          }`}
+        >
+          <Sparkles size={12} />
+          Mirofish Conciliation
+          <span className="text-[9px] font-mono bg-cyan-500/10 text-cyan-400/70 px-1.5 py-0.5 rounded">1MM agents</span>
+        </button>
+        {showMirofish && (
+          <div className="mt-3">
+            <MirofishConciliation
+              scenarioName={sim.scenario_name}
+              scenarioType={sim.scenario_type}
+              scenarioDescription={`${sim.scenario_name} - ${humanizeKey(sim.scenario_type)} scenario with ${sim.iterations?.toLocaleString() ?? 'N/A'} Monte Carlo iterations. Detection rate: ${(rate * 100).toFixed(1)}%. ${
+                sim.detection_gaps && sim.detection_gaps.length > 0
+                  ? 'Known gaps: ' + sim.detection_gaps.map((g) => g.gap).join(', ') + '.'
+                  : ''
+              } ${
+                sim.attack_paths && sim.attack_paths.length > 0
+                  ? 'Attack paths: ' + sim.attack_paths.map((p) => p.path).join('; ') + '.'
+                  : ''
+              }`}
+              detectionRate={rate}
+              attackPaths={sim.attack_paths?.map((p) => p.path) ?? []}
+            />
           </div>
         )}
       </div>
