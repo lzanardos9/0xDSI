@@ -5,6 +5,7 @@ import {
   ShieldAlert, Sparkles, Send, Code2, Database,
 } from 'lucide-react';
 import GraphPatternPreview from './GraphPatternPreview';
+import RuleFlowGraph from './RuleFlowGraph';
 
 type Item = any;
 type Proposal = any;
@@ -225,6 +226,10 @@ export default function IntelligenceDossier({
                 </Section>
 
                 <GraphPatternPreview pattern={proposal.graph_pattern || {}} />
+
+                {(proposal.graph_pattern?.rule_logic || proposal.graph_pattern?.rule_flow) && (
+                  <RuleFlowGraph flow={proposal.graph_pattern.rule_logic || proposal.graph_pattern.rule_flow} />
+                )}
 
                 <Section icon={Code2} title="Detection Rule (DSL)" accent="cyan">
                   <pre className="text-[11px] font-mono text-slate-300 bg-slate-950 rounded-md p-3 border border-slate-800 overflow-x-auto whitespace-pre-wrap">{proposal.detection_rule}</pre>

@@ -1,12 +1,13 @@
-type Node = { id: string; label: string; type: string; risk?: number };
-type Edge = { from: string; to: string; label?: string; weight?: number };
+type Node = { id: string; label: string; type: string; risk?: number; sublabel?: string };
+type Edge = { from: string; to: string; label?: string; weight?: number; kind?: string };
 
 const TYPE_COLOR: Record<string, string> = {
   external: '#ef4444',
   vector: '#fb923c',
   asset: '#38bdf8',
-  identity: '#a78bfa',
+  identity: '#14b8a6',
   data: '#10b981',
+  malware: '#f472b6',
 };
 
 export default function GraphPatternPreview({ pattern }: { pattern: { nodes?: Node[]; edges?: Edge[] } }) {
@@ -52,7 +53,7 @@ export default function GraphPatternPreview({ pattern }: { pattern: { nodes?: No
               <circle cx={n.x} cy={n.y} r={14} fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1.5} />
               <circle cx={n.x} cy={n.y} r={4} fill={color} />
               <text x={n.x} y={n.y + 28} textAnchor="middle" className="fill-slate-200" style={{ fontSize: 10, fontWeight: 600 }}>{n.label}</text>
-              <text x={n.x} y={n.y + 40} textAnchor="middle" className="fill-slate-500" style={{ fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{n.type}</text>
+              <text x={n.x} y={n.y + 40} textAnchor="middle" className="fill-slate-500" style={{ fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{n.sublabel || n.type}</text>
             </g>
           );
         })}
