@@ -3,9 +3,10 @@ import { Calculator, TrendingUp, Shield, Server, AlertTriangle, Settings, X, Plu
 import { supabase } from '../lib/supabase';
 import { ThreatEscalationEngine, ThreatEscalationInput } from '../lib/threatEscalation';
 import GraphScoringTab from './threat-escalation/GraphScoringTab';
+import DataContractsTab from './threat-escalation/DataContractsTab';
 
 const ThreatEscalationPanel = () => {
-  const [activeTab, setActiveTab] = useState<'calculator' | 'assets' | 'formula' | 'userrisk' | 'graphscoring'>('calculator');
+  const [activeTab, setActiveTab] = useState<'calculator' | 'assets' | 'formula' | 'userrisk' | 'graphscoring' | 'contracts'>('calculator');
   const [calculation, setCalculation] = useState<any>(null);
   const [assets, setAssets] = useState<any[]>([]);
   const [formulas, setFormulas] = useState<any[]>([]);
@@ -114,9 +115,21 @@ const ThreatEscalationPanel = () => {
             <Network className="w-4 h-4" />
             Graph Pattern Scoring
           </button>
+          <button
+            onClick={() => setActiveTab('contracts')}
+            className={`px-4 py-2 transition-colors flex items-center gap-1.5 ${
+              activeTab === 'contracts'
+                ? 'text-green-400 border-b-2 border-green-400'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Brain className="w-4 h-4" />
+            Data Contracts
+          </button>
         </div>
 
         {activeTab === 'graphscoring' && <GraphScoringTab />}
+        {activeTab === 'contracts' && <DataContractsTab />}
 
         {activeTab === 'calculator' && (
           <div className="space-y-6">
