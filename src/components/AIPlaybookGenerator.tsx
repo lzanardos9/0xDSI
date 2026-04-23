@@ -501,7 +501,7 @@ export default function AIPlaybookGenerator() {
                     <Play size={13}/>Open in Generator
                   </button>
                   <div className="flex gap-1.5">
-                    {['n8n', 'JSON', 'YAML'].map(f => (
+                    {['SOAR', 'JSON', 'YAML'].map(f => (
                       <button key={f} onClick={() => mockExport(f)}
                         className="flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] rounded-lg bg-white/5 hover:bg-white/10 border border-gray-700/50 text-gray-400 hover:text-white transition-colors">
                         <Download size={10}/>{f}
@@ -521,7 +521,7 @@ export default function AIPlaybookGenerator() {
               <ChevronLeft size={14}/>Back to Library
             </button>
             <div className="ml-auto flex gap-2">
-              {['n8n', 'JSON', 'YAML'].map(f => (
+              {['SOAR', 'JSON', 'YAML'].map(f => (
                 <button key={f} onClick={() => mockExport(f)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-white/5 hover:bg-white/10 border border-gray-700/50 text-gray-400 hover:text-white transition-colors">
                   <Download size={12}/>{f}

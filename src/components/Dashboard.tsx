@@ -1,54 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  Shield,
-  Activity,
-  AlertTriangle,
-  Users,
-  Database,
-  TrendingUp,
-  Clock,
-  Target,
-  Workflow,
-  Zap,
-  Rss,
-  Menu,
-  X,
-  ChevronRight,
-  Globe,
-  Briefcase,
-  Scan,
-  Calculator,
-  Network,
-  Brain,
-  LogOut,
-  Layers,
-  CheckCircle2,
-  ShieldCheck,
-  ArrowUpRight,
-  ArrowDownRight,
-  Minus,
-  DollarSign,
-  TrendingDown,
-  Award,
-  BarChart3,
-  Bug,
-  Crosshair,
-  Settings,
-  FileText,
-  BookOpen,
-  Eye,
-  LayoutGrid,
-  Radar,
-  Grid3X3,
-  Sparkles,
-  Gauge,
-  Building2,
-  GitBranch,
-  Terminal,
-  Server,
-  FileBarChart,
-  Coins
-} from 'lucide-react';
+import { Shield, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThreatGlobe from './ThreatGlobe';
 import AttackVectorGraph from './AttackVectorGraph';
@@ -108,6 +59,7 @@ import AdvancedHuntingQuery from './AdvancedHuntingQuery';
 import SAPSecurityConnector from './SAPSecurityConnector';
 import ReportBuilder from './ReportBuilder';
 import PlatformEconomics from './PlatformEconomics';
+import IndustryThreatsHub from './industry-threats/IndustryThreatsHub';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -121,7 +73,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -311,9 +263,10 @@ const Dashboard = () => {
       ]
     },
     {
-      section: 'Financial Threat Intel',
+      section: 'Industry Threat Intel',
       roles: ['analyst', 'engineer', 'admin', 'ciso'],
       items: [
+        { id: 'industrythreats', label: 'All Industries', icon: Globe },
         { id: 'financialthreat', label: 'Financial Threats', icon: DollarSign },
       ]
     },
@@ -1048,6 +1001,7 @@ const Dashboard = () => {
           {selectedView === 'dashboardstudio' && <DashboardMigrationsTab />}
           {selectedView === 'simulations' && <ThreatSimulator />}
           {selectedView === 'financialthreat' && <FinancialThreatIntel />}
+          {selectedView === 'industrythreats' && <IndustryThreatsHub />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}

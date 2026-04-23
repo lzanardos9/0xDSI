@@ -163,7 +163,7 @@ const WorkflowsPanel = () => {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-white flex items-center space-x-2">
           <Workflow className="w-6 h-6 text-blue-500" />
-          <span>n8n Workflow Automation</span>
+          <span>Workflow Automation</span>
         </h2>
         <div className="flex space-x-3">
           <button
@@ -197,7 +197,7 @@ const WorkflowsPanel = () => {
           <div className="text-center py-12">
             <Workflow className="w-16 h-16 text-slate-600 mx-auto mb-4" />
             <p className="text-slate-400">No workflows configured</p>
-            <p className="text-slate-500 text-sm mt-2">Create workflows to automate security responses with n8n</p>
+            <p className="text-slate-500 text-sm mt-2">Create workflows to automate security responses</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -399,7 +399,7 @@ const CreateWorkflowModal = ({ onClose, onCreated }: { onClose: () => void; onCr
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 max-w-md w-full mx-4">
-        <h3 className="text-xl font-semibold text-white mb-4">Create n8n Workflow</h3>
+        <h3 className="text-xl font-semibold text-white mb-4">Create Automation Workflow</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-slate-400 text-sm mb-2">Workflow Name</label>
@@ -412,13 +412,13 @@ const CreateWorkflowModal = ({ onClose, onCreated }: { onClose: () => void; onCr
             />
           </div>
           <div>
-            <label className="block text-slate-400 text-sm mb-2">n8n Webhook URL</label>
+            <label className="block text-slate-400 text-sm mb-2">Webhook URL</label>
             <input
               type="url"
               value={formData.n8n_webhook_url}
               onChange={(e) => setFormData({ ...formData, n8n_webhook_url: e.target.value })}
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
-              placeholder="https://your-n8n.com/webhook/..."
+              placeholder="https://automation.example.com/webhook/..."
               required
             />
           </div>
