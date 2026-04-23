@@ -9,6 +9,9 @@ import {
   Activity,
   UserX,
   Briefcase,
+  Zap,
+  Bug,
+  FileText,
 } from 'lucide-react';
 import IdentityTrustScores from './IdentityTrustScores';
 import TransactionRiskMonitor from './TransactionRiskMonitor';
@@ -18,8 +21,14 @@ import ThreatSimulations from './ThreatSimulations';
 import ResponseDecisions from './ResponseDecisions';
 import InsiderCredentialSelling from './InsiderCredentialSelling';
 import FinancialCases from './FinancialCases';
+import PixFraudIntelligence from './PixFraudIntelligence';
+import BrazilBankingTrojans from './BrazilBankingTrojans';
+import BoletoFraudEngine from './BoletoFraudEngine';
 
 const TABS = [
+  { id: 'pix-fraud', label: 'PIX Fraud Intel', icon: Zap, description: 'Brazil PIX fraud taxonomy & live monitoring' },
+  { id: 'banking-trojans', label: 'Banking Trojans', icon: Bug, description: 'Grandoreiro, Coyote, Casbaneiro & LATAM malware' },
+  { id: 'boleto-social', label: 'Boleto & Social Eng.', icon: FileText, description: 'Boleto fraud & social engineering attack flows' },
   { id: 'identity', label: 'Identity Trust', icon: Fingerprint, description: 'Behavioral identity scoring' },
   { id: 'transactions', label: 'Transaction Risk', icon: CreditCard, description: 'Real-time PIX/transfer monitoring' },
   { id: 'graph', label: 'Identity Graph', icon: Network, description: 'Relationship intelligence' },
@@ -33,7 +42,7 @@ const TABS = [
 type TabId = typeof TABS[number]['id'];
 
 export default function FinancialThreatIntel() {
-  const [activeTab, setActiveTab] = useState<TabId>('identity');
+  const [activeTab, setActiveTab] = useState<TabId>('pix-fraud');
 
   return (
     <div className="space-y-0">
@@ -50,7 +59,7 @@ export default function FinancialThreatIntel() {
                   Financial Threat Intelligence
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Real-time behavior-driven decision intelligence for financial fraud prevention
+                  Brazil-focused financial threat intelligence -- PIX fraud, banking trojans & social engineering
                 </p>
               </div>
             </div>
@@ -95,6 +104,9 @@ export default function FinancialThreatIntel() {
 
         {/* Tab Content */}
         <div className="bg-[#0f1629]/50">
+          {activeTab === 'pix-fraud' && <PixFraudIntelligence />}
+          {activeTab === 'banking-trojans' && <BrazilBankingTrojans />}
+          {activeTab === 'boleto-social' && <BoletoFraudEngine />}
           {activeTab === 'identity' && <IdentityTrustScores />}
           {activeTab === 'transactions' && <TransactionRiskMonitor />}
           {activeTab === 'graph' && <IdentityGraphExplorer />}
