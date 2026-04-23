@@ -243,13 +243,23 @@ Deno.serve(async (req: Request) => {
       ]);
       const eventTypes = [...new Set((eventsRes.data || []).map((e: any) => e.event_type))].slice(0, 20);
 
-      const plannerSystem = `You orchestrate an agile multi-agent workflow to design a Databricks Lakehouse security feature. Simulate FOUR specialized agents collaborating in order. Each must contribute their distinct deliverables.
-
-AGENTS TO SIMULATE:
+      const isBackend = feature_type === "backend";
+      const agentsBlock = isBackend
+        ? `AGENTS TO SIMULATE (backend code feature - NO UX agent):
 1. Mary (Analyst) - conducts domain / market / technical research. Produces a concise brief with insights, risks, and prior-art references.
 2. John (Product Manager) - converts the brief into a PRD: epics with user stories and acceptance criteria, success metrics, scope in/out.
 3. Winston (Architect) - designs the system: components, data flows, Databricks integrations, tech choices, NFRs. OWNS the architecture diagram.
-4. Sally (UX Designer) - designs personas, user flows, key screens, and accessibility notes.
+
+Sally (UX Designer) is NOT part of the workflow for backend code features. Do NOT produce a "ux" object. Do NOT include any judgment where from_agent or of_agent is "Sally".`
+        : `AGENTS TO SIMULATE:
+1. Mary (Analyst) - conducts domain / market / technical research. Produces a concise brief with insights, risks, and prior-art references.
+2. John (Product Manager) - converts the brief into a PRD: epics with user stories and acceptance criteria, success metrics, scope in/out.
+3. Winston (Architect) - designs the system: components, data flows, Databricks integrations, tech choices, NFRs. OWNS the architecture diagram.
+4. Sally (UX Designer) - designs personas, user flows, key screens, and accessibility notes.`;
+
+      const plannerSystem = `You orchestrate an agile multi-agent workflow to design a Databricks Lakehouse security feature. Each agent must contribute their distinct deliverables.
+
+${agentsBlock}
 
 Downstream agents (NOT in this call): Amelia (Developer) will implement, Paige (Tech Writer) will document.
 
@@ -419,8 +429,18 @@ Constraints:
       let plan: any = {};
       try { plan = JSON.parse(planner.choices?.[0]?.message?.content || "{}"); } catch { plan = {}; }
       plan.category = plan.category || category;
-      plan.feature_type = plan.feature_type || feature_type;
-      plan.code_language = plan.code_language || code_language;
+      // Force feature_type from the caller / classifier. The LLM cannot override this.
+      plan.feature_type = feature_type;
+      plan.code_language = code_language;
+      // For backend code, the UX agent (Sally) is not part of the workflow.
+      if (feature_type === "backend" && plan.bmad) {
+        delete plan.bmad.ux;
+        if (Array.isArray(plan.bmad.judgments)) {
+          plan.bmad.judgments = plan.bmad.judgments.filter((j: any) =>
+            j?.from_agent !== "Sally" && j?.of_agent !== "Sally"
+          );
+        }
+      }
 
       // Enforce Databricks-only architecture diagram. Strip any non-Databricks node and rebuild if empty.
       const DBX_ALLOWLIST: Array<{ name: string; layer: string; purpose: string }> = [

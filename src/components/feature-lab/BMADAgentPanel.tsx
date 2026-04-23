@@ -9,11 +9,12 @@ interface BMADAgentPanelProps {
   };
   developerActive?: boolean;
   writerDocs?: any;
+  featureType?: 'app' | 'backend';
 }
 
 type AgentKey = 'analyst' | 'pm' | 'architect' | 'ux' | 'developer' | 'writer';
 
-const AGENTS: Array<{
+const ALL_AGENTS: Array<{
   key: AgentKey;
   name: string;
   role: string;
@@ -32,7 +33,8 @@ const AGENTS: Array<{
   { key: 'writer', name: 'Paige', role: 'Tech Writer', initials: 'PA', color: 'teal', icon: BookOpen, bg: 'bg-teal-500/10', border: 'border-teal-500/40', text: 'text-teal-300' },
 ];
 
-export default function BMADAgentPanel({ bmad, developerActive, writerDocs }: BMADAgentPanelProps) {
+export default function BMADAgentPanel({ bmad, developerActive, writerDocs, featureType }: BMADAgentPanelProps) {
+  const AGENTS = featureType === 'backend' ? ALL_AGENTS.filter(a => a.key !== 'ux') : ALL_AGENTS;
   const [expanded, setExpanded] = useState<AgentKey | null>('analyst');
 
   const statusFor = (key: AgentKey): 'done' | 'pending' | 'active' => {
@@ -54,7 +56,7 @@ export default function BMADAgentPanel({ bmad, developerActive, writerDocs }: BM
           </div>
           <div>
             <div className="text-sm font-bold text-white">Agent Collaboration Pipeline</div>
-            <div className="text-[10px] text-slate-500">Six specialist agents collaborating on this feature</div>
+            <div className="text-[10px] text-slate-500">{featureType === 'backend' ? 'Five specialist agents (no UX) collaborating on this code feature' : 'Six specialist agents collaborating on this feature'}</div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-400">
@@ -107,7 +109,7 @@ export default function BMADAgentPanel({ bmad, developerActive, writerDocs }: BM
 }
 
 function AgentDetails({ agent, bmad, writerDocs, developerActive }: { agent: AgentKey; bmad: any; writerDocs: any; developerActive?: boolean }) {
-  const def = AGENTS.find(a => a.key === agent);
+  const def = ALL_AGENTS.find(a => a.key === agent);
   if (!def) return null;
   const Icon = def.icon;
 

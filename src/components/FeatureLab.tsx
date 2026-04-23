@@ -533,7 +533,7 @@ export default function FeatureLab() {
 
                   {/* BMAD agent pipeline (with Paige docs) */}
                   {plan?.bmad && (
-                    <BMADAgentPanel bmad={plan.bmad} writerDocs={plan?.paige_docs || savedCreation?.architecture_plan?.paige_docs} />
+                    <BMADAgentPanel bmad={plan.bmad} writerDocs={plan?.paige_docs || savedCreation?.architecture_plan?.paige_docs} featureType={plan?.feature_type} />
                   )}
 
                   {/* Lifecycle */}

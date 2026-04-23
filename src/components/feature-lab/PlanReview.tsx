@@ -88,7 +88,7 @@ export default function PlanReview({ plan, onApprove, onReject, onRegenerate, on
       </div>
 
       {/* BMAD agent track */}
-      {plan.bmad && <BMADAgentPanel bmad={plan.bmad} />}
+      {plan.bmad && <BMADAgentPanel bmad={plan.bmad} featureType={plan?.feature_type} />}
 
       {/* Peer review verdicts */}
       {plan.judgments && plan.judgments.length > 0 && <JudgmentsPanel judgments={plan.judgments} />}
