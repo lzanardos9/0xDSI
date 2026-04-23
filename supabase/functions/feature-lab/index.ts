@@ -57,23 +57,15 @@ Deno.serve(async (req: Request) => {
     }
 
     // Fetch rich data context from multiple tables
-    const [eventsRes, alertsRes, casesRes, vulnsRes, trojanEventsRes, pixEventsRes, corrRulesRes] = await Promise.all([
-      supabase.from("events").select("event_type, severity, description, source_ip, dest_ip, username, hostname, tags, metadata, mitre_tactic, mitre_technique, raw_log, event_timestamp").order("event_timestamp", { ascending: false }).limit(40),
-      supabase.from("alerts").select("alert_id, title, description, severity, status, alert_type, source, confidence_score, source_ip, hostname, mitre_tactic, mitre_technique, tags, metadata, created_at").order("created_at", { ascending: false }).limit(25),
-      supabase.from("cases").select("title, description, status, priority, severity, category, assigned_to, tags, created_at").order("created_at", { ascending: false }).limit(15),
-      supabase.from("vulnerabilities").select("title, severity, status, cvss_score, discovered_at").order("cvss_score", { ascending: false }).limit(15),
-      supabase.from("events").select("event_type, severity, description, metadata, tags, mitre_technique, event_timestamp").eq("event_type", "banking_trojan").order("event_timestamp", { ascending: false }).limit(10),
-      supabase.from("events").select("event_type, severity, description, metadata, tags, event_timestamp").eq("event_type", "pix_fraud").order("event_timestamp", { ascending: false }).limit(10),
-      supabase.from("correlation_rules").select("rule_name, description, severity, status, rule_type, match_count").limit(15),
+    const [eventsRes, alertsRes, corrRulesRes] = await Promise.all([
+      supabase.from("events").select("event_type, severity, description, source_ip, hostname, mitre_technique").order("event_timestamp", { ascending: false }).limit(15),
+      supabase.from("alerts").select("title, severity, alert_type, source").order("created_at", { ascending: false }).limit(10),
+      supabase.from("correlation_rules").select("rule_name, severity, rule_type").limit(8),
     ]);
 
     const sampleData = {
       events: eventsRes.data || [],
       alerts: alertsRes.data || [],
-      cases: casesRes.data || [],
-      vulnerabilities: vulnsRes.data || [],
-      banking_trojans: trojanEventsRes.data || [],
-      pix_fraud_events: pixEventsRes.data || [],
       correlation_rules: corrRulesRes.data || [],
     };
 
@@ -145,7 +137,7 @@ Available tables: events, alerts, cases, vulnerabilities, correlation_rules, mal
 Event types in database: ${Object.keys(eventTypes).join(", ")}
 
 SAMPLE REAL DATA (use as fallback if APIs fail, and as reference for realistic content):
-${JSON.stringify(sampleData, null, 2).slice(0, 8000)}
+${JSON.stringify(sampleData).slice(0, 3500)}
 
 ================================================================================
 WHAT TO BUILD FOR EACH USER INTENT - BOLT-QUALITY DEPTH
@@ -261,7 +253,7 @@ REMEMBER: Build the FULL feature, not a minimal version. If the user asks for an
           { role: "user", content: prompt },
         ],
         temperature: 0.8,
-        max_tokens: 16000,
+        max_tokens: 7000,
       }),
     });
 
