@@ -285,7 +285,7 @@ Constraints:
           { role: "user", content: `Feature request:\n${prompt}\n\nReturn the JSON plan now.` },
         ],
         temperature: 0.5,
-        max_tokens: 5000,
+        max_tokens: 12000,
         response_format: { type: "json_object" },
       });
 
@@ -294,6 +294,42 @@ Constraints:
       plan.category = plan.category || category;
       plan.feature_type = plan.feature_type || feature_type;
       plan.code_language = plan.code_language || code_language;
+
+      // Defensive fallback: if architecture_diagram is missing or empty, synthesize a minimal one from components
+      if (!plan.architecture_diagram || !Array.isArray(plan.architecture_diagram.nodes) || plan.architecture_diagram.nodes.length === 0) {
+        const comps: string[] = Array.isArray(plan.components) ? plan.components : [];
+        const dbx: any[] = Array.isArray(plan.databricks_features) ? plan.databricks_features : [];
+        const synthNodes: any[] = [];
+        const synthLinks: any[] = [];
+
+        synthNodes.push({ id: "user", label: "SOC Analyst", type: "actor", layer: "client", description: "End user" });
+        synthNodes.push({ id: "ui", label: plan.title || "Feature UI", type: "frontend", layer: "client", description: "React interface" });
+        synthNodes.push({ id: "api", label: "Supabase Edge", type: "api", layer: "edge", description: "Authenticated API layer" });
+        synthLinks.push({ from: "user", to: "ui", label: "interacts", protocol: "HTTPS" });
+        synthLinks.push({ from: "ui", to: "api", label: "queries", protocol: "HTTPS" });
+
+        comps.slice(0, 5).forEach((c, i) => {
+          const id = `comp-${i}`;
+          const label = (typeof c === "string" ? c : (c as any)?.name || `Component ${i + 1}`).toString().slice(0, 40);
+          synthNodes.push({ id, label, type: "api", layer: "platform", description: typeof c === "string" ? c : "" });
+          synthLinks.push({ from: "api", to: id, label: "routes", protocol: "REST" });
+        });
+
+        dbx.slice(0, 4).forEach((d, i) => {
+          const id = `dbx-${i}`;
+          synthNodes.push({
+            id,
+            label: d?.name || `Databricks ${i + 1}`,
+            type: "databricks",
+            layer: i < 2 ? "lakehouse" : "ml",
+            description: d?.purpose || "",
+            databricks_product: d?.name || null,
+          });
+          synthLinks.push({ from: "api", to: id, label: "delegates", protocol: "JDBC" });
+        });
+
+        plan.architecture_diagram = { nodes: synthNodes, links: synthLinks };
+      }
 
       return json({ plan, tokens_used: planner.usage?.total_tokens || 0 });
     }
