@@ -437,6 +437,110 @@ const QUERY_CATALOG: Record<
     },
   },
 
+  pix_fraud: {
+    description:
+      "PIX fraud events in Brazil - useful for PIX transactions, Ghost Hand, mule cascades, QR code swap, fake bank calls, WhatsApp cloning, express kidnapping, MED recovery, Sequestro Relampago, Comprovante Falso, PIX Bug scam",
+    run: async (sb) => {
+      const { data } = await sb
+        .from("events")
+        .select("event_type, severity, description, source_ip, username, hostname, tags, metadata, raw_json, mitre_tactic, mitre_technique, event_timestamp")
+        .eq("event_type", "pix_fraud")
+        .order("event_timestamp", { ascending: false })
+        .limit(25);
+      return data || [];
+    },
+  },
+
+  banking_trojans: {
+    description:
+      "Brazilian and LATAM banking trojans - useful for Grandoreiro, Coyote, Casbaneiro, Metamorfo, Mekotio, Guildma, Astaroth, BrazKing, PixRevolution, malware families, trojan detections, DLL side-loading, DGA, Tetrade group",
+    run: async (sb) => {
+      const { data } = await sb
+        .from("events")
+        .select("event_type, severity, description, source_ip, dest_ip, username, hostname, tags, metadata, raw_json, mitre_tactic, mitre_technique, event_timestamp")
+        .eq("event_type", "banking_trojan")
+        .order("event_timestamp", { ascending: false })
+        .limit(25);
+      return data || [];
+    },
+  },
+
+  boleto_fraud: {
+    description:
+      "Boleto bancario fraud events - useful for Boleto interception, barcode modification, segunda via scam, GRF/FGTS/DARF tax fraud, BEC email swap, condominium fraud, accounting software compromise",
+    run: async (sb) => {
+      const { data } = await sb
+        .from("events")
+        .select("event_type, severity, description, source_ip, username, hostname, tags, metadata, raw_json, mitre_tactic, mitre_technique, event_timestamp")
+        .eq("event_type", "boleto_fraud")
+        .order("event_timestamp", { ascending: false })
+        .limit(25);
+      return data || [];
+    },
+  },
+
+  social_engineering_brazil: {
+    description:
+      "Brazilian social engineering scams - useful for Madonna/celebrity scam, fake auction (Leilao Falso), WhatsApp job scam, fake investment/Ponzi, wrong PIX refund, deepfake, Telegram, Instagram scams",
+    run: async (sb) => {
+      const { data } = await sb
+        .from("events")
+        .select("event_type, severity, description, source_ip, username, hostname, tags, metadata, raw_json, mitre_tactic, mitre_technique, event_timestamp")
+        .eq("event_type", "social_engineering")
+        .order("event_timestamp", { ascending: false })
+        .limit(25);
+      return data || [];
+    },
+  },
+
+  supply_chain_cpg: {
+    description:
+      "CPG supply chain attacks, ICS safety, counterfeit, and IP theft - useful for EDI injection, cold chain IoT, MQTT, food safety, HACCP, CIP sabotage, pasteurizer, fryer interlock, counterfeit products, formula theft, APT41, APT10",
+    run: async (sb) => {
+      const { data } = await sb
+        .from("events")
+        .select("event_type, severity, description, source_ip, username, hostname, tags, metadata, raw_json, mitre_tactic, mitre_technique, event_timestamp")
+        .in("event_type", ["supply_chain_attack", "ics_safety", "counterfeit_detection", "ip_theft"])
+        .order("event_timestamp", { ascending: false })
+        .limit(25);
+      return data || [];
+    },
+  },
+
+  financial_alerts: {
+    description:
+      "Financial threat alerts - PIX fraud, banking trojan, boleto fraud, social engineering alerts with amounts, banks, threat details. Use for any question about financial threats, Brazil banking, fraud amounts, blocked transactions",
+    run: async (sb) => {
+      const { data } = await sb
+        .from("alerts")
+        .select("alert_id, title, description, severity, status, alert_type, source, source_ip, hostname, mitre_tactic, mitre_technique, confidence_score, tags, metadata, created_at")
+        .in("alert_type", ["pix_fraud", "banking_trojan", "boleto_fraud", "social_engineering", "supply_chain", "ics_safety", "counterfeit", "ip_theft"])
+        .order("created_at", { ascending: false })
+        .limit(25);
+      return data || [];
+    },
+  },
+
+  financial_event_summary: {
+    description:
+      "Summary statistics of all financial events by type and severity - useful for financial security posture, fraud overview, how many PIX frauds, trojan detections, overall financial threat landscape",
+    run: async (sb) => {
+      const { data } = await sb
+        .from("events")
+        .select("event_type, severity")
+        .in("event_type", ["pix_fraud", "banking_trojan", "boleto_fraud", "social_engineering", "supply_chain_attack", "ics_safety", "counterfeit_detection", "ip_theft", "mule_network", "identity_fraud"])
+        .limit(500);
+      if (!data) return {};
+      const byType: Record<string, { count: number; severities: Record<string, number> }> = {};
+      for (const e of data) {
+        if (!byType[e.event_type]) byType[e.event_type] = { count: 0, severities: {} };
+        byType[e.event_type].count++;
+        if (e.severity) byType[e.event_type].severities[e.severity] = (byType[e.event_type].severities[e.severity] || 0) + 1;
+      }
+      return { total_financial_events: data.length, by_type: byType };
+    },
+  },
+
   escalation_rules: {
     description:
       "Threat escalation rules and formulas - useful for escalation policies, automation rules",
