@@ -60,6 +60,7 @@ import SAPSecurityConnector from './SAPSecurityConnector';
 import ReportBuilder from './ReportBuilder';
 import PlatformEconomics from './PlatformEconomics';
 import IndustryThreatsHub from './industry-threats/IndustryThreatsHub';
+import FeatureLab from './FeatureLab';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -73,7 +74,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -268,6 +269,13 @@ const Dashboard = () => {
       items: [
         { id: 'industrythreats', label: 'All Industries', icon: Globe },
         { id: 'financialthreat', label: 'Financial Threats', icon: DollarSign },
+      ]
+    },
+    {
+      section: 'Innovation',
+      roles: ['analyst', 'engineer', 'admin', 'ciso'],
+      items: [
+        { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
       ]
     },
     {
@@ -1002,6 +1010,7 @@ const Dashboard = () => {
           {selectedView === 'simulations' && <ThreatSimulator />}
           {selectedView === 'financialthreat' && <FinancialThreatIntel />}
           {selectedView === 'industrythreats' && <IndustryThreatsHub />}
+          {selectedView === 'featurelab' && <FeatureLab />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
