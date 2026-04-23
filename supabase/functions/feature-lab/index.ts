@@ -421,6 +421,30 @@ Constraints:
       let generated_code = "";
       let tokens = 0;
 
+      // Pull REAL sample data from Supabase so the generated app is never empty.
+      const safe = async <T,>(p: Promise<{ data: T | null }>) => p.then(r => r.data || []).catch(() => []) as Promise<any[]>;
+      const [evSample, alSample, caSample, vuSample, crSample, iocSample, asSample, ubSample] = await Promise.all([
+        safe(supabase.from("events").select("id, event_type, severity, source_ip, destination_ip, username, event_timestamp").order("event_timestamp", { ascending: false }).limit(40) as any),
+        safe(supabase.from("alerts").select("id, title, severity, alert_type, status, created_at, description").order("created_at", { ascending: false }).limit(30) as any),
+        safe(supabase.from("cases").select("id, title, status, priority, created_at").order("created_at", { ascending: false }).limit(20) as any),
+        safe(supabase.from("vulnerabilities").select("id, cve_id, title, severity, cvss_score, status").order("cvss_score", { ascending: false }).limit(30) as any),
+        safe(supabase.from("correlation_rules").select("id, rule_name, severity, description, rule_type, confidence_score").limit(20) as any),
+        safe(supabase.from("iocs").select("id, indicator, indicator_type, threat_type, severity, confidence_score, first_seen").limit(25) as any),
+        safe(supabase.from("asset_registry").select("id, asset_name, asset_type, criticality, ip_address, os, status").limit(25) as any),
+        safe(supabase.from("user_behavior_events").select("id, event_type, event_category, timestamp, ip_address, anomaly_score, outcome").order("timestamp", { ascending: false }).limit(20) as any),
+      ]);
+
+      const sampleData = {
+        events: evSample.slice(0, 30),
+        alerts: alSample.slice(0, 20),
+        cases: caSample.slice(0, 15),
+        vulnerabilities: vuSample.slice(0, 20),
+        correlation_rules: crSample.slice(0, 15),
+        iocs: iocSample.slice(0, 20),
+        asset_registry: asSample.slice(0, 20),
+        user_behavior_events: ubSample.slice(0, 15),
+      };
+
       const paigeSystem = `You are Paige, the Tech Writer agent. Produce concise, production-grade documentation for the approved feature.
 
 APPROVED PLAN:
@@ -481,6 +505,21 @@ ${JSON.stringify(plan)}
 
 DATABRICKS INTEGRATIONS (surface them prominently in the UI):
 ${(plan.databricks_features || []).map((f: any) => `- ${f.name}: ${f.purpose}`).join("\n")}
+
+REAL SEED DATA FROM THE LAKEHOUSE (you MUST embed this verbatim as JS constants and render it everywhere):
+\`\`\`json
+${JSON.stringify(sampleData).slice(0, 18000)}
+\`\`\`
+
+DATA POPULATION RULES (non-negotiable):
+- Create a top-level <script> that defines: const SEED = { events, alerts, cases, vulnerabilities, correlation_rules, iocs, asset_registry, user_behavior_events } using the REAL data above.
+- Every table, chart, KPI, and drawer MUST render from SEED immediately on page load - the UI is NEVER empty on first paint.
+- THEN optionally try Supabase (window.__SUPABASE_URL__ + window.__SUPABASE_ANON_KEY__) to refresh. If the fetch succeeds, merge over SEED. If it fails, keep SEED silently. Never show a blank state because of a fetch miss.
+- KPIs must be computed from SEED (counts, averages, severity breakdowns, trend from timestamps).
+- Charts must plot SEED series: time-series from events/alerts timestamps, severity distribution from alerts, CVSS from vulnerabilities, risk scores from user_behavior_anomalies.
+- Tables must render at least 10 rows from SEED with real values (titles, IPs, usernames, CVEs, timestamps formatted relative).
+- The inspector drawer must show a real SEED record with all its fields on row click.
+- If a SEED array is empty, fall back to a realistic hardcoded 10-row array (do not leave it blank).
 
 SUPERPOWERS:
 1. Supabase live DB (events, alerts, cases, vulnerabilities, correlation_rules)
@@ -565,6 +604,8 @@ NON-NEGOTIABLE:
         const polishSystem = `You are Sally, the UX/Design agent. You receive a single-page HTML app written by Amelia and your job is to audit it against a design rubric and return a VISUALLY PERFECTED rewrite.
 
 AUDIT CHECKLIST (fix anything failing):
+- DATA POPULATION: every KPI, chart, and table MUST render real values from the embedded SEED constant on first paint. No empty cards, no placeholder zeros, no "---" values. If a section is empty, populate it from SEED or a hardcoded 10-row fallback.
+- Supabase refresh must be non-blocking: SEED renders first, then a background fetch can upgrade.
 - App shell present: sidebar (240px) + topbar + main + right inspector drawer.
 - KPI strip: 4-6 stat cards with sparkline canvas, animated count-up, delta chip.
 - Primary chart area: real Chart.js chart, 300-360px tall, gradient fill, proper legend, hover tooltip, axis units.
