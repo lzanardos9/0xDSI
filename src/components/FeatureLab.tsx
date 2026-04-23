@@ -10,6 +10,7 @@ import PlanReview from './feature-lab/PlanReview';
 import CodeViewer from './feature-lab/CodeViewer';
 import LifecyclePanel from './feature-lab/LifecyclePanel';
 import BMADAgentPanel from './feature-lab/BMADAgentPanel';
+import BMADLiveTheater from './feature-lab/BMADLiveTheater';
 
 interface Creation {
   id: string;
@@ -407,29 +408,13 @@ export default function FeatureLab() {
                 </div>
               )}
 
-              {/* Planning / executing progress */}
+              {/* Planning / executing progress - BMAD live theater */}
               {(phase === 'planning' || phase === 'executing') && (
-                <div className="bg-[#0a0e1a] border border-cyan-500/20 rounded-xl p-5">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
-                      <Loader2 size={16} className="text-cyan-400 animate-spin" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-cyan-300">
-                        {phase === 'planning' ? 'Designing your architecture' : 'Building your approved feature'}
-                      </div>
-                      <div className="text-[11px] text-slate-400 font-mono mt-0.5">{progressMessage}</div>
-                    </div>
-                  </div>
-                  <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 rounded-full animate-pulse" style={{ width: '70%' }} />
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-3">
-                    {phase === 'planning'
-                      ? 'Analyzing intent, selecting Databricks products, and generating interactive architecture graph...'
-                      : 'Implementing the approved architecture into production-grade code. This takes 60-90 seconds.'}
-                  </div>
-                </div>
+                <BMADLiveTheater
+                  phase={phase}
+                  featureType={featureType}
+                  judgments={phase === 'executing' ? (plan?.judgments || []) : []}
+                />
               )}
 
               {/* Error */}

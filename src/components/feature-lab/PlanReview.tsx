@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronRight, Zap, Target, Users, ShieldCheck, TestTube, Layers, Loader2, RefreshCw, XCircle, Globe, FileCode, ArrowLeftRight } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Zap, Target, Users, ShieldCheck, TestTube, Layers, Loader2, RefreshCw, XCircle, Globe, FileCode, ArrowLeftRight, Gavel, AlertTriangle } from 'lucide-react';
 import ArchitectureDiagram from './ArchitectureDiagram';
 import BMADAgentPanel from './BMADAgentPanel';
 
@@ -90,6 +90,9 @@ export default function PlanReview({ plan, onApprove, onReject, onRegenerate, on
       {/* BMAD agent track */}
       {plan.bmad && <BMADAgentPanel bmad={plan.bmad} />}
 
+      {/* Peer review verdicts */}
+      {plan.judgments && plan.judgments.length > 0 && <JudgmentsPanel judgments={plan.judgments} />}
+
       {/* Architecture diagram */}
       {nodes.length > 0 && (
         <div className="bg-[#0a0e1a] border border-slate-800 rounded-xl p-5">
@@ -157,6 +160,83 @@ export default function PlanReview({ plan, onApprove, onReject, onRegenerate, on
         {plan.homologation_checklist?.length > 0 && (
           <PlanSection title="Homologation Checklist" icon={<ShieldCheck size={12} className="text-teal-400" />} items={plan.homologation_checklist} accent="teal" />
         )}
+      </div>
+    </div>
+  );
+}
+
+function JudgmentsPanel({ judgments }: { judgments: any[] }) {
+  const blockers = judgments.filter(j => j.verdict === 'reject').length;
+  const concerns = judgments.filter(j => j.verdict === 'concerns').length;
+  const approved = judgments.filter(j => j.verdict === 'approve').length;
+
+  const verdictStyle: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
+    approve:  { label: 'APPROVED',  color: 'text-emerald-300', bg: 'bg-emerald-500/10', border: 'border-emerald-500/40', icon: CheckCircle2 },
+    concerns: { label: 'CONCERNS',  color: 'text-amber-300',   bg: 'bg-amber-500/10',   border: 'border-amber-500/40',   icon: AlertTriangle },
+    reject:   { label: 'BLOCK',     color: 'text-red-300',     bg: 'bg-red-500/10',     border: 'border-red-500/40',     icon: AlertTriangle },
+  };
+
+  return (
+    <div className="bg-[#0a0e1a] border border-amber-500/20 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-amber-500/5">
+        <div className="flex items-center gap-2">
+          <Gavel size={14} className="text-amber-400" />
+          <div>
+            <div className="text-sm font-bold text-amber-300">Peer Review Verdicts</div>
+            <div className="text-[10px] text-slate-500 font-mono">Cross-agent judgments enforcing feasibility and quality</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] font-mono">
+          <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">{approved} approved</span>
+          {concerns > 0 && <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300">{concerns} concerns</span>}
+          {blockers > 0 && <span className="px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-300">{blockers} blocking</span>}
+        </div>
+      </div>
+      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        {judgments.map((j, i) => {
+          const v = verdictStyle[j.verdict] || verdictStyle.approve;
+          const VIcon = v.icon;
+          return (
+            <div key={i} className={`rounded-lg border ${v.border} ${v.bg} p-3`}>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="text-[10px] font-mono">
+                  <span className="font-bold text-white">{j.from_agent}</span>
+                  <span className="text-slate-500"> judging </span>
+                  <span className="font-bold text-white">{j.of_agent}</span>
+                </div>
+                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold font-mono border ${v.bg} ${v.border} ${v.color}`}>
+                  <VIcon size={9} />
+                  {v.label}
+                </div>
+              </div>
+              <div className="text-[11px] font-semibold text-slate-200 mb-2">{j.topic}</div>
+              {j.concerns?.length > 0 && (
+                <div className="mb-2">
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-amber-400 mb-1">Concerns</div>
+                  <ul className="space-y-0.5">
+                    {j.concerns.map((c: string, k: number) => (
+                      <li key={k} className="text-[11px] text-slate-300 flex items-start gap-1.5">
+                        <AlertTriangle size={9} className="text-amber-400 shrink-0 mt-0.5" />{c}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {j.suggestions?.length > 0 && (
+                <div>
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-400 mb-1">Suggestions</div>
+                  <ul className="space-y-0.5">
+                    {j.suggestions.map((s: string, k: number) => (
+                      <li key={k} className="text-[11px] text-slate-300 flex items-start gap-1.5">
+                        <CheckCircle2 size={9} className="text-emerald-400 shrink-0 mt-0.5" />{s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

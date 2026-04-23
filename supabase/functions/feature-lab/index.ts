@@ -197,8 +197,41 @@ Return STRICT JSON matching this schema:
       "user_flows": ["3-5 end-to-end flows described in one line each"],
       "screens": [{ "name": "Screen name", "description": "purpose", "key_elements": ["3-5 UI elements"] }],
       "accessibility": "WCAG notes and keyboard shortcuts"
-    }
-  },
+    },
+    "judgments": [
+      {
+        "from_agent": "Winston",
+        "of_agent": "John",
+        "topic": "Epic scope & acceptance criteria feasibility",
+        "verdict": "approve|concerns|reject",
+        "concerns": ["2-4 specific engineering concerns - cost, scale, latency, security, dependency gaps"],
+        "suggestions": ["2-3 concrete changes to make it feasible"]
+      },
+      {
+        "from_agent": "Sally",
+        "of_agent": "Winston",
+        "topic": "UX implications of the architecture",
+        "verdict": "approve|concerns|reject",
+        "concerns": ["2-3 UX gaps - missing empty states, error flows, a11y issues, latency UX"],
+        "suggestions": ["2-3 concrete UX improvements"]
+      },
+      {
+        "from_agent": "Mary",
+        "of_agent": "John",
+        "topic": "Success metrics realism vs. domain evidence",
+        "verdict": "approve|concerns|reject",
+        "concerns": ["1-3 metrics that need baselining or are unrealistic"],
+        "suggestions": ["1-2 adjusted targets with justification"]
+      },
+      {
+        "from_agent": "John",
+        "of_agent": "Mary",
+        "topic": "Brief completeness for PRD generation",
+        "verdict": "approve|concerns|reject",
+        "concerns": ["1-2 gaps in analyst brief that block PRD work"],
+        "suggestions": ["1-2 follow-up research items"]
+      }
+    ],
   "components": ["4-8 major UI/service components with crisp descriptions"],
   "user_interactions": ["5-7 key interactions"],
   "wow_factors": ["4-6 delightful details"],
