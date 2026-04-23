@@ -55,8 +55,9 @@ export default function FeatureLab() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [generationPhase, setGenerationPhase] = useState('');
   const [showExamples, setShowExamples] = useState(true);
+  const [progressSteps, setProgressSteps] = useState<Array<{ step: number; total: number; label: string; detail: string; status: 'active' | 'done' }>>([]);
+  const [generationPlan, setGenerationPlan] = useState<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -102,22 +103,9 @@ export default function FeatureLab() {
     setIsGenerating(true);
     setError(null);
     setGeneratedHtml(null);
+    setGenerationPlan(null);
+    setProgressSteps([]);
     setShowExamples(false);
-
-    const phases = [
-      'Analyzing your prompt...',
-      'Querying live security data...',
-      'Designing component architecture...',
-      'Generating HTML + Tailwind + Chart.js...',
-      'Injecting real-time data hooks...',
-      'Polishing animations & micro-interactions...',
-    ];
-    let phaseIdx = 0;
-    setGenerationPhase(phases[0]);
-    const phaseInterval = setInterval(() => {
-      phaseIdx = Math.min(phaseIdx + 1, phases.length - 1);
-      setGenerationPhase(phases[phaseIdx]);
-    }, 2500);
 
     try {
       const apiUrl = `${supabaseUrl}/functions/v1/feature-lab`;
@@ -126,33 +114,60 @@ export default function FeatureLab() {
         headers: {
           'Authorization': `Bearer ${supabaseAnonKey}`,
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
         },
-        body: JSON.stringify({ prompt: prompt.trim(), action: 'generate' }),
+        body: JSON.stringify({ prompt: prompt.trim() }),
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.error || `Generation failed (${response.status})`);
       }
 
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let completed = false;
 
-      setGeneratedHtml(data.html);
-      setGeneratedTitle(data.title || prompt.slice(0, 60));
-      setView('preview');
+      while (!completed) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-      setTimeout(() => {
-        renderToIframe(data.html);
-      }, 100);
+        const frames = buffer.split('\n\n');
+        buffer = frames.pop() || '';
 
-      loadCreations();
+        for (const frame of frames) {
+          const line = frame.split('\n').find(l => l.startsWith('data: '));
+          if (!line) continue;
+          let evt: any;
+          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (evt.type === 'step') {
+            setProgressSteps(prev => {
+              const next = prev.map(s => ({ ...s, status: 'done' as const }));
+              next.push({ step: evt.step, total: evt.total, label: evt.label, detail: evt.detail, status: 'active' });
+              return next;
+            });
+            if (evt.plan) setGenerationPlan(evt.plan);
+          } else if (evt.type === 'complete') {
+            setProgressSteps(prev => prev.map(s => ({ ...s, status: 'done' as const })));
+            setGeneratedHtml(evt.html);
+            setGeneratedTitle(evt.title || prompt.slice(0, 60));
+            if (evt.plan) setGenerationPlan(evt.plan);
+            setView('preview');
+            setTimeout(() => renderToIframe(evt.html), 100);
+            loadCreations();
+            completed = true;
+          } else if (evt.type === 'error') {
+            throw new Error(evt.message);
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed');
     } finally {
-      clearInterval(phaseInterval);
       setIsGenerating(false);
-      setGenerationPhase('');
     }
   };
 
@@ -347,21 +362,105 @@ export default function FeatureLab() {
                 </div>
               </div>
 
-              {/* Generation progress */}
-              {isGenerating && (
-                <div className="bg-[#0a0e1a] border border-cyan-500/20 rounded-xl p-5 space-y-3 animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
-                      <Loader2 size={16} className="text-cyan-400 animate-spin" />
+              {/* Generation progress - multi-step timeline */}
+              {(isGenerating || progressSteps.length > 0) && (
+                <div className="bg-[#0a0e1a] border border-cyan-500/20 rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
+                        {isGenerating
+                          ? <Loader2 size={16} className="text-cyan-400 animate-spin" />
+                          : <Check size={16} className="text-emerald-400" />}
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-cyan-300">
+                          {isGenerating ? 'Building your feature' : 'Build complete'}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                          {progressSteps.length > 0
+                            ? `Step ${progressSteps[progressSteps.length - 1].step} of ${progressSteps[progressSteps.length - 1].total}`
+                            : 'Initializing pipeline...'}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-sm font-bold text-cyan-300">{generationPhase}</div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">AI is building your feature with real platform data</div>
+                    {progressSteps.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: progressSteps[0]?.total || 5 }).map((_, i) => {
+                          const current = progressSteps[progressSteps.length - 1]?.step || 0;
+                          const isActive = i + 1 === current && isGenerating;
+                          const isDone = i + 1 < current || (!isGenerating && i + 1 <= current);
+                          return (
+                            <div key={i}
+                              className={`h-1.5 w-8 rounded-full transition-all ${
+                                isDone ? 'bg-emerald-500' : isActive ? 'bg-cyan-400 animate-pulse' : 'bg-slate-800'
+                              }`} />
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    {progressSteps.map((s, i) => (
+                      <div key={i} className="flex items-start gap-3 py-1.5">
+                        <div className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 mt-0.5 ${
+                          s.status === 'done'
+                            ? 'bg-emerald-500/10 border-emerald-500/30'
+                            : 'bg-cyan-500/10 border-cyan-500/30'
+                        }`}>
+                          {s.status === 'done'
+                            ? <Check size={11} className="text-emerald-400" />
+                            : <Loader2 size={11} className="text-cyan-400 animate-spin" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono text-slate-600 tracking-wider">0{s.step}</span>
+                            <span className={`text-xs font-semibold ${s.status === 'done' ? 'text-slate-300' : 'text-cyan-300'}`}>
+                              {s.label}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 leading-relaxed mt-0.5">{s.detail}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {generationPlan && (
+                    <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-3">
+                      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles size={10} className="text-cyan-400" />Architecture Plan
+                      </div>
+                      {generationPlan.summary && (
+                        <div className="text-xs text-slate-400 leading-relaxed">{generationPlan.summary}</div>
+                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        {generationPlan.components?.length > 0 && (
+                          <div>
+                            <div className="text-[10px] text-cyan-400 font-semibold mb-1.5">COMPONENTS</div>
+                            <div className="space-y-1">
+                              {generationPlan.components.slice(0, 6).map((c: string, i: number) => (
+                                <div key={i} className="text-[10px] text-slate-400 flex items-start gap-1.5">
+                                  <ChevronRight size={10} className="text-slate-600 mt-0.5 shrink-0" />{c}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {generationPlan.wow_factors?.length > 0 && (
+                          <div>
+                            <div className="text-[10px] text-emerald-400 font-semibold mb-1.5">WOW FACTORS</div>
+                            <div className="space-y-1">
+                              {generationPlan.wow_factors.slice(0, 5).map((w: string, i: number) => (
+                                <div key={i} className="text-[10px] text-slate-400 flex items-start gap-1.5">
+                                  <Zap size={10} className="text-emerald-500/70 mt-0.5 shrink-0" />{w}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 rounded-full animate-pulse" style={{ width: '60%', transition: 'width 2s ease' }} />
-                  </div>
+                  )}
                 </div>
               )}
 
