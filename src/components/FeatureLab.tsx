@@ -80,8 +80,12 @@ export default function FeatureLab() {
     const injection = `<script>
       window.__SUPABASE_URL__ = "${supabaseUrl}";
       window.__SUPABASE_ANON_KEY__ = "${supabaseAnonKey}";
+      window.__RUNTIME_URL__ = "${supabaseUrl}/functions/v1/feature-runtime";
     </script>`;
-    return html.replace('<head>', '<head>' + injection).replace('</head>', injection + '</head>');
+    if (html.includes('<head>')) {
+      return html.replace('<head>', '<head>' + injection);
+    }
+    return injection + html;
   };
 
   const renderToIframe = useCallback((html: string) => {
