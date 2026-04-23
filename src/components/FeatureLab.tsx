@@ -1,16 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Sparkles, Send, Loader2, Maximize2, Minimize2, Pin, PinOff,
-  Trash2, Eye, Code, LayoutGrid, Clock, Tag, ChevronRight,
-  Zap, FlaskConical, X, RefreshCw, Download, Copy, Check
+  Sparkles, Loader2, Maximize2, Minimize2, Pin, PinOff,
+  Trash2, Eye, Code, LayoutGrid, Clock, ChevronRight,
+  Zap, FlaskConical, X, RefreshCw, Download, Copy, Check,
+  CheckCircle2, FileCode, Layers,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import PlanReview from './feature-lab/PlanReview';
+import CodeViewer from './feature-lab/CodeViewer';
+import LifecyclePanel from './feature-lab/LifecyclePanel';
 
 interface Creation {
   id: string;
   title: string;
   prompt: string;
   generated_html: string;
+  generated_code?: string;
+  code_language?: string;
+  feature_type?: string;
   category: string;
   tags: string[];
   thumbnail_color: string;
@@ -18,16 +25,20 @@ interface Creation {
   view_count: number;
   created_by: string;
   created_at: string;
+  architecture_plan?: any;
+  databricks_features?: any[];
+  status?: string;
+  share_token?: string | null;
 }
 
 const EXAMPLE_PROMPTS = [
   'Build an interactive SOC analyst agent chatbot that I can ask questions about threats, and it searches events and alerts in real-time, showing reasoning steps as it works',
   'Create a ransomware attack simulator where I can pick a variant (LockBit, BlackCat, Royal), configure parameters with sliders, and watch it play out step-by-step with animations',
   'Build an IP/IOC investigation pivot tool with a search bar where I type an IP or hash and it queries events, shows related alerts, maps MITRE techniques, and lets me click entities to drill deeper',
-  'Create a network attack visualization on HTML5 Canvas showing animated packets flowing between attacker and victim nodes, with a kill chain timeline progressing in real-time',
+  'Create a Databricks DLT pipeline notebook that ingests raw security events from Kafka, applies quality expectations, enriches with threat intel, and lands into a Delta Lake gold table with Unity Catalog',
   'Build a phishing email identification training game that shows me emails and I have to classify them as legit or phishing, with scoring, timer, and explanations',
   'Create a detection rule builder where I can click to add conditions (event type, severity, IP range, MITRE technique), chain them with AND/OR logic, and test against real events',
-  'Build a threat hunting notebook interface with executable query cells, markdown notes, and a findings panel where I can save interesting results',
+  'Build a Mosaic AI Agent Framework notebook that deploys a tool-using threat-hunting agent with Vector Search for IOC similarity and MLflow tracking',
   'Create an incident response decision tree simulator - start with an alert and walk through containment/eradication/recovery choices, with branching paths and scoring',
   'Build a real-time banking trojan tracker showing Grandoreiro, Coyote, and Casbaneiro detections on an animated world map with IOC details on click',
   'Create a MITRE ATT&CK coverage heatmap that queries real events and highlights which techniques we have detections for vs gaps, with click-to-see-events on each cell',
@@ -44,29 +55,32 @@ const CATEGORY_COLORS: Record<string, string> = {
   workflow: 'bg-teal-500/10 text-teal-400 border-teal-500/30',
 };
 
+type Phase = 'idle' | 'planning' | 'reviewing' | 'executing' | 'preview';
+
 export default function FeatureLab() {
   const [prompt, setPrompt] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [plan, setPlan] = useState<any>(null);
   const [generatedHtml, setGeneratedHtml] = useState<string | null>(null);
+  const [generatedCode, setGeneratedCode] = useState<string>('');
+  const [codeLanguage, setCodeLanguage] = useState<string>('python');
+  const [featureType, setFeatureType] = useState<'app' | 'backend'>('app');
   const [generatedTitle, setGeneratedTitle] = useState('');
+  const [savedCreation, setSavedCreation] = useState<Creation | null>(null);
   const [creations, setCreations] = useState<Creation[]>([]);
-  const [view, setView] = useState<'create' | 'gallery' | 'preview'>('create');
-  const [previewCreation, setPreviewCreation] = useState<Creation | null>(null);
+  const [view, setView] = useState<'create' | 'gallery'>('create');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [progressMessage, setProgressMessage] = useState('');
   const [showExamples, setShowExamples] = useState(true);
-  const [progressSteps, setProgressSteps] = useState<Array<{ step: number; total: number; label: string; detail: string; status: 'active' | 'done' }>>([]);
-  const [generationPlan, setGenerationPlan] = useState<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-  useEffect(() => {
-    loadCreations();
-  }, []);
+  useEffect(() => { loadCreations(); }, []);
 
   const loadCreations = async () => {
     const { data } = await supabase
@@ -74,7 +88,7 @@ export default function FeatureLab() {
       .select('*')
       .order('created_at', { ascending: false })
       .limit(50);
-    if (data) setCreations(data);
+    if (data) setCreations(data as Creation[]);
   };
 
   const injectSupabaseVars = (html: string) => {
@@ -83,9 +97,7 @@ export default function FeatureLab() {
       window.__SUPABASE_ANON_KEY__ = "${supabaseAnonKey}";
       window.__RUNTIME_URL__ = "${supabaseUrl}/functions/v1/feature-runtime";
     </script>`;
-    if (html.includes('<head>')) {
-      return html.replace('<head>', '<head>' + injection);
-    }
+    if (html.includes('<head>')) return html.replace('<head>', '<head>' + injection);
     return injection + html;
   };
 
@@ -98,169 +110,177 @@ export default function FeatureLab() {
     return () => URL.revokeObjectURL(url);
   }, [supabaseUrl, supabaseAnonKey]);
 
-  const handleGenerate = async () => {
-    if (!prompt.trim() || isGenerating) return;
-    setIsGenerating(true);
+  const callEdge = async (body: any) => {
+    const res = await fetch(`${supabaseUrl}/functions/v1/feature-lab`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${supabaseAnonKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  };
+
+  const startPlan = async () => {
+    if (!prompt.trim() || phase !== 'idle') return;
     setError(null);
+    setPlan(null);
     setGeneratedHtml(null);
-    setGenerationPlan(null);
-    setProgressSteps([]);
+    setGeneratedCode('');
+    setSavedCreation(null);
     setShowExamples(false);
+    setPhase('planning');
+
+    const messages = [
+      'Parsing feature request...',
+      'Querying lakehouse schema...',
+      'Selecting Databricks products...',
+      'Drafting architecture graph...',
+      'Scoring wow-factor ideas...',
+    ];
+    let i = 0;
+    setProgressMessage(messages[0]);
+    const interval = setInterval(() => {
+      i = Math.min(i + 1, messages.length - 1);
+      setProgressMessage(messages[i]);
+    }, 1400);
 
     try {
-      const apiUrl = `${supabaseUrl}/functions/v1/feature-lab`;
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseAnonKey}`,
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream',
-        },
-        body: JSON.stringify({ prompt: prompt.trim() }),
-      });
-
-      if (!response.ok || !response.body) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `Generation failed (${response.status})`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let completed = false;
-
-      while (!completed) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const frames = buffer.split('\n\n');
-        buffer = frames.pop() || '';
-
-        for (const frame of frames) {
-          const line = frame.split('\n').find(l => l.startsWith('data: '));
-          if (!line) continue;
-          let evt: any;
-          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
-
-          if (evt.type === 'step') {
-            setProgressSteps(prev => {
-              const next = prev.map(s => ({ ...s, status: 'done' as const }));
-              next.push({ step: evt.step, total: evt.total, label: evt.label, detail: evt.detail, status: 'active' });
-              return next;
-            });
-            if (evt.plan) setGenerationPlan(evt.plan);
-          } else if (evt.type === 'complete') {
-            setProgressSteps(prev => prev.map(s => ({ ...s, status: 'done' as const })));
-            setGeneratedHtml(evt.html);
-            setGeneratedTitle(evt.title || prompt.slice(0, 60));
-            if (evt.plan) setGenerationPlan(evt.plan);
-            setView('preview');
-            setTimeout(() => renderToIframe(evt.html), 100);
-            loadCreations();
-            completed = true;
-          } else if (evt.type === 'error') {
-            throw new Error(evt.message);
-          }
-        }
-      }
+      const data = await callEdge({ action: 'plan', prompt: prompt.trim() });
+      setPlan(data.plan);
+      setFeatureType(data.plan.feature_type || 'app');
+      setCodeLanguage(data.plan.code_language || 'python');
+      setPhase('reviewing');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Generation failed');
+      setError(err instanceof Error ? err.message : 'Planning failed');
+      setPhase('idle');
     } finally {
-      setIsGenerating(false);
+      clearInterval(interval);
+      setProgressMessage('');
     }
   };
 
+  const executePlan = async () => {
+    if (!plan) return;
+    setError(null);
+    setPhase('executing');
+
+    const messages = featureType === 'backend' ? [
+      'Scaffolding Databricks notebook...',
+      'Writing Delta Lake schema...',
+      'Generating DLT expectations...',
+      'Wiring Unity Catalog...',
+      'Adding MLflow tracking...',
+      'Writing validation cell...',
+    ] : [
+      'Scaffolding HTML structure...',
+      'Wiring Tailwind design system...',
+      'Embedding Chart.js visualizations...',
+      'Connecting Supabase live queries...',
+      'Building runtime agent hooks...',
+      'Polishing micro-interactions...',
+    ];
+    let i = 0;
+    setProgressMessage(messages[0]);
+    const interval = setInterval(() => {
+      i = Math.min(i + 1, messages.length - 1);
+      setProgressMessage(messages[i]);
+    }, 4000);
+
+    try {
+      const data = await callEdge({ action: 'execute', prompt: prompt.trim(), plan });
+      setGeneratedHtml(data.html || null);
+      setGeneratedCode(data.generated_code || '');
+      setCodeLanguage(data.code_language || '');
+      setFeatureType(data.feature_type || 'app');
+      setGeneratedTitle(data.title || plan.title || prompt.slice(0, 60));
+      setSavedCreation(data.saved || null);
+      setPhase('preview');
+      if (data.html) setTimeout(() => renderToIframe(data.html), 100);
+      loadCreations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Build failed');
+      setPhase('reviewing');
+    } finally {
+      clearInterval(interval);
+      setProgressMessage('');
+    }
+  };
+
+  const resetFlow = () => {
+    setPhase('idle');
+    setPlan(null);
+    setGeneratedHtml(null);
+    setGeneratedCode('');
+    setSavedCreation(null);
+    setError(null);
+    setShowExamples(true);
+  };
+
   const openCreation = (creation: Creation) => {
-    setPreviewCreation(creation);
-    setGeneratedHtml(creation.generated_html);
-    setGeneratedTitle(creation.title);
     setPrompt(creation.prompt);
-    setView('preview');
-    setTimeout(() => renderToIframe(creation.generated_html), 100);
-    supabase
-      .from('feature_lab_creations')
-      .update({ view_count: (creation.view_count || 0) + 1 })
-      .eq('id', creation.id)
-      .then(() => {});
+    setPlan(creation.architecture_plan || null);
+    setGeneratedHtml(creation.generated_html || null);
+    setGeneratedCode(creation.generated_code || '');
+    setCodeLanguage(creation.code_language || 'python');
+    setFeatureType((creation.feature_type as 'app' | 'backend') || 'app');
+    setGeneratedTitle(creation.title);
+    setSavedCreation(creation);
+    setView('create');
+    setPhase('preview');
+    if (creation.generated_html) setTimeout(() => renderToIframe(creation.generated_html), 100);
+    supabase.from('feature_lab_creations').update({ view_count: (creation.view_count || 0) + 1 }).eq('id', creation.id).then(() => {});
   };
 
   const deleteCreation = async (id: string) => {
     await supabase.from('feature_lab_creations').delete().eq('id', id);
     setCreations(prev => prev.filter(c => c.id !== id));
-    if (previewCreation?.id === id) {
-      setView('gallery');
-      setPreviewCreation(null);
-    }
   };
 
   const togglePin = async (creation: Creation) => {
-    await supabase
-      .from('feature_lab_creations')
-      .update({ is_pinned: !creation.is_pinned })
-      .eq('id', creation.id);
-    setCreations(prev =>
-      prev.map(c => c.id === creation.id ? { ...c, is_pinned: !c.is_pinned } : c)
-    );
+    await supabase.from('feature_lab_creations').update({ is_pinned: !creation.is_pinned }).eq('id', creation.id);
+    setCreations(prev => prev.map(c => c.id === creation.id ? { ...c, is_pinned: !c.is_pinned } : c));
   };
 
   const copyHtml = () => {
-    if (generatedHtml) {
-      navigator.clipboard.writeText(generatedHtml);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    const content = generatedHtml || generatedCode;
+    if (!content) return;
+    navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const downloadHtml = () => {
-    if (!generatedHtml) return;
-    const blob = new Blob([injectSupabaseVars(generatedHtml)], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${generatedTitle.replace(/\s+/g, '_').toLowerCase()}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const downloadOutput = () => {
+    if (generatedHtml) {
+      const blob = new Blob([injectSupabaseVars(generatedHtml)], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${generatedTitle.replace(/\s+/g, '_').toLowerCase()}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      handleGenerate();
-    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) startPlan();
   };
 
-  const timeSince = (date: string) => {
-    const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-    if (seconds < 60) return 'just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    return `${Math.floor(seconds / 86400)}d ago`;
-  };
-
-  // Fullscreen preview
   if (isFullscreen && generatedHtml) {
     return (
       <div className="fixed inset-0 z-50 bg-black">
         <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-          <button onClick={copyHtml}
-            className="p-2 bg-slate-800/90 rounded-lg border border-slate-700 hover:bg-slate-700 transition-colors">
+          <button onClick={copyHtml} className="p-2 bg-slate-800/90 rounded-lg border border-slate-700 hover:bg-slate-700">
             {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} className="text-slate-400" />}
           </button>
-          <button onClick={downloadHtml}
-            className="p-2 bg-slate-800/90 rounded-lg border border-slate-700 hover:bg-slate-700 transition-colors">
+          <button onClick={downloadOutput} className="p-2 bg-slate-800/90 rounded-lg border border-slate-700 hover:bg-slate-700">
             <Download size={16} className="text-slate-400" />
           </button>
-          <button onClick={() => setIsFullscreen(false)}
-            className="p-2 bg-slate-800/90 rounded-lg border border-slate-700 hover:bg-slate-700 transition-colors">
+          <button onClick={() => setIsFullscreen(false)} className="p-2 bg-slate-800/90 rounded-lg border border-slate-700 hover:bg-slate-700">
             <Minimize2 size={16} className="text-slate-400" />
           </button>
         </div>
-        <iframe
-          ref={iframeRef}
-          className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin"
-          title="Feature Preview"
-        />
+        <iframe ref={iframeRef} className="w-full h-full border-0" sandbox="allow-scripts allow-same-origin" title="Feature Preview" />
       </div>
     );
   }
@@ -277,15 +297,14 @@ export default function FeatureLab() {
                 <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-100 tracking-tight">
-                  Feature Lab
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Describe any security feature and watch it come to life -- powered by AI + real platform data
-                </p>
+                <h2 className="text-lg font-bold text-slate-100 tracking-tight">Feature Lab</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Plan-review-build pipeline -- Databricks Lakehouse native, production-grade</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <span className="px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 text-[10px] font-mono font-bold text-orange-400 tracking-wider flex items-center gap-1.5">
+                <Layers size={10} />DATABRICKS
+              </span>
               <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono font-bold text-emerald-400 tracking-wider flex items-center gap-1.5">
                 <Sparkles size={10} />AI BUILDER
               </span>
@@ -295,21 +314,15 @@ export default function FeatureLab() {
             </div>
           </div>
 
-          {/* View toggle */}
+          {/* Tabs */}
           <div className="flex items-center gap-1 mt-4 -mb-4">
             {[
               { id: 'create' as const, label: 'Create', icon: Sparkles },
               { id: 'gallery' as const, label: `Gallery (${creations.length})`, icon: LayoutGrid },
-              ...(generatedHtml ? [{ id: 'preview' as const, label: 'Preview', icon: Eye }] : []),
             ].map(tab => {
               const Icon = tab.icon;
               return (
-                <button key={tab.id} onClick={() => {
-                  setView(tab.id);
-                  if (tab.id === 'preview' && generatedHtml) {
-                    setTimeout(() => renderToIframe(generatedHtml), 50);
-                  }
-                }}
+                <button key={tab.id} onClick={() => setView(tab.id)}
                   className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-lg transition-all duration-200 ${view === tab.id
                     ? 'bg-[#0f1629] text-cyan-300 border border-[#1e293b] border-b-transparent'
                     : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.02]'}`}>
@@ -321,146 +334,66 @@ export default function FeatureLab() {
           </div>
         </div>
 
-        {/* Content */}
+        {/* Body */}
         <div className="flex-1 overflow-auto">
-          {/* CREATE VIEW */}
           {view === 'create' && (
             <div className="p-6 space-y-5">
               {/* Prompt input */}
-              <div className="relative">
-                <div className="bg-[#0a0e1a] border border-[#1e293b] rounded-xl overflow-hidden focus-within:border-cyan-500/50 transition-colors">
-                  <textarea
-                    ref={textareaRef}
-                    value={prompt}
-                    onChange={e => setPrompt(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Describe the security feature you want to build... e.g. 'Create a real-time ransomware detection dashboard with live alert feed and risk scoring gauge'"
-                    className="w-full bg-transparent px-5 pt-4 pb-16 text-sm text-slate-200 placeholder-slate-600 resize-none focus:outline-none"
-                    rows={4}
-                    disabled={isGenerating}
-                  />
-                  <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
-                    <div className="text-[10px] text-slate-600">
-                      {prompt.length > 0 ? `${prompt.length} chars` : 'Ctrl+Enter to generate'}
+              {(phase === 'idle' || phase === 'planning') && (
+                <div className="relative">
+                  <div className="bg-[#0a0e1a] border border-[#1e293b] rounded-xl overflow-hidden focus-within:border-cyan-500/50 transition-colors">
+                    <textarea
+                      ref={textareaRef}
+                      value={prompt}
+                      onChange={e => setPrompt(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Describe the security feature you want to build... e.g. 'Create a real-time ransomware detection dashboard with live alert feed and risk scoring gauge'"
+                      className="w-full bg-transparent px-5 pt-4 pb-16 text-sm text-slate-200 placeholder-slate-600 resize-none focus:outline-none"
+                      rows={4}
+                      disabled={phase !== 'idle'}
+                    />
+                    <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
+                      <div className="text-[10px] text-slate-600">
+                        {prompt.length > 0 ? `${prompt.length} chars` : 'Ctrl+Enter to plan'}
+                      </div>
+                      <button
+                        onClick={startPlan}
+                        disabled={!prompt.trim() || phase !== 'idle'}
+                        className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${phase === 'planning'
+                          ? 'bg-cyan-500/20 text-cyan-400 cursor-wait'
+                          : prompt.trim()
+                            ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white hover:from-cyan-400 hover:to-emerald-400 shadow-lg shadow-cyan-500/20'
+                            : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
+                      >
+                        {phase === 'planning' ? (<><Loader2 size={14} className="animate-spin" />Designing...</>) : (<><Zap size={14} />Design Architecture</>)}
+                      </button>
                     </div>
-                    <button
-                      onClick={handleGenerate}
-                      disabled={!prompt.trim() || isGenerating}
-                      className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${isGenerating
-                        ? 'bg-cyan-500/20 text-cyan-400 cursor-wait'
-                        : prompt.trim()
-                          ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-white hover:from-cyan-400 hover:to-emerald-400 shadow-lg shadow-cyan-500/20'
-                          : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
-                    >
-                      {isGenerating ? (
-                        <><Loader2 size={14} className="animate-spin" />Generating...</>
-                      ) : (
-                        <><Zap size={14} />Generate Feature</>
-                      )}
-                    </button>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Generation progress - multi-step timeline */}
-              {(isGenerating || progressSteps.length > 0) && (
+              {/* Planning / executing progress */}
+              {(phase === 'planning' || phase === 'executing') && (
                 <div className="bg-[#0a0e1a] border border-cyan-500/20 rounded-xl p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
-                        {isGenerating
-                          ? <Loader2 size={16} className="text-cyan-400 animate-spin" />
-                          : <Check size={16} className="text-emerald-400" />}
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-cyan-300">
-                          {isGenerating ? 'Building your feature' : 'Build complete'}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-                          {progressSteps.length > 0
-                            ? `Step ${progressSteps[progressSteps.length - 1].step} of ${progressSteps[progressSteps.length - 1].total}`
-                            : 'Initializing pipeline...'}
-                        </div>
-                      </div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
+                      <Loader2 size={16} className="text-cyan-400 animate-spin" />
                     </div>
-                    {progressSteps.length > 0 && (
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: progressSteps[0]?.total || 5 }).map((_, i) => {
-                          const current = progressSteps[progressSteps.length - 1]?.step || 0;
-                          const isActive = i + 1 === current && isGenerating;
-                          const isDone = i + 1 < current || (!isGenerating && i + 1 <= current);
-                          return (
-                            <div key={i}
-                              className={`h-1.5 w-8 rounded-full transition-all ${
-                                isDone ? 'bg-emerald-500' : isActive ? 'bg-cyan-400 animate-pulse' : 'bg-slate-800'
-                              }`} />
-                          );
-                        })}
+                    <div>
+                      <div className="text-sm font-bold text-cyan-300">
+                        {phase === 'planning' ? 'Designing your architecture' : 'Building your approved feature'}
                       </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    {progressSteps.map((s, i) => (
-                      <div key={i} className="flex items-start gap-3 py-1.5">
-                        <div className={`w-6 h-6 rounded-md border flex items-center justify-center shrink-0 mt-0.5 ${
-                          s.status === 'done'
-                            ? 'bg-emerald-500/10 border-emerald-500/30'
-                            : 'bg-cyan-500/10 border-cyan-500/30'
-                        }`}>
-                          {s.status === 'done'
-                            ? <Check size={11} className="text-emerald-400" />
-                            : <Loader2 size={11} className="text-cyan-400 animate-spin" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono text-slate-600 tracking-wider">0{s.step}</span>
-                            <span className={`text-xs font-semibold ${s.status === 'done' ? 'text-slate-300' : 'text-cyan-300'}`}>
-                              {s.label}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-500 leading-relaxed mt-0.5">{s.detail}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {generationPlan && (
-                    <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-3">
-                      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                        <Sparkles size={10} className="text-cyan-400" />Architecture Plan
-                      </div>
-                      {generationPlan.summary && (
-                        <div className="text-xs text-slate-400 leading-relaxed">{generationPlan.summary}</div>
-                      )}
-                      <div className="grid grid-cols-2 gap-3">
-                        {generationPlan.components?.length > 0 && (
-                          <div>
-                            <div className="text-[10px] text-cyan-400 font-semibold mb-1.5">COMPONENTS</div>
-                            <div className="space-y-1">
-                              {generationPlan.components.slice(0, 6).map((c: string, i: number) => (
-                                <div key={i} className="text-[10px] text-slate-400 flex items-start gap-1.5">
-                                  <ChevronRight size={10} className="text-slate-600 mt-0.5 shrink-0" />{c}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {generationPlan.wow_factors?.length > 0 && (
-                          <div>
-                            <div className="text-[10px] text-emerald-400 font-semibold mb-1.5">WOW FACTORS</div>
-                            <div className="space-y-1">
-                              {generationPlan.wow_factors.slice(0, 5).map((w: string, i: number) => (
-                                <div key={i} className="text-[10px] text-slate-400 flex items-start gap-1.5">
-                                  <Zap size={10} className="text-emerald-500/70 mt-0.5 shrink-0" />{w}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono mt-0.5">{progressMessage}</div>
                     </div>
-                  )}
+                  </div>
+                  <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 rounded-full animate-pulse" style={{ width: '70%' }} />
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-3">
+                    {phase === 'planning'
+                      ? 'Analyzing intent, selecting Databricks products, and generating interactive architecture graph...'
+                      : 'Implementing the approved architecture into production-grade code. This takes 60-90 seconds.'}
+                  </div>
                 </div>
               )}
 
@@ -472,20 +405,109 @@ export default function FeatureLab() {
                 </div>
               )}
 
+              {/* Plan review phase */}
+              {phase === 'reviewing' && plan && (
+                <PlanReview
+                  plan={plan}
+                  onApprove={executePlan}
+                  onReject={resetFlow}
+                  onRegenerate={() => { setPlan(null); setPhase('idle'); startPlan(); }}
+                  executing={false}
+                />
+              )}
+
+              {/* Preview phase */}
+              {phase === 'preview' && (generatedHtml || generatedCode) && (
+                <div className="space-y-4">
+                  {/* Header bar */}
+                  <div className="flex items-center justify-between bg-[#0a0e1a] border border-slate-800 rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <div>
+                        <div className="text-sm font-bold text-white">{generatedTitle}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`px-2 py-0.5 text-[9px] rounded border ${CATEGORY_COLORS[savedCreation?.category || 'dashboard']}`}>
+                            {savedCreation?.category || 'dashboard'}
+                          </span>
+                          {featureType === 'backend' ? (
+                            <span className="px-2 py-0.5 text-[9px] rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/30 flex items-center gap-1">
+                              <FileCode size={9} />Backend / {codeLanguage}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[9px] rounded border bg-cyan-500/10 text-cyan-400 border-cyan-500/30">
+                              Frontend app
+                            </span>
+                          )}
+                          <CheckCircle2 size={11} className="text-emerald-400" />
+                          <span className="text-[9px] font-mono text-emerald-400">APPROVED BUILD</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={copyHtml} className="p-1.5 rounded-lg hover:bg-slate-800" title={featureType === 'backend' ? 'Copy code' : 'Copy HTML'}>
+                        {copied ? <Check size={14} className="text-emerald-400" /> : <Code size={14} className="text-slate-500" />}
+                      </button>
+                      {generatedHtml && (
+                        <>
+                          <button onClick={() => renderToIframe(generatedHtml)} className="p-1.5 rounded-lg hover:bg-slate-800" title="Refresh">
+                            <RefreshCw size={14} className="text-slate-500" />
+                          </button>
+                          <button onClick={downloadOutput} className="p-1.5 rounded-lg hover:bg-slate-800" title="Download">
+                            <Download size={14} className="text-slate-500" />
+                          </button>
+                          <button onClick={() => setIsFullscreen(true)} className="p-1.5 rounded-lg hover:bg-slate-800" title="Fullscreen">
+                            <Maximize2 size={14} className="text-slate-500" />
+                          </button>
+                        </>
+                      )}
+                      <button onClick={resetFlow} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold hover:bg-cyan-500/20">
+                        <Sparkles size={10} />New
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Content: iframe for apps, code viewer for backend */}
+                  {featureType === 'backend' && generatedCode ? (
+                    <CodeViewer code={generatedCode} language={codeLanguage || 'python'} title={generatedTitle} />
+                  ) : generatedHtml ? (
+                    <div className="bg-black rounded-xl overflow-hidden border border-slate-800" style={{ minHeight: 600 }}>
+                      <iframe
+                        ref={iframeRef}
+                        className="w-full border-0"
+                        sandbox="allow-scripts allow-same-origin"
+                        title="Feature Preview"
+                        style={{ minHeight: 600, width: '100%' }}
+                      />
+                    </div>
+                  ) : null}
+
+                  {/* Lifecycle */}
+                  {savedCreation && (
+                    <LifecyclePanel
+                      creationId={savedCreation.id}
+                      initialStatus={savedCreation.status || 'draft'}
+                      shareToken={savedCreation.share_token || null}
+                      featureType={featureType}
+                    />
+                  )}
+
+                  {/* Original prompt */}
+                  <div className="bg-[#0a0e1a] border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500 shrink-0">PROMPT:</span>
+                    <span className="text-[11px] text-slate-400 flex-1 truncate">{prompt}</span>
+                    <button onClick={resetFlow} className="text-[10px] text-cyan-400 hover:text-cyan-300 shrink-0">New Feature</button>
+                  </div>
+                </div>
+              )}
+
               {/* Example prompts */}
-              {showExamples && !isGenerating && (
+              {phase === 'idle' && showExamples && (
                 <div className="space-y-3">
                   <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Try one of these</div>
                   <div className="grid grid-cols-2 gap-2">
                     {EXAMPLE_PROMPTS.map((ex, i) => (
-                      <button
-                        key={i}
-                        onClick={() => {
-                          setPrompt(ex);
-                          textareaRef.current?.focus();
-                        }}
-                        className="text-left px-4 py-3 bg-[#0a0e1a] border border-[#1e293b] rounded-xl hover:border-cyan-500/30 hover:bg-cyan-500/[0.02] transition-all group"
-                      >
+                      <button key={i} onClick={() => { setPrompt(ex); textareaRef.current?.focus(); }}
+                        className="text-left px-4 py-3 bg-[#0a0e1a] border border-[#1e293b] rounded-xl hover:border-cyan-500/30 hover:bg-cyan-500/[0.02] transition-all group">
                         <div className="flex items-start gap-2">
                           <ChevronRight size={12} className="text-slate-600 group-hover:text-cyan-400 mt-0.5 shrink-0 transition-colors" />
                           <span className="text-[11px] text-slate-400 group-hover:text-slate-300 leading-relaxed transition-colors">{ex}</span>
@@ -497,13 +519,14 @@ export default function FeatureLab() {
               )}
 
               {/* How it works */}
-              {showExamples && !isGenerating && (
-                <div className="grid grid-cols-4 gap-3 mt-4">
+              {phase === 'idle' && showExamples && (
+                <div className="grid grid-cols-5 gap-3 mt-4">
                   {[
-                    { step: '1', title: 'Describe', desc: 'Type what you want to build in plain English', color: 'cyan' },
-                    { step: '2', title: 'AI Generates', desc: 'GPT-4o creates a full HTML page with live data', color: 'emerald' },
-                    { step: '3', title: 'Live Preview', desc: 'See your feature rendered instantly with real data', color: 'blue' },
-                    { step: '4', title: 'Save & Share', desc: 'Your creation is saved to the gallery for reuse', color: 'amber' },
+                    { step: '1', title: 'Describe', desc: 'Type what you want in plain English', color: 'cyan' },
+                    { step: '2', title: 'Architect', desc: 'AI proposes a Databricks-native design', color: 'orange' },
+                    { step: '3', title: 'Approve', desc: 'Review the interactive diagram and sign off', color: 'amber' },
+                    { step: '4', title: 'Build', desc: 'Production code or app generated', color: 'emerald' },
+                    { step: '5', title: 'Ship', desc: 'Test, homologate, promote to production', color: 'teal' },
                   ].map(s => (
                     <div key={s.step} className="bg-[#0a0e1a] border border-[#1e293b] rounded-xl p-4 text-center">
                       <div className={`w-8 h-8 rounded-full bg-${s.color}-500/10 border border-${s.color}-500/30 flex items-center justify-center mx-auto mb-2 text-sm font-bold text-${s.color}-400`}>{s.step}</div>
@@ -516,7 +539,6 @@ export default function FeatureLab() {
             </div>
           )}
 
-          {/* GALLERY VIEW */}
           {view === 'gallery' && (
             <div className="p-6 space-y-4">
               {creations.length === 0 ? (
@@ -526,7 +548,6 @@ export default function FeatureLab() {
                 </div>
               ) : (
                 <>
-                  {/* Pinned */}
                   {creations.filter(c => c.is_pinned).length > 0 && (
                     <div className="space-y-2">
                       <div className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider flex items-center gap-1"><Pin size={10} />Pinned</div>
@@ -537,7 +558,6 @@ export default function FeatureLab() {
                       </div>
                     </div>
                   )}
-                  {/* All */}
                   <div className="space-y-2">
                     <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">All Creations</div>
                     <div className="grid grid-cols-3 gap-3">
@@ -548,73 +568,6 @@ export default function FeatureLab() {
                   </div>
                 </>
               )}
-            </div>
-          )}
-
-          {/* PREVIEW VIEW */}
-          {view === 'preview' && generatedHtml && (
-            <div className="flex flex-col h-full">
-              <div className="flex items-center justify-between px-5 py-3 border-b border-[#1e293b] bg-[#0a0e1a] shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-sm font-bold text-white">{generatedTitle}</span>
-                  {previewCreation && (
-                    <span className={`px-2 py-0.5 text-[10px] rounded border ${CATEGORY_COLORS[previewCreation.category] || CATEGORY_COLORS.dashboard}`}>
-                      {previewCreation.category}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button onClick={() => renderToIframe(generatedHtml)}
-                    className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors" title="Refresh">
-                    <RefreshCw size={14} className="text-slate-500" />
-                  </button>
-                  <button onClick={copyHtml}
-                    className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors" title="Copy HTML">
-                    {copied ? <Check size={14} className="text-emerald-400" /> : <Code size={14} className="text-slate-500" />}
-                  </button>
-                  <button onClick={downloadHtml}
-                    className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors" title="Download">
-                    <Download size={14} className="text-slate-500" />
-                  </button>
-                  <button onClick={() => setIsFullscreen(true)}
-                    className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors" title="Fullscreen">
-                    <Maximize2 size={14} className="text-slate-500" />
-                  </button>
-                  <button onClick={() => { setView('create'); setShowExamples(false); }}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold hover:bg-cyan-500/20 transition-colors">
-                    <Sparkles size={10} />New
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 bg-black relative" style={{ minHeight: 500 }}>
-                <iframe
-                  ref={iframeRef}
-                  className="w-full h-full border-0 absolute inset-0"
-                  sandbox="allow-scripts allow-same-origin"
-                  title="Feature Preview"
-                  style={{ minHeight: 500 }}
-                />
-              </div>
-
-              {/* Original prompt bar */}
-              <div className="px-5 py-3 border-t border-[#1e293b] bg-[#0a0e1a] shrink-0">
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] text-slate-500 shrink-0">PROMPT:</span>
-                  <span className="text-[11px] text-slate-400 truncate flex-1">{prompt}</span>
-                  <button
-                    onClick={() => {
-                      setView('create');
-                      setShowExamples(false);
-                      textareaRef.current?.focus();
-                    }}
-                    className="text-[10px] text-cyan-400 hover:text-cyan-300 shrink-0"
-                  >
-                    Edit & Regenerate
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -639,6 +592,13 @@ function CreationCard({ creation, onOpen, onDelete, onTogglePin }: {
     return `${Math.floor(seconds / 86400)}d ago`;
   };
 
+  const statusColors: Record<string, string> = {
+    draft: 'bg-slate-700 text-slate-300',
+    testing: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    homologation: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+    production: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  };
+
   return (
     <div
       className="bg-[#0a0e1a] border border-[#1e293b] rounded-xl overflow-hidden hover:border-slate-600 transition-all cursor-pointer group"
@@ -646,39 +606,31 @@ function CreationCard({ creation, onOpen, onDelete, onTogglePin }: {
       onMouseLeave={() => setShowActions(false)}
       onClick={() => onOpen(creation)}
     >
-      {/* Color bar */}
       <div className="h-1" style={{ backgroundColor: creation.thumbnail_color }} />
-
       <div className="p-4">
         <div className="flex items-start justify-between mb-2">
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold text-white truncate group-hover:text-cyan-300 transition-colors">
-              {creation.title || 'Untitled'}
-            </div>
+            <div className="text-sm font-bold text-white truncate group-hover:text-cyan-300 transition-colors">{creation.title || 'Untitled'}</div>
             <div className="text-[10px] text-slate-500 mt-0.5 truncate">{creation.prompt}</div>
           </div>
           <div className={`flex items-center gap-1 transition-opacity ${showActions ? 'opacity-100' : 'opacity-0'}`}>
-            <button onClick={e => { e.stopPropagation(); onTogglePin(creation); }}
-              className="p-1 rounded hover:bg-slate-800">
+            <button onClick={e => { e.stopPropagation(); onTogglePin(creation); }} className="p-1 rounded hover:bg-slate-800">
               {creation.is_pinned ? <PinOff size={12} className="text-amber-400" /> : <Pin size={12} className="text-slate-600" />}
             </button>
-            <button onClick={e => { e.stopPropagation(); onDelete(creation.id); }}
-              className="p-1 rounded hover:bg-red-500/10">
+            <button onClick={e => { e.stopPropagation(); onDelete(creation.id); }} className="p-1 rounded hover:bg-red-500/10">
               <Trash2 size={12} className="text-slate-600 hover:text-red-400" />
             </button>
           </div>
         </div>
-
-        <div className="flex items-center justify-between mt-3">
-          <div className="flex items-center gap-2">
-            <span className={`px-2 py-0.5 text-[9px] rounded border ${CATEGORY_COLORS[creation.category] || CATEGORY_COLORS.dashboard}`}>
-              {creation.category}
-            </span>
-            {(Array.isArray(creation.tags) ? creation.tags : []).slice(0, 2).map((tag: string) => (
-              <span key={tag} className="px-1.5 py-0.5 text-[9px] rounded bg-slate-800 text-slate-500 border border-slate-700">
-                {tag}
-              </span>
-            ))}
+        <div className="flex items-center justify-between mt-3 gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-2 py-0.5 text-[9px] rounded border ${CATEGORY_COLORS[creation.category] || CATEGORY_COLORS.dashboard}`}>{creation.category}</span>
+            {creation.feature_type === 'backend' && (
+              <span className="px-1.5 py-0.5 text-[9px] rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">code</span>
+            )}
+            {creation.status && creation.status !== 'draft' && (
+              <span className={`px-1.5 py-0.5 text-[9px] rounded border ${statusColors[creation.status] || statusColors.draft}`}>{creation.status}</span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-[9px] text-slate-600">
             <span className="flex items-center gap-0.5"><Eye size={9} />{creation.view_count}</span>

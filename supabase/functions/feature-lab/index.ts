@@ -8,6 +8,12 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const json = (data: unknown, status = 200) =>
+  new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+
 async function callOpenAI(key: string, body: unknown): Promise<any> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -18,269 +24,309 @@ async function callOpenAI(key: string, body: unknown): Promise<any> {
   return res.json();
 }
 
-function classify(prompt: string): string {
+function classifyFeatureType(prompt: string): { category: string; feature_type: "app" | "backend"; code_language: string } {
   const p = prompt.toLowerCase();
-  if (/(agent|chatbot|assistant|copilot|advisor)/.test(p)) return "agent";
-  if (/(simulator|simulation|game|training|quiz)/.test(p)) return "simulator";
-  if (/(scanner|analyzer|builder|investigation|pivot|hunt|tool)/.test(p)) return "tool";
-  if (/(canvas|visualization|graph|map|network|heatmap|topology)/.test(p)) return "visualization";
-  if (/(monitor|live|real.?time|feed|tracker|stream)/.test(p)) return "monitor";
-  if (/(report|summary|executive|briefing)/.test(p)) return "report";
-  if (/(workflow|playbook|rule|detection|automation)/.test(p)) return "workflow";
-  return "dashboard";
+  if (/(notebook|pipeline|etl|delta live|dlt|job|workflow|ingestion|transform)/.test(p)) {
+    return { category: "workflow", feature_type: "backend", code_language: "python" };
+  }
+  if (/(agent|langgraph|mosaic agent|tool-using|function calling|mcp)/.test(p) && /(build|create|deploy|backend|python)/.test(p)) {
+    return { category: "agent", feature_type: "backend", code_language: "python" };
+  }
+  if (/(sql query|sql warehouse|materialized view|genie)/.test(p)) {
+    return { category: "workflow", feature_type: "backend", code_language: "sql" };
+  }
+  if (/(agent|chatbot|assistant|copilot|advisor)/.test(p)) return { category: "agent", feature_type: "app", code_language: "" };
+  if (/(simulator|simulation|game|training|quiz)/.test(p)) return { category: "simulator", feature_type: "app", code_language: "" };
+  if (/(scanner|analyzer|builder|investigation|pivot|hunt)/.test(p)) return { category: "tool", feature_type: "app", code_language: "" };
+  if (/(canvas|visualization|graph|map|network|heatmap|topology)/.test(p)) return { category: "visualization", feature_type: "app", code_language: "" };
+  if (/(monitor|live|real.?time|feed|tracker|stream)/.test(p)) return { category: "monitor", feature_type: "app", code_language: "" };
+  if (/(report|summary|executive|briefing)/.test(p)) return { category: "report", feature_type: "app", code_language: "" };
+  return { category: "dashboard", feature_type: "app", code_language: "" };
 }
 
 function extractTags(prompt: string): string[] {
-  const keywords = ["pix", "fraud", "trojan", "malware", "boleto", "brazil", "alert", "threat", "incident", "network", "compliance", "risk", "identity", "mule", "phishing", "ransomware", "supply chain", "ics", "vulnerability"];
+  const keywords = ["pix","fraud","trojan","malware","boleto","brazil","alert","threat","incident","network","compliance","risk","identity","mule","phishing","ransomware","supply chain","ics","vulnerability","databricks","mlflow","delta","unity catalog","mosaic"];
   const p = prompt.toLowerCase();
   return keywords.filter(k => p.includes(k));
 }
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200, headers: corsHeaders });
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const openaiKey = Deno.env.get("OPENAI_API_KEY");
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-  let body: any = {};
-  try { body = await req.json(); } catch { /* ignore */ }
-
-  // Non-streaming utility actions
-  if (body.action === "list") {
-    const { data } = await supabase
-      .from("feature_lab_creations")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    return new Response(JSON.stringify({ creations: data || [] }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  if (!openaiKey) {
-    return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  const prompt = (body.prompt || "").toString().trim();
-  if (!prompt) {
-    return new Response(JSON.stringify({ error: "Prompt is required" }), {
-      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
-  // Stream multi-step progress as Server-Sent Events
-  const stream = new ReadableStream({
-    async start(controller) {
-      const enc = new TextEncoder();
-      const send = (data: Record<string, unknown>) => {
-        try { controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`)); }
-        catch { /* closed */ }
-      };
-      const fail = (message: string) => {
-        send({ type: "error", message });
-        try { controller.close(); } catch { /* ignore */ }
-      };
-
-      try {
-        const category = classify(prompt);
-        const tags = extractTags(prompt);
-
-        // ---------------- STEP 1: Analyze & plan ----------------
-        send({
-          type: "step", step: 1, total: 5,
-          label: "Analyzing your request",
-          detail: `Detected feature type: ${category}. Extracting requirements, data sources, and interaction model...`,
-        });
-
-        const [eventsRes, alertsRes, corrRulesRes] = await Promise.all([
-          supabase.from("events").select("event_type, severity, description, source_ip, hostname, mitre_technique").order("event_timestamp", { ascending: false }).limit(12),
-          supabase.from("alerts").select("title, severity, alert_type, source").order("created_at", { ascending: false }).limit(8),
-          supabase.from("correlation_rules").select("rule_name, severity, rule_type").limit(6),
-        ]);
-
-        const sampleData = {
-          events: eventsRes.data || [],
-          alerts: alertsRes.data || [],
-          correlation_rules: corrRulesRes.data || [],
-        };
-        const eventTypes = [...new Set((eventsRes.data || []).map((e: any) => e.event_type))];
-
-        send({
-          type: "step", step: 2, total: 5,
-          label: "Designing architecture",
-          detail: "Planning components, data flows, and AI tool integrations for a production build...",
-        });
-
-        const planner = await callOpenAI(openaiKey, {
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: `You are a senior architect. Produce a concise technical plan (max 500 words) for building a production-grade single-page HTML security feature.
-
-Output STRICT JSON:
-{
-  "title": "short title",
-  "category": "${category}",
-  "summary": "2 sentence what it does",
-  "components": ["list of 4-8 UI panels/components"],
-  "data_sources": ["which Supabase tables and runtime-API tools to use"],
-  "interactions": ["key user interactions and keyboard shortcuts"],
-  "wow_factors": ["3-5 standout details that make this impressive"]
+function makeShareToken(): string {
+  return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
 }
 
-Available Supabase tables: events, alerts, cases, vulnerabilities, correlation_rules.
-Event types: ${eventTypes.join(", ")}.
-Runtime API tools (agent mode): query_events, query_alerts, query_cases, query_vulnerabilities, aggregate_events, investigate_ioc, get_mitre_coverage, correlate_threats.`,
-            },
-            { role: "user", content: prompt },
-          ],
-          temperature: 0.4,
-          max_tokens: 700,
-          response_format: { type: "json_object" },
-        });
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
-        let plan: any = {};
-        try { plan = JSON.parse(planner.choices?.[0]?.message?.content || "{}"); } catch { plan = {}; }
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        send({
-          type: "step", step: 3, total: 5,
-          label: "Plan ready",
-          detail: plan.summary || "Architecture complete. Components: " + (plan.components || []).join(", "),
-          plan,
-        });
+    let body: any = {};
+    try { body = await req.json(); } catch { /* ignore */ }
+    const action = body.action || "plan";
 
-        // ---------------- STEP 4: Generate HTML ----------------
-        send({
-          type: "step", step: 4, total: 5,
-          label: "Generating production code",
-          detail: "Writing HTML + Tailwind + Chart.js + runtime API wiring. This is the heavy step (~60-90s)...",
-        });
+    // ---------- LIST ----------
+    if (action === "list") {
+      const { data } = await supabase
+        .from("feature_lab_creations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return json({ creations: data || [] });
+    }
 
-        const systemPrompt = `You are a world-class full-stack engineer building PRODUCTION-QUALITY single-page security applications. Match the quality of Bolt.new, v0.dev, Linear, or Cursor.
+    // ---------- PROMOTE (lifecycle) ----------
+    if (action === "promote") {
+      const { id, stage, notes } = body;
+      if (!id || !stage) return json({ error: "id and stage required" }, 400);
+      const update: any = { status: stage };
+      if (stage === "testing") update.test_results = { started_at: new Date().toISOString(), notes };
+      if (stage === "homologation") update.homolog_results = { signed_off_at: new Date().toISOString(), notes };
+      if (stage === "production") update.promoted_to_production_at = new Date().toISOString();
+      const { data } = await supabase.from("feature_lab_creations").update(update).eq("id", id).select().maybeSingle();
+      return json({ creation: data });
+    }
 
-ARCHITECTURE PLAN TO IMPLEMENT (follow it precisely):
-${JSON.stringify(plan, null, 2)}
+    if (!openaiKey) return json({ error: "OpenAI API key not configured" }, 500);
 
-YOU HAVE THREE SUPERPOWERS:
-1. Live Supabase DB with real events, alerts, cases, vulnerabilities, correlation_rules.
-2. Runtime AI API at window.__RUNTIME_URL__ with real GPT-4o + tool use.
-3. Tailwind + Chart.js + Canvas + vanilla JS.
+    const prompt = (body.prompt || "").toString().trim();
+    if (!prompt) return json({ error: "Prompt is required" }, 400);
 
-============================================================
-RUNTIME API - USE THIS FOR REAL AGENTS (not fake chatbots)
-============================================================
-POST window.__RUNTIME_URL__ with Authorization: Bearer window.__SUPABASE_ANON_KEY__
-AGENT MODE body: { messages: [{role,content}], system: "domain prompt" }
-Response: { message, reasoning_steps: [{step,tool,args,result_summary}], iterations }
-Tools agent has: query_events, query_alerts, query_cases, query_vulnerabilities, aggregate_events, investigate_ioc, get_mitre_coverage, correlate_threats.
-CHAT MODE body: { mode: 'chat', messages, model: 'gpt-4o-mini', temperature }
+    // ---------- PLAN ----------
+    if (action === "plan") {
+      const { category, feature_type, code_language } = classifyFeatureType(prompt);
 
-============================================================
-DIRECT SUPABASE (fast reads)
-============================================================
-const sb = supabase.createClient(window.__SUPABASE_URL__, window.__SUPABASE_ANON_KEY__);
-const { data } = await sb.from('events').select('*').limit(25);
-Event types: ${eventTypes.join(", ")}
+      const [eventsRes, alertsRes, corrRulesRes] = await Promise.all([
+        supabase.from("events").select("event_type, severity").order("event_timestamp", { ascending: false }).limit(10),
+        supabase.from("alerts").select("title, severity, alert_type").order("created_at", { ascending: false }).limit(6),
+        supabase.from("correlation_rules").select("rule_name, severity").limit(5),
+      ]);
+      const eventTypes = [...new Set((eventsRes.data || []).map((e: any) => e.event_type))].slice(0, 20);
 
-SAMPLE DATA (fallback reference):
-${JSON.stringify(sampleData).slice(0, 2500)}
+      const plannerSystem = `You are the chief architect of a Databricks Lakehouse security platform. Design a PRODUCTION-GRADE blueprint for the user's feature.
 
-============================================================
-NON-NEGOTIABLE REQUIREMENTS
-============================================================
-1. Single standalone HTML file starting with <!DOCTYPE html>.
-2. CDNs in <head>:
-   <script src="https://cdn.tailwindcss.com"></script>
-   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
-   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-3. Dark theme: body bg-[#0a0e1a]. Cards bg-slate-900/60 border-slate-800. Glassmorphism where appropriate.
-4. Color system (NEVER purple/indigo/violet): cyan/emerald/amber/red/blue/orange/teal.
-5. Inter for UI, JetBrains Mono for data.
-6. Micro-interactions: transition-all duration-200, hover:scale-[1.02], active:scale-95, animated pulse dots.
-7. Required UX: loading skeletons, empty states, error states with retry, toasts, keyboard shortcuts (Cmd+K, /, Esc), tooltips.
-8. Feels alive: auto-refresh, animated counters, typing animation for agent, progress bars.
-9. Data: try runtime API / Supabase first, fall back to embedded sample gracefully. Never broken/empty UI.
-10. For AGENT features: full interface - left sidebar with history/settings, center chat with markdown+code blocks, reasoning panel showing tool calls live, right sidebar with memory+live data, action buttons, status bar, slash commands. The agent MUST call runtime API and render reasoning_steps as a live timeline.
-11. For SIMULATOR: config panel, animated Canvas, kill chain timeline, play/pause/speed, event log, metrics, AI defender calling runtime API, post-mortem report.
-12. For INVESTIGATION: smart search, entity profile, Canvas graph, tabbed drawer, AI analyst button.
-13. Output: ONLY raw HTML. No markdown fences. No explanation. Target 10,000-25,000 chars. Compress JS aggressively.
+MANDATORY: Every plan MUST integrate meaningful Databricks products. Choose from:
+- Delta Lake (ACID storage of events/alerts/cases)
+- Unity Catalog (RBAC, lineage, tagging across workspaces)
+- Delta Live Tables / Lakeflow (streaming ETL pipelines)
+- Databricks SQL + Genie (analyst queries / NL to SQL)
+- MLflow (model registry, experiments, model serving)
+- Mosaic AI Agent Framework (tool-using agents in production)
+- Mosaic AI Model Serving (low-latency GPT-4 / Llama / custom)
+- Vector Search (semantic retrieval over IOCs, rules, playbooks)
+- Lakeflow Connect (Kafka, SaaS, CDC ingestion)
+- Photon (vectorized SQL engine)
+- Feature Store (behavioral features for fraud/anomaly)
+- Lakehouse Monitoring (drift, data quality)
+- AI/BI Dashboards (executive)
+- Auto Loader (cloud storage streaming)
+- DLT Expectations (data quality gates)
+- Workflows (scheduled jobs)
+- Structured Streaming
+- Clean Rooms (cross-org threat intel)
+- System Tables (audit)
 
-Build the FULL feature with WOW factors. Match Bolt.new depth.`;
+Feature classification: ${category} (${feature_type})
+Available event types: ${eventTypes.join(", ") || "n/a"}
+
+Return STRICT JSON matching this schema:
+{
+  "title": "short, punchy product name",
+  "category": "${category}",
+  "feature_type": "${feature_type}",
+  "code_language": "${code_language}",
+  "summary": "2-3 sentence elevator pitch",
+  "business_value": "why this matters to the SOC / CISO",
+  "components": ["4-8 major UI/service components with crisp descriptions"],
+  "user_interactions": ["5-7 key interactions"],
+  "wow_factors": ["4-6 delightful details"],
+  "databricks_features": [
+    {"name":"Product", "purpose":"what it does here", "why":"why it belongs"}
+  ],
+  "architecture_diagram": {
+    "nodes": [
+      {
+        "id": "kebab-case",
+        "label": "Display name",
+        "type": "actor|frontend|api|stream|storage|ml|agent|databricks|external",
+        "layer": "client|edge|platform|lakehouse|ml|external",
+        "description": "1 sentence what it does",
+        "tech": ["React","Tailwind"],
+        "databricks_product": "Delta Lake | null",
+        "details": {
+          "inputs": "what comes in",
+          "outputs": "what goes out",
+          "scale": "throughput/latency target",
+          "security": "RLS, UC, PII handling"
+        }
+      }
+    ],
+    "links": [
+      {
+        "from": "node-id",
+        "to": "node-id",
+        "label": "short verb",
+        "protocol": "HTTPS|SSE|JDBC|Kafka|Delta|REST",
+        "data": "what flows",
+        "latency": "p50 target",
+        "volume": "events/sec"
+      }
+    ]
+  },
+  "test_plan": ["3-5 validation scenarios"],
+  "homologation_checklist": ["3-5 sign-off items"]
+}
+
+Constraints:
+- Include AT LEAST 3 Databricks nodes in the diagram.
+- Place nodes sensibly across layers for left-to-right flow.
+- Keep node count to 8-14 for clarity.
+- ALL fields are required.`;
+
+      const planner = await callOpenAI(openaiKey, {
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: plannerSystem },
+          { role: "user", content: `Feature request:\n${prompt}\n\nReturn the JSON plan now.` },
+        ],
+        temperature: 0.5,
+        max_tokens: 3200,
+        response_format: { type: "json_object" },
+      });
+
+      let plan: any = {};
+      try { plan = JSON.parse(planner.choices?.[0]?.message?.content || "{}"); } catch { plan = {}; }
+      plan.category = plan.category || category;
+      plan.feature_type = plan.feature_type || feature_type;
+      plan.code_language = plan.code_language || code_language;
+
+      return json({ plan, tokens_used: planner.usage?.total_tokens || 0 });
+    }
+
+    // ---------- EXECUTE ----------
+    if (action === "execute") {
+      const plan = body.plan;
+      if (!plan) return json({ error: "Approved plan is required" }, 400);
+
+      const feature_type = plan.feature_type || "app";
+      const code_language = plan.code_language || "python";
+
+      let html = "";
+      let generated_code = "";
+      let tokens = 0;
+
+      if (feature_type === "backend") {
+        const backendSystem = `You are a senior Databricks engineer writing PRODUCTION ${code_language.toUpperCase()} code for the Lakehouse.
+
+APPROVED PLAN (implement precisely):
+${JSON.stringify(plan)}
+
+Requirements:
+- Write real, runnable ${code_language} (Databricks notebook for Python, Databricks SQL for sql).
+- USE the Databricks features listed: ${(plan.databricks_features || []).map((f: any) => f.name).join(", ")}.
+- For Python: include %pip magic if needed, use spark, dlt, mlflow, databricks-vectorsearch, databricks-agents, openai, delta APIs authentically.
+- For agents: use Mosaic AI Agent Framework or LangGraph on Databricks Model Serving.
+- For ETL: use DLT with @dlt.table, @dlt.expect_or_drop, Auto Loader, Unity Catalog three-part names (catalog.schema.table).
+- Include docstrings, type hints, config section, error handling, structured logging.
+- Include a test cell / validation block at the bottom.
+- Target 300-700 lines. No placeholders. No TODOs.
+- Output raw code only, no markdown fences.`;
 
         const gen = await callOpenAI(openaiKey, {
           model: "gpt-4o",
           messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: `Build: ${prompt}\n\nImplement the plan above with maximum depth and polish.` },
+            { role: "system", content: backendSystem },
+            { role: "user", content: `Implement now. Output only ${code_language} code.` },
+          ],
+          temperature: 0.5,
+          max_tokens: 7500,
+        });
+        generated_code = (gen.choices?.[0]?.message?.content || "").replace(/^```\w*\n?/i, "").replace(/\n?```$/i, "").trim();
+        tokens = gen.usage?.total_tokens || 0;
+      } else {
+        const appSystem = `You are a world-class engineer building PRODUCTION-QUALITY single-page security applications. Match Bolt.new / v0.dev quality.
+
+APPROVED PLAN (implement precisely):
+${JSON.stringify(plan)}
+
+DATABRICKS INTEGRATIONS (surface them prominently in the UI):
+${(plan.databricks_features || []).map((f: any) => `- ${f.name}: ${f.purpose}`).join("\n")}
+
+SUPERPOWERS:
+1. Supabase live DB (events, alerts, cases, vulnerabilities, correlation_rules)
+2. Runtime AI at window.__RUNTIME_URL__ (GPT-4 + tool use): POST {messages,system} returns {message,reasoning_steps}
+3. Tailwind + Chart.js + Canvas + vanilla JS
+
+NON-NEGOTIABLE:
+1. Single standalone HTML, <!DOCTYPE html> first line.
+2. CDNs: tailwindcss, chart.js@4.4, @supabase/supabase-js@2.
+3. Dark theme bg-[#0a0e1a], cards bg-slate-900/60. No purple/indigo/violet.
+4. Colors: cyan/emerald/amber/red/blue/orange/teal.
+5. Inter + JetBrains Mono. 8px spacing.
+6. Micro-interactions: transition-all, hover scale, pulse dots, animated counters.
+7. Loading skeletons, empty states, error states, toasts, keyboard shortcuts.
+8. Show Databricks logos/badges where data comes from the lakehouse.
+9. Live data: try Supabase + runtime API, fall back to embedded samples gracefully.
+10. Output ONLY raw HTML. No markdown fences. Target 12k-22k chars.`;
+
+        const gen = await callOpenAI(openaiKey, {
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: appSystem },
+            { role: "user", content: `Build the feature now. Output only HTML.` },
           ],
           temperature: 0.75,
           max_tokens: 7500,
         });
-
-        let html = gen.choices?.[0]?.message?.content || "";
-        html = html.replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
-
-        if (!html || html.length < 500) {
-          return fail("AI produced an empty or invalid response. Try rephrasing your prompt.");
-        }
-
-        // ---------------- STEP 5: Save ----------------
-        send({
-          type: "step", step: 5, total: 5,
-          label: "Saving to gallery",
-          detail: `Persisting ${html.length.toLocaleString()} chars of generated code to Supabase...`,
-        });
-
-        const titleMatch = html.match(/<title>([^<]+)<\/title>/i) || html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-        const title = (plan.title || (titleMatch ? titleMatch[1].trim() : prompt.slice(0, 80))).slice(0, 200);
-
-        const colors = ["#06B6D4", "#10B981", "#F59E0B", "#3B82F6", "#EF4444", "#F97316"];
-        const thumbnailColor = colors[Math.floor(Math.random() * colors.length)];
-
-        const { data: saved } = await supabase
-          .from("feature_lab_creations")
-          .insert({
-            title,
-            prompt,
-            generated_html: html,
-            category,
-            tags: JSON.stringify(tags),
-            thumbnail_color: thumbnailColor,
-            created_by: "anonymous",
-          })
-          .select()
-          .maybeSingle();
-
-        send({
-          type: "complete",
-          html,
-          title,
-          category,
-          tags,
-          saved: saved || null,
-          tokens_used: (planner.usage?.total_tokens || 0) + (gen.usage?.total_tokens || 0),
-          plan,
-        });
-        try { controller.close(); } catch { /* ignore */ }
-      } catch (err) {
-        fail(err instanceof Error ? err.message : "Unknown generation error");
+        html = (gen.choices?.[0]?.message?.content || "").replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
+        tokens = gen.usage?.total_tokens || 0;
+        if (!html || html.length < 500) return json({ error: "AI produced empty output. Try rephrasing." }, 500);
       }
-    },
-  });
 
-  return new Response(stream, {
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      "Connection": "keep-alive",
-    },
-  });
+      const tags = extractTags(prompt);
+      const colors = ["#06B6D4","#10B981","#F59E0B","#3B82F6","#EF4444","#F97316"];
+      const thumbnailColor = colors[Math.floor(Math.random() * colors.length)];
+      const share_token = makeShareToken();
+
+      const { data: saved } = await supabase
+        .from("feature_lab_creations")
+        .insert({
+          title: (plan.title || prompt.slice(0, 80)).slice(0, 200),
+          prompt,
+          generated_html: html,
+          generated_code,
+          code_language: feature_type === "backend" ? code_language : "",
+          feature_type,
+          category: plan.category || "dashboard",
+          tags: JSON.stringify(tags),
+          thumbnail_color: thumbnailColor,
+          architecture_plan: plan,
+          databricks_features: plan.databricks_features || [],
+          status: "draft",
+          share_token,
+          created_by: "anonymous",
+        })
+        .select()
+        .maybeSingle();
+
+      return json({
+        html,
+        generated_code,
+        code_language: feature_type === "backend" ? code_language : "",
+        feature_type,
+        title: plan.title || prompt.slice(0, 80),
+        category: plan.category || "dashboard",
+        tags,
+        saved,
+        share_token,
+        tokens_used: tokens,
+      });
+    }
+
+    return json({ error: "Unknown action" }, 400);
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : "Unknown error" }, 500);
+  }
 });
