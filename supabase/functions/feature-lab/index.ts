@@ -62,6 +62,131 @@ function makeShareToken(): string {
   return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
 }
 
+type DbxEntry = { name: string; layer: string; purpose: string };
+
+function pickRelevantProducts(prompt: string, plan: any, allowlist: DbxEntry[]): DbxEntry[] {
+  const text = `${prompt} ${plan?.title || ""} ${plan?.summary || ""} ${(plan?.components || []).join(" ")}`.toLowerCase();
+  const hints: Array<[RegExp, string]> = [
+    [/\b(kafka|stream|realtime|real[- ]time|sse|webhook)\b/, "Structured Streaming"],
+    [/\b(kafka|ingest|collect|tap|connector|siem|edr)\b/, "Lakeflow Connect"],
+    [/\b(cloud storage|s3|adls|blob|parquet|csv dump|batch load)\b/, "Auto Loader"],
+    [/\b(pipeline|etl|dlt|medallion|bronze|silver|gold)\b/, "Delta Live Tables"],
+    [/\b(data quality|expectations|validate|great expectations)\b/, "DLT Expectations"],
+    [/\b(store|table|warehouse|lake|delta)\b/, "Delta Lake"],
+    [/\b(governance|rbac|audit|lineage|pii|clearance)\b/, "Unity Catalog"],
+    [/\b(drift|quality monitor|metric monitoring|model monitor)\b/, "Lakehouse Monitoring"],
+    [/\b(audit|billing|system log)\b/, "System Tables"],
+    [/\b(feature|behavioral|ubem|baseline|ml feature)\b/, "Feature Store"],
+    [/\b(mlflow|experiment|model registry|train|retrain)\b/, "MLflow"],
+    [/\b(vector|embed|semantic|similarity|rag|graphrag|ioc match|hunt)\b/, "Vector Search"],
+    [/\b(llm|chat|assistant|copilot|gpt|model serving|inference|endpoint)\b/, "Mosaic AI Model Serving"],
+    [/\b(agent|tool[- ]using|autonomous|orchestrat|planner|react)\b/, "Mosaic AI Agent Framework"],
+    [/\b(sql|query|warehouse|photon|analyst)\b/, "Databricks SQL"],
+    [/\b(natural language|nl2sql|ask a question|genie)\b/, "Genie"],
+    [/\b(dashboard|chart|exec|kpi|bi|ai\/bi)\b/, "AI/BI Dashboards"],
+    [/\b(app|interactive|ui|webapp|page)\b/, "Databricks Apps"],
+    [/\b(schedule|cron|workflow|job|orchestrat|dag)\b/, "Workflows"],
+    [/\b(clean room|share|cross[- ]org|consortium)\b/, "Clean Rooms"],
+  ];
+
+  const picks = new Map<string, DbxEntry>();
+  for (const [re, name] of hints) {
+    if (re.test(text)) {
+      const entry = allowlist.find(a => a.name === name);
+      if (entry) picks.set(entry.name, entry);
+    }
+  }
+  // Always include the spine
+  ["Delta Lake", "Unity Catalog"].forEach(n => {
+    const e = allowlist.find(a => a.name === n);
+    if (e) picks.set(n, e);
+  });
+  // Fill to 8 if sparse
+  const fillers = ["Lakeflow Connect", "Delta Live Tables", "DLT Expectations", "MLflow", "Mosaic AI Model Serving", "Databricks SQL", "AI/BI Dashboards", "Workflows"];
+  for (const n of fillers) {
+    if (picks.size >= 10) break;
+    const e = allowlist.find(a => a.name === n);
+    if (e && !picks.has(n)) picks.set(n, e);
+  }
+  return Array.from(picks.values());
+}
+
+async function generateBespokeArchitecture(args: {
+  openaiKey: string;
+  prompt: string;
+  plan: any;
+  allowlist: DbxEntry[];
+}): Promise<{ nodes: any[]; links: any[] } | null> {
+  const { openaiKey, prompt, plan, allowlist } = args;
+  const catalog = allowlist.map(a => `- ${a.name} (${a.layer}): ${a.purpose}`).join("\n");
+  const planCtx = JSON.stringify({
+    title: plan?.title,
+    summary: plan?.summary,
+    category: plan?.category,
+    components: plan?.components,
+    databricks_features: plan?.databricks_features,
+  });
+
+  const system = `You are a senior Databricks solutions architect. Design a realistic, bespoke Lakehouse architecture for the feature described by the user. The diagram MUST vary based on the specifics of the ask - no two diagrams should look the same.
+
+RULES:
+1. Select 8-14 Databricks products from this allowlist (ONLY these - no generic services):
+${catalog}
+2. Pick products that are TRULY RELEVANT to the feature - if the feature is a chatbot pick Mosaic AI Model Serving and Vector Search; if it is a streaming monitor pick Structured Streaming; if it is a batch report pick Databricks SQL; etc. Do NOT include products that do not serve the feature.
+3. Each node's "label" should be the product name PLUS a short tailored descriptor, e.g. "Vector Search: IOC embeddings" or "Delta Live Tables: PIX fraud pipeline". Max 44 chars.
+4. Description must be 1 sentence and reference the specific feature.
+5. Links must describe REAL data flows between the chosen products for this feature - never generic "flows to".
+6. Layers must be one of: ingest | lakehouse | governance | ml | serving | apps.
+
+Return JSON:
+{
+  "nodes": [
+    {"id": "kebab-case","label":"Product: tailored","type":"databricks","layer":"...","description":"...","databricks_product":"<exact allowlist name>","details":{"inputs":"","outputs":"","scale":"","security":""}}
+  ],
+  "links": [
+    {"from":"id","to":"id","label":"verb phrase","protocol":"Delta|UC|REST|SQL|Vector|Stream","data":"what flows","latency":"","volume":""}
+  ]
+}`;
+
+  const res = await callOpenAI(openaiKey, {
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: `Feature request:\n${prompt}\n\nPlanner context:\n${planCtx}\n\nReturn the tailored architecture JSON now.` },
+    ],
+    temperature: 0.6,
+    max_tokens: 3000,
+    response_format: { type: "json_object" },
+  });
+
+  let parsed: any = {};
+  try { parsed = JSON.parse(res.choices?.[0]?.message?.content || "{}"); } catch { return null; }
+  const nodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+  const links = Array.isArray(parsed.links) ? parsed.links : [];
+
+  const allowLayers = new Set(["ingest", "lakehouse", "governance", "ml", "serving", "apps"]);
+  const normalized = nodes
+    .map((n: any) => {
+      const productName = (n.databricks_product || n.label || "").toString();
+      const match = allowlist.find(d => productName.toLowerCase().includes(d.name.toLowerCase()) || d.name.toLowerCase().includes(productName.toLowerCase()));
+      if (!match) return null;
+      return {
+        id: (n.id || match.name).toString().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+        label: (n.label || match.name).toString().slice(0, 44),
+        type: "databricks",
+        layer: allowLayers.has(n.layer) ? n.layer : match.layer,
+        description: n.description || match.purpose,
+        databricks_product: match.name,
+        details: n.details || { inputs: "", outputs: "", scale: "", security: "Unity Catalog governed" },
+      };
+    })
+    .filter(Boolean);
+
+  const ids = new Set(normalized.map((n: any) => n.id));
+  const safeLinks = links.filter((l: any) => ids.has(l.from) && ids.has(l.to));
+  return { nodes: normalized, links: safeLinks };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
@@ -328,18 +453,22 @@ Constraints:
       const originalNodes: any[] = Array.isArray(plan.architecture_diagram?.nodes) ? plan.architecture_diagram.nodes : [];
       const originalLinks: any[] = Array.isArray(plan.architecture_diagram?.links) ? plan.architecture_diagram.links : [];
 
-      // Keep only nodes that map to a Databricks product
+      // Keep nodes that map to a Databricks product, but preserve the LLM's
+      // bespoke label/description so each diagram is tailored to the prompt.
       const keptNodes = originalNodes
         .map(n => {
           const productName = (n.databricks_product || n.label || "").toString();
           const match = DBX_ALLOWLIST.find(d => productName.toLowerCase().includes(d.name.toLowerCase()) || d.name.toLowerCase().includes(productName.toLowerCase()));
           if (!match) return null;
+          const originalLabel = (n.label || "").toString().trim();
+          const keepOriginal = originalLabel && originalLabel.toLowerCase() !== match.name.toLowerCase();
           return {
             ...n,
             type: "databricks",
             layer: ALLOWED_LAYERS.has(n.layer) ? n.layer : match.layer,
             databricks_product: match.name,
-            label: match.name,
+            label: keepOriginal ? `${match.name}: ${originalLabel}`.slice(0, 44) : match.name,
+            description: n.description || match.purpose,
           };
         })
         .filter(Boolean);
@@ -347,60 +476,62 @@ Constraints:
       const keptIds = new Set(keptNodes.map((n: any) => n.id));
       const keptLinks = originalLinks.filter(l => keptIds.has(l.from) && keptIds.has(l.to));
 
-      // If fewer than 6 nodes survive the filter, synthesize a Databricks-only reference architecture
       let finalNodes: any[] = keptNodes as any[];
       let finalLinks: any[] = keptLinks;
 
+      // If the LLM's first pass lost too many nodes, make a dedicated bespoke
+      // architecture call so the diagram relates specifically to THIS prompt.
       if (finalNodes.length < 6) {
-        const dbxFromPlan: any[] = Array.isArray(plan.databricks_features) ? plan.databricks_features : [];
-        const picks = new Set<string>();
-        dbxFromPlan.forEach(d => {
-          const match = DBX_ALLOWLIST.find(a => d?.name && a.name.toLowerCase().includes(d.name.toLowerCase().split(" ")[0]));
-          if (match) picks.add(match.name);
-        });
-        const defaults = ["Lakeflow Connect", "Auto Loader", "Delta Live Tables", "Delta Lake", "Unity Catalog", "DLT Expectations", "Vector Search", "MLflow", "Mosaic AI Model Serving", "Databricks SQL", "AI/BI Dashboards", "Workflows"];
-        defaults.forEach(n => { if (picks.size < 12) picks.add(n); });
+        const bespoke = await generateBespokeArchitecture({
+          openaiKey,
+          prompt,
+          plan,
+          allowlist: DBX_ALLOWLIST,
+        }).catch(() => null);
 
-        finalNodes = Array.from(picks).map(name => {
-          const d = DBX_ALLOWLIST.find(a => a.name === name)!;
-          return {
+        if (bespoke && Array.isArray(bespoke.nodes) && bespoke.nodes.length >= 4) {
+          finalNodes = bespoke.nodes;
+          finalLinks = Array.isArray(bespoke.links) ? bespoke.links : [];
+        } else {
+          // Last-resort deterministic scaffold, but with products selected from
+          // the prompt's keywords so it still varies per feature.
+          const picks = pickRelevantProducts(prompt, plan, DBX_ALLOWLIST);
+          finalNodes = picks.map(d => ({
             id: slug(d.name),
             label: d.name,
             type: "databricks",
             layer: d.layer,
-            description: d.purpose,
+            description: `${d.purpose} for: ${plan.title || prompt.slice(0, 60)}`,
             databricks_product: d.name,
             details: { inputs: "", outputs: "", scale: "", security: "Unity Catalog governed" },
-          };
-        });
-
-        const byLayer = (layer: string) => finalNodes.filter(n => n.layer === layer);
-        const chain = [
-          ...byLayer("ingest"),
-          ...byLayer("lakehouse"),
-          ...byLayer("governance"),
-          ...byLayer("ml"),
-          ...byLayer("serving"),
-          ...byLayer("apps"),
-        ];
-        finalLinks = [];
-        for (let i = 0; i < chain.length - 1; i++) {
-          finalLinks.push({
-            from: chain[i].id,
-            to: chain[i + 1].id,
-            label: "flows to",
-            protocol: "Delta",
-            data: "events",
-            latency: "",
-            volume: "",
-          });
-        }
-        // Cross-link governance to all data layers
-        const uc = finalNodes.find(n => n.label === "Unity Catalog");
-        if (uc) {
-          finalNodes.filter(n => ["lakehouse", "ml", "serving"].includes(n.layer) && n.id !== uc.id).forEach(n => {
-            finalLinks.push({ from: uc.id, to: n.id, label: "governs", protocol: "UC" });
-          });
+          }));
+          const byLayer = (layer: string) => finalNodes.filter(n => n.layer === layer);
+          const chain = [
+            ...byLayer("ingest"),
+            ...byLayer("lakehouse"),
+            ...byLayer("governance"),
+            ...byLayer("ml"),
+            ...byLayer("serving"),
+            ...byLayer("apps"),
+          ];
+          finalLinks = [];
+          for (let i = 0; i < chain.length - 1; i++) {
+            finalLinks.push({
+              from: chain[i].id,
+              to: chain[i + 1].id,
+              label: "flows to",
+              protocol: "Delta",
+              data: "events",
+              latency: "",
+              volume: "",
+            });
+          }
+          const uc = finalNodes.find(n => n.label === "Unity Catalog");
+          if (uc) {
+            finalNodes.filter(n => ["lakehouse", "ml", "serving"].includes(n.layer) && n.id !== uc.id).forEach(n => {
+              finalLinks.push({ from: uc.id, to: n.id, label: "governs", protocol: "UC" });
+            });
+          }
         }
       }
 
