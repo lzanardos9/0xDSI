@@ -1,5 +1,6 @@
 import { CheckCircle2, ChevronRight, Zap, Target, Users, ShieldCheck, TestTube, Layers, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import ArchitectureDiagram from './ArchitectureDiagram';
+import BMADAgentPanel from './BMADAgentPanel';
 
 interface PlanReviewProps {
   plan: any;
@@ -66,6 +67,9 @@ export default function PlanReview({ plan, onApprove, onReject, onRegenerate, ex
           </div>
         </div>
       </div>
+
+      {/* BMAD agent track */}
+      {plan.bmad && <BMADAgentPanel bmad={plan.bmad} />}
 
       {/* Architecture diagram */}
       {nodes.length > 0 && (

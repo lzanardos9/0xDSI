@@ -105,7 +105,17 @@ Deno.serve(async (req: Request) => {
       ]);
       const eventTypes = [...new Set((eventsRes.data || []).map((e: any) => e.event_type))].slice(0, 20);
 
-      const plannerSystem = `You are the chief architect of a Databricks Lakehouse security platform. Design a PRODUCTION-GRADE blueprint for the user's feature.
+      const plannerSystem = `You orchestrate the BMAD Method agile multi-agent workflow to design a Databricks Lakehouse security feature. Simulate FOUR specialized agents collaborating in order. Each must contribute their distinct deliverables.
+
+BMAD AGENTS TO SIMULATE:
+1. Mary (Analyst) - conducts domain / market / technical research. Produces a concise brief with insights, risks, and prior-art references.
+2. John (Product Manager) - converts the brief into a PRD: epics with user stories and acceptance criteria, success metrics, scope in/out.
+3. Winston (Architect) - designs the system: components, data flows, Databricks integrations, tech choices, NFRs. OWNS the architecture diagram.
+4. Sally (UX Designer) - designs personas, user flows, key screens, and accessibility notes.
+
+Downstream agents (NOT in this call): Amelia (Developer) will implement, Paige (Tech Writer) will document.
+
+
 
 MANDATORY: Every plan MUST integrate meaningful Databricks products. Choose from:
 - Delta Lake (ACID storage of events/alerts/cases)
@@ -139,6 +149,38 @@ Return STRICT JSON matching this schema:
   "code_language": "${code_language}",
   "summary": "2-3 sentence elevator pitch",
   "business_value": "why this matters to the SOC / CISO",
+  "bmad": {
+    "analyst": {
+      "agent": "Mary",
+      "brief": "3-4 sentence executive brief framing the problem and opportunity",
+      "domain_insights": ["3-5 security domain findings that shape the solution"],
+      "prior_art": ["2-3 existing tools/patterns we reference or improve upon"],
+      "risks": ["3-4 risks with mitigations"]
+    },
+    "pm": {
+      "agent": "John",
+      "epics": [
+        {
+          "id": "E1",
+          "title": "Epic title",
+          "goal": "outcome in 1 sentence",
+          "user_stories": [
+            { "as_a": "role", "i_want": "capability", "so_that": "value", "acceptance_criteria": ["Given/When/Then style, 2-3 bullets"] }
+          ]
+        }
+      ],
+      "success_metrics": ["3-4 measurable KPIs"],
+      "in_scope": ["3-5 items"],
+      "out_of_scope": ["2-3 items"]
+    },
+    "ux": {
+      "agent": "Sally",
+      "personas": [{ "name": "SOC Analyst Tier 2", "goals": "...", "pain_points": "..." }],
+      "user_flows": ["3-5 end-to-end flows described in one line each"],
+      "screens": [{ "name": "Screen name", "description": "purpose", "key_elements": ["3-5 UI elements"] }],
+      "accessibility": "WCAG notes and keyboard shortcuts"
+    }
+  },
   "components": ["4-8 major UI/service components with crisp descriptions"],
   "user_interactions": ["5-7 key interactions"],
   "wow_factors": ["4-6 delightful details"],
@@ -192,7 +234,7 @@ Constraints:
           { role: "user", content: `Feature request:\n${prompt}\n\nReturn the JSON plan now.` },
         ],
         temperature: 0.5,
-        max_tokens: 3200,
+        max_tokens: 5000,
         response_format: { type: "json_object" },
       });
 
@@ -217,8 +259,32 @@ Constraints:
       let generated_code = "";
       let tokens = 0;
 
+      const paigeSystem = `You are Paige, the BMAD Tech Writer agent. Produce concise, production-grade documentation for the approved feature.
+
+APPROVED PLAN:
+${JSON.stringify(plan).slice(0, 4000)}
+
+Return STRICT JSON:
+{
+  "readme": "Markdown README body (overview, usage, configuration, how Databricks products are used, screenshots placeholders). 400-600 words.",
+  "runbook": "Markdown operations runbook: deployment steps, smoke tests, on-call procedures, rollback. 250-400 words.",
+  "changelog_entry": "One paragraph describing this release for internal changelog",
+  "api_contract": "Short description of inputs/outputs or a code snippet showing main interface"
+}`;
+
+      const paigePromise = callOpenAI(openaiKey, {
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: paigeSystem },
+          { role: "user", content: "Write the documentation JSON now." },
+        ],
+        temperature: 0.4,
+        max_tokens: 2500,
+        response_format: { type: "json_object" },
+      }).catch(() => null);
+
       if (feature_type === "backend") {
-        const backendSystem = `You are a senior Databricks engineer writing PRODUCTION ${code_language.toUpperCase()} code for the Lakehouse.
+        const backendSystem = `You are Amelia, the BMAD Developer agent. Write PRODUCTION ${code_language.toUpperCase()} code for the Databricks Lakehouse.
 
 APPROVED PLAN (implement precisely):
 ${JSON.stringify(plan)}
@@ -246,7 +312,7 @@ Requirements:
         generated_code = (gen.choices?.[0]?.message?.content || "").replace(/^```\w*\n?/i, "").replace(/\n?```$/i, "").trim();
         tokens = gen.usage?.total_tokens || 0;
       } else {
-        const appSystem = `You are a world-class engineer building PRODUCTION-QUALITY single-page security applications. Match Bolt.new / v0.dev quality.
+        const appSystem = `You are Amelia, the BMAD Developer agent. Build a PRODUCTION-QUALITY single-page security application. Match Bolt.new / v0.dev quality.
 
 APPROVED PLAN (implement precisely):
 ${JSON.stringify(plan)}
@@ -285,10 +351,19 @@ NON-NEGOTIABLE:
         if (!html || html.length < 500) return json({ error: "AI produced empty output. Try rephrasing." }, 500);
       }
 
+      const paigeResult = await paigePromise;
+      let paige_docs: any = {};
+      if (paigeResult) {
+        try { paige_docs = JSON.parse(paigeResult.choices?.[0]?.message?.content || "{}"); } catch { paige_docs = {}; }
+        tokens += paigeResult.usage?.total_tokens || 0;
+      }
+
       const tags = extractTags(prompt);
       const colors = ["#06B6D4","#10B981","#F59E0B","#3B82F6","#EF4444","#F97316"];
       const thumbnailColor = colors[Math.floor(Math.random() * colors.length)];
       const share_token = makeShareToken();
+
+      const enrichedPlan = { ...plan, paige_docs };
 
       const { data: saved } = await supabase
         .from("feature_lab_creations")
@@ -302,7 +377,7 @@ NON-NEGOTIABLE:
           category: plan.category || "dashboard",
           tags: JSON.stringify(tags),
           thumbnail_color: thumbnailColor,
-          architecture_plan: plan,
+          architecture_plan: enrichedPlan,
           databricks_features: plan.databricks_features || [],
           status: "draft",
           share_token,
@@ -321,6 +396,7 @@ NON-NEGOTIABLE:
         tags,
         saved,
         share_token,
+        paige_docs,
         tokens_used: tokens,
       });
     }

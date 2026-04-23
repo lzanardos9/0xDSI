@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import PlanReview from './feature-lab/PlanReview';
 import CodeViewer from './feature-lab/CodeViewer';
 import LifecyclePanel from './feature-lab/LifecyclePanel';
+import BMADAgentPanel from './feature-lab/BMADAgentPanel';
 
 interface Creation {
   id: string;
@@ -480,6 +481,11 @@ export default function FeatureLab() {
                       />
                     </div>
                   ) : null}
+
+                  {/* BMAD agent pipeline (with Paige docs) */}
+                  {plan?.bmad && (
+                    <BMADAgentPanel bmad={plan.bmad} writerDocs={plan?.paige_docs || savedCreation?.architecture_plan?.paige_docs} />
+                  )}
 
                   {/* Lifecycle */}
                   {savedCreation && (
