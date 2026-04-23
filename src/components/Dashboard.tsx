@@ -38,7 +38,16 @@ import {
   BookOpen,
   Eye,
   LayoutGrid,
-  Radar
+  Radar,
+  Grid3X3,
+  Sparkles,
+  Gauge,
+  Building2,
+  GitBranch,
+  Terminal,
+  Server,
+  FileBarChart,
+  Coins
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ThreatGlobe from './ThreatGlobe';
@@ -88,6 +97,17 @@ import CommandCenter from './command-center/CommandCenter';
 import EventProcessingFunnel from './command-center/EventProcessingFunnel';
 import ThreatSimulator from './ThreatSimulator';
 import FinancialThreatIntel from './financial-threat/FinancialThreatIntel';
+import MitreAttackMatrix from './MitreAttackMatrix';
+import EntityInvestigation from './EntityInvestigation';
+import AIIncidentSummarizer from './AIIncidentSummarizer';
+import SOCOptimization from './SOCOptimization';
+import MultiTenantManager from './MultiTenantManager';
+import AIPlaybookGenerator from './AIPlaybookGenerator';
+import StixTaxiiManager from './StixTaxiiManager';
+import AdvancedHuntingQuery from './AdvancedHuntingQuery';
+import SAPSecurityConnector from './SAPSecurityConnector';
+import ReportBuilder from './ReportBuilder';
+import PlatformEconomics from './PlatformEconomics';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -101,7 +121,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -301,9 +321,11 @@ const Dashboard = () => {
       section: 'Detection & Intelligence',
       roles: ['analyst', 'engineer', 'admin'],
       items: [
+        { id: 'mitre', label: 'MITRE ATT&CK Matrix', icon: Grid3X3 },
         { id: 'glasswing', label: 'Glasswing Scanner', icon: Scan },
         { id: 'feeds', label: 'Threat Feeds', icon: Rss },
         { id: 'iocs', label: 'IOCs', icon: Shield },
+        { id: 'stixtaxii', label: 'STIX/TAXII Intel', icon: Globe },
         { id: 'honeypot', label: 'HoneyPot & Tokens', icon: Eye },
         { id: 'malwaresandbox', label: 'AI Malware Sandbox', icon: Bug },
         { id: 'poisonguard', label: 'Model Poisoning Guard', icon: Shield },
@@ -319,6 +341,9 @@ const Dashboard = () => {
       section: 'Investigation',
       roles: ['analyst', 'engineer', 'admin'],
       items: [
+        { id: 'entityinvestigation', label: 'Entity Investigation', icon: Eye },
+        { id: 'aisummarizer', label: 'AI Incident Summary', icon: Sparkles },
+        { id: 'advancedhunt', label: 'Advanced Hunting', icon: Terminal },
         { id: 'userbehavior', label: 'User Behaviors', icon: Users },
         { id: 'topology', label: 'Network & Physical', icon: Network },
         { id: 'vulnerabilities', label: 'Vulnerabilities', icon: Bug },
@@ -335,6 +360,7 @@ const Dashboard = () => {
         { id: 'cases', label: 'Cases', icon: Briefcase },
         { id: 'escalation', label: 'Threat Escalation', icon: Calculator },
         { id: 'workflows', label: 'Automation', icon: Workflow },
+        { id: 'aiplaybook', label: 'AI Playbook Builder', icon: GitBranch },
         { id: 'redteam', label: 'Red Team', icon: Crosshair },
       ]
     },
@@ -346,23 +372,28 @@ const Dashboard = () => {
         { id: 'notebooks', label: 'Databricks Notebooks', icon: BookOpen },
         { id: 'ocsf', label: 'OCSF Schema', icon: Database },
         { id: 'dataconnectors', label: 'Data Connectors', icon: Database },
+        { id: 'sapconnector', label: 'SAP Security', icon: Server },
         { id: 'docanalysis', label: 'Document Intelligence', icon: Scan },
         { id: 'streaminggraph', label: 'Streaming Graph', icon: Globe },
         { id: 'architecture', label: 'Architecture', icon: Layers },
       ]
     },
     {
-      section: 'Reports',
+      section: 'Reports & Analytics',
       roles: ['analyst', 'engineer', 'admin', 'ciso'],
       items: [
         { id: 'reports', label: 'Security Reports', icon: FileText },
+        { id: 'reportbuilder', label: 'Report Builder', icon: FileBarChart },
         { id: 'compliance', label: 'Compliance Dashboard', icon: CheckCircle2 },
+        { id: 'platformeconomics', label: 'Platform Economics', icon: Coins },
+        { id: 'socoptimization', label: 'SOC Optimization', icon: Gauge },
       ]
     },
     {
       section: 'Administration',
       roles: ['admin', 'ciso'],
       items: [
+        { id: 'multitenant', label: 'Multi-Tenant Manager', icon: Building2 },
         { id: 'usermanagement', label: 'Platform Users', icon: Users },
         { id: 'settings', label: 'Production Settings', icon: Settings },
       ]
@@ -1017,6 +1048,17 @@ const Dashboard = () => {
           {selectedView === 'dashboardstudio' && <DashboardMigrationsTab />}
           {selectedView === 'simulations' && <ThreatSimulator />}
           {selectedView === 'financialthreat' && <FinancialThreatIntel />}
+          {selectedView === 'mitre' && <MitreAttackMatrix />}
+          {selectedView === 'entityinvestigation' && <EntityInvestigation />}
+          {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
+          {selectedView === 'socoptimization' && <SOCOptimization />}
+          {selectedView === 'multitenant' && <MultiTenantManager />}
+          {selectedView === 'aiplaybook' && <AIPlaybookGenerator />}
+          {selectedView === 'stixtaxii' && <StixTaxiiManager />}
+          {selectedView === 'advancedhunt' && <AdvancedHuntingQuery />}
+          {selectedView === 'sapconnector' && <SAPSecurityConnector />}
+          {selectedView === 'reportbuilder' && <ReportBuilder />}
+          {selectedView === 'platformeconomics' && <PlatformEconomics />}
           {selectedView === 'glasswing' && <GlasswingPanel />}
           {selectedView === 'negcorrelation' && (
             <div className="h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
