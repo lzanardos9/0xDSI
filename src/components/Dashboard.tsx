@@ -9,6 +9,7 @@ import AlertsPanel from './AlertsPanel';
 import WorkflowsPanel from './WorkflowsPanel';
 import ResponseAutomation from './ResponseAutomation';
 import ThreatFeedsPanel from './ThreatFeedsPanel';
+import ThreatRadar from './ThreatRadar';
 import IOCPanel from './IOCPanel';
 import CasesPanel from './CasesPanel';
 import PatternDiscoveryPanel from './PatternDiscoveryPanel';
@@ -284,6 +285,7 @@ const Dashboard = () => {
       items: [
         { id: 'mitre', label: 'MITRE ATT&CK Matrix', icon: Grid3X3 },
         { id: 'glasswing', label: 'Glasswing Scanner', icon: Scan },
+        { id: 'threatradar', label: 'Threat Radar Agent', icon: Radar },
         { id: 'feeds', label: 'Threat Feeds', icon: Rss },
         { id: 'iocs', label: 'IOCs', icon: Shield },
         { id: 'stixtaxii', label: 'STIX/TAXII Intel', icon: Globe },
@@ -986,6 +988,7 @@ const Dashboard = () => {
           {selectedView === 'workflows' && <WorkflowsPanel />}
           {selectedView === 'responses' && <ResponseAutomation />}
           {selectedView === 'feeds' && <ThreatFeedsPanel />}
+          {selectedView === 'threatradar' && <ThreatRadar />}
           {selectedView === 'iocs' && <IOCPanel />}
           {selectedView === 'malwaresandbox' && <AIMalwareSandbox />}
           {selectedView === 'poisonguard' && <ModelPoisoningGuard />}
