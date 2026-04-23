@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Shield, Target, AlertTriangle, CheckCircle2, XCircle, TrendingUp, ChevronRight, Eye, Zap, Activity, Filter, BarChart3, Grid3x3 as Grid3X3, X } from "lucide-react";
+import { Shield, Target, AlertTriangle, CheckCircle2, XCircle, TrendingUp, ChevronRight, Eye, Zap, Activity, Filter, Grid3x3 as Grid3X3, X } from "lucide-react";
 
 type Status = "covered" | "partial" | "gap" | "detected";
 interface Technique {
@@ -116,15 +116,6 @@ const TACTICS: Tactic[] = [
 ];
 
 const SPARKLINE = [52, 55, 59, 63, 68, 73];
-const SENTINEL_COVERAGE: Record<string, [number, number, number]> = {};
-TACTICS.forEach((t) => {
-  const total = t.techniques.length;
-  const cov = t.techniques.filter((x) => x.status === "covered" || x.status === "detected").length;
-  const sentPct = Math.max(10, Math.round((cov / total) * 100) - Math.floor(Math.random() * 20));
-  const ourPct = Math.round((cov / total) * 100);
-  const uniquePct = Math.max(5, ourPct - sentPct);
-  SENTINEL_COVERAGE[t.short] = [sentPct, ourPct, uniquePct];
-});
 
 const statusColor = (s: Status) =>
   s === "covered" ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
@@ -140,10 +131,12 @@ export default function MitreAttackMatrix() {
   const [selected, setSelected] = useState<Technique | null>(null);
   const [panelTactic, setPanelTactic] = useState("");
   const [coveragePct, setCoveragePct] = useState(0);
-  const [showSentinel, setShowSentinel] = useState(false);
+  const [tactics, setTactics] = useState(() => JSON.parse(JSON.stringify(TACTICS)) as Tactic[]);
+  const [showAgentLog, setShowAgentLog] = useState(false);
+  const [agentLog, setAgentLog] = useState<{time: string; msg: string; type: 'deploy' | 'detect' | 'resolve'}[]>([]);
   const [rippleCol, setRippleCol] = useState(-1);
 
-  const allTechniques = TACTICS.flatMap((t) => t.techniques);
+  const allTechniques = tactics.flatMap((t) => t.techniques);
   const totalCov = allTechniques.filter((t) => t.status === "covered" || t.status === "detected").length;
   const targetPct = Math.round((totalCov / allTechniques.length) * 100);
 
@@ -162,9 +155,56 @@ export default function MitreAttackMatrix() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setRippleCol((prev) => (prev >= TACTICS.length ? -1 : prev + 1));
+      setRippleCol((prev) => (prev >= tactics.length ? -1 : prev + 1));
     }, 600);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const now = new Date().toLocaleTimeString();
+      setTactics(prev => {
+        const next = JSON.parse(JSON.stringify(prev)) as Tactic[];
+        const allTechs = next.flatMap(t => t.techniques);
+        const roll = Math.random();
+        if (roll < 0.4) {
+          const gaps = allTechs.filter(t => t.status === 'gap');
+          if (gaps.length > 0) {
+            const target = gaps[Math.floor(Math.random() * gaps.length)];
+            target.status = 'partial';
+            target.rules = 1;
+            const ruleName = target.recommendedRules[0] || 'Auto-Generated Rule';
+            target.activeRules.push(ruleName);
+            setAgentLog(p => [{time: now, msg: `Agent deployed "${ruleName}" for ${target.id} - ${target.name}`, type: 'deploy'}, ...p].slice(0, 15));
+          }
+        } else if (roll < 0.7) {
+          const partials = allTechs.filter(t => t.status === 'partial');
+          if (partials.length > 0) {
+            const target = partials[Math.floor(Math.random() * partials.length)];
+            target.status = 'covered';
+            target.rules += 2;
+            setAgentLog(p => [{time: now, msg: `Agent achieved full coverage for ${target.id} - ${target.name} (${target.rules} rules)`, type: 'deploy'}, ...p].slice(0, 15));
+          }
+        } else if (roll < 0.85) {
+          const covered = allTechs.filter(t => t.status === 'covered' && t.rules >= 3);
+          if (covered.length > 0) {
+            const target = covered[Math.floor(Math.random() * covered.length)];
+            target.status = 'detected';
+            target.recentDetections += Math.floor(Math.random() * 5) + 1;
+            setAgentLog(p => [{time: now, msg: `Live detection on ${target.id} - ${target.name} (${target.recentDetections} hits)`, type: 'detect'}, ...p].slice(0, 15));
+          }
+        } else {
+          const detected = allTechs.filter(t => t.status === 'detected');
+          if (detected.length > 0) {
+            const target = detected[Math.floor(Math.random() * detected.length)];
+            target.status = 'covered';
+            setAgentLog(p => [{time: now, msg: `Agent resolved detection for ${target.id} - ${target.name}`, type: 'resolve'}, ...p].slice(0, 15));
+          }
+        }
+        return next;
+      });
+    }, 5000);
+    return () => clearInterval(iv);
   }, []);
 
   const filtered = (techniques: Technique[]) =>
@@ -209,7 +249,7 @@ export default function MitreAttackMatrix() {
               <span className="ml-auto text-xs text-gray-500">{allTechniques.length} techniques tracked</span>
             </div>
             <div className="grid grid-cols-7 gap-1.5">
-              {TACTICS.map((tac) => {
+              {tactics.map((tac) => {
                 const pct = miniBar(tac);
                 return (
                   <div key={tac.short} className="text-center">
@@ -258,9 +298,9 @@ export default function MitreAttackMatrix() {
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={() => setShowSentinel(!showSentinel)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all duration-300 ${showSentinel ? "bg-purple-500/20 border-purple-500/50 text-purple-300" : "bg-[#0F1D32] border-[#1E3A5F] text-gray-500 hover:text-gray-300"}`}>
-            <BarChart3 size={12} /> vs Sentinel
+          <button onClick={() => setShowAgentLog(!showAgentLog)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all duration-300 ${showAgentLog ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300" : "bg-[#0F1D32] border-[#1E3A5F] text-gray-500 hover:text-gray-300"}`}>
+            <Activity size={12} /> Agent Activity
           </button>
           <div className="flex items-center gap-1 px-2 py-1 text-[10px] text-gray-600">
             <Grid3X3 size={12} /> {allTechniques.length} techniques
@@ -268,42 +308,33 @@ export default function MitreAttackMatrix() {
         </div>
       </div>
 
-      {/* Sentinel Comparison */}
-      {showSentinel && (
-        <div className="bg-[#0F1D32] border border-purple-500/30 rounded-xl p-4 mb-5 animate-[fadeIn_0.3s_ease-out]">
+      {/* Agent Activity Log */}
+      {showAgentLog && (
+        <div className="bg-[#0F1D32] border border-emerald-500/30 rounded-xl p-4 mb-5 animate-[fadeIn_0.3s_ease-out]">
           <div className="flex items-center gap-2 mb-3">
-            <BarChart3 size={16} className="text-purple-400" />
-            <span className="text-sm font-semibold text-white">0xDSI vs Microsoft Sentinel Coverage</span>
-            <span className="ml-auto text-[10px] text-gray-500">Unique: Physical-Cyber, Financial Fraud, AI Security</span>
+            <Activity size={16} className="text-emerald-400" />
+            <span className="text-sm font-semibold text-white">SOC Agent Activity</span>
+            <span className="flex items-center gap-1 ml-2"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /><span className="text-[10px] text-emerald-400">LIVE</span></span>
+            <span className="ml-auto text-[10px] text-gray-500">Agents autonomously improving coverage</span>
           </div>
-          <div className="grid grid-cols-7 gap-2">
-            {TACTICS.map((tac) => {
-              const [sent, ours, unique] = SENTINEL_COVERAGE[tac.short];
-              return (
-                <div key={tac.short} className="text-center">
-                  <div className="text-[9px] text-gray-500 truncate mb-1">{tac.short}</div>
-                  <div className="relative h-24 bg-[#1A2942] rounded overflow-hidden flex flex-col-reverse">
-                    <div className="w-full transition-all duration-500" style={{ height: `${sent}%`, background: "#6366F1" }} />
-                    <div className="w-full transition-all duration-500" style={{ height: `${Math.max(0, ours - sent)}%`, background: "#10B981" }} />
-                    <div className="w-full transition-all duration-500" style={{ height: `${unique}%`, background: "#F59E0B" }} />
-                  </div>
-                  <div className="text-[9px] text-gray-600 mt-0.5">{ours}%</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex items-center gap-4 mt-3 text-[10px]">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-[#6366F1] inline-block" /> Sentinel</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block" /> 0xDSI Shared</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" /> 0xDSI Unique</span>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {agentLog.length === 0 ? (
+              <div className="text-xs text-gray-600 italic py-2">Agents are analyzing coverage gaps... activity will appear shortly</div>
+            ) : agentLog.map((entry, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs py-1 border-b border-[#1A2942] last:border-0">
+                <span className="text-[10px] text-gray-600 font-mono w-20 flex-shrink-0">{entry.time}</span>
+                <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${entry.type === 'deploy' ? 'bg-emerald-400' : entry.type === 'detect' ? 'bg-blue-400' : 'bg-amber-400'}`} />
+                <span className="text-gray-400">{entry.msg}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
       {/* Matrix Grid */}
       <div className="overflow-x-auto pb-2">
-        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${TACTICS.length}, minmax(120px, 1fr))` }}>
-          {TACTICS.map((tac, ci) => (
+        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${tactics.length}, minmax(120px, 1fr))` }}>
+          {tactics.map((tac, ci) => (
             <div key={tac.name} className="flex flex-col gap-1">
               {/* Tactic Header */}
               <div className="bg-[#0F1D32] border border-[#1E3A5F] rounded-lg p-2 text-center sticky top-0 z-10">
