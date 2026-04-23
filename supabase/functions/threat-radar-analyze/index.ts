@@ -143,26 +143,49 @@ function buildProposal(item: any, c: ReturnType<typeof classify>) {
 }
 
 async function tryLLM(title: string, content: string): Promise<null | { pov: string; why: string; chain: string }> {
-  const key = Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("OPENAI_API_KEY");
-  if (!key) return null;
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!openaiKey) return null;
 
-  const prompt = `You are the SOC's senior threat intel analyst. Read this article and return a JSON object with keys pov, why, chain. Each is a 2-3 sentence paragraph. pov = plain-English summary of what this threat is. why = why our enterprise should care specifically. chain = likely attacker kill chain and detection opportunity.\n\nARTICLE TITLE: ${title}\nARTICLE CONTENT: ${content.slice(0, 3000)}\n\nReturn ONLY valid JSON, no markdown.`;
+  const systemPrompt = `You are the SOC's senior threat intelligence analyst. Return ONLY a valid JSON object with keys pov, why, chain. Each value is a 2-3 sentence paragraph. pov = plain-English summary of what this threat is. why = why our enterprise should care specifically (reference likely assets, identity, or data impact). chain = hypothesized attacker kill chain with MITRE ATT&CK technique IDs and the best detection opportunity.`;
+  const userPrompt = `ARTICLE TITLE: ${title}\n\nARTICLE CONTENT:\n${content.slice(0, 3000)}`;
 
   try {
-    if (Deno.env.get("ANTHROPIC_API_KEY")) {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-api-key": Deno.env.get("ANTHROPIC_API_KEY")!, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 800, messages: [{ role: "user", content: prompt }] }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!r.ok) return null;
-      const j = await r.json();
-      const text = j.content?.[0]?.text || "";
-      const parsed = JSON.parse(text.replace(/```json\s*|\s*```/g, ""));
-      if (parsed.pov && parsed.why && parsed.chain) return parsed;
-    }
-  } catch { /* fall back */ }
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openaiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.3,
+        max_tokens: 700,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const text = j.choices?.[0]?.message?.content || "";
+    const parsed = JSON.parse(text);
+    const coerce = (v: any): string => {
+      if (v == null) return "";
+      if (typeof v === "string") return v;
+      if (Array.isArray(v)) return v.map(coerce).filter(Boolean).join(" ");
+      if (typeof v === "object") {
+        return Object.entries(v).map(([k, val]) => `${k}: ${coerce(val)}`).join("; ");
+      }
+      return String(v);
+    };
+    const pov = coerce(parsed.pov);
+    const why = coerce(parsed.why);
+    const chain = coerce(parsed.chain);
+    if (pov && why && chain) return { pov, why, chain };
+  } catch { /* fall back to deterministic */ }
   return null;
 }
 
