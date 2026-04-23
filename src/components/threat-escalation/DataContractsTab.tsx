@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Activity, AlertTriangle, Banknote, Brain, Bug, Building2, CheckCircle2, ChevronRight,
-  Cloud, Coins, Cpu, CreditCard, DoorClosed, Download, Edit3, FileSpreadsheet, FileWarning,
-  Gauge, GitBranch, HeartPulse, KeyRound, Landmark, Layers, Loader2, Network, Package,
-  Plus, Power, Radar, Save, Scale, Search, Shield, ShieldAlert, ShieldCheck, Sparkles,
-  Timer, Trash2, TrendingUp, UserCog, Users, UserX, Waves, X, XCircle, Zap,
-} from 'lucide-react';
+import { Activity, AlertTriangle, Banknote, Brain, Bug, Building2, CheckCircle2, ChevronRight, Cloud, Coins, Cpu, CreditCard, DoorClosed, Download, CreditCard as Edit3, FileSpreadsheet, FileWarning, Gauge, GitBranch, HeartPulse, KeyRound, Landmark, Layers, Loader2, Network, Package, Plus, Power, Radar, Save, Scale, Search, Shield, ShieldAlert, ShieldCheck, Sparkles, Timer, Trash2, TrendingUp, UserCog, Users, UserX, Waves, X, XCircle, Zap } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 type Engine = 'regular' | 'graph' | 'user' | 'hybrid';
