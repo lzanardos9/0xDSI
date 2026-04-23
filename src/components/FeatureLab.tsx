@@ -21,24 +21,27 @@ interface Creation {
 }
 
 const EXAMPLE_PROMPTS = [
-  'Create a real-time PIX fraud heatmap of Brazil showing fraud density by state with animated pulses and live counters',
-  'Build a Grandoreiro trojan kill chain visualization with animated attack flow stages and IOC details',
-  'Design a CISO executive summary dashboard with threat severity pie chart, top 10 alerts, and risk score gauge',
-  'Create a mule cascade money flow tracker showing how funds split across accounts with animated paths',
-  'Build a banking trojan comparison matrix showing Grandoreiro vs Coyote vs Casbaneiro capabilities side by side',
-  'Design a PIX transaction risk scoring engine with a real-time feed showing blocked vs allowed transactions',
-  'Create a boleto fraud detection dashboard with barcode validation status and monthly trend charts',
-  'Build a social engineering attack timeline showing the step-by-step flow of a WhatsApp cloning attack',
-  'Design an alert triage workbench with severity distribution chart and quick-action buttons',
-  'Create a supply chain risk radar showing ICS safety events, counterfeit detections, and IP theft alerts',
+  'Build an interactive SOC analyst agent chatbot that I can ask questions about threats, and it searches events and alerts in real-time, showing reasoning steps as it works',
+  'Create a PIX fraud attack simulator where I can pick an attack type (Ghost Hand, Mule Cascade, QR Swap), configure parameters with sliders, and watch it play out step-by-step with animations',
+  'Build an IP/IOC investigation pivot tool with a search bar where I type an IP or hash and it queries events, shows related alerts, maps MITRE techniques, and lets me click entities to drill deeper',
+  'Create a network attack visualization on HTML5 Canvas showing animated packets flowing between attacker and victim nodes, with a kill chain timeline progressing in real-time',
+  'Build a phishing email identification training game that shows me emails and I have to classify them as legit or phishing, with scoring, timer, and explanations',
+  'Create a detection rule builder where I can click to add conditions (event type, severity, IP range, MITRE technique), chain them with AND/OR logic, and test against real events',
+  'Build a threat hunting notebook interface with executable query cells, markdown notes, and a findings panel where I can save interesting results',
+  'Create an incident response decision tree simulator - start with an alert and walk through containment/eradication/recovery choices, with branching paths and scoring',
+  'Build a real-time banking trojan tracker showing Grandoreiro, Coyote, and Casbaneiro detections on an animated world map with IOC details on click',
+  'Create a MITRE ATT&CK coverage heatmap that queries real events and highlights which techniques we have detections for vs gaps, with click-to-see-events on each cell',
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
   dashboard: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
-  chart: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-  monitor: 'bg-red-500/10 text-red-400 border-red-500/30',
+  agent: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+  simulator: 'bg-red-500/10 text-red-400 border-red-500/30',
   tool: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  report: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+  visualization: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+  monitor: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
+  report: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
+  workflow: 'bg-teal-500/10 text-teal-400 border-teal-500/30',
 };
 
 export default function FeatureLab() {
