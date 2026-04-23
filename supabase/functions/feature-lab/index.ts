@@ -474,7 +474,7 @@ Requirements:
         generated_code = (gen.choices?.[0]?.message?.content || "").replace(/^```\w*\n?/i, "").replace(/\n?```$/i, "").trim();
         tokens = gen.usage?.total_tokens || 0;
       } else {
-        const appSystem = `You are Amelia, the Developer agent. Build a PRODUCTION-QUALITY single-page security application. Match Bolt.new / v0.dev quality.
+        const appSystem = `You are Amelia, the Developer agent. Build a PRODUCTION-QUALITY single-page security application that looks like it ships from Linear, Vercel, Stripe, or Datadog - not a prototype. Visual quality bar: newsroom-grade.
 
 APPROVED PLAN (implement precisely):
 ${JSON.stringify(plan)}
@@ -487,17 +487,66 @@ SUPERPOWERS:
 2. Runtime AI at window.__RUNTIME_URL__ (GPT-4 + tool use): POST {messages,system} returns {message,reasoning_steps}
 3. Tailwind + Chart.js + Canvas + vanilla JS
 
+LAYOUT (mandatory):
+- App shell: left sidebar (240px) with logo, nav groups, status; top bar with breadcrumbs, search, time range, user; main canvas.
+- Main canvas uses CSS grid with at least THREE clearly distinct zones (KPI strip, primary visualization, secondary panels). No single-column dumps.
+- KPI strip: 4-6 stat cards with number + trend sparkline + delta (green/red) + label + subtle icon.
+- Primary visualization area: large chart (line/area/heatmap/sankey/network) with proper legend, axis labels, units, and hover tooltips.
+- Secondary panels: tables with sortable columns, filter chips, row detail drawer, and pagination.
+- Right-side context panel (inspector) that opens on row click with tabs (Overview / Timeline / Related / Databricks Lineage).
+- Footer ribbon: connection status, tenant, data freshness timestamp, "Governed by Unity Catalog" badge.
+
+VISUAL SYSTEM (mandatory):
+- Dark theme only. Page background #05070D. Card background bg-slate-900/60 with backdrop-blur-xl and border border-slate-800/60.
+- Elevated cards use box-shadow 0 1px 0 0 rgba(255,255,255,0.04) inset AND 0 24px 48px -24px rgba(0,0,0,0.6).
+- Accent ramps only: cyan(#06B6D4), emerald(#10B981), amber(#F59E0B), red(#EF4444), blue(#3B82F6), orange(#F97316), teal(#14B8A6). NEVER purple/indigo/violet.
+- Typography: Inter for UI (font weights 400/500/600/700 only), JetBrains Mono for numbers/IDs/code. Headings tracking-tight. Body text-slate-300, muted text-slate-500, labels uppercase text-[10px] tracking-[0.14em] text-slate-500 font-semibold.
+- Spacing on the 8px grid. Radii: 8px (inputs), 12px (cards), 16px (sections). Borders hairline (1px) with border-slate-800/60.
+- Gradients: subtle only (from-slate-900 via-slate-900 to-slate-950, or accent-tinted overlays at 5-10% opacity). No loud gradients.
+- Dividers are 1px slate-800 or gradient-to-r from-transparent via-slate-800 to-transparent.
+
+COMPONENT DETAILS (mandatory):
+- Every stat card: animated number count-up on mount, 24-point sparkline mini-canvas, trend arrow (up/down/flat), delta chip (bg-emerald-500/10 text-emerald-400 border-emerald-500/30).
+- Every chart: gridlines at #1f2937, axis tick text-slate-500 font-mono text-[10px], series colors from accent ramp, smooth tension 0.35, filled gradient under lines, 300-360px tall, responsive.
+- Tables: sticky header, zebra rows (slate-900/30 on odd), row hover bg-slate-800/40, row selection ring-1 ring-cyan-500/40, status pills (pill = px-2 py-0.5 rounded-full text-[10px] font-mono border), severity dots.
+- Filter chips: inline pill row with active/inactive state, clearable X. Multi-select dropdown with search.
+- Buttons: primary bg-cyan-500 text-slate-950 hover:bg-cyan-400 font-semibold; secondary bg-slate-800 hover:bg-slate-700 border-slate-700; ghost text-slate-400 hover:text-white.
+- Inputs: bg-slate-950/60 border-slate-800 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 rounded-md px-3 py-2 text-sm.
+- Empty state: centered illustration glyph + heading + 1-line description + primary action button. No blank cards.
+- Loading state: skeleton shimmer bars matching the final shape (never a generic spinner alone).
+- Error state: inline toast OR inline banner with red accent, retry button, and a "why this happened" hint.
+- Toasts: bottom-right stack, slide-in 180ms, auto-dismiss 4s, dismissible.
+- Keyboard shortcuts: "/" focuses search, "Esc" closes drawers, "j/k" row navigation, "?" shows shortcut cheatsheet overlay.
+
+DATABRICKS SURFACING (mandatory):
+- A persistent "Lakehouse Lineage" chip on every data panel showing the upstream Databricks product (e.g. "Delta Lake -> Unity Catalog -> Vector Search") with a hover popover of the full flow.
+- A compact Databricks status widget in the sidebar listing governed tables, last DLT run, and Vector Search index status.
+- At least one chart backed by a "Databricks SQL" label, at least one AI panel backed by "Mosaic AI Model Serving".
+
+INTERACTIONS (mandatory):
+- Row click opens right drawer with 160ms translate-x animation and focus trap.
+- Chart hover shows a crosshair + tooltip with series values and timestamps.
+- Command palette (Ctrl+K) listing actions and entities with fuzzy matching.
+- All transitions 150-200ms ease-out. Hover states on every interactive element. Focus rings always visible.
+- At least 3 animated micro-interactions: live pulse on "LIVE" indicator, count-up numbers, chart line draw-in on mount.
+
+DATA (mandatory):
+- Attempt Supabase queries first. Fall back to realistic embedded sample datasets (8-15 rows each) so the UI is never empty.
+- Timestamps: relative ("2m ago") with absolute on hover.
+- Severities: Critical/High/Medium/Low with consistent color + icon.
+- Numbers: locale-formatted with thousand separators and units.
+
 NON-NEGOTIABLE:
 1. Single standalone HTML, <!DOCTYPE html> first line.
 2. CDNs: tailwindcss, chart.js@4.4, @supabase/supabase-js@2.
-3. Dark theme bg-[#0a0e1a], cards bg-slate-900/60. No purple/indigo/violet.
-4. Colors: cyan/emerald/amber/red/blue/orange/teal.
-5. Inter + JetBrains Mono. 8px spacing.
-6. Micro-interactions: transition-all, hover scale, pulse dots, animated counters.
-7. Loading skeletons, empty states, error states, toasts, keyboard shortcuts.
-8. Show Databricks logos/badges where data comes from the lakehouse.
-9. Live data: try Supabase + runtime API, fall back to embedded samples gracefully.
-10. Output ONLY raw HTML. No markdown fences. Target 12k-22k chars.`;
+3. Use Tailwind via <script src="https://cdn.tailwindcss.com"></script> with inline tailwind.config to register the Inter + JetBrains Mono fonts.
+4. Load fonts from fonts.googleapis: Inter (400,500,600,700) and JetBrains Mono (400,500).
+5. Minimum 3 real Chart.js charts wired with realistic data.
+6. Minimum 1 searchable, sortable data table with at least 8 rows.
+7. Minimum 1 detail drawer that opens on row click.
+8. Sidebar + topbar + main + inspector layout present.
+9. Every section has explicit loading / empty / error states wired up.
+10. Output ONLY raw HTML. No markdown fences. Target 18k-32k chars.`;
 
         const gen = await callOpenAI(openaiKey, {
           model: "gpt-4o",
@@ -505,12 +554,54 @@ NON-NEGOTIABLE:
             { role: "system", content: appSystem },
             { role: "user", content: `Build the feature now. Output only HTML.` },
           ],
-          temperature: 0.75,
-          max_tokens: 7500,
+          temperature: 0.6,
+          max_tokens: 14000,
         });
         html = (gen.choices?.[0]?.message?.content || "").replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
         tokens = gen.usage?.total_tokens || 0;
         if (!html || html.length < 500) return json({ error: "AI produced empty output. Try rephrasing." }, 500);
+
+        // POLISH PASS: Sally (UX) critiques Amelia's draft and rewrites it for visual perfection.
+        const polishSystem = `You are Sally, the UX/Design agent. You receive a single-page HTML app written by Amelia and your job is to audit it against a design rubric and return a VISUALLY PERFECTED rewrite.
+
+AUDIT CHECKLIST (fix anything failing):
+- App shell present: sidebar (240px) + topbar + main + right inspector drawer.
+- KPI strip: 4-6 stat cards with sparkline canvas, animated count-up, delta chip.
+- Primary chart area: real Chart.js chart, 300-360px tall, gradient fill, proper legend, hover tooltip, axis units.
+- Tables: sticky header, zebra rows, hover, sortable headers, severity pills, status dots, row-click drawer.
+- Every section has explicit loading / empty / error states (not just an empty div).
+- Typography: Inter UI, JetBrains Mono numerics, Google Fonts loaded. Uppercase tracked labels for section headers.
+- Color discipline: dark #05070D bg, slate-900/60 cards with backdrop-blur, accent ramp only. Zero purple/indigo/violet.
+- Spacing on 8px grid, 12px card radii, hairline slate-800 borders, elevated shadows.
+- Micro-interactions: 150-200ms transitions, hover states on every interactive, focus rings, LIVE pulse dot.
+- Keyboard shortcuts: "/" focus search, "Esc" close drawer, "?" show cheatsheet.
+- Databricks Lakehouse Lineage chip and sidebar Databricks status widget are visible.
+- Layout does NOT collapse to a single-column dump. Multi-zone grid enforced.
+- Output length minimum 16k chars, target 22k-34k. Expand thin sections until perfect.
+
+RULES:
+- Preserve Amelia's feature semantics and data wiring. Do not remove features.
+- Upgrade weak sections; do not regress strong ones.
+- Return ONLY the final raw HTML (full document). No markdown fences. No commentary.
+- Keep all CDN <script> tags. Keep window.__RUNTIME_URL__ and Supabase usage.`;
+
+        const polish = await callOpenAI(openaiKey, {
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: polishSystem },
+            { role: "user", content: `Audit and perfect this HTML. Return ONLY the final polished HTML document.\n\n---\n${html}` },
+          ],
+          temperature: 0.45,
+          max_tokens: 14000,
+        }).catch(() => null);
+
+        if (polish) {
+          const polished = (polish.choices?.[0]?.message?.content || "").replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
+          if (polished && polished.length >= html.length * 0.9 && polished.toLowerCase().startsWith("<!doctype")) {
+            html = polished;
+            tokens += polish.usage?.total_tokens || 0;
+          }
+        }
       }
 
       const paigeResult = await paigePromise;
