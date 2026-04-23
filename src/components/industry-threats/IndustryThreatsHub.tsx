@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Radio, Factory, Heart, Zap, ShoppingCart, Navigation, BookOpen,
+  Radio, Factory, Heart, Zap, ShoppingCart, Navigation, BookOpen, Package,
   DollarSign, ChevronRight, Shield, Activity, TrendingUp, AlertTriangle
 } from 'lucide-react';
 import TelcoThreats from './TelcoThreats';
@@ -10,6 +10,7 @@ import EnergyThreats from './EnergyThreats';
 import RetailThreats from './RetailThreats';
 import AviationThreats from './AviationThreats';
 import EducationThreats from './EducationThreats';
+import CPGThreats from './CPGThreats';
 
 const INDUSTRIES = [
   { id: 'telco', label: 'Telecom', icon: Radio, color: 'from-blue-500/20 to-cyan-500/20', border: 'border-blue-500/30', text: 'text-blue-400', threats: 2847, critical: 34, description: 'SS7, Diameter, SIM Swap, 5G Core' },
@@ -19,6 +20,7 @@ const INDUSTRIES = [
   { id: 'retail', label: 'Retail & E-Commerce', icon: ShoppingCart, color: 'from-teal-500/20 to-emerald-500/20', border: 'border-teal-500/30', text: 'text-teal-400', threats: 3421, critical: 41, description: 'POS Malware, E-Commerce Fraud, PCI DSS' },
   { id: 'aviation', label: 'Aviation & Maritime', icon: Navigation, color: 'from-sky-500/20 to-blue-500/20', border: 'border-sky-500/30', text: 'text-sky-400', threats: 678, critical: 8, description: 'ADS-B, ATC Systems, Maritime VSAT' },
   { id: 'education', label: 'Education', icon: BookOpen, color: 'from-blue-500/20 to-emerald-500/20', border: 'border-blue-500/30', text: 'text-blue-400', threats: 1892, critical: 15, description: 'Student Data, Research IP, Campus Network' },
+  { id: 'cpg', label: 'Consumer Packaged Goods', icon: Package, color: 'from-amber-500/20 to-orange-500/20', border: 'border-amber-500/30', text: 'text-amber-400', threats: 2134, critical: 29, description: 'Supply Chain, Anti-Counterfeit, Formula IP, Food Safety' },
 ] as const;
 
 type IndustryId = typeof INDUSTRIES[number]['id'];
@@ -48,6 +50,7 @@ export default function IndustryThreatsHub({ initialIndustry }: { initialIndustr
         {selected === 'retail' && <RetailThreats />}
         {selected === 'aviation' && <AviationThreats />}
         {selected === 'education' && <EducationThreats />}
+        {selected === 'cpg' && <CPGThreats />}
       </div>
     );
   }
@@ -139,3 +142,6 @@ export default function IndustryThreatsHub({ initialIndustry }: { initialIndustr
     </div>
   );
 }
+
+
+export default IndustryThreatsHub
