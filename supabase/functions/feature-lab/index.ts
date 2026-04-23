@@ -26,21 +26,29 @@ async function callOpenAI(key: string, body: unknown): Promise<any> {
 
 function classifyFeatureType(prompt: string): { category: string; feature_type: "app" | "backend"; code_language: string } {
   const p = prompt.toLowerCase();
-  if (/(notebook|pipeline|etl|delta live|dlt|job|workflow|ingestion|transform)/.test(p)) {
-    return { category: "workflow", feature_type: "backend", code_language: "python" };
+
+  // EXPLICIT backend / code signals - user is asking for code, not a UI
+  const explicitBackend = /\b(databricks notebook|python notebook|\.py file|dlt pipeline|delta live table|lakeflow pipeline|spark (streaming )?job|etl (script|job|pipeline)|python code|sql (query|script)|materialized view|databricks workflow|scheduled job|cron job|airflow dag|kafka (consumer|producer)|ingestion pipeline|auto loader pipeline|deploy (a |an )?(agent|pipeline|job|model))\b/;
+  if (explicitBackend.test(p)) {
+    const lang = /\b(sql (query|script)|materialized view|genie)\b/.test(p) ? "sql" : "python";
+    return { category: "workflow", feature_type: "backend", code_language: lang };
   }
-  if (/(agent|langgraph|mosaic agent|tool-using|function calling|mcp)/.test(p) && /(build|create|deploy|backend|python)/.test(p)) {
-    return { category: "agent", feature_type: "backend", code_language: "python" };
+
+  // EXPLICIT UI / visual signals - user wants a visual app
+  const visualSignals = /\b(ui|visual(i[sz]e|i[sz]ation)?|interactive|dashboard|chart|graph(?!rag)|view|screen|page|panel|heatmap|map|simulator|game|quiz|chatbot|advisor|copilot|assistant|assistant ui|interface|frontend|webapp|web app|html|tailwind|animate|animation|hover|click|drag|pivot|investigation|hunt|explorer|monitor|tracker|live feed|real[- ]?time|canvas|topology|network (view|graph|map)|world map|timeline|report|executive|briefing)\b/;
+
+  if (visualSignals.test(p)) {
+    if (/\b(chatbot|assistant|copilot|advisor)\b/.test(p)) return { category: "agent", feature_type: "app", code_language: "" };
+    if (/\b(simulator|simulation|game|training|quiz)\b/.test(p)) return { category: "simulator", feature_type: "app", code_language: "" };
+    if (/\b(scanner|analyzer|builder|investigation|pivot|hunt|explorer|tool)\b/.test(p)) return { category: "tool", feature_type: "app", code_language: "" };
+    if (/\b(map|heatmap|topology|network|canvas|visuali[sz])/.test(p)) return { category: "visualization", feature_type: "app", code_language: "" };
+    if (/\b(monitor|live|real[- ]?time|feed|tracker|stream)\b/.test(p)) return { category: "monitor", feature_type: "app", code_language: "" };
+    if (/\b(report|summary|executive|briefing)\b/.test(p)) return { category: "report", feature_type: "app", code_language: "" };
+    return { category: "dashboard", feature_type: "app", code_language: "" };
   }
-  if (/(sql query|sql warehouse|materialized view|genie)/.test(p)) {
-    return { category: "workflow", feature_type: "backend", code_language: "sql" };
-  }
-  if (/(agent|chatbot|assistant|copilot|advisor)/.test(p)) return { category: "agent", feature_type: "app", code_language: "" };
-  if (/(simulator|simulation|game|training|quiz)/.test(p)) return { category: "simulator", feature_type: "app", code_language: "" };
-  if (/(scanner|analyzer|builder|investigation|pivot|hunt)/.test(p)) return { category: "tool", feature_type: "app", code_language: "" };
-  if (/(canvas|visualization|graph|map|network|heatmap|topology)/.test(p)) return { category: "visualization", feature_type: "app", code_language: "" };
-  if (/(monitor|live|real.?time|feed|tracker|stream)/.test(p)) return { category: "monitor", feature_type: "app", code_language: "" };
-  if (/(report|summary|executive|briefing)/.test(p)) return { category: "report", feature_type: "app", code_language: "" };
+
+  // DEFAULT: visual app. If the user says "agent" without "deploy/build backend", assume they want a chat UI.
+  if (/\b(agent|ai)\b/.test(p)) return { category: "agent", feature_type: "app", code_language: "" };
   return { category: "dashboard", feature_type: "app", code_language: "" };
 }
 
@@ -96,7 +104,12 @@ Deno.serve(async (req: Request) => {
 
     // ---------- PLAN ----------
     if (action === "plan") {
-      const { category, feature_type, code_language } = classifyFeatureType(prompt);
+      const classified = classifyFeatureType(prompt);
+      // Allow the caller to force a feature_type (from UI toggle)
+      const forced = body.force_feature_type as ("app" | "backend" | undefined);
+      const category = classified.category;
+      const feature_type = forced || classified.feature_type;
+      const code_language = feature_type === "backend" ? (classified.code_language || "python") : "";
 
       const [eventsRes, alertsRes, corrRulesRes] = await Promise.all([
         supabase.from("events").select("event_type, severity").order("event_timestamp", { ascending: false }).limit(10),
@@ -114,6 +127,11 @@ BMAD AGENTS TO SIMULATE:
 4. Sally (UX Designer) - designs personas, user flows, key screens, and accessibility notes.
 
 Downstream agents (NOT in this call): Amelia (Developer) will implement, Paige (Tech Writer) will document.
+
+FEATURE TYPE (CRITICAL):
+- feature_type = "app": build an interactive single-page HTML application with live UI, charts, animations. This is the DEFAULT whenever the user wants something visual, interactive, or dashboard-like.
+- feature_type = "backend": ONLY when the user EXPLICITLY asks for a notebook, DLT pipeline, scheduled job, SQL script, ETL code, or similar non-visual artifact.
+- The caller pre-classified this as "${feature_type}". Keep it UNLESS the user's prompt unmistakably contradicts that classification. When in doubt, prefer "app".
 
 
 

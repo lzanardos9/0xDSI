@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronRight, Zap, Target, Users, ShieldCheck, TestTube, Layers, Loader2, RefreshCw, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Zap, Target, Users, ShieldCheck, TestTube, Layers, Loader2, RefreshCw, XCircle, Globe, FileCode, ArrowLeftRight } from 'lucide-react';
 import ArchitectureDiagram from './ArchitectureDiagram';
 import BMADAgentPanel from './BMADAgentPanel';
 
@@ -7,10 +7,13 @@ interface PlanReviewProps {
   onApprove: () => void;
   onReject: () => void;
   onRegenerate: () => void;
+  onSwitchType?: (next: 'app' | 'backend') => void;
   executing: boolean;
 }
 
-export default function PlanReview({ plan, onApprove, onReject, onRegenerate, executing }: PlanReviewProps) {
+export default function PlanReview({ plan, onApprove, onReject, onRegenerate, onSwitchType, executing }: PlanReviewProps) {
+  const featureType = plan.feature_type || 'app';
+  const oppositeType: 'app' | 'backend' = featureType === 'app' ? 'backend' : 'app';
   const nodes = plan.architecture_diagram?.nodes || [];
   const links = plan.architecture_diagram?.links || [];
   const dbxFeatures = plan.databricks_features || [];
@@ -28,9 +31,25 @@ export default function PlanReview({ plan, onApprove, onReject, onRegenerate, ex
               <div className="px-2 py-0.5 rounded-full bg-orange-500/10 border border-orange-500/30 text-[9px] font-mono font-bold text-orange-400 tracking-wider flex items-center gap-1">
                 <Layers size={9} />DATABRICKS-NATIVE
               </div>
-              <div className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-[9px] font-mono text-slate-400 tracking-wider">
-                {plan.feature_type === 'backend' ? `BACKEND / ${(plan.code_language || 'python').toUpperCase()}` : 'FRONTEND APP'}
+              <div className={`px-2 py-0.5 rounded-full border text-[9px] font-mono tracking-wider flex items-center gap-1 ${
+                featureType === 'backend'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+              }`}>
+                {featureType === 'backend' ? <FileCode size={9} /> : <Globe size={9} />}
+                {featureType === 'backend' ? `BACKEND / ${(plan.code_language || 'python').toUpperCase()}` : 'VISUAL APP'}
               </div>
+              {onSwitchType && (
+                <button
+                  onClick={() => onSwitchType(oppositeType)}
+                  disabled={executing}
+                  className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-[9px] font-mono text-slate-300 tracking-wider flex items-center gap-1 hover:border-cyan-500/40 hover:text-cyan-300 transition-colors disabled:opacity-50"
+                  title={`Regenerate plan as ${oppositeType === 'app' ? 'Visual App' : 'Backend Code'}`}
+                >
+                  <ArrowLeftRight size={9} />
+                  Switch to {oppositeType === 'app' ? 'Visual App' : 'Backend Code'}
+                </button>
+              )}
             </div>
             <div className="text-xl font-bold text-white mb-2">{plan.title || 'Untitled Feature'}</div>
             <div className="text-sm text-slate-300 leading-relaxed mb-2">{plan.summary}</div>

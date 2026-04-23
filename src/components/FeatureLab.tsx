@@ -3,7 +3,7 @@ import {
   Sparkles, Loader2, Maximize2, Minimize2, Pin, PinOff,
   Trash2, Eye, Code, LayoutGrid, Clock, ChevronRight,
   Zap, FlaskConical, X, RefreshCw, Download, Copy, Check,
-  CheckCircle2, FileCode, Layers,
+  CheckCircle2, FileCode, Layers, Globe, Wand2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import PlanReview from './feature-lab/PlanReview';
@@ -75,6 +75,7 @@ export default function FeatureLab() {
   const [copied, setCopied] = useState(false);
   const [progressMessage, setProgressMessage] = useState('');
   const [showExamples, setShowExamples] = useState(true);
+  const [forceFeatureType, setForceFeatureType] = useState<'auto' | 'app' | 'backend'>('auto');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -147,7 +148,9 @@ export default function FeatureLab() {
     }, 1400);
 
     try {
-      const data = await callEdge({ action: 'plan', prompt: prompt.trim() });
+      const body: any = { action: 'plan', prompt: prompt.trim() };
+      if (forceFeatureType !== 'auto') body.force_feature_type = forceFeatureType;
+      const data = await callEdge(body);
       setPlan(data.plan);
       setFeatureType(data.plan.feature_type || 'app');
       setCodeLanguage(data.plan.code_language || 'python');
@@ -353,9 +356,40 @@ export default function FeatureLab() {
                       rows={4}
                       disabled={phase !== 'idle'}
                     />
-                    <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between">
-                      <div className="text-[10px] text-slate-600">
-                        {prompt.length > 0 ? `${prompt.length} chars` : 'Ctrl+Enter to plan'}
+                    <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="text-[10px] text-slate-600 whitespace-nowrap">
+                          {prompt.length > 0 ? `${prompt.length} chars` : 'Ctrl+Enter to plan'}
+                        </div>
+                        <div className="flex items-center gap-0.5 bg-[#060912] border border-slate-800 rounded-lg p-0.5">
+                          {([
+                            { id: 'auto' as const, label: 'Auto', icon: Wand2, tip: 'Let AI decide' },
+                            { id: 'app' as const, label: 'Visual App', icon: Globe, tip: 'Force interactive UI' },
+                            { id: 'backend' as const, label: 'Backend Code', icon: FileCode, tip: 'Force notebook/code' },
+                          ]).map(opt => {
+                            const Icon = opt.icon;
+                            const active = forceFeatureType === opt.id;
+                            return (
+                              <button
+                                key={opt.id}
+                                onClick={() => setForceFeatureType(opt.id)}
+                                title={opt.tip}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                                  active
+                                    ? opt.id === 'backend'
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                      : opt.id === 'app'
+                                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                                        : 'bg-slate-700 text-slate-200 border border-slate-600'
+                                    : 'text-slate-500 hover:text-slate-300 border border-transparent'
+                                }`}
+                              >
+                                <Icon size={10} />
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                       <button
                         onClick={startPlan}
@@ -413,6 +447,27 @@ export default function FeatureLab() {
                   onApprove={executePlan}
                   onReject={resetFlow}
                   onRegenerate={() => { setPlan(null); setPhase('idle'); startPlan(); }}
+                  onSwitchType={(next) => {
+                    setForceFeatureType(next);
+                    setPlan(null);
+                    setPhase('idle');
+                    setTimeout(() => {
+                      setPhase('planning');
+                      (async () => {
+                        setError(null);
+                        try {
+                          const data = await callEdge({ action: 'plan', prompt: prompt.trim(), force_feature_type: next });
+                          setPlan(data.plan);
+                          setFeatureType(data.plan.feature_type || next);
+                          setCodeLanguage(data.plan.code_language || 'python');
+                          setPhase('reviewing');
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : 'Re-plan failed');
+                          setPhase('idle');
+                        }
+                      })();
+                    }, 50);
+                  }}
                   executing={false}
                 />
               )}
