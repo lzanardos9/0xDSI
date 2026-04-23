@@ -57,6 +57,7 @@ export default function FeedStream({
   const [severity, setSeverity] = useState<string>('all');
   const [family, setFamily] = useState<string>('all');
   const [onlyExposed, setOnlyExposed] = useState(false);
+  const [onlyBleeding, setOnlyBleeding] = useState(false);
 
   const families = useMemo(() => Array.from(new Set(items.map(i => i.family).filter(Boolean))).sort(), [items]);
 
@@ -64,12 +65,15 @@ export default function FeedStream({
     return items.filter(it => {
       if (severity !== 'all' && it.severity !== severity) return false;
       if (family !== 'all' && it.family !== family) return false;
+      if (onlyBleeding && it.exposure_status !== 'active') return false;
       if (onlyExposed && (it.exposure_status === 'unknown' || it.exposure_status === 'clean')) return false;
       if (!q) return true;
       const term = q.toLowerCase();
       return [it.title, it.summary, ...it.cves, ...it.vendors, ...it.tags, it.source_name].some(s => (s || '').toLowerCase().includes(term));
     });
-  }, [items, q, severity, family, onlyExposed]);
+  }, [items, q, severity, family, onlyExposed, onlyBleeding]);
+
+  const bleedingCount = useMemo(() => items.filter(i => i.exposure_status === 'active').length, [items]);
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/40 overflow-hidden flex flex-col h-[calc(100vh-340px)] min-h-[600px]">
@@ -96,9 +100,16 @@ export default function FeedStream({
             {families.map(f => <option key={f} value={f}>{f}</option>)}
           </select>
           <button
-            onClick={() => setOnlyExposed(v => !v)}
-            className={`px-2 py-1 rounded-md text-[10px] font-bold border ${onlyExposed ? 'bg-red-500/20 border-red-500/50 text-red-200' : 'bg-slate-800/60 border-slate-700 text-slate-400'}`}
-            title="Show only items where we're exposed"
+            onClick={() => { setOnlyBleeding(v => !v); if (!onlyBleeding) setOnlyExposed(false); }}
+            className={`px-2 py-1 rounded-md text-[10px] font-bold border transition ${onlyBleeding ? 'bg-red-500/30 border-red-500/60 text-red-100 shadow-[0_0_12px_rgba(239,68,68,0.45)]' : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:text-red-200'}`}
+            title="Show only actively bleeding items (exposure = active)"
+          >
+            <Zap className="w-3 h-3 inline mr-1" /> Bleeding{bleedingCount ? ` (${bleedingCount})` : ''}
+          </button>
+          <button
+            onClick={() => { setOnlyExposed(v => !v); if (!onlyExposed) setOnlyBleeding(false); }}
+            className={`px-2 py-1 rounded-md text-[10px] font-bold border ${onlyExposed ? 'bg-orange-500/20 border-orange-500/50 text-orange-100' : 'bg-slate-800/60 border-slate-700 text-slate-400'}`}
+            title="Show any item where we have exposure (at_risk / indicators / active)"
           >
             <Flame className="w-3 h-3 inline mr-1" /> Exposed
           </button>
