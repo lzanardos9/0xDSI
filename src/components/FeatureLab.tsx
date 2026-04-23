@@ -22,7 +22,7 @@ interface Creation {
 
 const EXAMPLE_PROMPTS = [
   'Build an interactive SOC analyst agent chatbot that I can ask questions about threats, and it searches events and alerts in real-time, showing reasoning steps as it works',
-  'Create a PIX fraud attack simulator where I can pick an attack type (Ghost Hand, Mule Cascade, QR Swap), configure parameters with sliders, and watch it play out step-by-step with animations',
+  'Create a ransomware attack simulator where I can pick a variant (LockBit, BlackCat, Royal), configure parameters with sliders, and watch it play out step-by-step with animations',
   'Build an IP/IOC investigation pivot tool with a search bar where I type an IP or hash and it queries events, shows related alerts, maps MITRE techniques, and lets me click entities to drill deeper',
   'Create a network attack visualization on HTML5 Canvas showing animated packets flowing between attacker and victim nodes, with a kill chain timeline progressing in real-time',
   'Build a phishing email identification training game that shows me emails and I have to classify them as legit or phishing, with scoring, timer, and explanations',
@@ -319,7 +319,7 @@ export default function FeatureLab() {
                     value={prompt}
                     onChange={e => setPrompt(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Describe the security feature you want to build... e.g. 'Create a real-time PIX fraud monitoring dashboard with live transaction feed and risk scoring gauge'"
+                    placeholder="Describe the security feature you want to build... e.g. 'Create a real-time ransomware detection dashboard with live alert feed and risk scoring gauge'"
                     className="w-full bg-transparent px-5 pt-4 pb-16 text-sm text-slate-200 placeholder-slate-600 resize-none focus:outline-none"
                     rows={4}
                     disabled={isGenerating}
