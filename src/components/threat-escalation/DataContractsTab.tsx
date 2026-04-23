@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertTriangle, Banknote, Brain, Bug, Building2, CheckCircle2, ChevronRight,
-  Cloud, Coins, Cpu, CreditCard, DoorClosed, Download, FileSpreadsheet, FileWarning,
+  Cloud, Coins, Cpu, CreditCard, DoorClosed, Download, Edit3, FileSpreadsheet, FileWarning,
   Gauge, GitBranch, HeartPulse, KeyRound, Landmark, Layers, Loader2, Network, Package,
-  Power, Radar, Scale, Search, Shield, ShieldAlert, ShieldCheck, Sparkles, Timer,
-  TrendingUp, UserCog, Users, UserX, Waves, Zap,
+  Plus, Power, Radar, Save, Scale, Search, Shield, ShieldAlert, ShieldCheck, Sparkles,
+  Timer, Trash2, TrendingUp, UserCog, Users, UserX, Waves, X, XCircle, Zap,
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
@@ -92,6 +92,8 @@ export default function DataContractsTab() {
   const [category, setCategory] = useState<string>('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<Contract | null>(null);
+  const [editor, setEditor] = useState<{ mode: 'create' | 'edit'; draft: Partial<Contract> } | null>(null);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -99,8 +101,62 @@ export default function DataContractsTab() {
     setLoading(true);
     const { data } = await supabase.from('threat_escalation_contracts').select('*').order('contract_code');
     setContracts((data || []) as Contract[]);
-    if (data && data.length && !selected) setSelected(data[0] as Contract);
+    if (data && data.length) {
+      setSelected(prev => prev ? (data.find((d: any) => d.id === prev.id) || data[0]) as Contract : data[0] as Contract);
+    }
     setLoading(false);
+  };
+
+  const flash = (kind: 'ok' | 'err', msg: string) => {
+    setToast({ kind, msg });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const openCreate = () => setEditor({
+    mode: 'create',
+    draft: {
+      contract_code: '', contract_name: '', category: 'grc', engine_type: 'regular',
+      description: '', compliance_frameworks: [], severity_floor: 'medium', sla_minutes: 60,
+      parameters: {}, triggers: [], escalation_path: [], sample_signals: {},
+      icon: 'Shield', color: 'emerald', is_active: true,
+    },
+  });
+  const openEdit = (c: Contract) => setEditor({ mode: 'edit', draft: { ...c } });
+
+  const saveDraft = async (draft: Partial<Contract>) => {
+    if (!draft.contract_code || !draft.contract_name) {
+      flash('err', 'Contract code and name are required');
+      return;
+    }
+    const payload: any = {
+      contract_code: draft.contract_code, contract_name: draft.contract_name,
+      category: draft.category || 'grc', engine_type: draft.engine_type || 'regular',
+      description: draft.description || '', compliance_frameworks: draft.compliance_frameworks || [],
+      severity_floor: draft.severity_floor || 'medium', sla_minutes: Number(draft.sla_minutes) || 60,
+      parameters: draft.parameters || {}, triggers: draft.triggers || [],
+      escalation_path: draft.escalation_path || [], sample_signals: draft.sample_signals || {},
+      icon: draft.icon || 'Shield', color: draft.color || 'emerald',
+      is_active: draft.is_active !== false, updated_at: new Date().toISOString(),
+    };
+    let error: any;
+    if ((draft as any).id) {
+      ({ error } = await supabase.from('threat_escalation_contracts').update(payload).eq('id', (draft as any).id));
+    } else {
+      ({ error } = await supabase.from('threat_escalation_contracts').insert(payload));
+    }
+    if (error) { flash('err', error.message); return; }
+    flash('ok', `Contract "${draft.contract_name}" saved`);
+    setEditor(null);
+    await load();
+  };
+
+  const deleteContract = async (c: Contract) => {
+    if (!confirm(`Delete contract "${c.contract_name}"? This cannot be undone.`)) return;
+    const { error } = await supabase.from('threat_escalation_contracts').delete().eq('id', c.id);
+    if (error) { flash('err', error.message); return; }
+    flash('ok', `Deleted "${c.contract_name}"`);
+    setSelected(null);
+    await load();
   };
 
   const filtered = useMemo(() => {
@@ -166,11 +222,20 @@ export default function DataContractsTab() {
             </p>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 lg:w-[460px]">
-            <HeroStat label="Total" value={String(stats.total)} icon={Layers} accent="emerald" />
-            <HeroStat label="Active" value={String(stats.active)} icon={Power} accent="cyan" />
-            <HeroStat label="Engines" value={String(Object.keys(stats.byEngine).length)} icon={GitBranch} accent="amber" />
-            <HeroStat label="Avg SLA" value={`${stats.avgSla}m`} icon={Timer} accent="rose" />
+          <div className="flex flex-col gap-3 lg:w-[520px]">
+            <div className="grid grid-cols-4 gap-2">
+              <HeroStat label="Total" value={String(stats.total)} icon={Layers} accent="emerald" />
+              <HeroStat label="Active" value={String(stats.active)} icon={Power} accent="cyan" />
+              <HeroStat label="Engines" value={String(Object.keys(stats.byEngine).length)} icon={GitBranch} accent="amber" />
+              <HeroStat label="Avg SLA" value={`${stats.avgSla}m`} icon={Timer} accent="rose" />
+            </div>
+            <button
+              onClick={openCreate}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gradient-to-r from-emerald-500/25 to-cyan-500/20 hover:from-emerald-500/35 hover:to-cyan-500/30 border border-emerald-500/50 text-emerald-200 text-sm font-semibold transition"
+            >
+              <Plus className="w-4 h-4" />
+              Create New Data Contract
+            </button>
           </div>
         </div>
       </div>
@@ -257,13 +322,37 @@ export default function DataContractsTab() {
         </div>
 
         <div className="xl:col-span-1">
-          {selected ? <ContractDetail contract={selected} /> : (
+          {selected ? (
+            <ContractDetail
+              contract={selected}
+              onEdit={() => openEdit(selected)}
+              onDelete={() => deleteContract(selected)}
+            />
+          ) : (
             <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 text-slate-400 text-sm">
               Select a contract to view its specification.
             </div>
           )}
         </div>
       </div>
+
+      {editor && (
+        <ContractEditor
+          mode={editor.mode}
+          draft={editor.draft}
+          onCancel={() => setEditor(null)}
+          onSave={saveDraft}
+        />
+      )}
+
+      {toast && (
+        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded-lg border text-sm font-semibold shadow-xl z-50 ${
+          toast.kind === 'ok' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-500/15 border-red-500/40 text-red-200'
+        }`}>
+          {toast.kind === 'ok' ? <CheckCircle2 className="w-4 h-4 inline mr-1.5" /> : <XCircle className="w-4 h-4 inline mr-1.5" />}
+          {toast.msg}
+        </div>
+      )}
     </div>
   );
 }
@@ -346,7 +435,7 @@ function ContractCard({ contract, isSelected, onClick, onToggle }: { contract: C
   );
 }
 
-function ContractDetail({ contract }: { contract: Contract }) {
+function ContractDetail({ contract, onEdit, onDelete }: { contract: Contract; onEdit: () => void; onDelete: () => void }) {
   const Icon = ICONS[contract.icon] || Shield;
   const engineMeta = ENGINE_META[contract.engine_type];
   const EngineIcon = engineMeta.icon;
@@ -360,13 +449,23 @@ function ContractDetail({ contract }: { contract: Contract }) {
           background: `radial-gradient(circle, ${colorHex(contract.color)}, transparent 70%)`
         }} />
         <div className="relative">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-700">
-              <Icon className={`w-6 h-6 ${COLOR_TEXT[contract.color] || 'text-slate-200'}`} />
+          <div className="flex items-start justify-between gap-2 mb-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-700 shrink-0">
+                <Icon className={`w-6 h-6 ${COLOR_TEXT[contract.color] || 'text-slate-200'}`} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-mono tracking-wider text-slate-400 truncate">{contract.contract_code}</div>
+                <div className="text-base font-semibold text-white leading-tight">{contract.contract_name}</div>
+              </div>
             </div>
-            <div>
-              <div className="text-[10px] font-mono tracking-wider text-slate-400">{contract.contract_code}</div>
-              <div className="text-base font-semibold text-white leading-tight">{contract.contract_name}</div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={onEdit} title="Edit" className="p-1.5 rounded-lg bg-slate-900/70 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition">
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={onDelete} title="Delete" className="p-1.5 rounded-lg bg-slate-900/70 hover:bg-red-500/20 border border-slate-700 hover:border-red-500/40 text-slate-300 hover:text-red-300 transition">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">{contract.description}</p>
@@ -496,6 +595,202 @@ function ContractDetail({ contract }: { contract: Contract }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ContractEditor({
+  mode, draft, onCancel, onSave,
+}: { mode: 'create' | 'edit'; draft: Partial<Contract>; onCancel: () => void; onSave: (d: Partial<Contract>) => void }) {
+  const [form, setForm] = useState<Partial<Contract>>(() => ({ ...draft }));
+  const [paramsText, setParamsText] = useState<string>(() => JSON.stringify(draft.parameters || {}, null, 2));
+  const [sampleText, setSampleText] = useState<string>(() => JSON.stringify(draft.sample_signals || {}, null, 2));
+  const [triggersText, setTriggersText] = useState<string>(() => (draft.triggers || []).join('\n'));
+  const [pathText, setPathText] = useState<string>(() => (draft.escalation_path || []).join('\n'));
+  const [frameworksText, setFrameworksText] = useState<string>(() => (draft.compliance_frameworks || []).join(', '));
+  const [paramsErr, setParamsErr] = useState<string | null>(null);
+  const [sampleErr, setSampleErr] = useState<string | null>(null);
+
+  const update = <K extends keyof Contract>(k: K, v: any) => setForm(prev => ({ ...prev, [k]: v }));
+
+  const commit = () => {
+    let params: any = {}, samples: any = {};
+    try { params = JSON.parse(paramsText || '{}'); setParamsErr(null); } catch (e: any) { setParamsErr(e.message); return; }
+    try { samples = JSON.parse(sampleText || '{}'); setSampleErr(null); } catch (e: any) { setSampleErr(e.message); return; }
+    onSave({
+      ...form,
+      parameters: params,
+      sample_signals: samples,
+      triggers: triggersText.split('\n').map(s => s.trim()).filter(Boolean),
+      escalation_path: pathText.split('\n').map(s => s.trim()).filter(Boolean),
+      compliance_frameworks: frameworksText.split(',').map(s => s.trim()).filter(Boolean),
+    });
+  };
+
+  const Icon = ICONS[form.icon || 'Shield'] || Shield;
+  const engineMeta = ENGINE_META[(form.engine_type as Engine) || 'regular'];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="relative w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-700 bg-[#05070f] shadow-2xl">
+        {/* Preview banner */}
+        <div className={`relative overflow-hidden border-b border-slate-800 bg-gradient-to-br ${COLOR_GRAD[form.color || 'emerald'] || COLOR_GRAD.slate} p-5`}>
+          <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full blur-3xl opacity-40 pointer-events-none" style={{ background: `radial-gradient(circle, ${colorHex(form.color || 'emerald')}, transparent 70%)` }} />
+          <div className="relative flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-700">
+                <Icon className={`w-6 h-6 ${COLOR_TEXT[form.color || 'emerald'] || 'text-slate-200'}`} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-semibold">
+                  {mode === 'create' ? 'New Data Contract' : 'Edit Data Contract'}
+                </div>
+                <div className="text-lg font-bold text-white truncate">{form.contract_name || 'Untitled contract'}</div>
+                <div className="text-[11px] font-mono text-slate-400">{form.contract_code || 'DOM-CODE'}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border bg-slate-900/60 ${engineMeta.gradient.split(' ').find(c => c.startsWith('border-')) || 'border-slate-700'}`}>
+                <engineMeta.icon className={`w-3.5 h-3.5 ${engineMeta.color}`} />
+                <span className={`text-[10px] font-bold ${engineMeta.color}`}>{engineMeta.label}</span>
+              </div>
+              <button onClick={onCancel} className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-slate-300">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Field label="Contract Code" hint="Unique identifier, e.g. DOM-NETWORK or CUSTOM-APT-EU">
+            <input className={fieldCls} value={form.contract_code || ''} onChange={e => update('contract_code', e.target.value)} />
+          </Field>
+          <Field label="Contract Name" hint="Human-readable domain or policy title">
+            <input className={fieldCls} value={form.contract_name || ''} onChange={e => update('contract_name', e.target.value)} />
+          </Field>
+          <Field label="Description" hint="What this contract covers and when it fires" span>
+            <textarea className={fieldCls + ' min-h-[68px]'} value={form.description || ''} onChange={e => update('description', e.target.value)} />
+          </Field>
+
+          <Field label="Category" hint="Drives the filter pill and default icon group">
+            <select className={fieldCls} value={form.category || 'grc'} onChange={e => update('category', e.target.value)}>
+              {CATEGORIES.filter(c => c.key !== 'all').map(c => (
+                <option key={c.key} value={c.key}>{c.label}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Engine Type" hint="Which scoring engine receives matched events">
+            <div className="grid grid-cols-4 gap-1.5">
+              {(Object.keys(ENGINE_META) as Engine[]).map(e => {
+                const m = ENGINE_META[e];
+                const E = m.icon;
+                const active = form.engine_type === e;
+                return (
+                  <button
+                    key={e} type="button" onClick={() => update('engine_type', e)}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-[10px] font-bold transition ${
+                      active ? `bg-gradient-to-br ${m.gradient} ${m.color}` : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <E className="w-4 h-4" />
+                    <span className="capitalize">{e}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          <Field label="Severity Floor" hint="Lowest severity the contract can emit">
+            <select className={fieldCls} value={form.severity_floor || 'medium'} onChange={e => update('severity_floor', e.target.value)}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </Field>
+          <Field label="SLA (minutes)" hint="Response-time target">
+            <input type="number" min={1} className={fieldCls} value={form.sla_minutes ?? 60} onChange={e => update('sla_minutes', Number(e.target.value))} />
+          </Field>
+
+          <Field label="Icon" hint="Lucide icon name (e.g. Shield, Brain, Network)">
+            <select className={fieldCls} value={form.icon || 'Shield'} onChange={e => update('icon', e.target.value)}>
+              {Object.keys(ICONS).map(k => <option key={k} value={k}>{k}</option>)}
+            </select>
+          </Field>
+          <Field label="Color" hint="Accent hue for the card">
+            <div className="flex flex-wrap gap-1">
+              {Object.keys(COLOR_GRAD).map(c => (
+                <button
+                  key={c} type="button" onClick={() => update('color', c)}
+                  className={`w-7 h-7 rounded-lg border-2 transition ${form.color === c ? 'scale-110 ring-2 ring-white/30' : 'border-transparent'}`}
+                  style={{ background: colorHex(c) }}
+                  title={c}
+                />
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Compliance Frameworks" hint="Comma-separated (e.g. PCI-DSS, SOX, GDPR)" span>
+            <input className={fieldCls} value={frameworksText} onChange={e => setFrameworksText(e.target.value)} placeholder="GDPR, LGPD, ISO 27001" />
+          </Field>
+
+          <Field label="Trigger Conditions" hint="One per line. Free-form DSL, e.g. event_class:auth_event" span>
+            <textarea className={fieldCls + ' font-mono min-h-[88px]'} value={triggersText} onChange={e => setTriggersText(e.target.value)} placeholder={'event_class:pii_exposure\nintel:watchlist'} />
+          </Field>
+
+          <Field label="Escalation Path" hint="One step per line, top-to-bottom" span>
+            <textarea className={fieldCls + ' min-h-[88px]'} value={pathText} onChange={e => setPathText(e.target.value)} placeholder={'Notify DPO\nStart breach clock\nFile regulator report'} />
+          </Field>
+
+          <Field label="Engine Parameters (JSON)" hint="Weights / thresholds loaded into the engine when matched" span>
+            <textarea
+              className={`${fieldCls} font-mono min-h-[140px] ${paramsErr ? 'border-red-500/50' : ''}`}
+              value={paramsText} onChange={e => setParamsText(e.target.value)}
+            />
+            {paramsErr && <div className="text-[11px] text-red-300 mt-1">{paramsErr}</div>}
+          </Field>
+
+          <Field label="Sample Signals (JSON)" hint="Representative values shown in the detail pane" span>
+            <textarea
+              className={`${fieldCls} font-mono min-h-[110px] ${sampleErr ? 'border-red-500/50' : ''}`}
+              value={sampleText} onChange={e => setSampleText(e.target.value)}
+            />
+            {sampleErr && <div className="text-[11px] text-red-300 mt-1">{sampleErr}</div>}
+          </Field>
+
+          <Field label="Active" hint="Inactive contracts do not match events" span>
+            <button
+              type="button"
+              onClick={() => update('is_active', !form.is_active)}
+              className={`relative w-12 h-6 rounded-full transition ${form.is_active ? 'bg-emerald-500/70' : 'bg-slate-700'}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition ${form.is_active ? 'left-6' : 'left-0.5'}`} />
+            </button>
+          </Field>
+        </div>
+
+        <div className="border-t border-slate-800 bg-slate-900/50 px-5 py-3 flex items-center justify-end gap-2">
+          <button onClick={onCancel} className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-sm">
+            Cancel
+          </button>
+          <button onClick={commit} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-emerald-500/30 to-cyan-500/25 hover:from-emerald-500/40 hover:to-cyan-500/35 border border-emerald-500/50 text-emerald-100 text-sm font-semibold">
+            <Save className="w-4 h-4" /> {mode === 'create' ? 'Create Contract' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const fieldCls = 'w-full bg-slate-900 border border-slate-700 focus:border-emerald-500/50 outline-none rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600';
+
+function Field({ label, hint, children, span }: { label: string; hint?: string; children: React.ReactNode; span?: boolean }) {
+  return (
+    <div className={span ? 'lg:col-span-2' : ''}>
+      <label className="block text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-1">{label}</label>
+      {children}
+      {hint && <div className="text-[10px] text-slate-500 mt-1">{hint}</div>}
     </div>
   );
 }
