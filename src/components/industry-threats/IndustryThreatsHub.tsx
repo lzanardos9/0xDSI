@@ -142,6 +142,3 @@ export default function IndustryThreatsHub({ initialIndustry }: { initialIndustr
     </div>
   );
 }
-
-
-export default IndustryThreatsHub
