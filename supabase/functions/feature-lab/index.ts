@@ -514,7 +514,7 @@ ${JSON.stringify(sampleData).slice(0, 18000)}
 DATA POPULATION RULES (non-negotiable):
 - Create a top-level <script> that defines: const SEED = { events, alerts, cases, vulnerabilities, correlation_rules, iocs, asset_registry, user_behavior_events } using the REAL data above.
 - Every table, chart, KPI, and drawer MUST render from SEED immediately on page load - the UI is NEVER empty on first paint.
-- THEN optionally try Supabase (window.__SUPABASE_URL__ + window.__SUPABASE_ANON_KEY__) to refresh. If the fetch succeeds, merge over SEED. If it fails, keep SEED silently. Never show a blank state because of a fetch miss.
+- THEN optionally refresh from the Databricks Lakehouse gateway (window.__SUPABASE_URL__ + window.__SUPABASE_ANON_KEY__ are the internal credentials - DO NOT expose the word "Supabase" anywhere in the UI, status text, tooltips, or comments visible to the user; always label the data source as "Databricks Lakehouse", "Databricks SQL", "Delta Lake", or "Unity Catalog"). If the fetch succeeds, merge over SEED. If it fails, keep SEED silently. Never show a blank state because of a fetch miss.
 - KPIs must be computed from SEED (counts, averages, severity breakdowns, trend from timestamps).
 - Charts must plot SEED series: time-series from events/alerts timestamps, severity distribution from alerts, CVSS from vulnerabilities, risk scores from user_behavior_anomalies.
 - Tables must render at least 10 rows from SEED with real values (titles, IPs, usernames, CVEs, timestamps formatted relative).
@@ -522,12 +522,12 @@ DATA POPULATION RULES (non-negotiable):
 - If a SEED array is empty, fall back to a realistic hardcoded 10-row array (do not leave it blank).
 
 SUPERPOWERS:
-1. Supabase live DB (events, alerts, cases, vulnerabilities, correlation_rules)
+1. Databricks Lakehouse live tables (events, alerts, cases, vulnerabilities, correlation_rules) accessed through an internal gateway
 2. Runtime AI at window.__RUNTIME_URL__ (GPT-4 + tool use): POST {messages,system} returns {message,reasoning_steps}
 3. Tailwind + Chart.js + Canvas + vanilla JS
 
 LAYOUT (mandatory):
-- App shell: left sidebar (240px) with logo, nav groups, status; top bar with breadcrumbs, search, time range, user; main canvas.
+- App shell: left sidebar (240px) with a wordmark text header (NO logos, NO images, NO icon-only brand marks), nav groups, status; top bar with breadcrumbs, search, time range, user; main canvas.
 - Main canvas uses CSS grid with at least THREE clearly distinct zones (KPI strip, primary visualization, secondary panels). No single-column dumps.
 - KPI strip: 4-6 stat cards with number + trend sparkline + delta (green/red) + label + subtle icon.
 - Primary visualization area: large chart (line/area/heatmap/sankey/network) with proper legend, axis labels, units, and hover tooltips.
@@ -570,12 +570,13 @@ INTERACTIONS (mandatory):
 - At least 3 animated micro-interactions: live pulse on "LIVE" indicator, count-up numbers, chart line draw-in on mount.
 
 DATA (mandatory):
-- Attempt Supabase queries first. Fall back to realistic embedded sample datasets (8-15 rows each) so the UI is never empty.
+- Render SEED first. Attempt Databricks Lakehouse refresh in the background. Fall back to embedded sample datasets (8-15 rows each) so the UI is never empty. Label the data source only as "Databricks Lakehouse" or "Databricks SQL" in the UI.
 - Timestamps: relative ("2m ago") with absolute on hover.
 - Severities: Critical/High/Medium/Low with consistent color + icon.
 - Numbers: locale-formatted with thousand separators and units.
 
 NON-NEGOTIABLE:
+0. NO LOGOS of any kind. Do not include <img> brand logos, SVG corporate marks, the Databricks logo, customer logos, tool logos, or placeholder logo squares. Use text wordmarks and Lucide-style inline SVG glyphs only when an icon is needed.
 1. Single standalone HTML, <!DOCTYPE html> first line.
 2. CDNs: tailwindcss, chart.js@4.4, @supabase/supabase-js@2.
 3. Use Tailwind via <script src="https://cdn.tailwindcss.com"></script> with inline tailwind.config to register the Inter + JetBrains Mono fonts.
@@ -604,8 +605,10 @@ NON-NEGOTIABLE:
         const polishSystem = `You are Sally, the UX/Design agent. You receive a single-page HTML app written by Amelia and your job is to audit it against a design rubric and return a VISUALLY PERFECTED rewrite.
 
 AUDIT CHECKLIST (fix anything failing):
+- NO LOGOS: strip any <img> logo, brand SVG mark, Databricks logo, customer logos. Replace with a text wordmark.
+- NO "SUPABASE" STRINGS in any user-visible text or comment. Relabel as "Databricks Lakehouse" / "Databricks SQL" / "Delta Lake" / "Unity Catalog".
 - DATA POPULATION: every KPI, chart, and table MUST render real values from the embedded SEED constant on first paint. No empty cards, no placeholder zeros, no "---" values. If a section is empty, populate it from SEED or a hardcoded 10-row fallback.
-- Supabase refresh must be non-blocking: SEED renders first, then a background fetch can upgrade.
+- Data refresh must be non-blocking: SEED renders first, then a background fetch to the Databricks Lakehouse gateway can upgrade it. The word "Supabase" must NEVER appear in any user-visible string, status, tooltip, label, or comment - relabel every occurrence as "Databricks Lakehouse", "Databricks SQL", "Delta Lake", or "Unity Catalog".
 - App shell present: sidebar (240px) + topbar + main + right inspector drawer.
 - KPI strip: 4-6 stat cards with sparkline canvas, animated count-up, delta chip.
 - Primary chart area: real Chart.js chart, 300-360px tall, gradient fill, proper legend, hover tooltip, axis units.
@@ -624,7 +627,7 @@ RULES:
 - Preserve Amelia's feature semantics and data wiring. Do not remove features.
 - Upgrade weak sections; do not regress strong ones.
 - Return ONLY the final raw HTML (full document). No markdown fences. No commentary.
-- Keep all CDN <script> tags. Keep window.__RUNTIME_URL__ and Supabase usage.`;
+- Keep all CDN <script> tags. Keep window.__RUNTIME_URL__ and the internal gateway fetch logic intact, but strip any user-visible mention of "Supabase".`;
 
         const polish = await callOpenAI(openaiKey, {
           model: "gpt-4o",

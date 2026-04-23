@@ -72,7 +72,7 @@ const EXECUTE_SCRIPT_APP: ScriptEntry[] = [
   { t: 4000,  kind: 'work',   agent: 'amelia',  text: 'Wiring Tailwind design system and responsive layout...' },
   { t: 8000,  kind: 'judge',  judge: 'winston', target: 'amelia',  text: 'Spot-checking component count matches architecture...' },
   { t: 12000, kind: 'work',   agent: 'amelia',  text: 'Embedding Chart.js visualizations and micro-interactions...' },
-  { t: 18000, kind: 'work',   agent: 'amelia',  text: 'Hooking live Supabase queries for events, alerts, cases...' },
+  { t: 18000, kind: 'work',   agent: 'amelia',  text: 'Hooking live Databricks SQL queries for events, alerts, cases...' },
   { t: 26000, kind: 'judge',  judge: 'sally',   target: 'amelia',  text: 'Reviewing UX: loading, empty, and error states...' },
   { t: 32000, kind: 'work',   agent: 'amelia',  text: 'Adding keyboard shortcuts and focus rings...' },
   { t: 40000, kind: 'work',   agent: 'paige',   text: 'Drafting README, runbook, and API contract in parallel...' },

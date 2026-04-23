@@ -181,7 +181,7 @@ export default function FeatureLab() {
       'Scaffolding HTML structure...',
       'Wiring Tailwind design system...',
       'Embedding Chart.js visualizations...',
-      'Connecting Supabase live queries...',
+      'Connecting Databricks SQL live queries...',
       'Building runtime agent hooks...',
       'Polishing micro-interactions...',
     ];
