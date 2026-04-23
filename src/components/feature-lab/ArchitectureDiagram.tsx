@@ -35,14 +35,14 @@ interface ArchitectureDiagramProps {
   links: DiagramLink[];
 }
 
-const LAYER_ORDER = ['client', 'edge', 'platform', 'lakehouse', 'ml', 'external'];
+const LAYER_ORDER = ['ingest', 'lakehouse', 'governance', 'ml', 'serving', 'apps'];
 const LAYER_LABELS: Record<string, string> = {
-  client: 'Client / UI',
-  edge: 'Edge & API',
-  platform: 'Platform Services',
-  lakehouse: 'Databricks Lakehouse',
-  ml: 'Mosaic AI & ML',
-  external: 'External Systems',
+  ingest: 'Ingest',
+  lakehouse: 'Lakehouse Storage',
+  governance: 'Governance & Quality',
+  ml: 'ML & AI',
+  serving: 'Serving',
+  apps: 'Apps & Orchestration',
 };
 
 type NodeStyle = {
@@ -85,7 +85,7 @@ export default function ArchitectureDiagram({ nodes, links }: ArchitectureDiagra
   const { positions, activeLayers, width, height, laneBounds } = useMemo(() => {
     const byLayer: Record<string, DiagramNode[]> = {};
     nodes.forEach(n => {
-      const l = n.layer && LAYER_ORDER.includes(n.layer) ? n.layer : 'platform';
+      const l = n.layer && LAYER_ORDER.includes(n.layer) ? n.layer : 'lakehouse';
       (byLayer[l] ||= []).push(n);
     });
 
@@ -300,7 +300,7 @@ export default function ArchitectureDiagram({ nodes, links }: ArchitectureDiagra
               {activeLayers.map(layer => {
                 const bounds = laneBounds[layer];
                 if (!bounds) return null;
-                const isDbx = layer === 'lakehouse' || layer === 'ml';
+                const isDbx = true;
                 return (
                   <g key={layer}>
                     <rect

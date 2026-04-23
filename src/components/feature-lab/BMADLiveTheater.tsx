@@ -157,7 +157,7 @@ export default function BMADLiveTheater({ phase, featureType, judgments }: BMADL
           </div>
           <div>
             <div className="text-sm font-bold text-white">
-              {phase === 'planning' ? 'BMAD Agents Designing the Plan' : 'BMAD Agents Building the Feature'}
+              {phase === 'planning' ? 'Agents Designing the Plan' : 'Agents Building the Feature'}
             </div>
             <div className="text-[10px] text-slate-500 font-mono">
               {phase === 'planning' ? 'Mary -> John -> Winston -> Sally, with cross-agent peer review' : 'Amelia implementing, Paige documenting, Winston and Sally auditing'}

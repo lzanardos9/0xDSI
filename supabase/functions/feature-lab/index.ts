@@ -118,9 +118,9 @@ Deno.serve(async (req: Request) => {
       ]);
       const eventTypes = [...new Set((eventsRes.data || []).map((e: any) => e.event_type))].slice(0, 20);
 
-      const plannerSystem = `You orchestrate the BMAD Method agile multi-agent workflow to design a Databricks Lakehouse security feature. Simulate FOUR specialized agents collaborating in order. Each must contribute their distinct deliverables.
+      const plannerSystem = `You orchestrate an agile multi-agent workflow to design a Databricks Lakehouse security feature. Simulate FOUR specialized agents collaborating in order. Each must contribute their distinct deliverables.
 
-BMAD AGENTS TO SIMULATE:
+AGENTS TO SIMULATE:
 1. Mary (Analyst) - conducts domain / market / technical research. Produces a concise brief with insights, risks, and prior-art references.
 2. John (Product Manager) - converts the brief into a PRD: epics with user stories and acceptance criteria, success metrics, scope in/out.
 3. Winston (Architect) - designs the system: components, data flows, Databricks integrations, tech choices, NFRs. OWNS the architecture diagram.
@@ -273,9 +273,11 @@ Return STRICT JSON matching this schema:
 }
 
 Constraints:
-- Include AT LEAST 3 Databricks nodes in the diagram.
-- Place nodes sensibly across layers for left-to-right flow.
-- Keep node count to 8-14 for clarity.
+- ARCHITECTURE DIAGRAM MUST USE ONLY DATABRICKS PRODUCTS AS NODES. No generic "Frontend", "API Gateway", "Database", "User", etc. Every node must be a real Databricks service from the allowlist above (Delta Lake, Unity Catalog, DLT, Databricks SQL, Genie, MLflow, Mosaic AI Agent Framework, Mosaic AI Model Serving, Vector Search, Lakeflow Connect, Photon, Feature Store, Lakehouse Monitoring, AI/BI Dashboards, Auto Loader, DLT Expectations, Workflows, Structured Streaming, Clean Rooms, System Tables, Databricks Apps).
+- Every node MUST have type: "databricks" and a non-null databricks_product field naming the exact product.
+- Every node MUST have layer in {"ingest","lakehouse","ml","serving","governance","apps"} only - no "client" or "external".
+- Include 8-14 Databricks nodes covering ingest -> storage/governance -> ML/AI -> serving/apps.
+- Links describe real data flows between Databricks services using Delta, Unity Catalog, SQL Warehouse, Model Serving endpoints, Vector Search indexes, etc.
 - ALL fields are required.`;
 
       const planner = await callOpenAI(openaiKey, {
@@ -295,41 +297,114 @@ Constraints:
       plan.feature_type = plan.feature_type || feature_type;
       plan.code_language = plan.code_language || code_language;
 
-      // Defensive fallback: if architecture_diagram is missing or empty, synthesize a minimal one from components
-      if (!plan.architecture_diagram || !Array.isArray(plan.architecture_diagram.nodes) || plan.architecture_diagram.nodes.length === 0) {
-        const comps: string[] = Array.isArray(plan.components) ? plan.components : [];
-        const dbx: any[] = Array.isArray(plan.databricks_features) ? plan.databricks_features : [];
-        const synthNodes: any[] = [];
-        const synthLinks: any[] = [];
+      // Enforce Databricks-only architecture diagram. Strip any non-Databricks node and rebuild if empty.
+      const DBX_ALLOWLIST: Array<{ name: string; layer: string; purpose: string }> = [
+        { name: "Lakeflow Connect",              layer: "ingest",     purpose: "Streaming ingest from Kafka / SaaS / CDC" },
+        { name: "Auto Loader",                   layer: "ingest",     purpose: "Cloud storage incremental ingestion" },
+        { name: "Structured Streaming",          layer: "ingest",     purpose: "Low-latency stream processing" },
+        { name: "Delta Live Tables",             layer: "lakehouse",  purpose: "Declarative ETL pipelines with expectations" },
+        { name: "Delta Lake",                    layer: "lakehouse",  purpose: "ACID storage of raw/silver/gold tables" },
+        { name: "Unity Catalog",                 layer: "governance", purpose: "RBAC, lineage, tagging, audit" },
+        { name: "DLT Expectations",              layer: "governance", purpose: "Data quality gates" },
+        { name: "Lakehouse Monitoring",          layer: "governance", purpose: "Drift and quality telemetry" },
+        { name: "System Tables",                 layer: "governance", purpose: "Platform audit and billing logs" },
+        { name: "Feature Store",                 layer: "ml",         purpose: "Behavioral features for ML models" },
+        { name: "MLflow",                        layer: "ml",         purpose: "Experiment tracking and model registry" },
+        { name: "Vector Search",                 layer: "ml",         purpose: "Semantic retrieval over IOCs and rules" },
+        { name: "Mosaic AI Model Serving",       layer: "serving",    purpose: "Low-latency LLM and model endpoints" },
+        { name: "Mosaic AI Agent Framework",     layer: "serving",    purpose: "Production tool-using agents" },
+        { name: "Databricks SQL",                layer: "serving",    purpose: "Analyst queries via Photon warehouse" },
+        { name: "Genie",                         layer: "serving",    purpose: "Natural-language to SQL interface" },
+        { name: "AI/BI Dashboards",              layer: "apps",       purpose: "Executive dashboards" },
+        { name: "Databricks Apps",               layer: "apps",       purpose: "Hosted interactive application" },
+        { name: "Workflows",                     layer: "apps",       purpose: "Scheduled orchestration" },
+        { name: "Clean Rooms",                   layer: "apps",       purpose: "Cross-org threat intel collaboration" },
+      ];
+      const DBX_NAMES = new Set(DBX_ALLOWLIST.map(d => d.name.toLowerCase()));
+      const ALLOWED_LAYERS = new Set(["ingest", "lakehouse", "governance", "ml", "serving", "apps"]);
 
-        synthNodes.push({ id: "user", label: "SOC Analyst", type: "actor", layer: "client", description: "End user" });
-        synthNodes.push({ id: "ui", label: plan.title || "Feature UI", type: "frontend", layer: "client", description: "React interface" });
-        synthNodes.push({ id: "api", label: "Supabase Edge", type: "api", layer: "edge", description: "Authenticated API layer" });
-        synthLinks.push({ from: "user", to: "ui", label: "interacts", protocol: "HTTPS" });
-        synthLinks.push({ from: "ui", to: "api", label: "queries", protocol: "HTTPS" });
+      const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-        comps.slice(0, 5).forEach((c, i) => {
-          const id = `comp-${i}`;
-          const label = (typeof c === "string" ? c : (c as any)?.name || `Component ${i + 1}`).toString().slice(0, 40);
-          synthNodes.push({ id, label, type: "api", layer: "platform", description: typeof c === "string" ? c : "" });
-          synthLinks.push({ from: "api", to: id, label: "routes", protocol: "REST" });
-        });
+      const originalNodes: any[] = Array.isArray(plan.architecture_diagram?.nodes) ? plan.architecture_diagram.nodes : [];
+      const originalLinks: any[] = Array.isArray(plan.architecture_diagram?.links) ? plan.architecture_diagram.links : [];
 
-        dbx.slice(0, 4).forEach((d, i) => {
-          const id = `dbx-${i}`;
-          synthNodes.push({
-            id,
-            label: d?.name || `Databricks ${i + 1}`,
+      // Keep only nodes that map to a Databricks product
+      const keptNodes = originalNodes
+        .map(n => {
+          const productName = (n.databricks_product || n.label || "").toString();
+          const match = DBX_ALLOWLIST.find(d => productName.toLowerCase().includes(d.name.toLowerCase()) || d.name.toLowerCase().includes(productName.toLowerCase()));
+          if (!match) return null;
+          return {
+            ...n,
             type: "databricks",
-            layer: i < 2 ? "lakehouse" : "ml",
-            description: d?.purpose || "",
-            databricks_product: d?.name || null,
-          });
-          synthLinks.push({ from: "api", to: id, label: "delegates", protocol: "JDBC" });
+            layer: ALLOWED_LAYERS.has(n.layer) ? n.layer : match.layer,
+            databricks_product: match.name,
+            label: match.name,
+          };
+        })
+        .filter(Boolean);
+
+      const keptIds = new Set(keptNodes.map((n: any) => n.id));
+      const keptLinks = originalLinks.filter(l => keptIds.has(l.from) && keptIds.has(l.to));
+
+      // If fewer than 6 nodes survive the filter, synthesize a Databricks-only reference architecture
+      let finalNodes: any[] = keptNodes as any[];
+      let finalLinks: any[] = keptLinks;
+
+      if (finalNodes.length < 6) {
+        const dbxFromPlan: any[] = Array.isArray(plan.databricks_features) ? plan.databricks_features : [];
+        const picks = new Set<string>();
+        dbxFromPlan.forEach(d => {
+          const match = DBX_ALLOWLIST.find(a => d?.name && a.name.toLowerCase().includes(d.name.toLowerCase().split(" ")[0]));
+          if (match) picks.add(match.name);
+        });
+        const defaults = ["Lakeflow Connect", "Auto Loader", "Delta Live Tables", "Delta Lake", "Unity Catalog", "DLT Expectations", "Vector Search", "MLflow", "Mosaic AI Model Serving", "Databricks SQL", "AI/BI Dashboards", "Workflows"];
+        defaults.forEach(n => { if (picks.size < 12) picks.add(n); });
+
+        finalNodes = Array.from(picks).map(name => {
+          const d = DBX_ALLOWLIST.find(a => a.name === name)!;
+          return {
+            id: slug(d.name),
+            label: d.name,
+            type: "databricks",
+            layer: d.layer,
+            description: d.purpose,
+            databricks_product: d.name,
+            details: { inputs: "", outputs: "", scale: "", security: "Unity Catalog governed" },
+          };
         });
 
-        plan.architecture_diagram = { nodes: synthNodes, links: synthLinks };
+        const byLayer = (layer: string) => finalNodes.filter(n => n.layer === layer);
+        const chain = [
+          ...byLayer("ingest"),
+          ...byLayer("lakehouse"),
+          ...byLayer("governance"),
+          ...byLayer("ml"),
+          ...byLayer("serving"),
+          ...byLayer("apps"),
+        ];
+        finalLinks = [];
+        for (let i = 0; i < chain.length - 1; i++) {
+          finalLinks.push({
+            from: chain[i].id,
+            to: chain[i + 1].id,
+            label: "flows to",
+            protocol: "Delta",
+            data: "events",
+            latency: "",
+            volume: "",
+          });
+        }
+        // Cross-link governance to all data layers
+        const uc = finalNodes.find(n => n.label === "Unity Catalog");
+        if (uc) {
+          finalNodes.filter(n => ["lakehouse", "ml", "serving"].includes(n.layer) && n.id !== uc.id).forEach(n => {
+            finalLinks.push({ from: uc.id, to: n.id, label: "governs", protocol: "UC" });
+          });
+        }
       }
+
+      plan.architecture_diagram = { nodes: finalNodes, links: finalLinks };
 
       return json({ plan, tokens_used: planner.usage?.total_tokens || 0 });
     }
@@ -346,7 +421,7 @@ Constraints:
       let generated_code = "";
       let tokens = 0;
 
-      const paigeSystem = `You are Paige, the BMAD Tech Writer agent. Produce concise, production-grade documentation for the approved feature.
+      const paigeSystem = `You are Paige, the Tech Writer agent. Produce concise, production-grade documentation for the approved feature.
 
 APPROVED PLAN:
 ${JSON.stringify(plan).slice(0, 4000)}
@@ -371,7 +446,7 @@ Return STRICT JSON:
       }).catch(() => null);
 
       if (feature_type === "backend") {
-        const backendSystem = `You are Amelia, the BMAD Developer agent. Write PRODUCTION ${code_language.toUpperCase()} code for the Databricks Lakehouse.
+        const backendSystem = `You are Amelia, the Developer agent. Write PRODUCTION ${code_language.toUpperCase()} code for the Databricks Lakehouse.
 
 APPROVED PLAN (implement precisely):
 ${JSON.stringify(plan)}
@@ -399,7 +474,7 @@ Requirements:
         generated_code = (gen.choices?.[0]?.message?.content || "").replace(/^```\w*\n?/i, "").replace(/\n?```$/i, "").trim();
         tokens = gen.usage?.total_tokens || 0;
       } else {
-        const appSystem = `You are Amelia, the BMAD Developer agent. Build a PRODUCTION-QUALITY single-page security application. Match Bolt.new / v0.dev quality.
+        const appSystem = `You are Amelia, the Developer agent. Build a PRODUCTION-QUALITY single-page security application. Match Bolt.new / v0.dev quality.
 
 APPROVED PLAN (implement precisely):
 ${JSON.stringify(plan)}

@@ -53,7 +53,7 @@ export default function BMADAgentPanel({ bmad, developerActive, writerDocs }: BM
             <Users size={14} className="text-cyan-300" />
           </div>
           <div>
-            <div className="text-sm font-bold text-white">BMAD Method Pipeline</div>
+            <div className="text-sm font-bold text-white">Agent Collaboration Pipeline</div>
             <div className="text-[10px] text-slate-500">Six specialist agents collaborating on this feature</div>
           </div>
         </div>
@@ -326,7 +326,7 @@ function AgentDetails({ agent, bmad, writerDocs, developerActive }: { agent: Age
         </div>
         <div>
           <div className={`text-sm font-bold ${def.text}`}>{def.name} <span className="text-slate-500 font-normal">- {def.role}</span></div>
-          <div className="text-[10px] text-slate-500">BMAD Agent {def.initials} -- deliverables below</div>
+          <div className="text-[10px] text-slate-500">Agent {def.initials} -- deliverables below</div>
         </div>
       </div>
       {body}
