@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import { Users, Zap, Brain, Target, Activity, Shield, X, Radio, AlertTriangle, TrendingUp, Glasses, Send, Loader2, MessageSquare } from 'lucide-react';
+import { Users, Zap, Brain, Target, Activity, Shield, X, Radio, AlertTriangle, Glasses, Send, Loader2, MessageSquare, Cpu, Sparkles } from 'lucide-react';
 import {
   AGENT_DEFS, AgentDef, BuiltAgent, DataPacket, VRSeatParts,
   buildCharacter, buildWorkstation, buildEnvironment, buildLabel,
   spawnDataPacket, updateDataPacket, disposePacket, animateScene,
   buildThoughtBubble, updateThoughtBubble, buildVRSeat, animateVRSeat,
 } from '../lib/soc3dHelpers';
+import { supabase } from '../lib/supabase';
 import {
   EnergyBeam, FloorPulse, FloatingLabel, HologramParts,
   spawnEnergyBeam, updateEnergyBeam, disposeBeam,
@@ -33,12 +34,30 @@ const QUICK_PROMPTS: Record<string, string[]> = {
   response: ['What containment actions have you taken?', 'Block the C2 IP now', 'Status on host isolation?'],
 };
 
-const AGENT_ANGLES = [-60, -30, 0, 30, 60];
 const RADIUS = 5.2;
 const ICON_MAP: Record<string, typeof Shield> = {
   triage: Target, enrichment: Brain, orchestrator: Shield,
   investigation: Activity, response: Zap,
 };
+
+function computeAngles(n: number): number[] {
+  if (n <= 1) return [0];
+  if (n <= 5) {
+    const step = 120 / (n - 1);
+    return Array.from({ length: n }, (_, i) => -60 + i * step);
+  }
+  if (n <= 8) {
+    const step = 160 / (n - 1);
+    return Array.from({ length: n }, (_, i) => -80 + i * step);
+  }
+  const step = 360 / n;
+  return Array.from({ length: n }, (_, i) => -180 + i * step);
+}
+
+function hexToNumber(hex: string): number {
+  const clean = hex.replace('#', '');
+  return parseInt(clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean, 16);
+}
 
 const STATUS_MESSAGES = [
   { from: 0, to: 2, msg: 'Hey Commander, batch #2847 is triaged and ready for you', severity: 'medium' as const },
@@ -81,6 +100,10 @@ export default function SOCAgents3D() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
+  const [roster, setRoster] = useState<AgentDef[]>(AGENT_DEFS);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
+  const [newAgentFlash, setNewAgentFlash] = useState<string | null>(null);
+
   const [vrMode, setVrMode] = useState<'orbital' | 'role-select' | 'immersive'>('orbital');
   const [vrRole, setVrRole] = useState<string | null>(null);
   const [xrSupported, setXrSupported] = useState(false);
@@ -96,7 +119,7 @@ export default function SOCAgents3D() {
 
   const sendChat = useCallback(async (text: string) => {
     if (!selected || !text.trim() || chatLoading) return;
-    const agentType = AGENT_TYPE_MAP[selected.id] || selected.type;
+    const agentType = selected.type || AGENT_TYPE_MAP[selected.id] || 'triage';
     const agentId = selected.id;
     const agentColor = selected.color;
     const agentName = selected.name;
@@ -134,8 +157,71 @@ export default function SOCAgents3D() {
   }, [selected, chatLoading, chatHistory, addFeedItem]);
 
   useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const { data } = await supabase
+        .from('soc_agent_registry')
+        .select('*')
+        .order('is_custom', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (cancelled) return;
+      if (data && data.length > 0) {
+        const mapped: AgentDef[] = data.map((row: any) => ({
+          id: row.agent_key,
+          name: row.name,
+          role: row.role,
+          type: row.agent_type,
+          color: row.color,
+          hex: hexToNumber(row.color),
+          status: (row.status || 'active') as AgentDef['status'],
+          task: row.task,
+          metrics: {
+            accuracy: Number(row.accuracy) || 95,
+            throughput: Number(row.throughput) || 100,
+            tasksCompleted: Number(row.tasks_completed) || 0,
+          },
+        }));
+        setRoster(mapped);
+      }
+      setRosterLoaded(true);
+    };
+    load();
+
+    const channel = supabase
+      .channel('soc_agent_registry_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'soc_agent_registry' }, (payload: any) => {
+        const row = payload.new;
+        if (!row) return;
+        const newDef: AgentDef = {
+          id: row.agent_key,
+          name: row.name,
+          role: row.role,
+          type: row.agent_type,
+          color: row.color,
+          hex: hexToNumber(row.color),
+          status: (row.status || 'active') as AgentDef['status'],
+          task: row.task,
+          metrics: {
+            accuracy: Number(row.accuracy) || 95,
+            throughput: Number(row.throughput) || 100,
+            tasksCompleted: Number(row.tasks_completed) || 0,
+          },
+        };
+        setRoster(prev => prev.some(a => a.id === newDef.id) ? prev : [...prev, newDef]);
+        setNewAgentFlash(newDef.name);
+        setTimeout(() => setNewAgentFlash(null), 6000);
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el || !rosterLoaded || roster.length === 0) return;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x050810);
@@ -165,8 +251,9 @@ export default function SOCAgents3D() {
     holoRef.current = holoParts;
 
     const agents: BuiltAgent[] = [];
-    AGENT_DEFS.forEach((def, i) => {
-      const agent = buildCharacter(def, AGENT_ANGLES[i], RADIUS);
+    const angles = computeAngles(roster.length);
+    roster.forEach((def, i) => {
+      const agent = buildCharacter(def, angles[i], RADIUS);
       buildWorkstation(def, agent.group);
       const label = buildLabel(def.name, def.role, def.color);
       label.position.y = 1.85;
@@ -347,7 +434,7 @@ export default function SOCAgents3D() {
       renderer.dispose();
       if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [rosterLoaded, roster.length]);
 
   useEffect(() => {
     const commInterval = setInterval(() => {
@@ -356,17 +443,20 @@ export default function SOCAgents3D() {
       if (agents.length === 0 || !scene) return;
 
       const scenario = STATUS_MESSAGES[Math.floor(Math.random() * STATUS_MESSAGES.length)];
-      const packet = spawnDataPacket(agents[scenario.from], agents[scenario.to], scene);
+      const fromIdx = scenario.from < agents.length ? scenario.from : Math.floor(Math.random() * agents.length);
+      let toIdx = scenario.to < agents.length ? scenario.to : Math.floor(Math.random() * agents.length);
+      if (toIdx === fromIdx) toIdx = (fromIdx + 1) % agents.length;
+      const packet = spawnDataPacket(agents[fromIdx], agents[toIdx], scene);
       packetsRef.current.push(packet);
 
-      const beam = spawnEnergyBeam(agents[scenario.from], agents[scenario.to], scene);
+      const beam = spawnEnergyBeam(agents[fromIdx], agents[toIdx], scene);
       beamsRef.current.push(beam);
 
-      agents[scenario.to].reactionTime = timeRef.current + 1.5;
+      agents[toIdx].reactionTime = timeRef.current + 1.5;
 
       addFeedItem(
-        `${agents[scenario.from].def.name} -> ${agents[scenario.to].def.name}: ${scenario.msg}`,
-        agents[scenario.from].def.color,
+        `${agents[fromIdx].def.name} -> ${agents[toIdx].def.name}: ${scenario.msg}`,
+        agents[fromIdx].def.color,
         scenario.severity
       );
 
@@ -455,7 +545,7 @@ export default function SOCAgents3D() {
     }
   }, [vrMode]);
 
-  const Icon = selected ? (ICON_MAP[selected.type] || Shield) : Shield;
+  const Icon = selected ? (ICON_MAP[selected.type] || Cpu) : Shield;
 
   const isOrbital = vrMode === 'orbital';
 
@@ -468,6 +558,16 @@ export default function SOCAgents3D() {
       )}
       <div ref={containerRef} className="absolute inset-0 z-10" style={{ cursor: vrMode === 'immersive' ? 'crosshair' : 'grab', pointerEvents: isOrbital ? 'auto' : 'none' }} />
 
+      {newAgentFlash && isOrbital && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-400/40 backdrop-blur-xl shadow-lg shadow-emerald-500/20 animate-[fadeIn_0.4s_ease-out]">
+            <Sparkles className="w-4 h-4 text-emerald-300" />
+            <span className="text-xs font-semibold text-emerald-100 tracking-wide">
+              {newAgentFlash} joined the SOC roster
+            </span>
+          </div>
+        </div>
+      )}
       {alertFlash && isOrbital && (
         <div className="absolute inset-0 z-5 pointer-events-none animate-pulse" style={{
           background: 'radial-gradient(ellipse at center, rgba(239,68,68,0.12) 0%, transparent 70%)',
@@ -514,8 +614,8 @@ export default function SOCAgents3D() {
           </div>
 
           <div className="absolute top-4 right-4 z-10 flex flex-col gap-1.5">
-            {AGENT_DEFS.map(d => {
-              const I = ICON_MAP[d.type] || Shield;
+            {roster.map(d => {
+              const I = ICON_MAP[d.type] || Cpu;
               return (
                 <button
                   key={d.id}
@@ -541,8 +641,12 @@ export default function SOCAgents3D() {
 
           {selected && (() => {
             const agentMessages = chatHistory[selected.id] || [];
-            const agentType = AGENT_TYPE_MAP[selected.id] || selected.type;
-            const quickPrompts = QUICK_PROMPTS[agentType] || QUICK_PROMPTS.triage;
+            const agentType = selected.type || AGENT_TYPE_MAP[selected.id] || 'triage';
+            const quickPrompts = QUICK_PROMPTS[agentType] || [
+              `What are you working on, ${selected.name}?`,
+              'Status report',
+              'What threats are you tracking?',
+            ];
             return (
             <div className="absolute bottom-4 left-4 z-10 w-96 bg-slate-900/95 backdrop-blur-xl rounded-xl border border-slate-700/50 shadow-2xl shadow-black/30 flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100% - 100px)' }}>
               <div className="flex items-center justify-between p-3 border-b border-slate-800/50">

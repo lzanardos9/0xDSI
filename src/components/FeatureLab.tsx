@@ -11,6 +11,7 @@ import CodeViewer from './feature-lab/CodeViewer';
 import LifecyclePanel from './feature-lab/LifecyclePanel';
 import BMADAgentPanel from './feature-lab/BMADAgentPanel';
 import BMADLiveTheater from './feature-lab/BMADLiveTheater';
+import PublishToSOCButton from './feature-lab/PublishToSOCButton';
 
 interface Creation {
   id: string;
@@ -500,6 +501,14 @@ export default function FeatureLab() {
                             <Maximize2 size={14} className="text-slate-500" />
                           </button>
                         </>
+                      )}
+                      {savedCreation && (
+                        <PublishToSOCButton
+                          creationId={savedCreation.id}
+                          title={generatedTitle}
+                          prompt={savedCreation.prompt}
+                          category={savedCreation.category}
+                        />
                       )}
                       <button onClick={resetFlow} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-bold hover:bg-cyan-500/20">
                         <Sparkles size={10} />New

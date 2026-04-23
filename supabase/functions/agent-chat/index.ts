@@ -130,14 +130,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const persona = AGENT_PERSONAS[agentType];
-    if (!persona) {
-      return new Response(
-        JSON.stringify({ error: `Unknown agent: ${agentType}` }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiKey) {
       return new Response(
@@ -149,6 +141,28 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseKey);
+
+    let persona = AGENT_PERSONAS[agentType];
+    if (!persona) {
+      const { data: custom } = await sb
+        .from("soc_agent_registry")
+        .select("name, role, system_prompt, task")
+        .eq("agent_type", agentType)
+        .maybeSingle();
+      if (custom && custom.system_prompt) {
+        persona = { name: custom.name, systemPrompt: custom.system_prompt };
+      } else if (custom) {
+        persona = {
+          name: custom.name,
+          systemPrompt: `You are ${custom.name}, a custom SOC agent. Role: ${custom.role}. Current mission: ${custom.task}. Stay in character. Be concise, operational, 1-3 sentences. Never say you are an AI.`,
+        };
+      } else {
+        return new Response(
+          JSON.stringify({ error: `Unknown agent: ${agentType}` }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     const socContext = await getSOCContext(sb);
 
