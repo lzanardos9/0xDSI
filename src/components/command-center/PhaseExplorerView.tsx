@@ -23,7 +23,14 @@ import {
   Cog,
 } from 'lucide-react';
 import { FUNNEL_PHASES, MOCK_EVENTS, CONNECTOR_META, FunnelEvent } from './eventFunnelData';
-import { PHASE_EXPLANATIONS, buildEventNarrative, PhaseAgent } from './phaseExplanations';
+import {
+  PHASE_EXPLANATIONS,
+  buildEventNarrative,
+  PhaseAgent,
+  PROMOTION_MILESTONES,
+  getPromotionForPhase,
+} from './phaseExplanations';
+import { Bell, Briefcase } from 'lucide-react';
 
 const AGENT_TYPE_META: Record<PhaseAgent['type'], { label: string; color: string; icon: typeof Bot }> = {
   deterministic: { label: 'DETERMINISTIC', color: '#64748b', icon: Cog },
@@ -114,12 +121,33 @@ export default function PhaseExplorerView() {
         </p>
       </div>
 
+      {/* Promotion legend */}
+      <div className="flex items-center gap-2 mb-3 text-[10px] font-mono">
+        <span className="text-slate-500 tracking-widest">PIPELINE MILESTONES:</span>
+        {PROMOTION_MILESTONES.map((m) => (
+          <span
+            key={m.phaseId}
+            className="flex items-center gap-1 px-2 py-1 rounded border"
+            style={{
+              backgroundColor: m.artifact === 'alert' ? 'rgba(245, 158, 11, 0.08)' : 'rgba(34, 197, 94, 0.08)',
+              borderColor: m.artifact === 'alert' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(34, 197, 94, 0.4)',
+              color: m.artifact === 'alert' ? '#fbbf24' : '#4ade80',
+            }}
+          >
+            {m.artifact === 'alert' ? <Bell size={10} /> : <Briefcase size={10} />}
+            <span className="font-bold tracking-wider">{m.label}</span>
+            <span className="text-slate-500">@ phase {m.phaseId}</span>
+          </span>
+        ))}
+      </div>
+
       {/* Phase rail */}
       <div className="grid grid-cols-11 gap-2 mb-6">
         {FUNNEL_PHASES.map((phase) => {
           const Icon = PHASE_ICONS[phase.id];
           const isActive = selectedPhaseId === phase.id;
           const phaseEventCount = MOCK_EVENTS.filter((e) => e.currentPhase === phase.id).length;
+          const promotion = getPromotionForPhase(phase.id);
           return (
             <button
               key={phase.id}
@@ -157,10 +185,64 @@ export default function PhaseExplorerView() {
                 <Activity size={9} />
                 <span>{phaseEventCount} live</span>
               </div>
+              {promotion && (
+                <div
+                  className="absolute -top-2 -right-2 flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold tracking-wider"
+                  style={{
+                    backgroundColor: promotion.artifact === 'alert' ? '#f59e0b' : '#22c55e',
+                    color: '#0a0e1a',
+                    boxShadow: `0 0 12px ${promotion.artifact === 'alert' ? 'rgba(245, 158, 11, 0.6)' : 'rgba(34, 197, 94, 0.6)'}`,
+                  }}
+                >
+                  {promotion.artifact === 'alert' ? <Bell size={8} /> : <Briefcase size={8} />}
+                  {promotion.artifact === 'alert' ? 'ALERT' : 'CASE'}
+                </div>
+              )}
             </button>
           );
         })}
       </div>
+
+      {/* Promotion banner if this phase births an alert/case */}
+      {(() => {
+        const promotion = getPromotionForPhase(selectedPhaseId);
+        if (!promotion) return null;
+        const isAlert = promotion.artifact === 'alert';
+        return (
+          <div
+            className="rounded-lg border p-3 mb-4 flex items-start gap-3"
+            style={{
+              backgroundColor: isAlert ? 'rgba(245, 158, 11, 0.08)' : 'rgba(34, 197, 94, 0.08)',
+              borderColor: isAlert ? 'rgba(245, 158, 11, 0.5)' : 'rgba(34, 197, 94, 0.5)',
+            }}
+          >
+            <div
+              className="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0"
+              style={{
+                backgroundColor: isAlert ? 'rgba(245, 158, 11, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                color: isAlert ? '#fbbf24' : '#4ade80',
+              }}
+            >
+              {isAlert ? <Bell size={16} /> : <Briefcase size={16} />}
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className="text-[10px] font-mono font-bold tracking-widest"
+                  style={{ color: isAlert ? '#fbbf24' : '#4ade80' }}
+                >
+                  THIS IS WHERE A {promotion.label} HAPPENS
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-300 leading-snug mb-1.5">
+                <span className="font-mono font-bold text-slate-400">TRIGGER: </span>
+                {promotion.trigger}
+              </div>
+              <div className="text-[11px] text-slate-300 leading-snug">{promotion.detail}</div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Phase context strip */}
       <div
@@ -568,34 +650,51 @@ function EventInspector({ event, phaseId }: { event: FunnelEvent; phaseId: numbe
         {/* Pipeline trail */}
         <div>
           <div className="text-[9px] font-mono font-bold tracking-widest text-slate-400 mb-2">
-            PIPELINE TRAIL
+            PIPELINE TRAIL — ALERT/CASE PROMOTION
           </div>
           <div className="flex items-center gap-1 flex-wrap">
             {FUNNEL_PHASES.map((p, idx) => {
               const reached = p.id < event.currentPhase;
               const current = p.id === event.currentPhase;
+              const promo = getPromotionForPhase(p.id);
               return (
                 <div key={p.id} className="flex items-center">
-                  <div
-                    className="flex items-center gap-1 px-2 py-1 rounded text-[9px] font-mono font-bold tracking-wider"
-                    style={{
-                      backgroundColor: current
-                        ? hexToRgba(p.color, 0.25)
-                        : reached
-                          ? hexToRgba(p.color, 0.08)
-                          : '#0a0e1a',
-                      color: current ? p.color : reached ? p.color : '#475569',
-                      border: current
-                        ? `1px solid ${p.color}`
-                        : '1px solid transparent',
-                    }}
-                  >
-                    {p.id}
-                    {current && (
-                      <span
-                        className="w-1 h-1 rounded-full animate-pulse"
-                        style={{ backgroundColor: p.color }}
-                      />
+                  <div className="relative">
+                    <div
+                      className="flex items-center gap-1 px-2 py-1 rounded text-[9px] font-mono font-bold tracking-wider"
+                      style={{
+                        backgroundColor: current
+                          ? hexToRgba(p.color, 0.25)
+                          : reached
+                            ? hexToRgba(p.color, 0.08)
+                            : '#0a0e1a',
+                        color: current ? p.color : reached ? p.color : '#475569',
+                        border: current ? `1px solid ${p.color}` : '1px solid transparent',
+                      }}
+                    >
+                      {p.id}
+                      {current && (
+                        <span
+                          className="w-1 h-1 rounded-full animate-pulse"
+                          style={{ backgroundColor: p.color }}
+                        />
+                      )}
+                    </div>
+                    {promo && (reached || current) && (
+                      <div
+                        className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full flex items-center justify-center"
+                        style={{
+                          backgroundColor: promo.artifact === 'alert' ? '#f59e0b' : '#22c55e',
+                          boxShadow: `0 0 6px ${promo.artifact === 'alert' ? 'rgba(245, 158, 11, 0.8)' : 'rgba(34, 197, 94, 0.8)'}`,
+                        }}
+                        title={promo.label}
+                      >
+                        {promo.artifact === 'alert' ? (
+                          <Bell size={6} className="text-slate-900" />
+                        ) : (
+                          <Briefcase size={6} className="text-slate-900" />
+                        )}
+                      </div>
                     )}
                   </div>
                   {idx < FUNNEL_PHASES.length - 1 && (
@@ -604,6 +703,19 @@ function EventInspector({ event, phaseId }: { event: FunnelEvent; phaseId: numbe
                 </div>
               );
             })}
+          </div>
+          <div className="mt-2 flex items-center gap-3 text-[9px] font-mono text-slate-500">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-amber-500" /> Alert birth (phase 5)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-green-500" /> Case opened (phase 7)
+            </span>
+            <span>
+              {event.currentPhase >= 5
+                ? `This event has reached the alert stage${event.currentPhase >= 7 ? ' and is bound to a case' : ''}.`
+                : 'This event has not yet been promoted to an alert.'}
+            </span>
           </div>
         </div>
 

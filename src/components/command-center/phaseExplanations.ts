@@ -21,6 +21,35 @@ export interface PhaseExplanation {
   agents: PhaseAgent[];
 }
 
+export interface PromotionMilestone {
+  phaseId: number;
+  artifact: 'alert' | 'case';
+  label: string;
+  trigger: string;
+  detail: string;
+}
+
+export const PROMOTION_MILESTONES: PromotionMilestone[] = [
+  {
+    phaseId: 5,
+    artifact: 'alert',
+    label: 'ALERT BORN',
+    trigger: 'Triage score >= 35 OR repeat-offender OR critical-asset interaction',
+    detail: 'A correlated event becomes a formal Alert here. The Alert object is written to the alerts table with rule_id, score, evidence pointers, and an SLA acknowledgement timer starts. Every event that gets a triage score >= 35 emits exactly one alert, deduplicated by entity+rule within a 10-minute window.',
+  },
+  {
+    phaseId: 7,
+    artifact: 'case',
+    label: 'CASE OPENED',
+    trigger: 'Investigation confidence >= 0.6 OR severity in (high, critical) OR multi-asset blast radius',
+    detail: 'When investigation produces a coherent narrative with sufficient confidence, a Case is opened. It binds: the originating alert(s), the evidence bundle, the MITRE ATT&CK technique mapping, the blast radius graph, the response playbook, and an SLA contract for acknowledge / contain / resolve. From here the case lives in the Case Management workspace until closed.',
+  },
+];
+
+export function getPromotionForPhase(phaseId: number): PromotionMilestone | undefined {
+  return PROMOTION_MILESTONES.find((m) => m.phaseId === phaseId);
+}
+
 export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
   1: {
     id: 1,
