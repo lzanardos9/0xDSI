@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, Zap, Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
+import { subscribeLiveStream, LiveSeed } from './liveEventStream';
 
 interface CEPNode {
   id: string;
@@ -69,6 +70,18 @@ const RealtimeCEPGraph = ({ expanded, onToggleExpand }: RealtimeCEPGraphProps) =
   const corrCountRef = useRef(0);
   const streamingRef = useRef(streaming);
   streamingRef.current = streaming;
+  const pendingSeedsRef = useRef<LiveSeed[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeLiveStream(batch => {
+      if (!streamingRef.current) return;
+      pendingSeedsRef.current.push(...batch);
+      if (pendingSeedsRef.current.length > 60) {
+        pendingSeedsRef.current = pendingSeedsRef.current.slice(-60);
+      }
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -113,26 +126,27 @@ const RealtimeCEPGraph = ({ expanded, onToggleExpand }: RealtimeCEPGraphProps) =
     let lastPatternCheck = Date.now();
     let eps = 0;
 
-    const spawnEvent = (now: number, w: number, h: number) => {
-      const et = EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)];
+    const spawnEvent = (now: number, w: number, h: number, seed?: LiveSeed) => {
+      const label = seed?.graphLabel ?? EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)].label;
+      const color = seed?.graphColor ?? EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)].color;
       const sourceNode = nodesRef.current.filter(n => n.type === 'source')[Math.floor(Math.random() * SOURCES.length)];
-      const id = `evt-${now}-${Math.random().toString(36).slice(2, 6)}`;
+      const id = seed?.id ?? `evt-${now}-${Math.random().toString(36).slice(2, 6)}`;
       const node: CEPNode = {
         id,
-        label: et.label,
-        type: et.type,
+        label,
+        type: 'event',
         x: sourceNode ? sourceNode.x + (Math.random() - 0.5) * 40 : Math.random() * w,
         y: 60 + Math.random() * 30,
         vx: (Math.random() - 0.5) * 0.5,
         vy: 0.3 + Math.random() * 0.5,
-        radius: 5,
-        color: et.color,
+        radius: seed?.severity === 'critical' ? 7 : seed?.severity === 'high' ? 6 : 5,
+        color,
         born: now,
         ttl: 8000,
       };
       nodesRef.current.push(node);
       if (sourceNode) {
-        edgesRef.current.push({ from: sourceNode.id, to: id, weight: 0.5, color: et.color + '40', born: now });
+        edgesRef.current.push({ from: sourceNode.id, to: id, weight: 0.5, color: color + '40', born: now });
       }
       eventCountRef.current++;
       eps++;
@@ -203,7 +217,11 @@ const RealtimeCEPGraph = ({ expanded, onToggleExpand }: RealtimeCEPGraphProps) =
       const now = Date.now();
 
       if (streamingRef.current) {
-        if (now - lastSpawn > 200 + Math.random() * 300) {
+        if (pendingSeedsRef.current.length > 0 && now - lastSpawn > 120) {
+          const seed = pendingSeedsRef.current.shift();
+          spawnEvent(now, w, h, seed);
+          lastSpawn = now;
+        } else if (pendingSeedsRef.current.length === 0 && now - lastSpawn > 600 + Math.random() * 400) {
           spawnEvent(now, w, h);
           lastSpawn = now;
         }

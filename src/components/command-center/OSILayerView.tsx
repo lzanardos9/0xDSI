@@ -23,6 +23,7 @@ import {
   FunnelEvent,
   FUNNEL_PHASES,
 } from './eventFunnelData';
+import { useLiveStream, LiveSeed } from './liveEventStream';
 
 // ---------------------------------------------------------------------------
 // OSI Layer definitions
@@ -307,6 +308,28 @@ function generateOSIEvent(forceAttack = false): OSIEvent {
   };
 }
 
+function seedToOSIEvent(seed: LiveSeed): OSIEvent {
+  const verdict: OSIEvent['verdict'] = seed.verdict === 'pending' ? 'pending' : seed.verdict;
+  return {
+    id: seed.id,
+    timestamp: seed.timestamp,
+    osiLayer: seed.osiLayer,
+    severity: seed.severity,
+    protocol: seed.protocol,
+    sourceIP: seed.sourceIP,
+    destIP: seed.destIP,
+    port: seed.port,
+    bytes: seed.bytes,
+    connector: seed.connector,
+    eventType: seed.eventType,
+    description: seed.resolutionReason,
+    crossLayerLinks: seed.crossLayerLinks,
+    verdict,
+    patternTag: seed.patternTag,
+    rawData: seed.rawData,
+  };
+}
+
 function generateInitialEvents(count: number): OSIEvent[] {
   const events: OSIEvent[] = [];
   for (let i = 0; i < count; i++) {
@@ -405,22 +428,17 @@ export default function OSILayerView({
     return stats;
   }, [events]);
 
-  // Generate new events periodically
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const newBatch: OSIEvent[] = [];
-      const count = 2 + Math.floor(Math.random() * 4);
-      for (let i = 0; i < count; i++) newBatch.push(generateOSIEvent());
-      // Occasionally force an attack pattern
-      if (Math.random() < 0.35) newBatch.push(generateOSIEvent(true));
+  // Subscribe to shared live stream so OSI events arrive in sync with funnel/graph/phase explorer
+  const { lastBatch: liveBatch } = useLiveStream(200);
 
-      setEvents(prev => {
-        const updated = [...prev, ...newBatch];
-        return updated.length > 200 ? updated.slice(updated.length - 200) : updated;
-      });
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => {
+    if (liveBatch.length === 0) return;
+    const newBatch: OSIEvent[] = liveBatch.map((seed: LiveSeed) => seedToOSIEvent(seed));
+    setEvents(prev => {
+      const updated = [...prev, ...newBatch];
+      return updated.length > 200 ? updated.slice(updated.length - 200) : updated;
+    });
+  }, [liveBatch]);
 
   // Spawn particles for new events
   useEffect(() => {

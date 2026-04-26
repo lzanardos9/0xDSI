@@ -31,6 +31,7 @@ import {
 } from './eventFunnelData';
 import OSILayerView from './OSILayerView';
 import PhaseExplorerView from './PhaseExplorerView';
+import { useLiveStream, seedToFunnelEvent } from './liveEventStream';
 
 interface AnimatedDot {
   id: string;
@@ -130,7 +131,20 @@ function FunnelView() {
   const [hoveredPhase, setHoveredPhase] = useState<number | null>(null);
   const [totalEps, setTotalEps] = useState(14203);
   const [phases, setPhases] = useState<FunnelPhase[]>(() => FUNNEL_PHASES.map(p => ({ ...p })));
+  const liveStream = useLiveStream(140);
   const [liveEvents, setLiveEvents] = useState<FunnelEvent[]>(() => [...MOCK_EVENTS]);
+
+  useEffect(() => {
+    if (liveStream.lastBatch.length === 0) return;
+    setLiveEvents(prev => {
+      let updated = prev.map(e =>
+        Math.random() < 0.08 && e.currentPhase < 11 ? { ...e, currentPhase: e.currentPhase + 1 } : e
+      );
+      updated = [...updated, ...liveStream.lastBatch.map(seedToFunnelEvent)];
+      if (updated.length > 140) updated = updated.slice(updated.length - 140);
+      return updated;
+    });
+  }, [liveStream.lastBatch]);
   const mousePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [canvasDims, setCanvasDims] = useState({ w: 900, h: 440 });
 
@@ -232,35 +246,6 @@ function FunnelView() {
         droppedEvents: Math.max(0, p.droppedEvents + Math.floor(Math.random() * 10) - 5),
         avgLatencyMs: Math.max(1, p.avgLatencyMs + Math.floor(Math.random() * 4) - 2),
       })));
-
-      const newCount = 3 + Math.floor(Math.random() * 3);
-      const newEvents: FunnelEvent[] = [];
-      for (let i = 0; i < newCount; i++) {
-        const template = MOCK_EVENTS[Math.floor(Math.random() * MOCK_EVENTS.length)];
-        const connectors = ALL_CONNECTORS;
-        const connector = connectors[Math.floor(Math.random() * connectors.length)];
-        const newEvt: FunnelEvent = {
-          ...template,
-          id: `EVT-${Date.now()}-${i}`,
-          connector,
-          currentPhase: 1 + Math.floor(Math.random() * 3),
-          timestamp: new Date().toISOString(),
-        };
-        newEvents.push(newEvt);
-      }
-
-      setLiveEvents(prev => {
-        let updated = [...prev];
-        updated = updated.map(e => {
-          if (Math.random() < 0.08 && e.currentPhase < 11) {
-            return { ...e, currentPhase: e.currentPhase + 1 };
-          }
-          return e;
-        });
-        updated = [...updated, ...newEvents];
-        if (updated.length > 120) updated = updated.slice(updated.length - 120);
-        return updated;
-      });
     }, 3000);
     return () => clearInterval(interval);
   }, []);

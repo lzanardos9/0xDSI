@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   ArrowRight,
   CheckCircle,
@@ -23,6 +23,7 @@ import {
   Cog,
 } from 'lucide-react';
 import { FUNNEL_PHASES, MOCK_EVENTS, CONNECTOR_META, FunnelEvent } from './eventFunnelData';
+import { useLiveStream, seedToFunnelEvent } from './liveEventStream';
 import {
   PHASE_EXPLANATIONS,
   buildEventNarrative,
@@ -81,6 +82,21 @@ export default function PhaseExplorerView() {
   const [selectedPhaseId, setSelectedPhaseId] = useState<number>(1);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
+  const { lastBatch } = useLiveStream(160);
+  const [liveEvents, setLiveEvents] = useState<FunnelEvent[]>(() => [...MOCK_EVENTS]);
+
+  useEffect(() => {
+    if (lastBatch.length === 0) return;
+    setLiveEvents(prev => {
+      let updated = prev.map(e =>
+        Math.random() < 0.12 && e.currentPhase < 11 ? { ...e, currentPhase: e.currentPhase + 1 } : e
+      );
+      updated = [...updated, ...lastBatch.map(seedToFunnelEvent)];
+      if (updated.length > 160) updated = updated.slice(updated.length - 160);
+      return updated;
+    });
+  }, [lastBatch]);
+
   const selectedPhase = useMemo(
     () => FUNNEL_PHASES.find((p) => p.id === selectedPhaseId)!,
     [selectedPhaseId],
@@ -88,8 +104,8 @@ export default function PhaseExplorerView() {
   const explanation = PHASE_EXPLANATIONS[selectedPhaseId];
 
   const eventsAtPhase = useMemo(
-    () => MOCK_EVENTS.filter((e) => e.currentPhase === selectedPhaseId),
-    [selectedPhaseId],
+    () => liveEvents.filter((e) => e.currentPhase === selectedPhaseId),
+    [liveEvents, selectedPhaseId],
   );
 
   const selectedEvent = useMemo(
@@ -146,7 +162,7 @@ export default function PhaseExplorerView() {
         {FUNNEL_PHASES.map((phase) => {
           const Icon = PHASE_ICONS[phase.id];
           const isActive = selectedPhaseId === phase.id;
-          const phaseEventCount = MOCK_EVENTS.filter((e) => e.currentPhase === phase.id).length;
+          const phaseEventCount = liveEvents.filter((e) => e.currentPhase === phase.id).length;
           const promotion = getPromotionForPhase(phase.id);
           return (
             <button
