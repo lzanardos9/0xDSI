@@ -366,4 +366,336 @@ display(dlp.groupBy("dlp_classification", "protocol").count().orderBy(F.desc("co
       },
     ],
   },
+
+  {
+    id: 'threat-feed-live-ingestion',
+    title: 'Live Threat Feed Ingestion (TAXII/OTX/MISP)',
+    subtitle: 'Real connectors for AlienVault OTX, MISP, and STIX/TAXII 2.1 endpoints',
+    category: 'threat-intel',
+    tags: ['STIX/TAXII', 'AlienVault OTX', 'MISP', 'Live Ingestion', 'Idempotent MERGE'],
+    description: 'Production-grade threat intelligence ingestion. Pulls real IOCs from AlienVault OTX, MISP, and any STIX/TAXII 2.1 collection, normalizes them to a common schema, deduplicates by (type,value), and upserts into Delta via idempotent MERGE. Credentials sourced from Databricks Secret Scope. Designed to run on a schedule (every 15 minutes).',
+    estimatedRuntime: '4 min per run',
+    clusterRequirements: 'DBR 14.3 LTS, 1+ workers, internet egress allowed',
+    cells: [
+      {
+        type: 'markdown',
+        content: `# Live Threat Feed Ingestion
+
+This notebook is the production replacement for mock-data feed generators. It connects to **real** threat intelligence APIs:
+
+| Source | Protocol | Auth |
+|---|---|---|
+| AlienVault OTX | REST | API key in secret scope |
+| MISP | REST | API key in secret scope |
+| Any STIX/TAXII 2.1 collection | TAXII 2.1 | Basic auth in secret scope |
+
+### Failure semantics
+- Each connector runs in its own try/except. A failure in one source does NOT block others.
+- All writes use Delta MERGE on (indicator_type, indicator_value) -> idempotent reruns.
+- Run failures are written to \`feed_run_log\` for observability.`,
+      },
+      {
+        type: 'code',
+        content: `# Cell 1: Configuration + secret scope
+from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    StructType, StructField, StringType, DoubleType, TimestampType, ArrayType, IntegerType,
+)
+from delta.tables import DeltaTable
+from datetime import datetime, timedelta, timezone
+import json
+import urllib.request
+import urllib.error
+
+dbutils.widgets.text("catalog", "soc_platform")
+dbutils.widgets.text("schema", "threat_intel")
+dbutils.widgets.text("secret_scope", "soc-platform")
+dbutils.widgets.text("max_indicators_per_source", "5000")
+
+CATALOG = dbutils.widgets.get("catalog")
+SCHEMA = dbutils.widgets.get("schema")
+SECRET_SCOPE = dbutils.widgets.get("secret_scope")
+MAX_INDICATORS = int(dbutils.widgets.get("max_indicators_per_source"))
+
+spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
+spark.sql(f"USE {CATALOG}.{SCHEMA}")
+
+def get_secret(key: str, default=None):
+    """Read from Databricks Secret Scope, fall back to None if not set."""
+    try:
+        return dbutils.secrets.get(scope=SECRET_SCOPE, key=key)
+    except Exception:
+        return default
+
+OTX_API_KEY = get_secret("otx_api_key")
+MISP_URL = get_secret("misp_url")
+MISP_API_KEY = get_secret("misp_api_key")
+TAXII_URL = get_secret("taxii_url")
+TAXII_USER = get_secret("taxii_user")
+TAXII_PASS = get_secret("taxii_pass")
+
+print("Configured sources:")
+print(f"  OTX:   {'YES' if OTX_API_KEY else 'no (skip)'}")
+print(f"  MISP:  {'YES' if MISP_URL and MISP_API_KEY else 'no (skip)'}")
+print(f"  TAXII: {'YES' if TAXII_URL else 'no (skip)'}")`,
+      },
+      {
+        type: 'sql',
+        content: `-- Cell 2: Idempotent target tables
+CREATE TABLE IF NOT EXISTS threat_indicators (
+  indicator_type STRING NOT NULL,
+  indicator_value STRING NOT NULL,
+  source STRING NOT NULL,
+  confidence DOUBLE,
+  severity STRING,
+  tags ARRAY<STRING>,
+  first_seen TIMESTAMP,
+  last_seen TIMESTAMP,
+  report_count INT,
+  raw_payload STRING,
+  ingested_at TIMESTAMP,
+  CONSTRAINT indicator_pk PRIMARY KEY (indicator_type, indicator_value, source) RELY
+) USING DELTA
+PARTITIONED BY (indicator_type)
+TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
+
+CREATE TABLE IF NOT EXISTS feed_run_log (
+  run_id STRING,
+  source STRING,
+  started_at TIMESTAMP,
+  finished_at TIMESTAMP,
+  status STRING,
+  indicators_ingested INT,
+  error_message STRING
+) USING DELTA;`,
+      },
+      {
+        type: 'code',
+        content: `# Cell 3: Connectors
+def _http_get_json(url, headers=None, timeout=30):
+    req = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def fetch_otx(api_key, max_indicators):
+    """AlienVault OTX pulse subscriptions -> normalized IOCs."""
+    if not api_key:
+        return []
+    out = []
+    page = 1
+    while len(out) < max_indicators:
+        url = f"https://otx.alienvault.com/api/v1/pulses/subscribed?limit=50&page={page}"
+        data = _http_get_json(url, headers={"X-OTX-API-KEY": api_key})
+        results = data.get("results", [])
+        if not results:
+            break
+        for pulse in results:
+            tags = pulse.get("tags", []) or []
+            for ind in pulse.get("indicators", []):
+                t = (ind.get("type") or "").lower()
+                if t in ("ipv4", "ipv6", "domain", "hostname", "url", "filehash-sha256", "email"):
+                    out.append({
+                        "indicator_type": "ipv4" if t.startswith("ipv") else
+                                          "domain" if t in ("domain", "hostname") else
+                                          "sha256" if t == "filehash-sha256" else t,
+                        "indicator_value": ind.get("indicator"),
+                        "source": "AlienVault OTX",
+                        "confidence": 0.7,
+                        "severity": "high" if "apt" in tags else "medium",
+                        "tags": tags,
+                        "first_seen": ind.get("created"),
+                        "last_seen": pulse.get("modified"),
+                        "report_count": 1,
+                        "raw_payload": json.dumps(ind),
+                    })
+                if len(out) >= max_indicators:
+                    return out
+        page += 1
+        if page > 100:
+            break
+    return out
+
+def fetch_misp(misp_url, api_key, max_indicators):
+    if not (misp_url and api_key):
+        return []
+    url = f"{misp_url.rstrip('/')}/attributes/restSearch"
+    body = json.dumps({"limit": max_indicators, "page": 1, "to_ids": True}).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Authorization": api_key, "Accept": "application/json", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    out = []
+    type_map = {
+        "ip-src": "ipv4", "ip-dst": "ipv4",
+        "domain": "domain", "hostname": "domain",
+        "url": "url", "sha256": "sha256", "email-src": "email", "email-dst": "email",
+    }
+    for attr in (data.get("response", {}).get("Attribute") or []):
+        norm_type = type_map.get(attr.get("type"))
+        if not norm_type:
+            continue
+        out.append({
+            "indicator_type": norm_type,
+            "indicator_value": attr.get("value"),
+            "source": "MISP",
+            "confidence": 0.8,
+            "severity": "high" if attr.get("category") in ("Payload delivery", "Network activity") else "medium",
+            "tags": [t.get("name") for t in (attr.get("Tag") or []) if t.get("name")],
+            "first_seen": attr.get("first_seen") or attr.get("timestamp"),
+            "last_seen": attr.get("last_seen") or attr.get("timestamp"),
+            "report_count": 1,
+            "raw_payload": json.dumps(attr),
+        })
+    return out
+
+def fetch_taxii(taxii_url, user, password, max_indicators):
+    """STIX 2.1 over TAXII 2.1: list collections -> get indicators."""
+    if not taxii_url:
+        return []
+    import base64
+    token = base64.b64encode(f"{user or ''}:{password or ''}".encode()).decode()
+    headers = {
+        "Accept": "application/taxii+json;version=2.1",
+        "Authorization": f"Basic {token}",
+    }
+    collections = _http_get_json(f"{taxii_url.rstrip('/')}/collections/", headers=headers)
+    out = []
+    for coll in (collections.get("collections") or []):
+        if len(out) >= max_indicators:
+            break
+        cid = coll.get("id")
+        objs_url = f"{taxii_url.rstrip('/')}/collections/{cid}/objects/?limit={max_indicators}"
+        try:
+            payload = _http_get_json(objs_url, headers={**headers, "Accept": "application/stix+json;version=2.1"})
+        except Exception:
+            continue
+        for obj in (payload.get("objects") or []):
+            if obj.get("type") != "indicator":
+                continue
+            pattern = obj.get("pattern", "")
+            # Naive STIX pattern parsing for the most common cases
+            if "ipv4-addr:value" in pattern:
+                t = "ipv4"
+            elif "domain-name:value" in pattern:
+                t = "domain"
+            elif "url:value" in pattern:
+                t = "url"
+            elif "file:hashes" in pattern and "SHA-256" in pattern:
+                t = "sha256"
+            else:
+                continue
+            try:
+                value = pattern.split("'")[1]
+            except IndexError:
+                continue
+            out.append({
+                "indicator_type": t,
+                "indicator_value": value,
+                "source": "TAXII",
+                "confidence": float(obj.get("confidence", 60)) / 100.0,
+                "severity": "high",
+                "tags": obj.get("labels", []) or [],
+                "first_seen": obj.get("valid_from"),
+                "last_seen": obj.get("modified"),
+                "report_count": 1,
+                "raw_payload": json.dumps(obj),
+            })
+            if len(out) >= max_indicators:
+                break
+    return out`,
+      },
+      {
+        type: 'code',
+        content: `# Cell 4: Run all connectors with isolated error handling, then MERGE
+import uuid
+
+INDICATOR_SCHEMA = StructType([
+    StructField("indicator_type", StringType(), False),
+    StructField("indicator_value", StringType(), False),
+    StructField("source", StringType(), False),
+    StructField("confidence", DoubleType()),
+    StructField("severity", StringType()),
+    StructField("tags", ArrayType(StringType())),
+    StructField("first_seen", StringType()),
+    StructField("last_seen", StringType()),
+    StructField("report_count", IntegerType()),
+    StructField("raw_payload", StringType()),
+])
+
+def run_source(name, fetcher, *args):
+    run_id = str(uuid.uuid4())
+    started = datetime.now(timezone.utc)
+    try:
+        rows = fetcher(*args, MAX_INDICATORS)
+        if not rows:
+            ingested = 0
+        else:
+            df = (
+              spark.createDataFrame(rows, INDICATOR_SCHEMA)
+                .filter(F.col("indicator_value").isNotNull())
+                .withColumn("first_seen", F.coalesce(F.to_timestamp("first_seen"), F.current_timestamp()))
+                .withColumn("last_seen", F.coalesce(F.to_timestamp("last_seen"), F.current_timestamp()))
+                .withColumn("ingested_at", F.current_timestamp())
+                .dropDuplicates(["indicator_type", "indicator_value", "source"])
+            )
+            target = DeltaTable.forName(spark, f"{CATALOG}.{SCHEMA}.threat_indicators")
+            (
+              target.alias("t").merge(
+                  df.alias("s"),
+                  "t.indicator_type = s.indicator_type AND t.indicator_value = s.indicator_value AND t.source = s.source",
+              )
+              .whenMatchedUpdate(set={
+                  "confidence": "greatest(t.confidence, s.confidence)",
+                  "severity": "s.severity",
+                  "tags": "s.tags",
+                  "last_seen": "greatest(t.last_seen, s.last_seen)",
+                  "report_count": "t.report_count + 1",
+                  "raw_payload": "s.raw_payload",
+                  "ingested_at": "s.ingested_at",
+              })
+              .whenNotMatchedInsertAll()
+              .execute()
+            )
+            ingested = df.count()
+        finished = datetime.now(timezone.utc)
+        spark.createDataFrame([(run_id, name, started, finished, "success", ingested, None)],
+                              ["run_id", "source", "started_at", "finished_at", "status",
+                               "indicators_ingested", "error_message"]) \\
+            .write.format("delta").mode("append").saveAsTable("feed_run_log")
+        print(f"[{name}] ingested {ingested}")
+    except Exception as exc:
+        finished = datetime.now(timezone.utc)
+        spark.createDataFrame([(run_id, name, started, finished, "failed", 0, str(exc)[:1000])],
+                              ["run_id", "source", "started_at", "finished_at", "status",
+                               "indicators_ingested", "error_message"]) \\
+            .write.format("delta").mode("append").saveAsTable("feed_run_log")
+        print(f"[{name}] FAILED: {exc}")
+
+run_source("OTX", fetch_otx, OTX_API_KEY)
+run_source("MISP", fetch_misp, MISP_URL, MISP_API_KEY)
+run_source("TAXII", fetch_taxii, TAXII_URL, TAXII_USER, TAXII_PASS)`,
+      },
+      {
+        type: 'sql',
+        content: `-- Cell 5: Run report
+SELECT source,
+       status,
+       COUNT(*) AS runs,
+       SUM(indicators_ingested) AS total_ingested,
+       MAX(finished_at) AS last_run
+FROM feed_run_log
+WHERE started_at >= current_date() - INTERVAL 7 DAYS
+GROUP BY source, status
+ORDER BY source, status;
+
+SELECT indicator_type, source, COUNT(*) AS indicators
+FROM threat_indicators
+GROUP BY indicator_type, source
+ORDER BY indicators DESC;`,
+      },
+    ],
+  },
 ];

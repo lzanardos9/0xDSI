@@ -78,10 +78,10 @@ export default function DatabricksNotebooksPanel() {
             <ArrowDownToLine className="w-4 h-4" /> Download All (.py)
           </button>
           <button
-            onClick={() => downloadAllNotebooks(allNotebooks, 'json')}
+            onClick={() => downloadAllNotebooks(allNotebooks, 'ipynb')}
             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-sm font-medium hover:bg-blue-600/30 transition-colors"
           >
-            <ArrowDownToLine className="w-4 h-4" /> Download All (.json)
+            <ArrowDownToLine className="w-4 h-4" /> Download All (.ipynb)
           </button>
         </div>
       </div>

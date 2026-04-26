@@ -947,10 +947,30 @@ class ResponseAgent(BaseAgent):
     def _execute_blocks(self, actions):
         block_duration = self.config.get("response", {}).get("block_duration_hours", 24)
 
-        blocks = actions.filter(
+        # Approval gate enforcement.
+        # Actions that require approval are only executed when an approval row
+        # exists in {SCHEMA}.response_action_approvals with status='approved'
+        # AND approved_by != requested_by. Pending/rejected/expired actions are
+        # filtered out.
+        approvals = (
+            self.spark.table(f"{SCHEMA}.response_action_approvals")
+            .filter(F.col("status") == "approved")
+            .filter(F.col("approved_by").isNotNull())
+            .filter(F.col("approved_by") != F.col("requested_by"))
+            .select(F.col("action_id").alias("approved_action_id"))
+        )
+        gated = actions.join(
+            approvals, actions.id == approvals.approved_action_id, "left"
+        ).withColumn(
+            "is_approved",
+            F.col("approved_action_id").isNotNull(),
+        ).drop("approved_action_id")
+
+        # Only execute non-approval actions OR actions whose approval is recorded.
+        blocks = gated.filter(
             (F.col("action") == "block_ip") &
             (F.col("target").isNotNull()) &
-            (~F.col("needs_approval"))
+            ((~F.col("needs_approval")) | F.col("is_approved"))
         )
 
         if blocks.count() == 0:

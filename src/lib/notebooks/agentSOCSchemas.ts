@@ -594,6 +594,25 @@ USING DELTA
 """)
 
 spark.sql(f"""
+CREATE TABLE IF NOT EXISTS {SCHEMA}.response_action_approvals (
+    action_id           STRING      NOT NULL,
+    action_type         STRING      NOT NULL,
+    target_entity       STRING,
+    scope_summary       STRING,
+    requested_by        STRING,
+    requested_at        TIMESTAMP   DEFAULT current_timestamp(),
+    status              STRING      DEFAULT 'pending',
+    approved_by         STRING,
+    approved_at         TIMESTAMP,
+    rejection_reason    STRING,
+    executed_at         TIMESTAMP,
+    execution_result    STRING,
+    ttl_minutes         INT         DEFAULT 60
+)
+USING DELTA
+""")
+
+spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {SCHEMA}.active_blocklist (
     id                  STRING      NOT NULL,
     list_name           STRING      NOT NULL,

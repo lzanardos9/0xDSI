@@ -4,6 +4,12 @@ env:
   - name: NODE_ENV
     value: production
   - name: VITE_SUPABASE_URL
-    value: https://xnhgvsdjtmzqxitpbemy.supabase.co
+    valueFrom:
+      secretKeyRef:
+        name: supabase-credentials
+        key: url
   - name: VITE_SUPABASE_ANON_KEY
-    value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhuaGd2c2RqdG16cXhpdHBiZW15Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MjE2NTMsImV4cCI6MjA3NDk5NzY1M30.vKvudE3TXTQ-RrH4LIu9Dal4y57uzJpzIr-meIXD_sg
+    valueFrom:
+      secretKeyRef:
+        name: supabase-credentials
+        key: anon_key

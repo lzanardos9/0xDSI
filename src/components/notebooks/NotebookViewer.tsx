@@ -88,10 +88,10 @@ export default function NotebookViewer({ notebook, onBack }: NotebookViewerProps
             <Download className="w-3.5 h-3.5" /> Download .py
           </button>
           <button
-            onClick={() => downloadNotebook(notebook, 'json')}
+            onClick={() => downloadNotebook(notebook, 'ipynb')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-medium hover:bg-blue-600/30 transition-colors"
           >
-            <Download className="w-3.5 h-3.5" /> Download .json
+            <Download className="w-3.5 h-3.5" /> Download .ipynb
           </button>
         </div>
       </div>

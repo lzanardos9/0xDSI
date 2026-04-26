@@ -80,10 +80,10 @@ export default function NotebookCard({ notebook, onSelect }: NotebookCardProps) 
             <Download className="w-3.5 h-3.5" /> .py
           </button>
           <button
-            onClick={() => downloadNotebook(notebook, 'json')}
+            onClick={() => downloadNotebook(notebook, 'ipynb')}
             className="flex items-center gap-1 px-3 py-1.5 bg-slate-700/50 text-slate-300 rounded-lg text-xs hover:bg-slate-700 transition-colors"
           >
-            <Download className="w-3.5 h-3.5" /> .json
+            <Download className="w-3.5 h-3.5" /> .ipynb
           </button>
           <button
             onClick={() => setExpanded(!expanded)}
