@@ -119,17 +119,17 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     operations: [
       'Sigma + custom rule evaluation',
       'Sliding-window joins across connectors',
-      'Stateful CEP via Quine for multi-event patterns',
+      'Stateful CEP via Real-time Graph for multi-event patterns',
       'Negative-correlation evaluation (expected events absent)',
     ],
     outputs: ['Correlation matches with rule_id, confidence, evidence chain'],
     passCriteria: 'At least one rule fired OR the event participates in an open multi-event pattern.',
     dropCriteria: 'No rule matched and no pattern accumulator opened — event is informational only and is shed.',
-    technicalDetail: 'Quine streaming graph holds open windows up to 24h. Rule index is FST-compiled for O(log n) match. Drop ratio averages ~83%.',
+    technicalDetail: 'Real-time Graph streaming engine holds open windows up to 24h. Rule index is FST-compiled for O(log n) match. Drop ratio averages ~83%.',
     example: 'IOC match in phase 3 + outbound on port 443 + asset criticality=high triggers rule R-0142 "Known C2 to Crown-Jewel Asset" with confidence 0.78.',
     agents: [
       { name: 'AI Correlation Agent', role: 'Sigma + custom rule evaluation, multi-source joins', type: 'hybrid', cadence: 'continuous (5s micro-batch)', ownsDecision: true },
-      { name: 'Quine CEP Agent', role: 'Stateful pattern matching across multi-event windows', type: 'deterministic', cadence: 'continuous', ownsDecision: true },
+      { name: 'Real-time Graph CEP Agent', role: 'Stateful pattern matching across multi-event windows', type: 'deterministic', cadence: 'continuous', ownsDecision: true },
       { name: 'Negative Correlation Agent', role: 'Detects expected events that did not occur', type: 'deterministic', cadence: 'continuous', ownsDecision: true },
     ],
   },
@@ -235,7 +235,7 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     example: 'Cluster C-2841 detected: 17 events from 9 hosts share an unusual TLS JA3 + identical 8.3kb upload — promoted as candidate rule R-DRAFT-0341.',
     agents: [
       { name: 'Pattern Discovery Agent', role: 'DBSCAN/HDBSCAN clustering and novelty scoring on event embeddings', type: 'ml', cadence: 'micro-batch every 15 min', ownsDecision: true },
-      { name: 'Rule Synthesis Agent', role: 'Translates novel clusters into draft Sigma/Quine rules', type: 'llm', cadence: 'on novel cluster detection', ownsDecision: false },
+      { name: 'Rule Synthesis Agent', role: 'Translates novel clusters into draft Sigma/Real-time Graph rules', type: 'llm', cadence: 'on novel cluster detection', ownsDecision: false },
     ],
   },
   10: {

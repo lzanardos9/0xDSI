@@ -1,5 +1,5 @@
 /*
-  # Quine Streaming Graph & Complex Event Processing (CEP)
+  # Real-time Graph Streaming Graph & Complex Event Processing (CEP)
 
   1. New Tables
     - streaming_graph_vertices: Real-time graph node streaming
@@ -19,7 +19,7 @@
     - RLS enabled
 */
 
--- Streaming Graph Vertices (Quine-style)
+-- Streaming Graph Vertices (Real-time Graph style)
 CREATE TABLE IF NOT EXISTS streaming_graph_vertices (
   id BIGSERIAL PRIMARY KEY,
   vertex_id TEXT UNIQUE NOT NULL,

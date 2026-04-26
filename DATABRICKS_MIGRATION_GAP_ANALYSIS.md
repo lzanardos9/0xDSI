@@ -236,7 +236,7 @@ vsc.create_delta_sync_index(
 **Problem:** You have a sophisticated CEP system (`cep_patterns`, `cep_pattern_matches`) that runs real-time pattern detection. This is **NOT** addressed in migration docs.
 
 **Current CEP Features:**
-- **Streaming graph analysis** (Quine-style temporal graphs)
+- **Streaming graph analysis** (Real-time Graph style temporal graphs)
 - **Pattern definitions:** sequence, conjunction, disjunction, negation, temporal
 - **Real-time pattern matching** (10-second windows)
 - **Pre-defined threat patterns:**
@@ -319,7 +319,7 @@ FROM live.lateral_movement_detected;
 
 ---
 
-### ❌ **GAP 5: Streaming Graph Infrastructure (Quine-style)**
+### ❌ **GAP 5: Streaming Graph Infrastructure (Real-time Graph style)**
 
 **Problem:** You have a **real-time streaming graph system** with temporal analysis. This is a complex feature **NOT** in migration docs.
 
@@ -734,7 +734,7 @@ async function addSessionListEntry(listId: string, entry: Entry) {
 1. 13 database triggers (automatic data maintenance)
 2. 10 PostgreSQL functions (business logic)
 3. Complex Event Processing engine (real-time pattern detection)
-4. Streaming graph infrastructure (Quine-style temporal graphs)
+4. Streaming graph infrastructure (Real-time Graph style temporal graphs)
 5. Custom Lucene search implementation
 6. Audit logging automation
 
