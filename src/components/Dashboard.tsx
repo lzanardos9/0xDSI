@@ -100,6 +100,17 @@ const Dashboard = () => {
     loadUserRole();
   }, [user]);
 
+  useEffect(() => {
+    const handleNavigate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (typeof detail === 'string') {
+        setSelectedView(detail as any);
+      }
+    };
+    window.addEventListener('navigate-to-view', handleNavigate);
+    return () => window.removeEventListener('navigate-to-view', handleNavigate);
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
