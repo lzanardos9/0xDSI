@@ -18,9 +18,20 @@ import {
   Sparkles,
   Compass,
   Brain,
+  Bot,
+  User,
+  Cog,
 } from 'lucide-react';
 import { FUNNEL_PHASES, MOCK_EVENTS, CONNECTOR_META, FunnelEvent } from './eventFunnelData';
-import { PHASE_EXPLANATIONS, buildEventNarrative } from './phaseExplanations';
+import { PHASE_EXPLANATIONS, buildEventNarrative, PhaseAgent } from './phaseExplanations';
+
+const AGENT_TYPE_META: Record<PhaseAgent['type'], { label: string; color: string; icon: typeof Bot }> = {
+  deterministic: { label: 'DETERMINISTIC', color: '#64748b', icon: Cog },
+  ml: { label: 'ML', color: '#06b6d4', icon: Brain },
+  llm: { label: 'LLM', color: '#22c55e', icon: Sparkles },
+  hybrid: { label: 'HYBRID', color: '#eab308', icon: Bot },
+  'human-in-loop': { label: 'HUMAN-IN-LOOP', color: '#f97316', icon: User },
+};
 
 const PHASE_ICONS: Record<number, typeof Database> = {
   1: Database,
@@ -238,6 +249,32 @@ export default function PhaseExplorerView() {
           </div>
         </div>
 
+        <div className="mt-4 pt-4 border-t border-[#1e293b]">
+          <div className="flex items-center gap-2 mb-2">
+            <Bot size={11} style={{ color: selectedPhase.color }} />
+            <span
+              className="text-[9px] font-mono font-bold tracking-widest"
+              style={{ color: selectedPhase.color }}
+            >
+              AGENTS RUNNING AT THIS PHASE
+            </span>
+            <span className="text-[9px] font-mono text-slate-500">
+              ({explanation.agents.length})
+            </span>
+          </div>
+          {explanation.agents.length === 0 ? (
+            <p className="text-[10px] text-slate-500 italic">
+              No autonomous agent — this phase is pure deterministic processing.
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {explanation.agents.map((agent, i) => (
+                <AgentBadge key={i} agent={agent} accent={selectedPhase.color} />
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="mt-3 pt-3 border-t border-[#1e293b]">
           <div className="flex items-start gap-3 text-[10px]">
             <div className="flex-1">
@@ -356,6 +393,52 @@ export default function PhaseExplorerView() {
   );
 }
 
+function AgentBadge({ agent, accent }: { agent: PhaseAgent; accent: string }) {
+  const meta = AGENT_TYPE_META[agent.type];
+  const Icon = meta.icon;
+  return (
+    <div
+      className="rounded border p-2.5 transition-all hover:border-slate-500"
+      style={{
+        backgroundColor: hexToRgba(accent, 0.04),
+        borderColor: hexToRgba(accent, 0.25),
+      }}
+    >
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Icon size={11} style={{ color: meta.color }} />
+          <span className="text-[10px] font-bold text-slate-100 truncate">{agent.name}</span>
+        </div>
+        {agent.ownsDecision && (
+          <span
+            className="px-1 py-0.5 rounded text-[8px] font-mono font-bold tracking-wider whitespace-nowrap"
+            style={{
+              backgroundColor: 'rgba(34, 197, 94, 0.12)',
+              color: '#4ade80',
+            }}
+            title="This agent owns a pass/drop or action decision at this phase"
+          >
+            DECIDES
+          </span>
+        )}
+      </div>
+      <p className="text-[10px] text-slate-300 leading-snug mb-1.5">{agent.role}</p>
+      <div className="flex items-center justify-between gap-2 text-[8px] font-mono">
+        <span
+          className="px-1 py-0.5 rounded font-bold tracking-wider"
+          style={{
+            backgroundColor: hexToRgba(meta.color, 0.12),
+            color: meta.color,
+          }}
+        >
+          {meta.label}
+        </span>
+        <span className="text-slate-500 truncate" title={agent.cadence}>{agent.cadence}</span>
+      </div>
+    </div>
+  );
+}
+
 function ExplainBlock({
   label,
   items,
@@ -451,6 +534,24 @@ function EventInspector({ event, phaseId }: { event: FunnelEvent; phaseId: numbe
             WHAT {phase.shortName} IS DOING TO THIS EVENT
           </div>
           <p className="text-[12px] text-slate-200 leading-relaxed">{narrative}</p>
+        </div>
+
+        <div>
+          <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-widest text-slate-400 mb-1.5">
+            <Bot size={10} />
+            AGENTS HANDLING THIS EVENT RIGHT NOW
+          </div>
+          {explanation.agents.length === 0 ? (
+            <p className="text-[10px] text-slate-500 italic">
+              No autonomous agent at this phase. Pure deterministic processing.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {explanation.agents.map((agent, i) => (
+                <AgentBadge key={i} agent={agent} accent={phase.color} />
+              ))}
+            </div>
+          )}
         </div>
 
         <div>

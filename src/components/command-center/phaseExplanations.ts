@@ -1,5 +1,13 @@
 import { FunnelEvent } from './eventFunnelData';
 
+export interface PhaseAgent {
+  name: string;
+  role: string;
+  type: 'deterministic' | 'ml' | 'llm' | 'hybrid' | 'human-in-loop';
+  cadence: string;
+  ownsDecision: boolean;
+}
+
 export interface PhaseExplanation {
   id: number;
   whatItDoes: string;
@@ -10,6 +18,7 @@ export interface PhaseExplanation {
   dropCriteria: string;
   technicalDetail: string;
   example: string;
+  agents: PhaseAgent[];
 }
 
 export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
@@ -28,6 +37,10 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'Only malformed transport (bad TLS, oversize frame, replay nonce collision) is rejected.',
     technicalDetail: 'Auto Loader with cloudFiles.maxBytesPerTrigger=128MB, structured streaming with checkpointed offsets. Throughput target 50k events/sec/connector.',
     example: 'A raw NetFlow v9 datagram of 1,452 bytes arrives, gets a UUID, and is appended to bronze.netflow_raw with no validation of its contents.',
+    agents: [
+      { name: 'Connector Adapter', role: 'TLS termination, transport-layer auth, frame validation', type: 'deterministic', cadence: 'continuous', ownsDecision: false },
+      { name: 'Auto Loader', role: 'Schema-on-read landing to bronze Delta tables', type: 'deterministic', cadence: 'continuous', ownsDecision: false },
+    ],
   },
   2: {
     id: 2,
@@ -44,6 +57,10 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'Truncated headers, unknown magic bytes, parser exception, or schema validation failure.',
     technicalDetail: 'Polyglot parsers: Suricata-style for packet captures, grok for Syslog, JSONPath for cloud APIs. Failures land on a dead-letter quarantine queue for replay.',
     example: 'A 1,452 byte NetFlow datagram is decoded into {src_ip, dst_ip, dst_port, bytes, packets, protocol_num=6} — protocol resolves to TCP and the row moves on.',
+    agents: [
+      { name: 'Parser Pool', role: 'Polyglot decoders for packet captures, Syslog, JSON APIs', type: 'deterministic', cadence: 'continuous', ownsDecision: false },
+      { name: 'OCSF Mapper', role: 'Cross-vendor schema normalization', type: 'deterministic', cadence: 'continuous', ownsDecision: false },
+    ],
   },
   3: {
     id: 3,
@@ -60,6 +77,11 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'Nothing is dropped. Missing enrichments are flagged null and logged as data quality misses.',
     technicalDetail: 'Lookup latency budget 15ms p95 via cached side-tables. Cache miss falls through to async hydration and the event continues without blocking.',
     example: 'src_ip 185.93.2.71 enriches to {country:RU, asn:AS49505, ioc_hit:true, feed:OTX, indicator_type:malware_c2, confidence:0.91}.',
+    agents: [
+      { name: 'Enrichment Agent (fast tier)', role: 'GeoIP/ASN/CMDB joins from in-memory side-tables', type: 'deterministic', cadence: 'continuous', ownsDecision: false },
+      { name: 'IOC Match Agent', role: 'Bloom + vector lookup against 12M-indicator threat-intel store', type: 'hybrid', cadence: 'continuous', ownsDecision: false },
+      { name: 'Identity Hydration Agent', role: 'IdP/Entra/Okta user and device context', type: 'deterministic', cadence: 'continuous', ownsDecision: false },
+    ],
   },
   4: {
     id: 4,
@@ -76,6 +98,11 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'No rule matched and no pattern accumulator opened — event is informational only and is shed.',
     technicalDetail: 'Quine streaming graph holds open windows up to 24h. Rule index is FST-compiled for O(log n) match. Drop ratio averages ~83%.',
     example: 'IOC match in phase 3 + outbound on port 443 + asset criticality=high triggers rule R-0142 "Known C2 to Crown-Jewel Asset" with confidence 0.78.',
+    agents: [
+      { name: 'AI Correlation Agent', role: 'Sigma + custom rule evaluation, multi-source joins', type: 'hybrid', cadence: 'continuous (5s micro-batch)', ownsDecision: true },
+      { name: 'Quine CEP Agent', role: 'Stateful pattern matching across multi-event windows', type: 'deterministic', cadence: 'continuous', ownsDecision: true },
+      { name: 'Negative Correlation Agent', role: 'Detects expected events that did not occur', type: 'deterministic', cadence: 'continuous', ownsDecision: true },
+    ],
   },
   5: {
     id: 5,
@@ -94,6 +121,10 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'Score < 35 with no offsetting boosters — closed as informational.',
     technicalDetail: 'Score computed as weighted geometric mean to prevent any single dimension from dominating. ~57% drop rate is by design.',
     example: 'Rule R-0142 score = severity(80) * asset(1.4) * ioc_fresh(1.2) * temporal(1.1) = 73 — escalated to deep enrichment.',
+    agents: [
+      { name: 'Triage Agent', role: 'Six-factor scoring with priority bucketing', type: 'ml', cadence: 'every 30s on backlog', ownsDecision: true },
+      { name: 'Repeat Offender Tracker', role: 'Maintains rolling memory of asset/identity recidivism', type: 'deterministic', cadence: 'continuous', ownsDecision: false },
+    ],
   },
   6: {
     id: 6,
@@ -110,6 +141,11 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'Empty graph neighborhood + no vector match + no CTI hit + no historical precedent.',
     technicalDetail: 'GraphRAG over LakeBase. Vector store uses cosine sim with HNSW index. Latency budget 45ms p95.',
     example: 'Graph traversal finds src 10.0.5.107 connected to 4 prior compromised hosts within 2 hops; vector similarity 0.87 to APT29 cluster — strong signal.',
+    agents: [
+      { name: 'Enrichment Agent (deep tier)', role: 'k-hop graph traversal and evidence bundling', type: 'hybrid', cadence: 'on-demand per triaged event', ownsDecision: false },
+      { name: 'Vector Memory Agent', role: 'HNSW similarity vs known-bad embeddings', type: 'ml', cadence: 'on-demand', ownsDecision: false },
+      { name: 'CTI Attribution Agent', role: 'Maps evidence to APT campaigns and known TTP clusters', type: 'llm', cadence: 'on-demand', ownsDecision: false },
+    ],
   },
   7: {
     id: 7,
@@ -126,6 +162,11 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'Nothing is dropped. Low-confidence cases still receive a report flagged as such.',
     technicalDetail: 'LLM-driven with strict JSON schema output. Grounded with retrieved evidence — no hallucination on entities or timestamps.',
     example: 'Report: "Host 10.0.5.107 (finance-vp-laptop) initiated outbound to known APT29 C2 at 14:32:47 UTC. Persistence via scheduled task observed 11 minutes prior. T1053.005 + T1071.001."',
+    agents: [
+      { name: 'Investigation Agent', role: 'Timeline reconstruction, blast-radius computation, hypothesis ranking', type: 'llm', cadence: 'on-demand per case', ownsDecision: true },
+      { name: 'MITRE ATT&CK Mapper', role: 'Maps observed behavior to ATT&CK techniques and tactics', type: 'llm', cadence: 'on-demand', ownsDecision: false },
+      { name: 'Evidence Collector', role: 'Pulls related events from a 7-day window across all connectors', type: 'deterministic', cadence: 'on-demand', ownsDecision: false },
+    ],
   },
   8: {
     id: 8,
@@ -142,6 +183,11 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'Confidence too low, no playbook, or analyst-suppressed — handed back to queue.',
     technicalDetail: 'Approval gate is mandatory for actions tagged irreversible=true. SOAR connectors execute with full audit trail to chain-of-custody.',
     example: 'Playbook PB-014 "C2-Beacon-Containment" auto-quarantines 10.0.5.107 via EDR API, blocks 185.93.2.71 at firewall, revokes user SSO session.',
+    agents: [
+      { name: 'Response Agent', role: 'Selects playbook, generates action plan, executes reversible actions', type: 'llm', cadence: 'on-demand per case', ownsDecision: true },
+      { name: 'Approval Gate', role: 'Holds irreversible actions pending human authorization', type: 'human-in-loop', cadence: 'on-demand', ownsDecision: true },
+      { name: 'SOAR Executor', role: 'Invokes connector control planes (EDR, firewall, IdP)', type: 'deterministic', cadence: 'on-demand', ownsDecision: false },
+    ],
   },
   9: {
     id: 9,
@@ -158,6 +204,10 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'Already-known cluster — no new learning to extract.',
     technicalDetail: 'Runs on a delayed micro-batch (15 min) on the gold tier. Candidate rules require human review before promotion.',
     example: 'Cluster C-2841 detected: 17 events from 9 hosts share an unusual TLS JA3 + identical 8.3kb upload — promoted as candidate rule R-DRAFT-0341.',
+    agents: [
+      { name: 'Pattern Discovery Agent', role: 'DBSCAN/HDBSCAN clustering and novelty scoring on event embeddings', type: 'ml', cadence: 'micro-batch every 15 min', ownsDecision: true },
+      { name: 'Rule Synthesis Agent', role: 'Translates novel clusters into draft Sigma/Quine rules', type: 'llm', cadence: 'on novel cluster detection', ownsDecision: false },
+    ],
   },
   10: {
     id: 10,
@@ -174,6 +224,10 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'FP suppression drives confidence below floor — archived as confirmed FP.',
     technicalDetail: 'Embedding spaces aligned via contrastive learning. Operates as a precision filter, not a primary detector.',
     example: 'Cross-modal agreement on actor 10.0.5.107: net+endpoint+identity all cluster on the same APT29 prototype; confidence uplift 0.78 -> 0.94.',
+    agents: [
+      { name: 'Vector Augmented Scoring Agent', role: 'Cross-modal embedding agreement and uplift', type: 'ml', cadence: 'continuous', ownsDecision: true },
+      { name: 'False-Positive Suppressor', role: 'Suppresses cases similar to known-good baselines', type: 'ml', cadence: 'continuous', ownsDecision: true },
+    ],
   },
   11: {
     id: 11,
@@ -190,6 +244,11 @@ export const PHASE_EXPLANATIONS: Record<number, PhaseExplanation> = {
     dropCriteria: 'No analyst disposition within feedback window — outcome marked unknown but not lost.',
     technicalDetail: 'Bounded learning rate prevents oscillation. All threshold changes are versioned through detection-as-code with rollback.',
     example: 'Rule R-0142 saw 14d precision drop from 0.81 to 0.66; threshold auto-raised from 35 to 42, with challenger model queued for promotion.',
+    agents: [
+      { name: 'ALHF Learning Agent', role: 'Per-rule precision/recall tracking and bounded threshold tuning', type: 'ml', cadence: 'daily retrain on disposition stream', ownsDecision: true },
+      { name: 'Drift Monitor Agent', role: 'Compares 7d vs 14d distributions and raises retraining tickets', type: 'ml', cadence: 'hourly', ownsDecision: false },
+      { name: 'Analyst Disposition Capture', role: 'Records TP/FP/benign judgments for the feedback loop', type: 'human-in-loop', cadence: 'event-driven', ownsDecision: false },
+    ],
   },
 };
 
