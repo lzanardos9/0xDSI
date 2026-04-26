@@ -1,0 +1,578 @@
+import { useState, useMemo } from 'react';
+import {
+  ArrowRight,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Activity,
+  Clock,
+  Zap,
+  ChevronRight,
+  Cpu,
+  Database,
+  Layers,
+  Search,
+  Target,
+  GitBranch,
+  Shield,
+  Sparkles,
+  Compass,
+  Brain,
+} from 'lucide-react';
+import { FUNNEL_PHASES, MOCK_EVENTS, CONNECTOR_META, FunnelEvent } from './eventFunnelData';
+import { PHASE_EXPLANATIONS, buildEventNarrative } from './phaseExplanations';
+
+const PHASE_ICONS: Record<number, typeof Database> = {
+  1: Database,
+  2: Cpu,
+  3: Layers,
+  4: GitBranch,
+  5: Target,
+  6: Search,
+  7: Compass,
+  8: Shield,
+  9: Sparkles,
+  10: Zap,
+  11: Brain,
+};
+
+const SEVERITY_COLORS: Record<string, string> = {
+  info: '#06b6d4',
+  low: '#22d3ee',
+  medium: '#eab308',
+  high: '#f97316',
+  critical: '#ef4444',
+};
+
+const VERDICT_COLORS: Record<string, string> = {
+  pending: '#64748b',
+  benign: '#22c55e',
+  suspicious: '#eab308',
+  threat: '#f97316',
+  critical_threat: '#ef4444',
+};
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+export default function PhaseExplorerView() {
+  const [selectedPhaseId, setSelectedPhaseId] = useState<number>(1);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  const selectedPhase = useMemo(
+    () => FUNNEL_PHASES.find((p) => p.id === selectedPhaseId)!,
+    [selectedPhaseId],
+  );
+  const explanation = PHASE_EXPLANATIONS[selectedPhaseId];
+
+  const eventsAtPhase = useMemo(
+    () => MOCK_EVENTS.filter((e) => e.currentPhase === selectedPhaseId),
+    [selectedPhaseId],
+  );
+
+  const selectedEvent = useMemo(
+    () => eventsAtPhase.find((e) => e.id === selectedEventId) ?? null,
+    [eventsAtPhase, selectedEventId],
+  );
+
+  const handleSelectPhase = (id: number) => {
+    setSelectedPhaseId(id);
+    setSelectedEventId(null);
+  };
+
+  return (
+    <div className="bg-[#070b14] text-slate-200 min-h-[800px] p-6">
+      <div className="mb-5">
+        <div className="flex items-center gap-2 mb-1">
+          <Search size={14} className="text-cyan-400" />
+          <span className="text-[10px] font-mono font-bold tracking-[0.25em] text-cyan-400">
+            PHASE EXPLORER
+          </span>
+        </div>
+        <h2 className="text-xl font-bold text-slate-100 tracking-tight">
+          Per-event explainability across the 11-phase pipeline
+        </h2>
+        <p className="text-xs text-slate-400 mt-1 max-w-3xl">
+          Click any phase below to filter the live event stream to only events currently being
+          evaluated at that phase. Click an event to see exactly what is being done to it, in plain
+          language, right now.
+        </p>
+      </div>
+
+      {/* Phase rail */}
+      <div className="grid grid-cols-11 gap-2 mb-6">
+        {FUNNEL_PHASES.map((phase) => {
+          const Icon = PHASE_ICONS[phase.id];
+          const isActive = selectedPhaseId === phase.id;
+          const phaseEventCount = MOCK_EVENTS.filter((e) => e.currentPhase === phase.id).length;
+          return (
+            <button
+              key={phase.id}
+              onClick={() => handleSelectPhase(phase.id)}
+              className={`relative group rounded-lg border p-3 text-left transition-all duration-200 ${
+                isActive
+                  ? 'border-transparent shadow-lg'
+                  : 'border-[#1e293b] hover:border-[#334155]'
+              }`}
+              style={{
+                backgroundColor: isActive ? hexToRgba(phase.color, 0.15) : '#0a0e1a',
+                borderColor: isActive ? phase.color : undefined,
+                boxShadow: isActive ? `0 0 24px ${hexToRgba(phase.color, 0.35)}` : undefined,
+              }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div
+                  className="w-7 h-7 rounded-md flex items-center justify-center font-mono font-bold text-[11px]"
+                  style={{
+                    backgroundColor: hexToRgba(phase.color, isActive ? 0.3 : 0.12),
+                    color: phase.color,
+                  }}
+                >
+                  {phase.id}
+                </div>
+                <Icon size={14} style={{ color: phase.color }} />
+              </div>
+              <div
+                className="text-[10px] font-mono font-bold tracking-wider mb-1"
+                style={{ color: isActive ? phase.color : '#cbd5e1' }}
+              >
+                {phase.shortName}
+              </div>
+              <div className="flex items-center gap-1 text-[9px] font-mono text-slate-500">
+                <Activity size={9} />
+                <span>{phaseEventCount} live</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Phase context strip */}
+      <div
+        className="rounded-lg border p-4 mb-5"
+        style={{
+          backgroundColor: hexToRgba(selectedPhase.color, 0.06),
+          borderColor: hexToRgba(selectedPhase.color, 0.4),
+        }}
+      >
+        <div className="flex items-start justify-between gap-6 mb-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <span
+                className="text-[10px] font-mono font-bold tracking-widest"
+                style={{ color: selectedPhase.color }}
+              >
+                PHASE {selectedPhase.id} OF 11 — {selectedPhase.shortName}
+              </span>
+            </div>
+            <h3 className="text-lg font-bold text-slate-100">{selectedPhase.name}</h3>
+            <p className="text-sm text-slate-300 mt-1.5 leading-relaxed">
+              {explanation.whatItDoes}
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-[10px] font-mono">
+            <div className="text-center">
+              <div className="text-slate-500 tracking-wider">ACTIVE</div>
+              <div className="text-slate-100 font-bold text-base">
+                {selectedPhase.activeEvents.toLocaleString()}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-slate-500 tracking-wider">DROPPED</div>
+              <div className="text-slate-100 font-bold text-base">
+                {selectedPhase.droppedEvents.toLocaleString()}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-slate-500 tracking-wider">LATENCY</div>
+              <div className="text-slate-100 font-bold text-base">
+                {selectedPhase.avgLatencyMs}ms
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-4 gap-3">
+          <ExplainBlock label="INPUTS" items={explanation.inputs} accent={selectedPhase.color} />
+          <ExplainBlock
+            label="OPERATIONS"
+            items={explanation.operations}
+            accent={selectedPhase.color}
+          />
+          <ExplainBlock label="OUTPUTS" items={explanation.outputs} accent={selectedPhase.color} />
+          <div className="space-y-2">
+            <div
+              className="rounded border p-2.5"
+              style={{
+                backgroundColor: 'rgba(34, 197, 94, 0.06)',
+                borderColor: 'rgba(34, 197, 94, 0.25)',
+              }}
+            >
+              <div className="flex items-center gap-1.5 mb-1">
+                <CheckCircle size={10} className="text-green-400" />
+                <span className="text-[9px] font-mono font-bold tracking-wider text-green-400">
+                  PASS WHEN
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-300 leading-snug">{explanation.passCriteria}</p>
+            </div>
+            <div
+              className="rounded border p-2.5"
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.06)',
+                borderColor: 'rgba(239, 68, 68, 0.25)',
+              }}
+            >
+              <div className="flex items-center gap-1.5 mb-1">
+                <XCircle size={10} className="text-red-400" />
+                <span className="text-[9px] font-mono font-bold tracking-wider text-red-400">
+                  DROP WHEN
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-300 leading-snug">{explanation.dropCriteria}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 pt-3 border-t border-[#1e293b]">
+          <div className="flex items-start gap-3 text-[10px]">
+            <div className="flex-1">
+              <span className="font-mono font-bold tracking-wider text-slate-400">
+                TECHNICAL:{' '}
+              </span>
+              <span className="text-slate-300">{explanation.technicalDetail}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Two column: events list + per-event narrative */}
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-5">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Activity size={12} className="text-slate-400" />
+              <span className="text-[10px] font-mono font-bold tracking-widest text-slate-300">
+                LIVE EVENTS AT {selectedPhase.shortName}
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-slate-500">
+              {eventsAtPhase.length} events
+            </span>
+          </div>
+
+          <div className="space-y-1.5 max-h-[560px] overflow-y-auto pr-1">
+            {eventsAtPhase.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-[#1e293b] p-8 text-center">
+                <p className="text-xs text-slate-500">
+                  No events currently at this phase in the sample window.
+                </p>
+                <p className="text-[10px] text-slate-600 mt-2">
+                  Try a different phase to see live event evaluation.
+                </p>
+              </div>
+            ) : (
+              eventsAtPhase.map((event) => {
+                const meta = CONNECTOR_META[event.connector];
+                const isSelected = selectedEventId === event.id;
+                return (
+                  <button
+                    key={event.id}
+                    onClick={() => setSelectedEventId(event.id)}
+                    className={`w-full text-left rounded-lg border p-2.5 transition-all duration-150 ${
+                      isSelected
+                        ? 'border-cyan-400/60 bg-cyan-500/5'
+                        : 'border-[#1e293b] hover:border-[#334155] bg-[#0a0e1a]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold"
+                          style={{
+                            backgroundColor: hexToRgba(meta.color, 0.15),
+                            color: meta.color,
+                          }}
+                        >
+                          {event.connector}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-300">{event.id}</span>
+                      </div>
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold tracking-wider uppercase"
+                        style={{
+                          backgroundColor: hexToRgba(SEVERITY_COLORS[event.severity], 0.12),
+                          color: SEVERITY_COLORS[event.severity],
+                        }}
+                      >
+                        {event.severity}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-200 mb-1 truncate">
+                      {event.eventType}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-500">
+                      <span>{event.sourceIP}</span>
+                      <ArrowRight size={8} />
+                      <span>{event.destIP}</span>
+                      <span className="text-slate-600">·</span>
+                      <span>{event.protocol}/{event.port}</span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Per-event narrative */}
+        <div className="col-span-7">
+          <div className="flex items-center gap-2 mb-2">
+            <ChevronRight size={12} className="text-slate-400" />
+            <span className="text-[10px] font-mono font-bold tracking-widest text-slate-300">
+              WHAT IS HAPPENING TO THIS EVENT
+            </span>
+          </div>
+
+          {!selectedEvent ? (
+            <div className="rounded-lg border border-dashed border-[#1e293b] bg-[#0a0e1a] p-12 text-center">
+              <Search size={28} className="mx-auto mb-3 text-slate-600" />
+              <p className="text-sm text-slate-300 font-bold">Select an event to inspect</p>
+              <p className="text-[11px] text-slate-500 mt-1.5 max-w-md mx-auto">
+                Pick any event from the list. You will see exactly what {selectedPhase.shortName} is
+                doing to it, why it will pass or drop, and what comes next.
+              </p>
+            </div>
+          ) : (
+            <EventInspector event={selectedEvent} phaseId={selectedPhaseId} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExplainBlock({
+  label,
+  items,
+  accent,
+}: {
+  label: string;
+  items: string[];
+  accent: string;
+}) {
+  return (
+    <div
+      className="rounded border p-2.5"
+      style={{
+        backgroundColor: 'rgba(10, 14, 26, 0.5)',
+        borderColor: hexToRgba(accent, 0.25),
+      }}
+    >
+      <div
+        className="text-[9px] font-mono font-bold tracking-wider mb-1.5"
+        style={{ color: accent }}
+      >
+        {label}
+      </div>
+      <ul className="space-y-1">
+        {items.map((item, i) => (
+          <li key={i} className="text-[10px] text-slate-300 leading-snug flex gap-1.5">
+            <span style={{ color: accent }}>·</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function EventInspector({ event, phaseId }: { event: FunnelEvent; phaseId: number }) {
+  const meta = CONNECTOR_META[event.connector];
+  const phase = FUNNEL_PHASES.find((p) => p.id === phaseId)!;
+  const explanation = PHASE_EXPLANATIONS[phaseId];
+  const narrative = buildEventNarrative(event, phaseId);
+
+  return (
+    <div className="rounded-lg border border-[#1e293b] bg-[#0a0e1a] overflow-hidden">
+      {/* Header */}
+      <div
+        className="px-4 py-3 border-b border-[#1e293b]"
+        style={{ backgroundColor: hexToRgba(phase.color, 0.06) }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span
+              className="px-2 py-1 rounded text-[10px] font-mono font-bold"
+              style={{
+                backgroundColor: hexToRgba(meta.color, 0.15),
+                color: meta.color,
+              }}
+            >
+              {event.connector}
+            </span>
+            <span className="text-sm font-mono font-bold text-slate-100">{event.id}</span>
+            <span className="text-[10px] font-mono text-slate-500">{event.timestamp}</span>
+          </div>
+          <span
+            className="px-2 py-1 rounded text-[10px] font-mono font-bold tracking-wider uppercase"
+            style={{
+              backgroundColor: hexToRgba(VERDICT_COLORS[event.finalVerdict], 0.15),
+              color: VERDICT_COLORS[event.finalVerdict],
+            }}
+          >
+            {event.finalVerdict.replace('_', ' ')}
+          </span>
+        </div>
+        <div className="mt-2 text-[12px] text-slate-200 font-medium">{event.eventType}</div>
+        <div className="mt-1 flex items-center gap-2 text-[10px] font-mono text-slate-400">
+          <span>{event.sourceIP}</span>
+          <ArrowRight size={10} />
+          <span>{event.destIP}</span>
+          <span className="text-slate-600">·</span>
+          <span>{event.protocol}/{event.port}</span>
+          <span className="text-slate-600">·</span>
+          <span>{event.bytes.toLocaleString()} bytes</span>
+        </div>
+      </div>
+
+      {/* Narrative */}
+      <div className="p-4 space-y-4">
+        <div>
+          <div
+            className="flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-widest mb-1.5"
+            style={{ color: phase.color }}
+          >
+            <Sparkles size={10} />
+            WHAT {phase.shortName} IS DOING TO THIS EVENT
+          </div>
+          <p className="text-[12px] text-slate-200 leading-relaxed">{narrative}</p>
+        </div>
+
+        <div>
+          <div className="text-[9px] font-mono font-bold tracking-widest text-slate-400 mb-1.5">
+            WORKED EXAMPLE FOR THIS PHASE
+          </div>
+          <div className="rounded border border-[#1e293b] bg-[#070b14] p-3">
+            <p className="text-[11px] text-slate-300 italic leading-relaxed">
+              {explanation.example}
+            </p>
+          </div>
+        </div>
+
+        {/* Pipeline trail */}
+        <div>
+          <div className="text-[9px] font-mono font-bold tracking-widest text-slate-400 mb-2">
+            PIPELINE TRAIL
+          </div>
+          <div className="flex items-center gap-1 flex-wrap">
+            {FUNNEL_PHASES.map((p, idx) => {
+              const reached = p.id < event.currentPhase;
+              const current = p.id === event.currentPhase;
+              return (
+                <div key={p.id} className="flex items-center">
+                  <div
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[9px] font-mono font-bold tracking-wider"
+                    style={{
+                      backgroundColor: current
+                        ? hexToRgba(p.color, 0.25)
+                        : reached
+                          ? hexToRgba(p.color, 0.08)
+                          : '#0a0e1a',
+                      color: current ? p.color : reached ? p.color : '#475569',
+                      border: current
+                        ? `1px solid ${p.color}`
+                        : '1px solid transparent',
+                    }}
+                  >
+                    {p.id}
+                    {current && (
+                      <span
+                        className="w-1 h-1 rounded-full animate-pulse"
+                        style={{ backgroundColor: p.color }}
+                      />
+                    )}
+                  </div>
+                  {idx < FUNNEL_PHASES.length - 1 && (
+                    <ChevronRight size={10} className="text-slate-700" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Outcome predictions */}
+        <div className="grid grid-cols-2 gap-3">
+          <div
+            className="rounded border p-3"
+            style={{
+              backgroundColor: 'rgba(34, 197, 94, 0.05)',
+              borderColor: 'rgba(34, 197, 94, 0.25)',
+            }}
+          >
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <CheckCircle size={11} className="text-green-400" />
+              <span className="text-[9px] font-mono font-bold tracking-widest text-green-400">
+                IF IT PASSES
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-300 leading-snug">
+              {phaseId < 11
+                ? `Proceeds to phase ${phaseId + 1} (${
+                    FUNNEL_PHASES.find((p) => p.id === phaseId + 1)?.shortName
+                  }) with current confidence and full evidence trail.`
+                : 'Disposition is recorded and used to retrain rule thresholds in the next ALHF cycle.'}
+            </p>
+          </div>
+          <div
+            className="rounded border p-3"
+            style={{
+              backgroundColor: 'rgba(239, 68, 68, 0.05)',
+              borderColor: 'rgba(239, 68, 68, 0.25)',
+            }}
+          >
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <AlertTriangle size={11} className="text-red-400" />
+              <span className="text-[9px] font-mono font-bold tracking-widest text-red-400">
+                IF IT DROPS
+              </span>
+            </div>
+            <p className="text-[10px] text-slate-300 leading-snug">
+              {explanation.dropCriteria} The event is archived to the audit lake and a sample is
+              retained for ALHF feedback review.
+            </p>
+          </div>
+        </div>
+
+        {/* Raw payload */}
+        <div>
+          <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-widest text-slate-400 mb-1.5">
+            <Database size={10} />
+            RAW EVIDENCE PAYLOAD
+          </div>
+          <div className="rounded border border-[#1e293b] bg-[#070b14] p-3 max-h-[160px] overflow-auto">
+            <pre className="text-[10px] font-mono text-slate-400 whitespace-pre-wrap break-all leading-relaxed">
+              {event.rawData}
+            </pre>
+          </div>
+        </div>
+
+        {/* Resolution */}
+        {event.resolutionReason && (
+          <div className="border-t border-[#1e293b] pt-3">
+            <div className="flex items-center gap-1.5 text-[9px] font-mono font-bold tracking-widest text-slate-400 mb-1">
+              <Clock size={10} />
+              RESOLUTION CONTEXT
+            </div>
+            <p className="text-[11px] text-slate-300">{event.resolutionReason}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

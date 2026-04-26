@@ -30,6 +30,7 @@ import {
   FunnelEvent,
 } from './eventFunnelData';
 import OSILayerView from './OSILayerView';
+import PhaseExplorerView from './PhaseExplorerView';
 
 interface AnimatedDot {
   id: string;
@@ -1236,7 +1237,7 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-type ViewMode = 'funnel' | 'osi';
+type ViewMode = 'funnel' | 'osi' | 'phase-explorer';
 
 function EventProcessingFunnel() {
   const [viewMode, setViewMode] = useState<ViewMode>('funnel');
@@ -1267,9 +1268,22 @@ function EventProcessingFunnel() {
           <Network size={12} />
           OSI LAYER VIEW
         </button>
+        <button
+          onClick={() => setViewMode('phase-explorer')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-mono font-bold tracking-wider transition-all duration-200 ${
+            viewMode === 'phase-explorer'
+              ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+              : 'text-slate-500 hover:text-slate-300 border border-transparent'
+          }`}
+        >
+          <Search size={12} />
+          PHASE EXPLORER
+        </button>
       </div>
 
-      {viewMode === 'funnel' ? <FunnelView /> : <OSILayerView />}
+      {viewMode === 'funnel' && <FunnelView />}
+      {viewMode === 'osi' && <OSILayerView />}
+      {viewMode === 'phase-explorer' && <PhaseExplorerView />}
     </div>
   );
 }
