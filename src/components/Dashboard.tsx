@@ -62,6 +62,7 @@ import ReportBuilder from './ReportBuilder';
 import PlatformEconomics from './PlatformEconomics';
 import IndustryThreatsHub from './industry-threats/IndustryThreatsHub';
 import FeatureLab from './FeatureLab';
+import MCPRegistry from './MCPRegistry';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -75,7 +76,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -369,6 +370,7 @@ const Dashboard = () => {
       items: [
         { id: 'multitenant', label: 'Multi-Tenant Manager', icon: Building2 },
         { id: 'usermanagement', label: 'Platform Users', icon: Users },
+        { id: 'mcp', label: 'MCP Registry', icon: Layers },
         { id: 'settings', label: 'Production Settings', icon: Settings },
       ]
     },
@@ -1030,6 +1032,7 @@ const Dashboard = () => {
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
           {selectedView === 'socoptimization' && <SOCOptimization />}
           {selectedView === 'multitenant' && <MultiTenantManager />}
+          {selectedView === 'mcp' && <MCPRegistry />}
           {selectedView === 'aiplaybook' && <AIPlaybookGenerator />}
           {selectedView === 'stixtaxii' && <StixTaxiiManager />}
           {selectedView === 'advancedhunt' && <AdvancedHuntingQuery />}
