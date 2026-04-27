@@ -62,6 +62,7 @@ import ReportBuilder from './ReportBuilder';
 import PlatformEconomics from './PlatformEconomics';
 import IndustryThreatsHub from './industry-threats/IndustryThreatsHub';
 import FeatureLab from './FeatureLab';
+import DetectionSLM from './DetectionSLM';
 import MCPRegistry from './MCPRegistry';
 import { supabase } from '../lib/supabase';
 
@@ -289,6 +290,7 @@ const Dashboard = () => {
       roles: ['analyst', 'engineer', 'admin', 'ciso'],
       items: [
         { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
+        { id: 'detectionslm', label: 'Detection SLM (Beta)', icon: Brain },
       ]
     },
     {
@@ -1027,6 +1029,7 @@ const Dashboard = () => {
           {selectedView === 'financialthreat' && <FinancialThreatIntel />}
           {selectedView === 'industrythreats' && <IndustryThreatsHub />}
           {selectedView === 'featurelab' && <FeatureLab />}
+          {selectedView === 'detectionslm' && <DetectionSLM />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
