@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 
 interface Agent {
   id: string;
+  slug?: string;
   name: string;
   type: string;
   description: string;
@@ -15,6 +16,13 @@ interface Agent {
   owns_decision?: boolean;
   phases?: number[];
   source_files?: string[];
+  production_code?: string;
+  config_yaml?: string;
+  integration_code?: string;
+  llm_config?: any;
+  dependencies?: string[];
+  language?: string;
+  notes?: string;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -68,13 +76,18 @@ const AgentCodeConfiguration = () => {
 
   const loadAgents = async () => {
     try {
-      const [canonicalRes, aiRes] = await Promise.all([
+      const [canonicalRes, aiRes, implRes] = await Promise.all([
         supabase.from('canonical_agents').select('*').order('category').order('name'),
         supabase.from('ai_agents').select('*'),
+        supabase.from('agent_implementations').select('*'),
       ]);
 
       const canonicalRows = canonicalRes.data || [];
       const aiRows = aiRes.data || [];
+      const implRows = implRes.data || [];
+
+      const implBySlug = new Map<string, any>();
+      implRows.forEach((i) => implBySlug.set(i.slug, i));
 
       const aiByName = new Map<string, any>();
       aiRows.forEach((a) => {
@@ -85,8 +98,10 @@ const AgentCodeConfiguration = () => {
       const merged: Agent[] = canonicalRows.map((c: any) => {
         const aliasKeys = [c.name, c.slug, ...(c.aliases || [])].map((s: string) => (s || '').toLowerCase());
         const ai = aliasKeys.map((k) => aiByName.get(k)).find(Boolean);
+        const impl = implBySlug.get(c.slug);
         return {
           id: c.id,
+          slug: c.slug,
           name: c.name,
           type: ai?.type || c.slug,
           description: c.role || ai?.description || '',
@@ -98,6 +113,13 @@ const AgentCodeConfiguration = () => {
           owns_decision: c.owns_decision,
           phases: c.phases || [],
           source_files: c.source_files || [],
+          production_code: impl?.production_code || '',
+          config_yaml: impl?.config_yaml || '',
+          integration_code: impl?.integration_code || '',
+          llm_config: impl?.llm_config || {},
+          dependencies: impl?.dependencies || [],
+          language: impl?.language || 'python',
+          notes: impl?.notes || '',
         };
       });
 
@@ -166,6 +188,9 @@ const AgentCodeConfiguration = () => {
   };
 
   const getAgentImplementation = (agent: Agent) => {
+    if (agent.production_code && agent.production_code.trim().length > 0) {
+      return agent.production_code;
+    }
     switch (agent.type) {
       case 'triage':
         return getTriageAgentCode();
@@ -2180,30 +2205,99 @@ if __name__ == "__main__":
                     <Database className="w-5 h-5 text-blue-500" />
                     <span>Agent Configuration</span>
                   </h3>
-                  <div className="bg-slate-900 rounded-lg border border-slate-700 p-6">
-                    <pre className="text-sm overflow-x-auto">
-                      <code className="text-blue-300 font-mono">
-                        {JSON.stringify(selectedAgent.config, null, 2)}
-                      </code>
-                    </pre>
-                  </div>
 
-                  <div className="bg-slate-900/50 rounded-lg p-6 border border-slate-800">
-                    <h4 className="text-white font-semibold mb-3">Configuration Options</h4>
-                    <div className="space-y-2 text-sm">
-                      {Object.entries(selectedAgent.config).map(([key, value]) => (
-                        <div key={key} className="flex justify-between items-start border-b border-slate-800 pb-2">
-                          <span className="text-slate-400 font-mono">{key}</span>
-                          <span className="text-slate-300">{typeof value === 'object' ? 'Object' : String(value)}</span>
-                        </div>
-                      ))}
+                  {selectedAgent.config_yaml && selectedAgent.config_yaml.trim().length > 0 && (
+                    <div className="bg-slate-900 rounded-lg border border-slate-700">
+                      <div className="px-4 py-2 border-b border-slate-700 flex items-center justify-between">
+                        <span className="text-xs font-mono text-slate-400">config.yaml</span>
+                        <button
+                          onClick={() => copyToClipboard(selectedAgent.config_yaml || '')}
+                          className="text-xs text-slate-400 hover:text-white flex items-center space-x-1"
+                        >
+                          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                          <span>Copy</span>
+                        </button>
+                      </div>
+                      <pre className="text-sm overflow-x-auto p-4">
+                        <code className="text-amber-200 font-mono whitespace-pre">
+                          {selectedAgent.config_yaml}
+                        </code>
+                      </pre>
                     </div>
-                  </div>
+                  )}
+
+                  {selectedAgent.dependencies && selectedAgent.dependencies.length > 0 && (
+                    <div className="bg-slate-900/50 rounded-lg p-6 border border-slate-800">
+                      <h4 className="text-white font-semibold mb-3">Runtime Dependencies</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedAgent.dependencies.map((dep) => (
+                          <span key={dep} className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-full text-xs font-mono">
+                            {dep}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedAgent.source_files && selectedAgent.source_files.length > 0 && (
+                    <div className="bg-slate-900/50 rounded-lg p-6 border border-slate-800">
+                      <h4 className="text-white font-semibold mb-3">Source Files</h4>
+                      <ul className="space-y-1.5 text-sm">
+                        {selectedAgent.source_files.map((f) => (
+                          <li key={f} className="text-slate-300 font-mono text-xs flex items-center space-x-2">
+                            <FileCode className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {selectedAgent.notes && (
+                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-4">
+                      <div className="text-amber-400 font-semibold text-sm mb-1">Operational Notes</div>
+                      <p className="text-slate-300 text-sm">{selectedAgent.notes}</p>
+                    </div>
+                  )}
+
+                  {Object.keys(selectedAgent.config || {}).length > 0 && (
+                    <div className="bg-slate-900/50 rounded-lg p-6 border border-slate-800">
+                      <h4 className="text-white font-semibold mb-3">Runtime Configuration (DB)</h4>
+                      <div className="space-y-2 text-sm">
+                        {Object.entries(selectedAgent.config).map(([key, value]) => (
+                          <div key={key} className="flex justify-between items-start border-b border-slate-800 pb-2">
+                            <span className="text-slate-400 font-mono">{key}</span>
+                            <span className="text-slate-300">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {activeTab === 'integration' && (
                 <div className="space-y-6">
+                  {selectedAgent.integration_code && selectedAgent.integration_code.trim().length > 0 && (
+                    <div className="bg-slate-900 rounded-lg border border-slate-700">
+                      <div className="px-4 py-2 border-b border-slate-700 flex items-center justify-between">
+                        <span className="text-xs font-mono text-slate-400">caller-snippet.ts</span>
+                        <button
+                          onClick={() => copyToClipboard(selectedAgent.integration_code || '')}
+                          className="text-xs text-slate-400 hover:text-white flex items-center space-x-1"
+                        >
+                          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                          <span>Copy</span>
+                        </button>
+                      </div>
+                      <pre className="text-sm overflow-x-auto p-4">
+                        <code className="text-cyan-200 font-mono whitespace-pre">
+                          {selectedAgent.integration_code}
+                        </code>
+                      </pre>
+                    </div>
+                  )}
+
                   <div className="bg-slate-900/50 rounded-lg p-6 border border-slate-800">
                     <h3 className="text-white font-semibold mb-4 flex items-center space-x-2">
                       <Workflow className="w-5 h-5 text-green-500" />
@@ -2265,7 +2359,29 @@ if __name__ == "__main__":
 
               {activeTab === 'llm' && (
                 <div className="space-y-6">
-                  {/* LLM Prompts Section */}
+                  {selectedAgent.llm_config && Object.keys(selectedAgent.llm_config).length > 0 && (
+                    <div className="bg-slate-900 rounded-lg border border-slate-700">
+                      <div className="px-4 py-2 border-b border-slate-700 flex items-center justify-between">
+                        <span className="text-xs font-mono text-slate-400 flex items-center space-x-2">
+                          <Brain className="w-3.5 h-3.5 text-pink-400" />
+                          <span>llm_config (live from agent_implementations)</span>
+                        </span>
+                        <button
+                          onClick={() => copyToClipboard(JSON.stringify(selectedAgent.llm_config, null, 2))}
+                          className="text-xs text-slate-400 hover:text-white flex items-center space-x-1"
+                        >
+                          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                          <span>Copy</span>
+                        </button>
+                      </div>
+                      <pre className="text-sm overflow-x-auto p-4">
+                        <code className="text-pink-200 font-mono whitespace-pre">
+                          {JSON.stringify(selectedAgent.llm_config, null, 2)}
+                        </code>
+                      </pre>
+                    </div>
+                  )}
+
                   {(selectedAgent.type === 'triage' || selectedAgent.type === 'investigation' || selectedAgent.type === 'orchestrator') && (
                     <div className="bg-gradient-to-br from-purple-900/20 to-slate-900 rounded-lg p-6 border border-purple-500/30">
                       <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
