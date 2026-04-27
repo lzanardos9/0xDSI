@@ -63,6 +63,7 @@ import PlatformEconomics from './PlatformEconomics';
 import IndustryThreatsHub from './industry-threats/IndustryThreatsHub';
 import FeatureLab from './FeatureLab';
 import DetectionSLM from './DetectionSLM';
+import DetectionConfluence from './DetectionConfluence';
 import MCPRegistry from './MCPRegistry';
 import { supabase } from '../lib/supabase';
 
@@ -291,6 +292,7 @@ const Dashboard = () => {
       items: [
         { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
         { id: 'detectionslm', label: 'Detection SLM (Beta)', icon: Brain },
+        { id: 'confluence', label: 'Detection Confluence', icon: Layers },
       ]
     },
     {
@@ -1030,6 +1032,7 @@ const Dashboard = () => {
           {selectedView === 'industrythreats' && <IndustryThreatsHub />}
           {selectedView === 'featurelab' && <FeatureLab />}
           {selectedView === 'detectionslm' && <DetectionSLM />}
+          {selectedView === 'confluence' && <DetectionConfluence />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
