@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, AlertTriangle, Brain, Gauge, Network, Target, Users, Zap,
   GitBranch, Sparkles, ChevronRight, Layers, Workflow, Eye, Scale,
-  Waves, Sigma, FlaskConical, Beaker
+  Waves, Sigma, FlaskConical, Beaker, Bot, Cpu, Skull, ShieldAlert, Globe,
+  Binary, GitMerge
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -58,6 +59,69 @@ type Weight = {
 
 const LENS_ICON: Record<string, typeof Zap> = {
   Zap, AlertTriangle, Network, Brain, Target, Gauge, Users, Activity,
+  Workflow, ShieldAlert, Layers, Globe,
+};
+
+type MLInv = {
+  id: string;
+  verdict_id: string;
+  model_id: string;
+  model_name: string;
+  model_category: string;
+  model_family: string;
+  model_version: string;
+  inference_score: number;
+  confidence: number;
+  decision: string;
+  feature_attribution: Record<string, unknown>;
+  baseline_deviation: number;
+  drift_psi: number;
+  latency_ms: number;
+  hardware: string;
+  invoked_at: string;
+};
+
+type AgentAct = {
+  id: string;
+  verdict_id: string;
+  agent_slug: string;
+  agent_name: string;
+  agent_role: string;
+  agent_color: string;
+  phase: number;
+  action_type: string;
+  action_summary: string;
+  reasoning: string;
+  confidence: number;
+  decision: string;
+  duration_ms: number;
+  llm_tokens: number;
+  cost_usd: number;
+  status: string;
+  occurred_at: string;
+};
+
+type Chain = {
+  id: string;
+  chain_code: string;
+  campaign_name: string;
+  threat_actor: string;
+  motivation: string;
+  sophistication: string;
+  narrative: string;
+  kill_chain_stages: string[];
+  mitre_techniques: string[];
+  verdict_ids: string[];
+  ml_models_used: string[];
+  agents_orchestrated: string[];
+  glasswing_vulns: string[];
+  negative_correlation_rules: string[];
+  bytecode_artifacts: Array<Record<string, unknown>>;
+  total_signals: number;
+  fused_score: number;
+  blast_radius: number;
+  containment_status: string;
+  detected_at: string;
 };
 
 const PRIORITY_STYLE: Record<string, { bg: string; ring: string; text: string }> = {
@@ -67,7 +131,7 @@ const PRIORITY_STYLE: Record<string, { bg: string; ring: string; text: string }>
   P4: { bg: 'bg-sky-500/20', ring: 'ring-sky-500/60', text: 'text-sky-300' },
 };
 
-type Tab = 'river' | 'verdicts' | 'sunburst' | 'lineage' | 'formula' | 'disagree';
+type Tab = 'river' | 'verdicts' | 'sunburst' | 'lineage' | 'formula' | 'disagree' | 'ml' | 'agents' | 'chains';
 
 export default function DetectionConfluence() {
   const [tab, setTab] = useState<Tab>('river');
@@ -75,21 +139,30 @@ export default function DetectionConfluence() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [verdicts, setVerdicts] = useState<Verdict[]>([]);
   const [weights, setWeights] = useState<Weight[]>([]);
+  const [mlInvocations, setMlInvocations] = useState<MLInv[]>([]);
+  const [agentActions, setAgentActions] = useState<AgentAct[]>([]);
+  const [chains, setChains] = useState<Chain[]>([]);
   const [selectedVerdict, setSelectedVerdict] = useState<Verdict | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
-      const [l, s, v, w] = await Promise.all([
+      const [l, s, v, w, m, a, c] = await Promise.all([
         supabase.from('confluence_lenses').select('*').order('display_name'),
-        supabase.from('confluence_signals').select('*').order('emitted_at', { ascending: false }).limit(200),
+        supabase.from('confluence_signals').select('*').order('emitted_at', { ascending: false }).limit(400),
         supabase.from('confluence_verdicts').select('*').order('fused_score', { ascending: false }),
         supabase.from('confluence_lens_weights').select('*').eq('tenant_id', 'default'),
+        supabase.from('confluence_ml_invocations').select('*').order('invoked_at', { ascending: false }).limit(500),
+        supabase.from('confluence_agent_actions').select('*').order('phase').limit(300),
+        supabase.from('confluence_attack_chains').select('*').order('fused_score', { ascending: false }),
       ]);
       setLenses((l.data ?? []) as Lens[]);
       setSignals((s.data ?? []) as Signal[]);
       setVerdicts((v.data ?? []) as Verdict[]);
       setWeights((w.data ?? []) as Weight[]);
+      setMlInvocations((m.data ?? []) as MLInv[]);
+      setAgentActions((a.data ?? []) as AgentAct[]);
+      setChains((c.data ?? []) as Chain[]);
       setLoading(false);
     })();
   }, []);
@@ -143,6 +216,15 @@ export default function DetectionConfluence() {
         )}
         {tab === 'disagree' && (
           <DisagreementView verdicts={verdicts} signals={signals} lensById={lensById} />
+        )}
+        {tab === 'ml' && (
+          <MLModelsView mlInvocations={mlInvocations} verdicts={verdicts} />
+        )}
+        {tab === 'agents' && (
+          <AgentsView agentActions={agentActions} verdicts={verdicts} />
+        )}
+        {tab === 'chains' && (
+          <AttackChainsView chains={chains} verdicts={verdicts} mlInvocations={mlInvocations} agentActions={agentActions} />
         )}
       </div>
     </div>
@@ -213,6 +295,9 @@ function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     { id: 'lineage', label: 'Evidence Lineage', icon: GitBranch },
     { id: 'formula', label: 'Formula Surgery', icon: Scale },
     { id: 'disagree', label: 'Disagreement Console', icon: FlaskConical },
+    { id: 'ml', label: 'ML Model Fusion', icon: Cpu },
+    { id: 'agents', label: 'Agentic Operations', icon: Bot },
+    { id: 'chains', label: 'Complex Attack Chains', icon: Skull },
   ];
   return (
     <div className="border-b border-slate-800 bg-slate-900/60 px-6">
@@ -954,6 +1039,521 @@ function DisagreementView({ verdicts, signals, lensById }: { verdicts: Verdict[]
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function MLModelsView({ mlInvocations, verdicts }: { mlInvocations: MLInv[]; verdicts: Verdict[] }) {
+  const verdictById = useMemo(() => Object.fromEntries(verdicts.map((v) => [v.id, v])), [verdicts]);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+
+  const modelStats = useMemo(() => {
+    const m: Record<string, { name: string; category: string; family: string; count: number; avgScore: number; avgConf: number; avgLatency: number; avgDrift: number; }> = {};
+    for (const inv of mlInvocations) {
+      if (!m[inv.model_id]) {
+        m[inv.model_id] = {
+          name: inv.model_name,
+          category: inv.model_category,
+          family: inv.model_family,
+          count: 0, avgScore: 0, avgConf: 0, avgLatency: 0, avgDrift: 0
+        };
+      }
+      const e = m[inv.model_id];
+      e.count++;
+      e.avgScore += Number(inv.inference_score);
+      e.avgConf += Number(inv.confidence);
+      e.avgLatency += Number(inv.latency_ms);
+      e.avgDrift += Number(inv.drift_psi);
+    }
+    for (const k of Object.keys(m)) {
+      const e = m[k];
+      e.avgScore /= e.count; e.avgConf /= e.count; e.avgLatency /= e.count; e.avgDrift /= e.count;
+    }
+    return m;
+  }, [mlInvocations]);
+
+  const byCategory = useMemo(() => {
+    const c: Record<string, Array<{ id: string; stats: typeof modelStats[string] }>> = {};
+    for (const [id, s] of Object.entries(modelStats)) {
+      if (!c[s.category]) c[s.category] = [];
+      c[s.category].push({ id, stats: s });
+    }
+    for (const k of Object.keys(c)) c[k].sort((a, b) => b.stats.count - a.stats.count);
+    return c;
+  }, [modelStats]);
+
+  const categoryColors: Record<string, string> = {
+    'behavioral':'#f472b6', 'malware':'#fb923c', 'vector':'#10b981',
+    'threat-modeling':'#22d3ee', 'model-guard':'#ef4444', 'llm-risk':'#eab308',
+    'correlation':'#a3e635', 'micro-pattern':'#60a5fa', 'pattern':'#34d399',
+  };
+
+  const recentForModel = useMemo(
+    () => selectedModel ? mlInvocations.filter((m) => m.model_id === selectedModel).slice(0, 50) : [],
+    [mlInvocations, selectedModel]
+  );
+
+  const totalModels = Object.keys(modelStats).length;
+
+  return (
+    <div className="h-full overflow-auto p-6 space-y-6">
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
+        <div className="flex items-start justify-between mb-5">
+          <div>
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-lime-400" />
+              ML Model Fusion ({totalModels} active models)
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Every inference behind every verdict. Isolation forests, GBT classifiers, LSTM behavioral analyzers, sentence transformers, GNN attack-path predictors, Bayesian risk ensembles, drift detectors, voiceprint embeddings.
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Mini2 label="invocations" value={mlInvocations.length} color="#a3e635" />
+            <Mini2 label="categories" value={Object.keys(byCategory).length} color="#22d3ee" />
+            <Mini2 label="avg latency" value={`${Math.round(mlInvocations.reduce((a, m) => a + m.latency_ms, 0) / Math.max(1, mlInvocations.length))}ms`} color="#eab308" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+          {Object.entries(byCategory).sort().map(([cat, list]) => {
+            const color = categoryColors[cat] ?? '#94a3b8';
+            return (
+              <div key={cat} className="rounded-lg bg-slate-950 border border-slate-800 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ background: color }} />
+                    <h3 className="text-sm font-bold text-slate-200 capitalize">{cat.replace('-', ' ')}</h3>
+                  </div>
+                  <span className="text-[10px] text-slate-500">{list.length} models</span>
+                </div>
+                <div className="space-y-2">
+                  {list.map(({ id, stats }) => (
+                    <button
+                      key={id}
+                      onClick={() => setSelectedModel(id === selectedModel ? null : id)}
+                      className={`w-full text-left p-2 rounded border transition ${
+                        selectedModel === id ? 'border-lime-400 bg-lime-500/10' : 'border-slate-800 hover:border-slate-700 bg-slate-900/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-semibold text-slate-100 truncate">{stats.name}</div>
+                        <span className="text-[9px] text-slate-500 font-mono ml-2">{stats.count}x</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-[9px]">
+                        <span className="text-emerald-400">conf {(stats.avgConf * 100).toFixed(0)}%</span>
+                        <span className="text-cyan-400">{Math.round(stats.avgLatency)}ms</span>
+                        {stats.avgDrift > 0.15 && (
+                          <span className="text-amber-400">drift {stats.avgDrift.toFixed(2)}</span>
+                        )}
+                      </div>
+                      <div className="mt-1.5 h-1 bg-slate-800 rounded overflow-hidden">
+                        <div
+                          className="h-full"
+                          style={{ width: `${stats.avgScore * 100}%`, background: color }}
+                        />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {selectedModel && (
+        <div className="bg-slate-900/60 border border-lime-500/40 rounded-xl p-5">
+          <h3 className="text-sm font-bold mb-3 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-lime-400" />
+            Recent invocations - {modelStats[selectedModel]?.name}
+          </h3>
+          <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+            {recentForModel.map((inv) => {
+              const v = verdictById[inv.verdict_id];
+              return (
+                <div key={inv.id} className="flex items-center gap-3 p-2 rounded bg-slate-950 border border-slate-800 text-xs">
+                  <span className="font-mono text-[10px] text-slate-500 w-32">{new Date(inv.invoked_at).toLocaleTimeString()}</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-lime-500/20 text-lime-300 w-20 text-center">
+                    {(inv.inference_score * 100).toFixed(0)}%
+                  </span>
+                  <span className="text-slate-300 truncate flex-1">{v?.title ?? inv.verdict_id?.slice(0, 8)}</span>
+                  <span className="text-cyan-400 font-mono text-[10px]">{inv.latency_ms}ms</span>
+                  <span className="text-slate-500 text-[10px]">{inv.hardware}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Mini2({ label, value, color }: { label: string; value: number | string; color: string }) {
+  return (
+    <div className="rounded bg-slate-950 border border-slate-800 px-3 py-2 text-right">
+      <div className="text-[9px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="text-lg font-bold" style={{ color }}>{value}</div>
+    </div>
+  );
+}
+
+function AgentsView({ agentActions, verdicts }: { agentActions: AgentAct[]; verdicts: Verdict[] }) {
+  const verdictById = useMemo(() => Object.fromEntries(verdicts.map((v) => [v.id, v])), [verdicts]);
+
+  const byAgent = useMemo(() => {
+    const m: Record<string, { name: string; role: string; color: string; actions: AgentAct[] }> = {};
+    for (const a of agentActions) {
+      if (!m[a.agent_slug]) m[a.agent_slug] = { name: a.agent_name, role: a.agent_role, color: a.agent_color, actions: [] };
+      m[a.agent_slug].actions.push(a);
+    }
+    return m;
+  }, [agentActions]);
+
+  const totalCost = agentActions.reduce((a, x) => a + Number(x.cost_usd), 0);
+  const totalTokens = agentActions.reduce((a, x) => a + x.llm_tokens, 0);
+  const avgConf = agentActions.length ? agentActions.reduce((a, x) => a + Number(x.confidence), 0) / agentActions.length : 0;
+
+  return (
+    <div className="h-full overflow-auto p-6 space-y-6">
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
+        <div className="flex items-start justify-between mb-5">
+          <div>
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <Bot className="w-5 h-5 text-emerald-400" />
+              Agentic SOC Operations
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Atlas (triage), Sage (enrichment), Nova (investigation), Vanguard (response), Commander (orchestrator), plus AI-Correlation, Negative-Correlation, Pattern-Discovery, Sandbox, and BMAD build-time personas.
+            </p>
+          </div>
+          <div className="grid grid-cols-4 gap-3">
+            <Mini2 label="agents" value={Object.keys(byAgent).length} color="#34d399" />
+            <Mini2 label="actions" value={agentActions.length} color="#22d3ee" />
+            <Mini2 label="LLM tokens" value={totalTokens.toLocaleString()} color="#a3e635" />
+            <Mini2 label="cost" value={`$${totalCost.toFixed(2)}`} color="#eab308" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {Object.entries(byAgent).sort((a, b) => b[1].actions.length - a[1].actions.length).map(([slug, info]) => {
+            const recent = info.actions.slice(0, 4);
+            return (
+              <div key={slug} className="rounded-lg bg-slate-950 border border-slate-800 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center"
+                      style={{ background: `${info.color}22`, border: `1px solid ${info.color}` }}
+                    >
+                      <Bot className="w-5 h-5" style={{ color: info.color }} />
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-slate-100">{info.name}</div>
+                      <div className="text-[10px] text-slate-500 capitalize">{info.role.replace('_', ' ')}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold" style={{ color: info.color }}>{info.actions.length}</div>
+                    <div className="text-[9px] text-slate-500">actions</div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  {recent.map((a) => {
+                    const v = verdictById[a.verdict_id];
+                    return (
+                      <div key={a.id} className="p-2 rounded bg-slate-900/60 border border-slate-800/60">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: info.color }}>
+                            {a.action_type}
+                          </span>
+                          <span className="text-[9px] text-slate-500 font-mono">{a.duration_ms}ms</span>
+                        </div>
+                        <div className="text-xs text-slate-300 mt-0.5 truncate">{a.action_summary}</div>
+                        {v && <div className="text-[10px] text-slate-500 mt-0.5 truncate">- {v.title}</div>}
+                        <div className="flex items-center gap-3 mt-1 text-[9px]">
+                          <span className="text-emerald-400">{(a.confidence * 100).toFixed(0)}% conf</span>
+                          <span className="text-slate-400">{a.decision}</span>
+                          {a.llm_tokens > 0 && <span className="text-amber-400">{a.llm_tokens} tok</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
+        <h3 className="text-sm font-bold mb-3 flex items-center gap-2">
+          <GitMerge className="w-4 h-4 text-emerald-400" />
+          Live Action Stream (avg confidence {(avgConf * 100).toFixed(1)}%)
+        </h3>
+        <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+          {agentActions.slice(0, 50).map((a) => {
+            const v = verdictById[a.verdict_id];
+            return (
+              <div key={a.id} className="flex items-center gap-3 p-2 rounded bg-slate-950 border border-slate-800 text-xs">
+                <span className="font-mono text-[10px] text-slate-500 w-24">{new Date(a.occurred_at).toLocaleTimeString()}</span>
+                <div className="flex items-center gap-2 w-32">
+                  <div className="w-2 h-2 rounded-full" style={{ background: a.agent_color }} />
+                  <span className="font-semibold text-slate-200">{a.agent_name}</span>
+                </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase w-24 text-center" style={{ background: `${a.agent_color}22`, color: a.agent_color }}>
+                  {a.action_type}
+                </span>
+                <span className="text-slate-300 truncate flex-1">{v?.title ?? a.action_summary}</span>
+                <span className="text-emerald-400 text-[10px]">{(a.confidence * 100).toFixed(0)}%</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttackChainsView({ chains, verdicts, mlInvocations, agentActions }: { chains: Chain[]; verdicts: Verdict[]; mlInvocations: MLInv[]; agentActions: AgentAct[] }) {
+  const [selectedChain, setSelectedChain] = useState<Chain | null>(chains[0] ?? null);
+
+  useMemo(() => { if (!selectedChain && chains[0]) setSelectedChain(chains[0]); }, [chains, selectedChain]);
+
+  const chain = selectedChain ?? chains[0];
+  const chainVerdicts = useMemo(
+    () => chain ? verdicts.filter((v) => chain.verdict_ids.includes(v.id)) : [],
+    [chain, verdicts]
+  );
+  const chainMl = useMemo(
+    () => chain ? mlInvocations.filter((m) => chain.verdict_ids.includes(m.verdict_id)) : [],
+    [chain, mlInvocations]
+  );
+  const chainAgents = useMemo(
+    () => chain ? agentActions.filter((a) => chain.verdict_ids.includes(a.verdict_id)) : [],
+    [chain, agentActions]
+  );
+
+  const sophColor = (s: string) => s === 'nation-state' ? '#ef4444' : s === 'expert' ? '#f59e0b' : s === 'high' ? '#eab308' : '#22d3ee';
+
+  return (
+    <div className="h-full overflow-auto p-6 space-y-6">
+      <div className="bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-red-950/30 border border-slate-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <Skull className="w-5 h-5 text-red-400" />
+            Complex Multi-Engine Attack Chains
+          </h2>
+          <span className="text-xs text-slate-400">{chains.length} active campaigns</span>
+        </div>
+        <p className="text-xs text-slate-400">
+          Each chain fuses ML inference, agentic actions, Glasswing vulns, Negative-correlation rules, and Bytecode Weaver artifacts into a single attack narrative.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-4 space-y-2">
+          {chains.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setSelectedChain(c)}
+              className={`w-full text-left p-3 rounded-lg border transition ${
+                chain?.id === c.id ? 'border-red-500 bg-red-500/10' : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-mono text-slate-500">{c.chain_code}</span>
+                <span
+                  className="px-1.5 py-0.5 text-[9px] font-bold rounded uppercase"
+                  style={{ background: `${sophColor(c.sophistication)}22`, color: sophColor(c.sophistication) }}
+                >
+                  {c.sophistication}
+                </span>
+              </div>
+              <div className="text-sm font-bold text-slate-100">{c.campaign_name}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{c.threat_actor}</div>
+              <div className="flex items-center gap-3 mt-2 text-[10px]">
+                <span className="text-red-300">score {c.fused_score.toFixed(2)}</span>
+                <span className="text-cyan-300">{c.kill_chain_stages.length} stages</span>
+                <span className="text-amber-300">blast {c.blast_radius}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="col-span-8 space-y-4">
+          {chain && (
+            <>
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-100">{chain.campaign_name}</h3>
+                    <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
+                      <span><span className="text-slate-500">actor:</span> {chain.threat_actor}</span>
+                      <span><span className="text-slate-500">motive:</span> {chain.motivation}</span>
+                      <span><span className="text-slate-500">status:</span> {chain.containment_status}</span>
+                    </div>
+                  </div>
+                  <span
+                    className="px-3 py-1 rounded text-xs font-bold"
+                    style={{ background: `${sophColor(chain.sophistication)}22`, color: sophColor(chain.sophistication) }}
+                  >
+                    {chain.fused_score.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-300 leading-relaxed">{chain.narrative}</p>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mt-4">
+                  <Pill label="ML models" value={chain.ml_models_used.length} color="#a3e635" icon={Cpu} />
+                  <Pill label="Agents" value={chain.agents_orchestrated.length} color="#34d399" icon={Bot} />
+                  <Pill label="Glasswing CVEs" value={chain.glasswing_vulns.length} color="#fb923c" icon={ShieldAlert} />
+                  <Pill label="NC rules fired" value={chain.negative_correlation_rules.length} color="#ef4444" icon={AlertTriangle} />
+                </div>
+              </div>
+
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
+                <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                  <GitBranch className="w-4 h-4 text-cyan-400" />
+                  Kill Chain Stages
+                </h4>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {chain.kill_chain_stages.map((s, idx) => (
+                    <div key={s} className="flex items-center gap-1">
+                      <span className="px-2 py-1 rounded text-[10px] font-bold uppercase bg-red-500/20 text-red-300 border border-red-500/30">{s}</span>
+                      {idx < chain.kill_chain_stages.length - 1 && <ChevronRight className="w-3 h-3 text-slate-500" />}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {chain.mitre_techniques.map((t) => (
+                    <span key={t} className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">{t}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
+                  <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-lime-400" />
+                    ML Models Used ({chain.ml_models_used.length})
+                  </h4>
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {chain.ml_models_used.map((m) => (
+                      <div key={m} className="text-xs px-2 py-1.5 rounded bg-slate-950 border border-slate-800 font-mono text-lime-300">
+                        {m}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-xs text-slate-400">
+                    <span className="text-slate-500">live invocations on this chain:</span> <span className="text-lime-400 font-bold">{chainMl.length}</span>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
+                  <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                    <Bot className="w-4 h-4 text-emerald-400" />
+                    Agents Orchestrated ({chain.agents_orchestrated.length})
+                  </h4>
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {chain.agents_orchestrated.map((a) => (
+                      <div key={a} className="text-xs px-2 py-1.5 rounded bg-slate-950 border border-slate-800 font-mono text-emerald-300">
+                        {a}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-xs text-slate-400">
+                    <span className="text-slate-500">recorded actions:</span> <span className="text-emerald-400 font-bold">{chainAgents.length}</span>
+                  </div>
+                </div>
+              </div>
+
+              {chain.bytecode_artifacts.length > 0 && (
+                <div className="bg-slate-900/60 border border-purple-500/30 rounded-xl p-5">
+                  <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                    <Binary className="w-4 h-4 text-purple-400" />
+                    Bytecode Weaver Artifacts
+                  </h4>
+                  <div className="space-y-2">
+                    {chain.bytecode_artifacts.map((b, i) => (
+                      <div key={i} className="p-3 rounded bg-slate-950 border border-purple-500/20">
+                        <pre className="text-[10px] text-purple-200 whitespace-pre-wrap break-all font-mono">{JSON.stringify(b, null, 2)}</pre>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(chain.glasswing_vulns.length > 0 || chain.negative_correlation_rules.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {chain.glasswing_vulns.length > 0 && (
+                    <div className="bg-slate-900/60 border border-orange-500/30 rounded-xl p-5">
+                      <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                        <ShieldAlert className="w-4 h-4 text-orange-400" />
+                        Glasswing Vulnerabilities
+                      </h4>
+                      <div className="space-y-1">
+                        {chain.glasswing_vulns.map((g) => (
+                          <div key={g} className="text-xs px-2 py-1.5 rounded bg-slate-950 border border-orange-500/20 font-mono text-orange-300">
+                            {g}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {chain.negative_correlation_rules.length > 0 && (
+                    <div className="bg-slate-900/60 border border-red-500/30 rounded-xl p-5">
+                      <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-400" />
+                        Negative Correlation Rules Fired
+                      </h4>
+                      <div className="space-y-1">
+                        {chain.negative_correlation_rules.map((r) => (
+                          <div key={r} className="text-xs px-2 py-1.5 rounded bg-slate-950 border border-red-500/20 font-mono text-red-300">
+                            {r}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5">
+                <h4 className="text-sm font-bold mb-3 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400" />
+                  Linked Verdicts ({chainVerdicts.length})
+                </h4>
+                <div className="space-y-1.5">
+                  {chainVerdicts.map((v) => (
+                    <div key={v.id} className="flex items-center gap-3 p-2 rounded bg-slate-950 border border-slate-800 text-xs">
+                      <span className="font-mono text-[10px] text-slate-500 w-32">{v.incident_key}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${PRIORITY_STYLE[v.priority]?.bg ?? ''} ${PRIORITY_STYLE[v.priority]?.text ?? ''}`}>
+                        {v.priority}
+                      </span>
+                      <span className="text-slate-200 truncate flex-1">{v.title}</span>
+                      <span className="text-red-300 font-bold">{Number(v.fused_score).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Pill({ label, value, color, icon: Icon }: { label: string; value: number; color: string; icon: typeof Cpu }) {
+  return (
+    <div className="rounded bg-slate-950 border border-slate-800 px-3 py-2 flex items-center gap-2">
+      <Icon className="w-4 h-4" style={{ color }} />
+      <div>
+        <div className="text-[9px] uppercase tracking-wider text-slate-500">{label}</div>
+        <div className="text-base font-bold" style={{ color }}>{value}</div>
       </div>
     </div>
   );
