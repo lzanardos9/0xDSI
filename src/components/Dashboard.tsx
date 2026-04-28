@@ -206,26 +206,21 @@ const Dashboard = () => {
 
   const loadStats = async () => {
     try {
-      const [eventsResult, sessionsResult, alertsResult] = await Promise.all([
+      const [eventsResult, sessionsResult, alertsResult, blockedResult] = await Promise.all([
         supabase.from('events').select('id', { count: 'exact', head: true }),
         supabase.from('sessions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
         supabase.from('alerts').select('id', { count: 'exact', head: true }).eq('severity', 'critical').eq('status', 'new'),
+        supabase.from('response_actions').select('id', { count: 'exact', head: true }).in('action_status', ['success', 'completed']),
       ]);
 
       setStats({
-        totalEvents: eventsResult.count || 24567,
-        activeSessions: sessionsResult.count || 1247,
-        criticalAlerts: alertsResult.count || 8,
-        blockedThreats: Math.floor(Math.random() * 50) + 156,
+        totalEvents: eventsResult.count ?? 0,
+        activeSessions: sessionsResult.count ?? 0,
+        criticalAlerts: alertsResult.count ?? 0,
+        blockedThreats: blockedResult.count ?? 0,
       });
     } catch (error) {
       console.error('Error loading stats:', error);
-      setStats({
-        totalEvents: 24567,
-        activeSessions: 1247,
-        criticalAlerts: 8,
-        blockedThreats: 156,
-      });
     }
   };
 
@@ -630,86 +625,38 @@ const Dashboard = () => {
               </div>
 
               {/* Live Metrics Dashboard */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 border border-blue-500/30 rounded-xl p-6 backdrop-blur-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-blue-500/20 rounded-lg">
-                      <Activity className="w-6 h-6 text-blue-400" />
-                    </div>
-                    <div className="px-3 py-1 bg-blue-500/20 rounded-full">
-                      <span className="text-blue-400 text-xs font-semibold flex items-center gap-1">
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+                {[
+                  { label: 'Total Events', value: stats.totalEvents.toLocaleString(), icon: Activity, accent: 'from-blue-500 to-cyan-400', text: 'text-blue-300', ring: 'ring-blue-500/30', sub: 'streaming pipeline', subIcon: TrendingUp },
+                  { label: 'Active Sessions', value: stats.activeSessions.toLocaleString(), icon: Users, accent: 'from-emerald-500 to-teal-400', text: 'text-emerald-300', ring: 'ring-emerald-500/30', sub: 'authenticated users', subIcon: Activity },
+                  { label: 'Critical Alerts', value: stats.criticalAlerts.toLocaleString(), icon: AlertTriangle, accent: 'from-red-500 to-rose-400', text: 'text-red-300', ring: 'ring-red-500/30', sub: 'awaiting triage', subIcon: Target },
+                  { label: 'Threats Neutralized', value: stats.blockedThreats.toLocaleString(), icon: ShieldCheck, accent: 'from-cyan-500 to-sky-400', text: 'text-cyan-300', ring: 'ring-cyan-500/30', sub: 'auto-response success', subIcon: CheckCircle2 },
+                ].map((m, i) => (
+                  <div
+                    key={i}
+                    className={`group relative overflow-hidden rounded-xl border border-slate-700/60 bg-slate-900/60 p-5 backdrop-blur-sm hover:border-slate-600 transition-all hover:-translate-y-0.5 hover:shadow-xl`}
+                  >
+                    <div className={`absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br ${m.accent} opacity-10 blur-2xl group-hover:opacity-20 transition`} />
+                    <div className="relative flex items-center justify-between mb-4">
+                      <div className={`p-2.5 rounded-lg bg-gradient-to-br ${m.accent} bg-opacity-20 ring-1 ${m.ring}`}>
+                        <m.icon className={`w-5 h-5 ${m.text}`} strokeWidth={1.75} />
+                      </div>
+                      <span className={`text-[10px] font-semibold tracking-wider ${m.text} flex items-center gap-1.5`}>
+                        <span className={`relative flex h-1.5 w-1.5`}>
+                          <span className={`absolute inline-flex h-full w-full rounded-full bg-current opacity-75 animate-ping`} />
+                          <span className={`relative inline-flex rounded-full h-1.5 w-1.5 bg-current`} />
+                        </span>
                         LIVE
                       </span>
                     </div>
+                    <p className="text-xs uppercase tracking-wider text-slate-400 font-medium">{m.label}</p>
+                    <p className="mt-1.5 text-3xl font-bold text-slate-50 tabular-nums">{m.value}</p>
+                    <p className={`mt-2 text-xs ${m.text} flex items-center gap-1.5`}>
+                      <m.subIcon className="w-3.5 h-3.5" />
+                      <span className="text-slate-400">{m.sub}</span>
+                    </p>
                   </div>
-                  <h3 className="text-gray-400 text-sm font-medium mb-2">Total Events</h3>
-                  <p className="text-3xl font-bold text-white mb-1">{stats.totalEvents.toLocaleString()}</p>
-                  <p className="text-blue-400 text-sm flex items-center gap-1">
-                    <TrendingUp className="w-4 h-4" />
-                    <span>Streaming</span>
-                  </p>
-                </div>
-
-                <div className="bg-gradient-to-br from-green-600/20 to-green-800/20 border border-green-500/30 rounded-xl p-6 backdrop-blur-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-green-500/20 rounded-lg">
-                      <Users className="w-6 h-6 text-green-400" />
-                    </div>
-                    <div className="px-3 py-1 bg-green-500/20 rounded-full">
-                      <span className="text-green-400 text-xs font-semibold flex items-center gap-1">
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                        LIVE
-                      </span>
-                    </div>
-                  </div>
-                  <h3 className="text-gray-400 text-sm font-medium mb-2">Active Sessions</h3>
-                  <p className="text-3xl font-bold text-white mb-1">{stats.activeSessions.toLocaleString()}</p>
-                  <p className="text-green-400 text-sm flex items-center gap-1">
-                    <Activity className="w-4 h-4" />
-                    <span>Real-time</span>
-                  </p>
-                </div>
-
-                <div className="bg-gradient-to-br from-red-600/20 to-red-800/20 border border-red-500/30 rounded-xl p-6 backdrop-blur-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-red-500/20 rounded-lg">
-                      <AlertTriangle className="w-6 h-6 text-red-400" />
-                    </div>
-                    <div className="px-3 py-1 bg-red-500/20 rounded-full">
-                      <span className="text-red-400 text-xs font-semibold flex items-center gap-1">
-                        <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
-                        LIVE
-                      </span>
-                    </div>
-                  </div>
-                  <h3 className="text-gray-400 text-sm font-medium mb-2">Critical Alerts</h3>
-                  <p className="text-3xl font-bold text-white mb-1">{stats.criticalAlerts}</p>
-                  <p className="text-red-400 text-sm flex items-center gap-1">
-                    <Target className="w-4 h-4" />
-                    <span>Monitoring</span>
-                  </p>
-                </div>
-
-                <div className="bg-gradient-to-br from-cyan-600/20 to-teal-800/20 border border-cyan-500/30 rounded-xl p-6 backdrop-blur-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-3 bg-cyan-500/20 rounded-lg">
-                      <Shield className="w-6 h-6 text-cyan-400" />
-                    </div>
-                    <div className="px-3 py-1 bg-cyan-500/20 rounded-full">
-                      <span className="text-cyan-400 text-xs font-semibold flex items-center gap-1">
-                        <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-                        LIVE
-                      </span>
-                    </div>
-                  </div>
-                  <h3 className="text-gray-400 text-sm font-medium mb-2">Blocked Threats</h3>
-                  <p className="text-3xl font-bold text-white mb-1">{stats.blockedThreats.toLocaleString()}</p>
-                  <p className="text-cyan-400 text-sm flex items-center gap-1">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Protected</span>
-                  </p>
-                </div>
+                ))}
               </div>
 
               {/* Compliance Dashboard */}
