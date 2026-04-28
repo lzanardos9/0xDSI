@@ -98,8 +98,16 @@ export default function UserActivityLineage() {
 
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    const t = setInterval(load, 10000);
-    return () => clearInterval(t);
+    const t = setInterval(load, 5000);
+    const ch = supabase
+      .channel('activity-lineage-stream')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_activity_events' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_activity_sessions' }, () => load())
+      .subscribe();
+    return () => {
+      clearInterval(t);
+      supabase.removeChannel(ch);
+    };
   }, []);
 
   const usernames = useMemo(

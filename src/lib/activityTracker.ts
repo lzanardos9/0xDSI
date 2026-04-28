@@ -244,3 +244,132 @@ export function trackLogout() {
 export function getSessionInfo() {
   return { sessionId: cachedSessionId, sessionToken: cachedSessionToken, user: cachedUser };
 }
+
+let globalListenersInstalled = false;
+let lastViewLabel = '';
+
+export function setCurrentView(viewId: string, viewLabel: string) {
+  lastViewId = viewId;
+  lastViewLabel = viewLabel;
+}
+
+function describeElement(el: Element): { id: string; label: string; kind: string } {
+  const t = el as HTMLElement;
+  const dataId = t.getAttribute('data-track-id') ?? t.id ?? '';
+  const dataLabel = t.getAttribute('data-track-label') ?? t.getAttribute('aria-label') ?? '';
+  const tag = t.tagName.toLowerCase();
+  const role = t.getAttribute('role') ?? '';
+  const text = (t.innerText || t.textContent || '').trim().slice(0, 80);
+  const kind =
+    tag === 'a' ? 'link'
+    : tag === 'button' || role === 'button' ? 'button'
+    : tag === 'input' ? `input:${(t as HTMLInputElement).type || 'text'}`
+    : tag === 'select' ? 'select'
+    : tag === 'textarea' ? 'textarea'
+    : role || tag;
+  return {
+    id: dataId,
+    label: dataLabel || text || (tag === 'a' ? (t as HTMLAnchorElement).href : ''),
+    kind,
+  };
+}
+
+export function installGlobalActivityTracking() {
+  if (globalListenersInstalled || typeof document === 'undefined') return;
+  globalListenersInstalled = true;
+
+  document.addEventListener('click', (ev) => {
+    const path = ev.composedPath();
+    let target: Element | null = null;
+    for (const node of path) {
+      if (!(node instanceof Element)) continue;
+      const tag = node.tagName.toLowerCase();
+      if (
+        tag === 'button' || tag === 'a' || tag === 'select' ||
+        node.getAttribute('role') === 'button' ||
+        node.hasAttribute('data-track-id') ||
+        node.hasAttribute('onclick')
+      ) {
+        target = node;
+        break;
+      }
+    }
+    if (!target) target = ev.target as Element | null;
+    if (!target) return;
+    const info = describeElement(target);
+    trackEvent({
+      eventType: 'click',
+      category: 'interaction',
+      viewId: lastViewId ?? '',
+      viewLabel: lastViewLabel,
+      targetId: info.id,
+      targetLabel: info.label,
+      targetKind: info.kind,
+      properties: {
+        x: ev.clientX,
+        y: ev.clientY,
+        button: ev.button,
+        meta: ev.metaKey,
+        ctrl: ev.ctrlKey,
+        shift: ev.shiftKey,
+      },
+    });
+  }, { capture: true });
+
+  document.addEventListener('submit', (ev) => {
+    const t = ev.target as HTMLFormElement | null;
+    if (!t) return;
+    trackEvent({
+      eventType: 'action',
+      category: 'interaction',
+      viewId: lastViewId ?? '',
+      targetId: t.id || t.getAttribute('name') || 'form',
+      targetLabel: t.getAttribute('aria-label') ?? 'form_submit',
+      targetKind: 'form',
+    });
+  }, { capture: true });
+
+  let hiddenAt: number | null = null;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
+      trackEvent({
+        eventType: 'action',
+        category: 'system',
+        targetKind: 'visibility',
+        targetLabel: 'tab_hidden',
+      });
+    } else if (document.visibilityState === 'visible') {
+      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = null;
+      trackEvent({
+        eventType: 'action',
+        category: 'system',
+        targetKind: 'visibility',
+        targetLabel: 'tab_visible',
+        durationMs: away,
+      });
+    }
+  });
+
+  window.addEventListener('error', (ev) => {
+    trackEvent({
+      eventType: 'error',
+      category: 'system',
+      targetKind: 'js_error',
+      targetLabel: ev.message?.slice(0, 200) ?? 'error',
+      properties: { filename: ev.filename, lineno: ev.lineno, colno: ev.colno },
+    });
+  });
+
+  window.addEventListener('beforeunload', () => {
+    const sid = cachedSessionId;
+    if (!sid) return;
+    try {
+      const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/rest/v1/user_activity_sessions?id=eq.${sid}`;
+      const body = JSON.stringify({ ended_at: new Date().toISOString(), is_active: false, last_active_at: new Date().toISOString() });
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon?.(url + `&apikey=${(import.meta as any).env.VITE_SUPABASE_ANON_KEY}`, blob);
+    } catch { /* ignore */ }
+  });
+}
