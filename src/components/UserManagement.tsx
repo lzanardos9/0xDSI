@@ -1,24 +1,7 @@
 import { useState, useEffect } from 'react';
-import {
-  Users,
-  Plus,
-  Edit,
-  Trash2,
-  Shield,
-  Lock,
-  Unlock,
-  Clock,
-  Search,
-  Filter,
-  X,
-  Check,
-  AlertTriangle,
-  Eye,
-  UserCog,
-  History,
-  Award
-} from 'lucide-react';
+import { Users, Plus, CreditCard as Edit, Trash2, Shield, Lock, Unlock, Clock, Search, Filter, X, Check, AlertTriangle, Eye, UserCog, History, Award, Network } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import UserActivityLineage from './UserActivityLineage';
 
 interface UserProfile {
   id: string;
@@ -69,7 +52,7 @@ const UserManagement = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [activeTab, setActiveTab] = useState<'users' | 'audit'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'audit' | 'lineage'>('users');
 
   const [formData, setFormData] = useState({
     user_id: '',
@@ -353,7 +336,26 @@ const UserManagement = () => {
             <span>Audit Log</span>
           </div>
         </button>
+        <button
+          onClick={() => setActiveTab('lineage')}
+          className={`px-4 py-2 font-medium transition-colors ${
+            activeTab === 'lineage'
+              ? 'text-blue-400 border-b-2 border-blue-400'
+              : 'text-slate-400 hover:text-slate-300'
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            <Network className="w-4 h-4" />
+            <span>Activity Lineage</span>
+          </div>
+        </button>
       </div>
+
+      {activeTab === 'lineage' && (
+        <div className="h-[calc(100vh-220px)] -mx-6 -mb-6 border-t border-slate-800 overflow-hidden">
+          <UserActivityLineage />
+        </div>
+      )}
 
       {activeTab === 'users' && (
         <>

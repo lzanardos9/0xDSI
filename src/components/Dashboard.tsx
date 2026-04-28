@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Shield, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { trackView, trackClick } from '../lib/activityTracker';
 import ThreatGlobe from './ThreatGlobe';
 import AttackVectorGraph from './AttackVectorGraph';
 import ListsPanel from './ListsPanel';
@@ -85,6 +86,10 @@ const Dashboard = () => {
   const [userRole, setUserRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    trackView(selectedView, selectedView);
+  }, [selectedView]);
 
   useEffect(() => {
     const loadUserRole = async () => {
@@ -449,7 +454,10 @@ const Dashboard = () => {
                     return (
                       <button
                         key={item.id}
-                        onClick={() => setSelectedView(item.id as any)}
+                        onClick={() => {
+                          trackClick({ id: item.id, label: item.label, kind: 'nav_item' }, { from: selectedView });
+                          setSelectedView(item.id as any);
+                        }}
                         title={!sidebarOpen ? item.label : undefined}
                         className={`w-full flex items-center ${sidebarOpen ? 'px-3 py-2' : 'justify-center px-2 py-2.5'} rounded-lg transition-all duration-150 text-[13px] font-medium relative ${
                           isActive

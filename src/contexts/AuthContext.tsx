@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
+import { trackLogin, trackLogout, setActivityUser, ensureSession } from '../lib/activityTracker';
 
 interface User {
   id: string;
@@ -21,6 +22,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    void ensureSession();
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -59,17 +61,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (data && !error) {
       const { data: authUser } = await supabase.auth.getUser();
-      setUser({
+      const u = {
         id: data.id,
         username: data.username,
         full_name: data.full_name,
         email: authUser.user?.email || ''
-      });
+      };
+      setUser(u);
+      setActivityUser({ id: u.id, username: u.username });
+      trackLogin(u.id, u.username);
     }
     setLoading(false);
   };
 
   const signOut = async () => {
+    trackLogout();
     await supabase.auth.signOut();
     setUser(null);
   };
