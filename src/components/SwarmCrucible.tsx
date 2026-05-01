@@ -5,6 +5,13 @@ import {
   CircuitBoard, Gauge, Layers, Binary, Radar, Target,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import {
+  BattlefieldSelector,
+  ChampionDetailModal,
+  ArtifactStudio,
+  type Battlefield,
+  type Champion as ChampionDetail,
+} from './swarm/SwarmExtras';
 
 type Side = 'red' | 'blue';
 const COHORTS_PER_SIDE = 12;
@@ -141,6 +148,9 @@ export default function SwarmCrucible() {
   const [rulesSeed, setRulesSeed] = useState<RuleSeed[]>([]);
   const [microPatterns, setMicroPatterns] = useState<MicroPattern[]>([]);
   const [pipelineStep, setPipelineStep] = useState(0);
+  const [selectedChampion, setSelectedChampion] = useState<ChampionDetail | null>(null);
+  const [battlefield, setBattlefield] = useState<Battlefield | null>(null);
+  const [artifactOpen, setArtifactOpen] = useState(false);
 
   useEffect(() => {
     const parts = { red: [] as Particle[], blue: [] as Particle[] };
@@ -559,16 +569,10 @@ export default function SwarmCrucible() {
               <RotateCcw className="w-4 h-4" /> Reset
             </button>
             <button
-              onClick={downloadNotebook}
+              onClick={() => setArtifactOpen(true)}
               className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold"
             >
-              <BookOpen className="w-4 h-4" /> Notebook
-            </button>
-            <button
-              onClick={downloadLangGraph}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold"
-            >
-              <FileCode2 className="w-4 h-4" /> LangGraph
+              <BookOpen className="w-4 h-4" /> Artifact Studio
             </button>
             <button
               onClick={downloadGenomes}
@@ -611,11 +615,28 @@ export default function SwarmCrucible() {
         </div>
 
         <div className="col-span-12 xl:col-span-4 space-y-4">
+          <BattlefieldSelector selected={battlefield} onSelect={setBattlefield} />
           <ScorePanel redMean={redMean} blueMean={blueMean} redElo={redElo} blueElo={blueElo} tick={tick} />
-          <ChampionsPanel champions={champions} />
+          <ChampionsPanel champions={champions} onSelect={setSelectedChampion} />
           <SeedsPanel rules={rulesSeed} micros={microPatterns} />
         </div>
       </div>
+      {selectedChampion && (
+        <ChampionDetailModal
+          champion={selectedChampion}
+          battlefield={battlefield}
+          onClose={() => setSelectedChampion(null)}
+        />
+      )}
+      {artifactOpen && (
+        <ArtifactStudio
+          onClose={() => setArtifactOpen(false)}
+          initialLangGraph={buildLangGraphPy()}
+          initialNotebook={buildNotebook({ tick, generation, redMean, blueMean, champions })}
+          onLangGraphDownload={(c) => downloadArtifact('tiny_agents_langgraph.py', c, 'text/x-python')}
+          onNotebookDownload={(c) => downloadArtifact('swarm_crucible.ipynb', c, 'application/json')}
+        />
+      )}
     </div>
   );
 }
@@ -718,7 +739,7 @@ function CohortBars({ cohorts }: { cohorts: { red: Cohort[]; blue: Cohort[] } })
   );
 }
 
-function ChampionsPanel({ champions }: { champions: Champion[] }) {
+function ChampionsPanel({ champions, onSelect }: { champions: Champion[]; onSelect: (c: Champion) => void }) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
       <div className="flex items-center justify-between mb-3">
@@ -734,10 +755,10 @@ function ChampionsPanel({ champions }: { champions: Champion[] }) {
       ) : (
         <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
           {champions.map((c) => (
-            <div key={c.id} className={`p-2.5 rounded-lg border ${
+            <button key={c.id} onClick={() => onSelect(c)} className={`w-full text-left p-2.5 rounded-lg border transition-all hover:scale-[1.01] hover:shadow-lg ${
               c.side === 'red'
-                ? 'border-rose-500/30 bg-rose-500/5'
-                : 'border-sky-500/30 bg-sky-500/5'
+                ? 'border-rose-500/30 bg-rose-500/5 hover:border-rose-500/60 hover:bg-rose-500/10'
+                : 'border-sky-500/30 bg-sky-500/5 hover:border-sky-500/60 hover:bg-sky-500/10'
             }`}>
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
@@ -768,7 +789,10 @@ function ChampionsPanel({ champions }: { champions: Champion[] }) {
                   <Sparkles className="w-2.5 h-2.5" /> PROMOTED TO {c.side === 'red' ? 'RED PLAYBOOK' : 'CORRELATION RULE'}
                 </div>
               )}
-            </div>
+              <div className="mt-1.5 text-[9px] font-mono text-slate-500 flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5" /> Click to inspect micro-pattern · embedding · transformer
+              </div>
+            </button>
           ))}
         </div>
       )}
