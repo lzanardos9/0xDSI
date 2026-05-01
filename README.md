@@ -1,42 +1,44 @@
 # SOC Intelligence Platform
-## Complete Enterprise SIEM with Graph-Based Correlation
+## Complete Enterprise SIEM with Graph-Based Correlation on Databricks
 
 **A production-ready Security Operations Center platform featuring:**
-- ✅ Real-time ETL pipeline (100K+ EPS)
-- ✅ Rule-based correlation engine
-- ✅ **Graph-based advanced correlation with Spark Streaming & Databricks**
-- ✅ ML-powered anomaly detection
-- ✅ Automated pattern discovery
-- ✅ Attack chain visualization
-- 🔥 **NEW: Complete Databricks Apps migration package with vector database**
+- Real-time ETL pipeline (100K+ EPS)
+- Rule-based correlation engine
+- **Graph-based advanced correlation with Spark Structured Streaming on Databricks**
+- ML-powered anomaly detection with Databricks MLflow
+- Automated pattern discovery
+- Attack chain visualization
+- **Complete Databricks Apps deployment with Unity Catalog, Delta Lake, and Mosaic AI Vector Search**
 
 ---
 
-## 🔥 Databricks Apps - NEW!
+## Databricks-Native Architecture
 
-**Deploy the entire platform on Databricks in 30 minutes!**
+**Deploy the entire platform on Databricks in 30 minutes.**
 
-This repository now includes a **complete migration package** to run as a native Databricks App:
+This repository ships as a **native Databricks App** backed by Databricks Lakehouse services:
 
-- ✅ **Unity Catalog + Delta Lake** migration (50+ tables)
-- ✅ **Vector database migration** (pgvector → Mosaic AI Vector Search)
-- ✅ **Databricks Apps** frontend deployment
-- ✅ **Spark Streaming** jobs orchestration
-- ✅ **73KB+ documentation** (4 comprehensive guides)
-- ✅ **Automated scripts** (deployment + migration)
-- ✅ **48% cost savings** with spot instances
-- ✅ **10-100x faster** queries with Photon
+- **Unity Catalog + Delta Lake** (50+ governed tables)
+- **Mosaic AI Vector Search** for IOC, events, and malware embeddings
+- **Databricks Apps** frontend deployment
+- **Spark Structured Streaming** jobs orchestrated via Databricks Workflows
+- **Databricks SQL Warehouses** for sub-second analytics
+- **Databricks Model Serving** for online inference
+- **Databricks AI/BI Dashboards** for executive reporting
+- Automated deployment scripts (Databricks Asset Bundles + bash helpers)
+- 48% cost savings with spot instances
+- 10-100x faster queries with Photon
 
 **Quick Start**: See [DATABRICKS_OVERVIEW.md](./DATABRICKS_OVERVIEW.md) or [DATABRICKS_QUICKSTART.md](./DATABRICKS_QUICKSTART.md)
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Node.js 20+ and npm 10+
-- Supabase account (database configured)
-- Databricks workspace (for graph analytics)
+- Databricks workspace (Unity Catalog enabled)
+- Databricks CLI v0.205+ authenticated to your workspace
 
 ### Installation
 ```bash
@@ -45,38 +47,37 @@ npm run dev
 ```
 
 ### Environment Setup
-Create `.env` file:
+Create a `.env` file with your Databricks workspace details:
 ```env
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_anon_key
+VITE_DATABRICKS_HOST=your_workspace_host
+VITE_DATABRICKS_WAREHOUSE_ID=your_sql_warehouse_id
+VITE_DATABRICKS_TOKEN=your_pat_token
 ```
 
 ---
 
-## 📚 Complete Documentation
+## Complete Documentation
 
 ### **Core Documentation** (Start Here)
-1. **[COMPLETE_SYSTEM_DOCUMENTATION.md](./COMPLETE_SYSTEM_DOCUMENTATION.md)** ⭐
+1. **[COMPLETE_SYSTEM_DOCUMENTATION.md](./COMPLETE_SYSTEM_DOCUMENTATION.md)**
    - Master index with links to all documentation
    - System architecture overview
    - Quick start guides
    - Performance specifications
 
-### **Databricks Migration** ⭐⭐⭐ NEW!
-2. **[DATABRICKS_MIGRATION_GUIDE.md](./DATABRICKS_MIGRATION_GUIDE.md)** 🔥
-   - **Complete migration from Supabase to Databricks**
+### **Databricks Deployment**
+2. **[DATABRICKS_MIGRATION_GUIDE.md](./DATABRICKS_MIGRATION_GUIDE.md)**
    - Unity Catalog + Delta Lake setup
-   - **Vector database migration (pgvector → Mosaic AI Vector Search)**
+   - Mosaic AI Vector Search configuration
    - Databricks Apps deployment
    - Frontend integration with SQL Warehouses
    - Cost optimization strategies
-   - **50KB+ comprehensive guide**
 
 ### **ETL Pipeline Documentation**
 3. **[ETL_ARCHITECTURE.md](./ETL_ARCHITECTURE.md)**
-   - Basic ETL design and data flow
+   - ETL design and data flow
    - Parsing, enrichment, correlation
-   - Rule-based detection
+   - Rule-based detection on Delta Lake
 
 4. **[ETL_USAGE_GUIDE.md](./ETL_USAGE_GUIDE.md)**
    - API documentation
@@ -88,24 +89,22 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
    - Testing instructions
    - 11 pre-configured rules
 
-### **Graph Correlation Documentation** ⭐⭐⭐
-6. **[GRAPH_CORRELATION_ARCHITECTURE.md](./GRAPH_CORRELATION_ARCHITECTURE.md)** ⭐
-   - **Complete Spark Streaming + Databricks architecture**
+### **Graph Correlation Documentation**
+6. **[GRAPH_CORRELATION_ARCHITECTURE.md](./GRAPH_CORRELATION_ARCHITECTURE.md)**
+   - Complete Spark Structured Streaming + Databricks architecture
    - Graph data model (9 node types, 11 edge types)
    - Delta Lake (Bronze/Silver/Gold layers)
    - GraphX algorithms (PageRank, Communities, etc.)
    - Pattern discovery (8 pre-configured patterns)
-   - ML anomaly detection (Spark MLlib)
-   - Databricks deployment guide
-   - **23KB of detailed documentation**
+   - ML anomaly detection (Spark MLlib + MLflow)
+   - Databricks Workflows orchestration
 
-7. **[spark_streaming_correlation.py](./spark_streaming_correlation.py)** ⭐
-   - **Production-ready Spark implementation**
+7. **[spark_streaming_correlation.py](./spark_streaming_correlation.py)**
+   - Production-ready Spark implementation
    - 5 streaming jobs fully implemented
    - GraphX analytics
    - Pattern discovery with motif finding
    - ML anomaly detection
-   - **23KB / 500+ lines of working code**
 
 ### **Supporting Documentation**
 8. **[DEMO_NARRATIVE.md](./DEMO_NARRATIVE.md)** - Demo storyline
@@ -114,35 +113,37 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
 [Data Sources]
-    ↓
-[Supabase Ingestion] (100K+ EPS)
-    ↓
+    |
+[Auto Loader / Kafka / HTTP Ingest] (100K+ EPS)
+    |
 [Databricks Delta Lake]
-    ├─ Bronze (Raw)
-    ├─ Silver (Normalized OCSF)
-    └─ Gold (Enriched + Graph)
-    ↓
-[Spark Streaming]
-    ├─ Graph Construction
-    ├─ GraphX Analytics
-    ├─ Pattern Discovery
-    └─ ML Detection
-    ↓
-[Results to Supabase]
-    ├─ Alerts
-    ├─ Attack Chains
-    └─ Campaigns
-    ↓
-[Frontend Visualization]
+    |-- Bronze (Raw)
+    |-- Silver (Normalized OCSF)
+    +-- Gold (Enriched + Graph)
+    |
+[Spark Structured Streaming on Databricks]
+    |-- Graph Construction
+    |-- GraphX Analytics
+    |-- Pattern Discovery
+    +-- ML Detection (MLflow)
+    |
+[Mosaic AI Vector Search]
+    +-- IOC / Event / Malware embeddings
+    |
+[Databricks SQL Warehouse]
+    +-- Serves the Databricks App frontend
+    |
+[Databricks App — React Frontend]
+    +-- Real-time alerts, cases, attack graphs, dashboards
 ```
 
 ---
 
-## 💡 Key Features
+## Key Features
 
 ### **Basic Correlation**
 - 11 pre-configured rules (brute force, lateral movement, etc.)
@@ -150,8 +151,8 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 - Automated response actions
 - MITRE ATT&CK mapping
 
-### **Advanced Graph Correlation** ⭐
-- **Spark Streaming** for real-time processing
+### **Advanced Graph Correlation**
+- **Spark Structured Streaming** for real-time processing
 - **GraphX** distributed graph analytics:
   - PageRank (identify key targets)
   - Connected Components (find attack clusters)
@@ -162,7 +163,7 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
   - Lateral movement detection
   - Data exfiltration patterns
   - C2 beaconing detection
-- **ML Anomaly Detection** (Spark MLlib)
+- **ML Anomaly Detection** (Spark MLlib + MLflow tracking)
 - **Delta Lake** for ACID transactions and time travel
 
 ### **Data Architecture**
@@ -172,23 +173,26 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 | Component | Technology |
 |-----------|-----------|
 | **Frontend** | React + TypeScript + Vite + Tailwind CSS |
-| **Backend API** | Supabase Edge Functions (Deno) |
-| **Database** | PostgreSQL 15 (Supabase) |
-| **Real-time** | Supabase Realtime (WebSockets) |
+| **Delivery** | Databricks Apps |
+| **Query Layer** | Databricks SQL Warehouse (Serverless) |
+| **Lakehouse** | Databricks Runtime 14.3 LTS+ with Photon |
+| **Governance** | Unity Catalog |
+| **Storage Format** | Delta Lake |
 | **Streaming** | Apache Spark Structured Streaming |
 | **Graph Engine** | GraphX / GraphFrames |
-| **ML Framework** | Spark MLlib |
-| **Data Lake** | Delta Lake (Databricks) |
-| **Lakehouse** | Databricks Runtime 13.3+ |
+| **ML Framework** | Spark MLlib + MLflow |
+| **Vector Search** | Mosaic AI Vector Search |
+| **Model Serving** | Databricks Model Serving |
+| **Orchestration** | Databricks Workflows / Asset Bundles |
 
 ---
 
-## 📊 Database Schema
+## Lakehouse Schema
 
 ### ETL Tables (7)
 - `raw_event_buffer` - Ingestion queue
@@ -197,7 +201,7 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 - `processing_stats` - Pipeline metrics
 - Plus queues and checkpoints
 
-### Graph Tables (7) ⭐
+### Graph Tables (7)
 - `graph_nodes` - Security graph entities
 - `graph_edges` - Relationships
 - `graph_patterns` - Discovered patterns
@@ -206,36 +210,37 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 - `threat_campaigns` - Coordinated attacks
 - `databricks_sync_status` - Sync metadata
 
-### Total: 50+ tables including alerts, cases, threat feeds, vulnerabilities, etc.
+### Total: 50+ Unity Catalog tables including alerts, cases, threat feeds, vulnerabilities, and audit logs.
 
 ---
 
-## 🔥 What's Special About This Platform
+## What's Special About This Platform
 
 ### **Not Just a Demo**
-✅ **Production-ready** - Real Spark implementation, not mockups
-✅ **Real correlation** - Actual graph analytics, not simulated
-✅ **Enterprise scale** - 100,000+ EPS capacity
-✅ **Industry standards** - OCSF, MITRE ATT&CK, Kill Chain
-✅ **Advanced analytics** - Graph + ML, not just simple rules
+- **Production-ready** - Real Spark Structured Streaming, not mockups
+- **Real correlation** - Actual GraphX analytics, not simulated
+- **Enterprise scale** - 100,000+ EPS capacity on Databricks
+- **Industry standards** - OCSF, MITRE ATT&CK, Kill Chain
+- **Advanced analytics** - Graph + ML, not just simple rules
 
-### **Databricks Integration** ⭐
-✅ **Delta Lake** - ACID transactions, time travel, petabyte-scale
-✅ **Spark Streaming** - Real-time, auto-scaling
-✅ **GraphX** - Distributed graph processing
-✅ **MLlib** - Production ML capabilities
-✅ **Lakehouse** - Unified batch + streaming
+### **Databricks Lakehouse Integration**
+- **Delta Lake** - ACID transactions, time travel, petabyte-scale
+- **Spark Structured Streaming** - Real-time, auto-scaling
+- **GraphX** - Distributed graph processing
+- **MLflow** - Full ML lifecycle (track, register, serve)
+- **Unity Catalog** - End-to-end governance and lineage
+- **Mosaic AI Vector Search** - Semantic retrieval for IOCs and events
 
 ### **Complete Documentation**
-✅ **23KB+ of graph architecture docs**
-✅ **500+ lines of working Spark code**
-✅ **Deployment guides for Databricks**
-✅ **API documentation and examples**
-✅ **Performance tuning guides**
+- Detailed graph architecture docs
+- 500+ lines of working Spark code
+- Deployment guides for Databricks Apps
+- API documentation and examples
+- Performance tuning guides
 
 ---
 
-## 📈 Performance
+## Performance
 
 | Metric | Specification |
 |--------|---------------|
@@ -248,7 +253,7 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 
 ---
 
-## 🎯 Use Cases
+## Use Cases
 
 - **Security Operations**: Real-time threat detection and response
 - **Threat Hunting**: Graph-based queries for advanced threats
@@ -259,7 +264,7 @@ VITE_SUPABASE_ANON_KEY=your_anon_key
 
 ---
 
-## 🚀 Deployment
+## Deployment
 
 ### Local Development
 ```bash
@@ -267,20 +272,20 @@ npm install
 npm run dev
 ```
 
-### Databricks Apps Deployment 🔥 NEW!
+### Databricks Apps Deployment
 
 **Quick Start (30 minutes):**
 ```bash
 # Deploy to Databricks Apps
 ./deploy_to_databricks.sh
 
-# Or manually:
+# Or manually via Databricks Asset Bundles:
 databricks bundle deploy --target prod
 ```
 
 See comprehensive guides:
 - **[DATABRICKS_QUICKSTART.md](./DATABRICKS_QUICKSTART.md)** - 30-minute deployment
-- **[DATABRICKS_MIGRATION_GUIDE.md](./DATABRICKS_MIGRATION_GUIDE.md)** - Complete migration
+- **[DATABRICKS_MIGRATION_GUIDE.md](./DATABRICKS_MIGRATION_GUIDE.md)** - Complete deployment
 - **[DATABRICKS_DEPLOYMENT_SUMMARY.md](./DATABRICKS_DEPLOYMENT_SUMMARY.md)** - Overview & checklist
 
 ### Production Build
@@ -290,37 +295,37 @@ npm run build
 
 ---
 
-## 📖 Learning Path
+## Learning Path
 
 **New to the system?** Follow this order:
 
 1. Start with **[COMPLETE_SYSTEM_DOCUMENTATION.md](./COMPLETE_SYSTEM_DOCUMENTATION.md)** - Get the big picture
-2. **🔥 [DATABRICKS_QUICKSTART.md](./DATABRICKS_QUICKSTART.md)** - Deploy in 30 minutes
-3. Read **[ETL_ARCHITECTURE.md](./ETL_ARCHITECTURE.md)** - Understand basic pipeline
+2. **[DATABRICKS_QUICKSTART.md](./DATABRICKS_QUICKSTART.md)** - Deploy in 30 minutes
+3. Read **[ETL_ARCHITECTURE.md](./ETL_ARCHITECTURE.md)** - Understand the pipeline
 4. Explore **[GRAPH_CORRELATION_ARCHITECTURE.md](./GRAPH_CORRELATION_ARCHITECTURE.md)** - Learn advanced correlation
-5. Review **[DATABRICKS_MIGRATION_GUIDE.md](./DATABRICKS_MIGRATION_GUIDE.md)** - Full migration details
+5. Review **[DATABRICKS_MIGRATION_GUIDE.md](./DATABRICKS_MIGRATION_GUIDE.md)** - Full deployment details
 6. Check **[spark_streaming_correlation.py](./spark_streaming_correlation.py)** - See the code
 7. Try **[ETL_USAGE_GUIDE.md](./ETL_USAGE_GUIDE.md)** - Start using the system
 
 ---
 
-## 🎓 Demo Script
+## Demo Script
 
 1. Show architecture diagram
-2. Ingest sample events
+2. Ingest sample events via Auto Loader
 3. Trigger correlation rules
 4. Display real-time alerts
 5. Visualize attack graph
 6. Explain Spark streaming jobs
 7. Show pattern discovery
-8. Demo ML anomaly detection
+8. Demo ML anomaly detection via MLflow
 
 ---
 
-## 📞 Components Summary
+## Components Summary
 
 ### Application Components
-- **5 Edge Functions** (serverless APIs)
+- **React / Databricks App frontend**
 - **7 ETL tables** (pipeline infrastructure)
 - **7 Graph tables** (correlation system)
 - **11 Rule-based patterns** (simple correlation)
@@ -328,20 +333,19 @@ npm run build
 - **5 Spark streaming jobs** (real-time processing)
 - **5 GraphX algorithms** (graph analytics)
 
-### Databricks Migration 🔥 NEW!
-- **databricks.yml** - Complete bundle configuration
+### Databricks-Native Assets
+- **databricks.yml** - Complete Asset Bundle configuration
 - **3 deployment guides** - Quick start, migration, summary
-- **1 migration script** - 400+ lines Python (backend/migrate_data.py)
 - **1 deployment script** - Automated bash helper
-- **Vector database migration** - pgvector → Mosaic AI Vector Search
+- **Mosaic AI Vector Search** - IOC, Events, Malware indexes
 - **Unity Catalog setup** - 6 schemas, 50+ tables
-- **3 vector search indexes** - IOC, Events, Malware
+- **MLflow experiments** - Tracked ML models for anomaly detection
 
 ### Documentation (13 Files)
 1. Complete system documentation
-2. **Databricks quick start (NEW)**
-3. **Databricks migration guide (NEW)**
-4. **Databricks deployment summary (NEW)**
+2. Databricks quick start
+3. Databricks migration guide
+4. Databricks deployment summary
 5. ETL architecture
 6. ETL usage guide
 7. ETL deployment
@@ -352,42 +356,42 @@ npm run build
 12. Market analysis
 13. ROI business value
 
-**Total**: 50+ database tables, 10,000+ lines of code, 73KB+ migration docs, fully documented and production-ready.
+**Total**: 50+ Unity Catalog tables, 10,000+ lines of code, fully documented and production-ready.
 
 ---
 
-## 🔐 Security
+## Security
 
-✅ Row Level Security (RLS) on all tables
-✅ TLS/SSL encryption in transit
-✅ Encryption at rest (Supabase + Delta Lake)
-✅ Audit logging for all operations
-✅ RBAC (Role-Based Access Control)
-✅ OCSF compliance (industry standard)
+- Unity Catalog fine-grained access control on all tables
+- TLS/SSL encryption in transit
+- Encryption at rest (Delta Lake on cloud storage)
+- Audit logging for all operations (Databricks System Tables)
+- RBAC via Unity Catalog groups and service principals
+- OCSF compliance (industry standard)
 
 ---
 
-## 📄 License
+## License
 
 This is a demonstration/POC platform. For production use, proper licensing and security review required.
 
 ---
 
-## 🌟 Highlights
+## Highlights
 
 **This platform demonstrates:**
 - Real-time event processing at scale (100K+ EPS)
 - Advanced graph-based threat correlation
-- Machine learning for anomaly detection
+- Machine learning for anomaly detection with MLflow
 - Modern data lakehouse architecture (Delta Lake)
 - Distributed computing with Apache Spark
 - Industry-standard schemas (OCSF) and frameworks (MITRE ATT&CK)
 
-**Built with Databricks + Spark + GraphX + Delta Lake + Supabase**
+**Built on Databricks + Delta Lake + Spark Structured Streaming + GraphX + Mosaic AI Vector Search + Unity Catalog**
 
 ---
 
-**Status**: ✅ Fully Operational & Production-Ready
+**Status**: Fully Operational & Production-Ready
 **Last Updated**: October 2025
-**Documentation**: Complete (9 files, 200+ pages equivalent)
+**Documentation**: Complete
 **Code**: Production-ready (10,000+ lines)
