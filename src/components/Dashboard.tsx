@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins } from 'lucide-react';
+import { Shield, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { trackView, setCurrentView } from '../lib/activityTracker';
 import ThreatGlobe from './ThreatGlobe';
@@ -65,6 +65,7 @@ import IndustryThreatsHub from './industry-threats/IndustryThreatsHub';
 import FeatureLab from './FeatureLab';
 import DetectionSLM from './DetectionSLM';
 import DetectionConfluence from './DetectionConfluence';
+import SwarmCrucible from './SwarmCrucible';
 import MCPRegistry from './MCPRegistry';
 import { supabase } from '../lib/supabase';
 
@@ -291,6 +292,7 @@ const Dashboard = () => {
       section: 'Innovation',
       roles: ['analyst', 'engineer', 'admin', 'ciso'],
       items: [
+        { id: 'swarmcrucible', label: 'Swarm Crucible', icon: Swords },
         { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
         { id: 'detectionslm', label: 'Detection SLM (Beta)', icon: Brain },
         { id: 'confluence', label: 'Detection Confluence', icon: Layers },
@@ -988,6 +990,7 @@ const Dashboard = () => {
           {selectedView === 'featurelab' && <FeatureLab />}
           {selectedView === 'detectionslm' && <DetectionSLM />}
           {selectedView === 'confluence' && <DetectionConfluence />}
+          {selectedView === 'swarmcrucible' && <SwarmCrucible />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
