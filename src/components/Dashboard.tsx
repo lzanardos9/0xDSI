@@ -66,6 +66,7 @@ import FeatureLab from './FeatureLab';
 import DetectionSLM from './DetectionSLM';
 import DetectionConfluence from './DetectionConfluence';
 import SwarmCrucible from './SwarmCrucible';
+import TrendEngineCET from './TrendEngineCET';
 import MCPRegistry from './MCPRegistry';
 import { supabase } from '../lib/supabase';
 
@@ -293,6 +294,7 @@ const Dashboard = () => {
       roles: ['analyst', 'engineer', 'admin', 'ciso'],
       items: [
         { id: 'swarmcrucible', label: 'Swarm Crucible', icon: Swords },
+        { id: 'trendengine', label: 'CET Trend Engine', icon: GitBranch },
         { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
         { id: 'detectionslm', label: 'Detection SLM (Beta)', icon: Brain },
         { id: 'confluence', label: 'Detection Confluence', icon: Layers },
@@ -991,6 +993,7 @@ const Dashboard = () => {
           {selectedView === 'detectionslm' && <DetectionSLM />}
           {selectedView === 'confluence' && <DetectionConfluence />}
           {selectedView === 'swarmcrucible' && <SwarmCrucible />}
+          {selectedView === 'trendengine' && <TrendEngineCET />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
