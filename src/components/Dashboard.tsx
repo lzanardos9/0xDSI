@@ -86,6 +86,7 @@ const Dashboard = () => {
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userRole, setUserRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
+  const [actualRole, setActualRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -105,6 +106,7 @@ const Dashboard = () => {
 
         if (data?.role) {
           setUserRole(data.role);
+          setActualRole(data.role);
         }
       }
     };
@@ -560,16 +562,25 @@ const Dashboard = () => {
                   <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-slate-700/40 text-slate-500 rounded border border-slate-600/50">⌘K</kbd>
                 </button>
 
-                <select
-                  value={userRole}
-                  onChange={(e) => setUserRole(e.target.value as any)}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors cursor-pointer bg-slate-800/40 hover:bg-slate-700/50 text-slate-300 border-slate-700/30"
-                >
-                  <option value="ciso">CISO</option>
-                  <option value="analyst">Analyst</option>
-                  <option value="engineer">Engineer</option>
-                  <option value="admin">Admin</option>
-                </select>
+                {actualRole === 'analyst' ? (
+                  <div
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg border bg-slate-800/40 text-slate-400 border-slate-700/30 cursor-not-allowed select-none"
+                    title="Analysts cannot change role"
+                  >
+                    Analyst
+                  </div>
+                ) : (
+                  <select
+                    value={userRole}
+                    onChange={(e) => setUserRole(e.target.value as any)}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors cursor-pointer bg-slate-800/40 hover:bg-slate-700/50 text-slate-300 border-slate-700/30"
+                  >
+                    <option value="ciso">CISO</option>
+                    <option value="analyst">Analyst</option>
+                    <option value="engineer">Engineer</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                )}
 
                 <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-800/40 rounded-lg border border-slate-700/30">
                   <div className="w-6 h-6 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center ring-1 ring-white/10">
