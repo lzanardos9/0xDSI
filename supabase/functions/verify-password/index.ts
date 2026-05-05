@@ -34,6 +34,32 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+    // Resolve login identifier to an actual email. Users may log in with:
+    //   - username only (e.g. "jasontrost")  -> look up user_profiles.email
+    //   - full email (e.g. "x@itau-unibanco.com.br") -> use as-is
+    let resolvedEmail: string | null = null;
+    const looksLikeEmail = typeof username === 'string' && username.includes('@');
+
+    if (looksLikeEmail) {
+      resolvedEmail = username;
+    } else {
+      const lookupResp = await fetch(
+        `${supabaseUrl}/rest/v1/user_profiles?username=eq.${encodeURIComponent(username)}&select=email`,
+        {
+          headers: {
+            'apikey': supabaseServiceKey,
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+        }
+      );
+      const lookup = await lookupResp.json();
+      if (Array.isArray(lookup) && lookup.length > 0 && lookup[0].email) {
+        resolvedEmail = lookup[0].email;
+      } else {
+        resolvedEmail = `${username}@soc.local`;
+      }
+    }
+
     // Use fetch to check password without creating a session
     const authResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
       method: 'POST',
@@ -42,7 +68,7 @@ Deno.serve(async (req: Request) => {
         'apikey': supabaseServiceKey,
       },
       body: JSON.stringify({
-        email: `${username}@soc.local`,
+        email: resolvedEmail,
         password: password,
       }),
     });
@@ -50,9 +76,9 @@ Deno.serve(async (req: Request) => {
     const authData = await authResponse.json();
 
     if (authResponse.ok && authData.access_token) {
-      // Password is valid, now get user profile
+      // Password is valid, now get user profile by email (works for both login flows)
       const profileResponse = await fetch(
-        `${supabaseUrl}/rest/v1/user_profiles?username=eq.${username}&is_active=eq.true&select=*`,
+        `${supabaseUrl}/rest/v1/user_profiles?email=eq.${encodeURIComponent(resolvedEmail!)}&is_active=eq.true&select=*`,
         {
           headers: {
             'apikey': supabaseServiceKey,
