@@ -185,8 +185,11 @@ const Login = () => {
           .eq('id', authState.userId);
       }
 
+      const loginEmail = authState.username.includes('@')
+        ? authState.username
+        : `${authState.username}@soc.local`;
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: `${authState.username}@soc.local`,
+        email: loginEmail,
         password: authState.password
       });
 
