@@ -116,14 +116,35 @@ const HoneytokenTable = ({ honeytokens }: Props) => {
                   <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-medium">Breadcrumb Trail</p>
                   <div className="relative pl-4">
                     <div className="absolute left-1.5 top-0 bottom-0 w-[1px] bg-gradient-to-b from-cyan-500/40 via-amber-500/40 to-red-500/40" />
-                    {(token.breadcrumb_trail || []).map((step: string, i: number) => {
+                    {(token.breadcrumb_trail || []).map((step: any, i: number) => {
                       const isLast = i === (token.breadcrumb_trail || []).length - 1;
+                      const isObject = step && typeof step === 'object';
                       return (
                         <div key={i} className="relative flex items-start gap-2 mb-2 last:mb-0">
-                          <div className={`absolute -left-[14px] mt-1 w-2 h-2 rounded-full border ${
+                          <div className={`absolute -left-[14px] mt-1.5 w-2 h-2 rounded-full border ${
                             isLast ? 'bg-red-500 border-red-400' : i === 0 ? 'bg-cyan-500 border-cyan-400' : 'bg-amber-500 border-amber-400'
                           }`} />
-                          <span className={`text-xs ${isLast ? 'text-red-300 font-medium' : 'text-slate-400'}`}>{step}</span>
+                          {isObject ? (
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                {step.ts && (
+                                  <span className="text-[10px] font-mono text-cyan-400/80 bg-cyan-500/5 border border-cyan-500/20 rounded px-1.5 py-0.5">
+                                    {step.ts}
+                                  </span>
+                                )}
+                                {step.actor && (
+                                  <span className="text-[10px] font-mono text-amber-400/90 truncate">
+                                    {step.actor}
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`text-xs leading-relaxed ${isLast ? 'text-red-300 font-medium' : 'text-slate-300'}`}>
+                                {step.event}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className={`text-xs ${isLast ? 'text-red-300 font-medium' : 'text-slate-400'}`}>{step}</span>
+                          )}
                         </div>
                       );
                     })}
