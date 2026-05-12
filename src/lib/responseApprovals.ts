@@ -158,3 +158,13 @@ export async function listPendingApprovals(): Promise<ResponseActionApproval[]> 
   if (error) throw error;
   return data ?? [];
 }
+
+export async function listAllApprovals(): Promise<ResponseActionApproval[]> {
+  const { data, error } = await supabase
+    .from('response_action_approvals')
+    .select('*')
+    .order('requested_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return data ?? [];
+}
