@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
+import { Swords, Megaphone, AlertOctagon, Flame, Activity, Briefcase, Landmark, Banknote, ShieldAlert, RefreshCw, X, Globe as Globe2, Radar } from 'lucide-react';
 import {
   createEarthTexture, latLonToVector3, createArcCurve, findNearestCity,
   SEVERITY_COLORS, ATTACK_TYPES, ATMOSPHERE_VS, ATMOSPHERE_INNER_FS,
   ATMOSPHERE_OUTER_FS, GLOBE_RADIUS, KNOWN_CITIES,
 } from '../lib/globeGeometry';
+import {
+  fetchGeopoliticalEvents, fetchExposureZones, refreshFeeds, categoryMeta,
+  type GeopoliticalEvent, type ExposureZone,
+} from '../lib/geopoliticalRisk';
 
 interface ThreatData {
   source: { lat: number; lon: number };
@@ -34,19 +39,103 @@ interface FeedItem {
   time: number;
 }
 
+interface RiskMarker {
+  group: THREE.Group;
+  pulse: THREE.Mesh;
+  core: THREE.Mesh;
+  event: GeopoliticalEvent;
+}
+
+type Mode = 'cyber' | 'geopolitical';
+
+const CATEGORY_ICONS: Record<string, typeof Swords> = {
+  armed_conflict: Swords,
+  civil_unrest: Flame,
+  protest: Megaphone,
+  strike: Briefcase,
+  sanctions: AlertOctagon,
+  political: Landmark,
+  natural_disaster: Activity,
+  seismic: Activity,
+  wildfire: Flame,
+  cyber_state: ShieldAlert,
+  financial_risk: Banknote,
+};
+
 const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const threatsRef = useRef(threats);
   const autoRotateRef = useRef(true);
   const [isAutoRotating, setIsAutoRotating] = useState(true);
+  const [mode, setMode] = useState<Mode>('cyber');
+  const modeRef = useRef<Mode>('cyber');
   const [attackFeed, setAttackFeed] = useState<FeedItem[]>([]);
   const [stats, setStats] = useState({ total: 0, active: 0, critical: 0 });
   const feedIdRef = useRef(0);
   const totalRef = useRef(0);
   const criticalRef = useRef(0);
 
+  const [geoEvents, setGeoEvents] = useState<GeopoliticalEvent[]>([]);
+  const [zones, setZones] = useState<ExposureZone[]>([]);
+  const [loadingGeo, setLoadingGeo] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<GeopoliticalEvent | null>(null);
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  const geoLayerRef = useRef<THREE.Group | null>(null);
+  const zonesLayerRef = useRef<THREE.Group | null>(null);
+  const markersRef = useRef<RiskMarker[]>([]);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const arcGroupRef = useRef<THREE.Group | null>(null);
+
   useEffect(() => { threatsRef.current = threats; }, [threats]);
   useEffect(() => { autoRotateRef.current = isAutoRotating; }, [isAutoRotating]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
+  const loadGeoData = useCallback(async () => {
+    setLoadingGeo(true);
+    try {
+      const [events, zoneData] = await Promise.all([
+        fetchGeopoliticalEvents(200),
+        fetchExposureZones(),
+      ]);
+      setGeoEvents(events);
+      setZones(zoneData);
+      setLastRefresh(new Date());
+    } finally {
+      setLoadingGeo(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadGeoData(); }, [loadGeoData]);
+
+  useEffect(() => {
+    if (mode !== 'geopolitical') return;
+    const interval = setInterval(() => { void loadGeoData(); }, 60_000);
+    return () => clearInterval(interval);
+  }, [mode, loadGeoData]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshFeeds();
+      await loadGeoData();
+    } catch (e) {
+      console.error('refresh failed', e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadGeoData]);
+
+  const toggleFilter = useCallback((cat: string) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -56,8 +145,9 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     scene.background = new THREE.Color(0x070d1a);
 
     const camera = new THREE.PerspectiveCamera(
-      50, container.clientWidth / container.clientHeight, 0.1, 1000
+      50, container.clientWidth / container.clientHeight, 0.1, 1000,
     );
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -65,6 +155,7 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
     container.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
     const ambientLight = new THREE.AmbientLight(0x334466, 0.8);
     scene.add(ambientLight);
@@ -156,16 +247,27 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     const cam = {
       theta: 0.3, phi: 1.2, radius: 7.5,
       tTheta: 0.3, tPhi: 1.2, tRadius: 5.0,
-      dragging: false, prevX: 0, prevY: 0,
+      dragging: false, dragMoved: false, prevX: 0, prevY: 0, downX: 0, downY: 0,
     };
 
     const arcs: ActiveArc[] = [];
     const arcGroup = new THREE.Group();
     scene.add(arcGroup);
+    arcGroupRef.current = arcGroup;
+
+    const geoLayer = new THREE.Group();
+    geoLayer.visible = false;
+    scene.add(geoLayer);
+    geoLayerRef.current = geoLayer;
+
+    const zonesLayer = new THREE.Group();
+    zonesLayer.visible = false;
+    scene.add(zonesLayer);
+    zonesLayerRef.current = zonesLayer;
 
     function spawnArc() {
       const available = threatsRef.current;
-      if (!available.length || arcs.length >= 15) return;
+      if (!available.length || arcs.length >= 15 || modeRef.current !== 'cyber') return;
 
       const threat = available[Math.floor(Math.random() * available.length)];
       const color = SEVERITY_COLORS[threat.severity]?.hex ?? 0xffffff;
@@ -175,9 +277,7 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
 
       const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
       lineGeo.setDrawRange(0, 0);
-      const lineMat = new THREE.LineBasicMaterial({
-        color, transparent: true, opacity: 0.7,
-      });
+      const lineMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.7 });
       const line = new THREE.Line(lineGeo, lineMat);
       arcGroup.add(line);
 
@@ -216,7 +316,7 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
 
       totalRef.current++;
       if (threat.severity === 'critical') criticalRef.current++;
-      setAttackFeed(prev => [feedItem, ...prev].slice(0, 8));
+      setAttackFeed((prev) => [feedItem, ...prev].slice(0, 8));
 
       arcs.push({
         line, head, sourceRing: srcRing, targetRing: null,
@@ -285,7 +385,7 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
       if (arc.targetRing) arcGroup.remove(arc.targetRing);
       arc.line.geometry.dispose();
       (arc.line.material as THREE.Material).dispose();
-      arc.head.children.forEach(child => {
+      arc.head.children.forEach((child) => {
         if (child instanceof THREE.Mesh) {
           child.geometry.dispose();
           (child.material as THREE.Material).dispose();
@@ -338,6 +438,14 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
         }
       }
 
+      // Pulse risk markers
+      const markerPulse = 1 + Math.sin(now * 0.004) * 0.4;
+      for (const m of markersRef.current) {
+        m.pulse.scale.setScalar(markerPulse);
+        const mat = m.pulse.material as THREE.MeshBasicMaterial;
+        mat.opacity = 0.55 - (markerPulse - 1) * 0.6;
+      }
+
       if (arcs.length !== prevArcCount) {
         prevArcCount = arcs.length;
         setStats({ total: totalRef.current, active: arcs.length, critical: criticalRef.current });
@@ -359,17 +467,43 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
 
     const onMouseDown = (e: MouseEvent) => {
       cam.dragging = true;
+      cam.dragMoved = false;
       cam.prevX = e.clientX;
       cam.prevY = e.clientY;
+      cam.downX = e.clientX;
+      cam.downY = e.clientY;
     };
     const onMouseMove = (e: MouseEvent) => {
       if (!cam.dragging) return;
-      cam.tTheta -= (e.clientX - cam.prevX) * 0.005;
-      cam.tPhi = Math.max(0.3, Math.min(Math.PI - 0.3, cam.tPhi + (e.clientY - cam.prevY) * 0.005));
+      const dx = e.clientX - cam.prevX;
+      const dy = e.clientY - cam.prevY;
+      if (Math.abs(e.clientX - cam.downX) > 4 || Math.abs(e.clientY - cam.downY) > 4) {
+        cam.dragMoved = true;
+      }
+      cam.tTheta -= dx * 0.005;
+      cam.tPhi = Math.max(0.3, Math.min(Math.PI - 0.3, cam.tPhi + dy * 0.005));
       cam.prevX = e.clientX;
       cam.prevY = e.clientY;
     };
     const onMouseUp = () => { cam.dragging = false; };
+    const onClick = (e: MouseEvent) => {
+      if (cam.dragMoved) return;
+      if (modeRef.current !== 'geopolitical') return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, camera);
+      const meshes = markersRef.current.map((m) => m.core);
+      const hits = ray.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        const hit = hits[0].object;
+        const marker = markersRef.current.find((m) => m.core === hit);
+        if (marker) setSelectedEvent(marker.event);
+      }
+    };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       cam.tRadius = Math.max(3, Math.min(8, cam.tRadius + e.deltaY * 0.003));
@@ -386,12 +520,14 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     cvs.addEventListener('mousemove', onMouseMove);
     cvs.addEventListener('mouseup', onMouseUp);
     cvs.addEventListener('mouseleave', onMouseUp);
+    cvs.addEventListener('click', onClick);
     cvs.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('resize', onResize);
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
         cam.dragging = true;
+        cam.dragMoved = false;
         cam.prevX = e.touches[0].clientX;
         cam.prevY = e.touches[0].clientY;
       }
@@ -417,6 +553,7 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
       cvs.removeEventListener('mousemove', onMouseMove);
       cvs.removeEventListener('mouseup', onMouseUp);
       cvs.removeEventListener('mouseleave', onMouseUp);
+      cvs.removeEventListener('click', onClick);
       cvs.removeEventListener('wheel', onWheel);
       cvs.removeEventListener('touchstart', onTouchStart);
       cvs.removeEventListener('touchmove', onTouchMove);
@@ -431,7 +568,7 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
       outerMat.dispose();
       starsGeo.dispose();
       starsMat.dispose();
-      cityMarkers.forEach(m => {
+      cityMarkers.forEach((m) => {
         m.geometry.dispose();
         (m.material as THREE.Material).dispose();
       });
@@ -440,7 +577,114 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     };
   }, []);
 
-  const toggleAutoRotate = useCallback(() => setIsAutoRotating(p => !p), []);
+  // Sync mode visibility on layers
+  useEffect(() => {
+    if (geoLayerRef.current) geoLayerRef.current.visible = mode === 'geopolitical';
+    if (zonesLayerRef.current) zonesLayerRef.current.visible = mode === 'geopolitical';
+    if (arcGroupRef.current) arcGroupRef.current.visible = mode === 'cyber';
+  }, [mode]);
+
+  // Re-render exposure zones layer
+  useEffect(() => {
+    const layer = zonesLayerRef.current;
+    if (!layer) return;
+    while (layer.children.length) {
+      const c = layer.children[0];
+      layer.remove(c);
+      if (c instanceof THREE.Mesh) {
+        c.geometry.dispose();
+        (c.material as THREE.Material).dispose();
+      }
+    }
+    for (const z of zones) {
+      const pos = latLonToVector3(z.lat, z.lon, GLOBE_RADIUS * 1.006);
+      const ringGeo = new THREE.RingGeometry(0.025, 0.05 + z.criticality * 0.012, 48);
+      const color = z.asset_type === 'datacenter' ? 0x22d3ee
+        : z.asset_type === 'headquarters' ? 0x34d399
+        : z.asset_type === 'engineering' ? 0x60a5fa
+        : z.asset_type === 'supplier' ? 0xfbbf24
+        : z.asset_type === 'finance' ? 0xfb7185
+        : 0x94a3b8;
+      const ringMat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.copy(pos);
+      ring.lookAt(pos.clone().multiplyScalar(2));
+      layer.add(ring);
+
+      const dotGeo = new THREE.SphereGeometry(0.025, 12, 12);
+      const dotMat = new THREE.MeshBasicMaterial({ color });
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.position.copy(pos);
+      layer.add(dot);
+    }
+  }, [zones]);
+
+  // Re-render geopolitical markers (filtered)
+  useEffect(() => {
+    const layer = geoLayerRef.current;
+    if (!layer) return;
+    // Tear down old
+    for (const m of markersRef.current) {
+      layer.remove(m.group);
+      m.group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.geometry.dispose();
+          (obj.material as THREE.Material).dispose();
+        }
+      });
+    }
+    markersRef.current = [];
+
+    const filtered = activeFilters.size === 0
+      ? geoEvents
+      : geoEvents.filter((e) => activeFilters.has(e.category));
+
+    for (const ev of filtered) {
+      if (!ev.lat && !ev.lon) continue;
+      const meta = categoryMeta(ev.category);
+      const pos = latLonToVector3(ev.lat, ev.lon, GLOBE_RADIUS * 1.012);
+      const group = new THREE.Group();
+
+      const sevScale = 0.018 + ev.severity * 0.008;
+      const coreGeo = new THREE.SphereGeometry(sevScale, 14, 14);
+      const coreMat = new THREE.MeshBasicMaterial({ color: meta.hex });
+      const core = new THREE.Mesh(coreGeo, coreMat);
+      core.position.copy(pos);
+      group.add(core);
+
+      const pulseGeo = new THREE.RingGeometry(sevScale * 1.4, sevScale * 2.4, 32);
+      const pulseMat = new THREE.MeshBasicMaterial({
+        color: meta.hex, transparent: true, opacity: 0.5, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+      pulse.position.copy(pos);
+      pulse.lookAt(pos.clone().multiplyScalar(2));
+      group.add(pulse);
+
+      // Beam vertical for high-exposure events
+      if (ev.acmeco_exposure_score >= 30) {
+        const beamGeo = new THREE.CylinderGeometry(sevScale * 0.4, sevScale * 0.1, sevScale * 8, 8);
+        const beamMat = new THREE.MeshBasicMaterial({
+          color: meta.hex, transparent: true, opacity: 0.55,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const beam = new THREE.Mesh(beamGeo, beamMat);
+        const beamPos = pos.clone().multiplyScalar(1 + (sevScale * 4) / GLOBE_RADIUS);
+        beam.position.copy(beamPos);
+        beam.lookAt(0, 0, 0);
+        beam.rotateX(Math.PI / 2);
+        group.add(beam);
+      }
+
+      layer.add(group);
+      markersRef.current.push({ group, pulse, core, event: ev });
+    }
+  }, [geoEvents, activeFilters]);
+
+  const toggleAutoRotate = useCallback(() => setIsAutoRotating((p) => !p), []);
 
   const sevDot = (s: string) => {
     const m: Record<string, string> = {
@@ -449,12 +693,27 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     return m[s] || 'bg-slate-500';
   };
 
-  const timeAgo = (t: number) => {
-    const s = Math.floor((Date.now() - t) / 1000);
+  const timeAgo = (t: number | string) => {
+    const ts = typeof t === 'number' ? t : new Date(t).getTime();
+    const s = Math.floor((Date.now() - ts) / 1000);
     if (s < 5) return 'now';
     if (s < 60) return `${s}s`;
-    return `${Math.floor(s / 60)}m`;
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h`;
+    return `${Math.floor(s / 86400)}d`;
   };
+
+  const topRisks = [...geoEvents]
+    .filter((e) => activeFilters.size === 0 || activeFilters.has(e.category))
+    .sort((a, b) => b.acmeco_exposure_score - a.acmeco_exposure_score)
+    .slice(0, 6);
+
+  const geoCounts = geoEvents.reduce<Record<string, number>>((acc, e) => {
+    acc[e.category] = (acc[e.category] ?? 0) + 1;
+    return acc;
+  }, {});
+  const totalExposed = geoEvents.filter((e) => e.acmeco_exposure_score >= 20).length;
+  const criticalExposed = geoEvents.filter((e) => e.acmeco_exposure_score >= 60).length;
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none">
@@ -462,6 +721,26 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
 
       <div className="absolute inset-0 pointer-events-none rounded-b-xl"
         style={{ background: 'radial-gradient(ellipse at center, transparent 55%, rgba(7,13,26,0.5) 100%)' }} />
+
+      {/* Mode toggle */}
+      <div className="absolute top-3 left-3 z-10 inline-flex bg-slate-900/70 backdrop-blur-md border border-slate-700/50 rounded-xl p-1">
+        <button
+          onClick={() => setMode('cyber')}
+          className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg flex items-center gap-1.5 transition-all ${
+            mode === 'cyber' ? 'bg-cyan-500/20 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.25)]' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Radar className="w-3.5 h-3.5" /> Cyber Threats
+        </button>
+        <button
+          onClick={() => setMode('geopolitical')}
+          className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg flex items-center gap-1.5 transition-all ${
+            mode === 'geopolitical' ? 'bg-amber-500/20 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.25)]' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Globe2 className="w-3.5 h-3.5" /> Geopolitical Risk
+        </button>
+      </div>
 
       <button
         onClick={toggleAutoRotate}
@@ -472,55 +751,263 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
         {isAutoRotating ? 'Pause Rotation' : 'Auto-Rotate'}
       </button>
 
-      <div className="absolute bottom-3 left-3 z-10 w-60 bg-slate-900/70 backdrop-blur-md
-        border border-slate-700/30 rounded-xl p-3">
-        <div className="text-[9px] font-semibold text-slate-500 uppercase tracking-[0.15em] mb-2">
-          Live Threat Feed
-        </div>
-        <div>
-          {attackFeed.length === 0 && (
-            <div className="text-[11px] text-slate-600 py-2">Initializing sensors...</div>
-          )}
-          {attackFeed.map(item => (
-            <div key={item.id}
-              className="flex items-start gap-2 py-1.5 border-b border-slate-800/30 last:border-0">
-              <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${sevDot(item.severity)}`} />
-              <div className="flex-1 min-w-0">
-                <div className="text-[11px] text-slate-200 font-medium truncate">{item.type}</div>
-                <div className="text-[9px] text-slate-500 truncate">
-                  {item.source} &rarr; {item.target}
-                </div>
-              </div>
-              <div className="text-[9px] text-slate-600 flex-shrink-0 mt-0.5">{timeAgo(item.time)}</div>
+      {mode === 'cyber' && (
+        <>
+          <div className="absolute bottom-3 left-3 z-10 w-60 bg-slate-900/70 backdrop-blur-md
+            border border-slate-700/30 rounded-xl p-3">
+            <div className="text-[9px] font-semibold text-slate-500 uppercase tracking-[0.15em] mb-2">
+              Live Threat Feed
             </div>
-          ))}
-        </div>
-      </div>
+            <div>
+              {attackFeed.length === 0 && (
+                <div className="text-[11px] text-slate-600 py-2">Initializing sensors...</div>
+              )}
+              {attackFeed.map((item) => (
+                <div key={item.id}
+                  className="flex items-start gap-2 py-1.5 border-b border-slate-800/30 last:border-0">
+                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${sevDot(item.severity)}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] text-slate-200 font-medium truncate">{item.type}</div>
+                    <div className="text-[9px] text-slate-500 truncate">
+                      {item.source} &rarr; {item.target}
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-slate-600 flex-shrink-0 mt-0.5">{timeAgo(item.time)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
 
-      <div className="absolute bottom-3 right-3 z-10 bg-slate-900/70 backdrop-blur-md
-        border border-slate-700/30 rounded-xl p-3">
-        <div className="grid grid-cols-3 gap-x-5 gap-y-1">
-          <div className="text-center">
-            <div className="text-base font-bold text-cyan-400 tabular-nums">{stats.active}</div>
-            <div className="text-[8px] text-slate-500 uppercase tracking-wider">Active</div>
+          <div className="absolute bottom-3 right-3 z-10 bg-slate-900/70 backdrop-blur-md
+            border border-slate-700/30 rounded-xl p-3">
+            <div className="grid grid-cols-3 gap-x-5 gap-y-1">
+              <div className="text-center">
+                <div className="text-base font-bold text-cyan-400 tabular-nums">{stats.active}</div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">Active</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-white tabular-nums">{stats.total}</div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">Total</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-red-400 tabular-nums">{stats.critical}</div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">Critical</div>
+              </div>
+            </div>
           </div>
-          <div className="text-center">
-            <div className="text-base font-bold text-white tabular-nums">{stats.total}</div>
-            <div className="text-[8px] text-slate-500 uppercase tracking-wider">Total</div>
+        </>
+      )}
+
+      {mode === 'geopolitical' && (
+        <>
+          {/* Filter chips */}
+          <div className="absolute top-14 left-3 z-10 max-w-md flex flex-wrap gap-1.5 bg-slate-900/70 backdrop-blur-md border border-slate-700/40 rounded-xl p-2">
+            {Object.entries(geoCounts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([cat, count]) => {
+                const meta = categoryMeta(cat);
+                const Icon = CATEGORY_ICONS[cat] ?? Activity;
+                const active = activeFilters.has(cat);
+                const dim = activeFilters.size > 0 && !active;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => toggleFilter(cat)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-all ${
+                      active
+                        ? 'bg-slate-700 border-slate-500 text-white'
+                        : 'bg-slate-800/40 border-slate-700/50 text-slate-300 hover:bg-slate-700/40'
+                    } ${dim ? 'opacity-50' : ''}`}
+                    style={active ? { boxShadow: `0 0 10px ${meta.color}40` } : {}}
+                  >
+                    <Icon className="w-3 h-3" style={{ color: meta.color }} />
+                    {meta.label}
+                    <span className="text-slate-500 ml-1">{count}</span>
+                  </button>
+                );
+              })}
           </div>
-          <div className="text-center">
-            <div className="text-base font-bold text-red-400 tabular-nums">{stats.critical}</div>
-            <div className="text-[8px] text-slate-500 uppercase tracking-wider">Critical</div>
+
+          {/* Top risks drawer */}
+          <div className="absolute bottom-3 left-3 z-10 w-80 bg-slate-900/80 backdrop-blur-md border border-amber-500/20 rounded-xl p-3 shadow-[0_0_24px_rgba(245,158,11,0.15)]">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Top Risks to Acmeco</span>
+              </div>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-1 text-[9px] text-slate-400 hover:text-white px-1.5 py-0.5 rounded border border-slate-700/40 hover:border-slate-500/60 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-2.5 h-2.5 ${refreshing ? 'animate-spin' : ''}`} />
+                {refreshing ? 'Fetching...' : 'Refresh'}
+              </button>
+            </div>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {loadingGeo && topRisks.length === 0 && <div className="text-[11px] text-slate-500 py-2">Loading global feeds...</div>}
+              {!loadingGeo && topRisks.length === 0 && <div className="text-[11px] text-slate-500 py-2">No events match filters.</div>}
+              {topRisks.map((ev) => {
+                const meta = categoryMeta(ev.category);
+                const Icon = CATEGORY_ICONS[ev.category] ?? Activity;
+                return (
+                  <button
+                    key={ev.id}
+                    onClick={() => setSelectedEvent(ev)}
+                    className="w-full text-left flex gap-2 py-1.5 px-2 rounded-lg border border-slate-800/30 hover:border-slate-600/60 hover:bg-slate-800/40 transition-all"
+                  >
+                    <Icon className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: meta.color }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] text-white font-medium leading-tight line-clamp-2">{ev.headline}</div>
+                      <div className="text-[9px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                        <span>{ev.country_name || ev.region || 'global'}</span>
+                        <span>·</span>
+                        <span>{ev.source}</span>
+                        <span>·</span>
+                        <span>{timeAgo(ev.occurred_at)}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end shrink-0">
+                      <div className={`text-[10px] font-bold tabular-nums ${
+                        ev.acmeco_exposure_score >= 60 ? 'text-rose-300'
+                        : ev.acmeco_exposure_score >= 30 ? 'text-amber-300'
+                        : 'text-slate-400'
+                      }`}>{ev.acmeco_exposure_score}</div>
+                      <div className="text-[8px] text-slate-600 uppercase tracking-wider">exp</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {lastRefresh && (
+              <div className="mt-2 pt-2 border-t border-slate-800/40 text-[8px] text-slate-600 uppercase tracking-wider">
+                Last refresh {timeAgo(lastRefresh.toISOString())} · {geoEvents.length} events live
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+
+          <div className="absolute bottom-3 right-3 z-10 bg-slate-900/70 backdrop-blur-md border border-slate-700/30 rounded-xl p-3">
+            <div className="grid grid-cols-3 gap-x-5 gap-y-1">
+              <div className="text-center">
+                <div className="text-base font-bold text-amber-300 tabular-nums">{geoEvents.length}</div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">Events</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-orange-300 tabular-nums">{totalExposed}</div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">Exposed</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-rose-300 tabular-nums">{criticalExposed}</div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">Critical</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10
         text-[9px] text-slate-600/50 select-none pointer-events-none">
-        Drag to orbit &middot; Scroll to zoom
+        Drag to orbit · Scroll to zoom · {mode === 'geopolitical' ? 'Click markers for impact brief' : 'Live cyber telemetry'}
       </div>
+
+      {selectedEvent && (
+        <EventDrilldown event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      )}
     </div>
   );
 };
+
+function EventDrilldown({ event, onClose }: { event: GeopoliticalEvent; onClose: () => void }) {
+  const meta = categoryMeta(event.category);
+  const Icon = CATEGORY_ICONS[event.category] ?? Activity;
+
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="relative w-full max-w-xl max-h-[85%] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 p-4 border-b border-slate-800">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="p-2 rounded-lg" style={{ background: `${meta.color}22`, border: `1px solid ${meta.color}55` }}>
+              <Icon className="w-5 h-5" style={{ color: meta.color }} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap text-[10px] uppercase tracking-wider">
+                <span className="px-2 py-0.5 rounded font-bold" style={{ background: `${meta.color}22`, color: meta.color, border: `1px solid ${meta.color}40` }}>
+                  {meta.label}
+                </span>
+                <span className="text-slate-500">{event.source}</span>
+                <span className="text-slate-500">severity {event.severity}/5</span>
+              </div>
+              <h3 className="mt-2 text-base font-bold text-white leading-tight">{event.headline}</h3>
+              <div className="mt-1 text-[11px] text-slate-400">
+                {event.country_name || 'Global'} · {new Date(event.occurred_at).toUTCString()}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <section className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-3">
+            <div className="text-[10px] uppercase tracking-wider text-amber-300 font-bold mb-1">Acmeco exposure score</div>
+            <div className="flex items-center gap-3">
+              <div className="text-3xl font-bold text-white">{event.acmeco_exposure_score}<span className="text-sm text-slate-500">/100</span></div>
+              <div className="flex-1 h-2 bg-slate-800 rounded overflow-hidden">
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${event.acmeco_exposure_score}%`,
+                    background: event.acmeco_exposure_score >= 60 ? '#fb7185'
+                      : event.acmeco_exposure_score >= 30 ? '#fbbf24'
+                      : '#34d399',
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+
+          {event.summary && (
+            <section>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5">Context</div>
+              <p className="text-sm text-slate-300 leading-relaxed">{event.summary}</p>
+            </section>
+          )}
+
+          {event.exposure_assets && event.exposure_assets.length > 0 && (
+            <section>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5">Acmeco assets in proximity</div>
+              <div className="space-y-1.5">
+                {event.exposure_assets.map((a, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs bg-slate-800/50 border border-slate-700/40 rounded-lg px-3 py-1.5">
+                    <span className="text-slate-200 font-medium truncate">{a.name}</span>
+                    <div className="flex items-center gap-3 text-[10px] text-slate-400 shrink-0 ml-3">
+                      <span>{a.distance_km} km</span>
+                      <span className="font-mono">crit {a.criticality}/5</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {event.url && (
+            <a
+              href={event.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-xs text-cyan-300 hover:text-cyan-200 underline"
+            >
+              Source: {event.source}
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default ThreatGlobe;
