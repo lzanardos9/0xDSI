@@ -9,6 +9,7 @@ import EventStream from './EventStream';
 import AlertsPanel from './AlertsPanel';
 import WorkflowsPanel from './WorkflowsPanel';
 import ResponseAutomation from './ResponseAutomation';
+import { ResponseApprovalsPanel } from './ResponseApprovalsPanel';
 import ThreatFeedsPanel from './ThreatFeedsPanel';
 import ThreatRadar from './ThreatRadar';
 import IOCPanel from './IOCPanel';
@@ -81,7 +82,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -345,6 +346,8 @@ const Dashboard = () => {
         { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
         { id: 'cases', label: 'Cases', icon: Briefcase },
         { id: 'escalation', label: 'Threat Escalation', icon: Calculator },
+        { id: 'responses', label: 'Response Automation', icon: ShieldCheck },
+        { id: 'responseapprovals', label: 'Response Approvals', icon: CheckCircle2 },
         { id: 'workflows', label: 'Automation', icon: Workflow },
         { id: 'aiplaybook', label: 'AI Playbook Builder', icon: GitBranch },
         { id: 'redteam', label: 'Red Team', icon: Crosshair },
@@ -974,6 +977,7 @@ const Dashboard = () => {
           {selectedView === 'escalation' && <ThreatEscalationPanel />}
           {selectedView === 'workflows' && <WorkflowsPanel />}
           {selectedView === 'responses' && <ResponseAutomation />}
+          {selectedView === 'responseapprovals' && <ResponseApprovalsPanel />}
           {selectedView === 'feeds' && <ThreatFeedsPanel />}
           {selectedView === 'threatradar' && <ThreatRadar />}
           {selectedView === 'iocs' && <IOCPanel />}
