@@ -2,11 +2,110 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Brain, Sparkles, MessageSquare, Shield, AlertTriangle, Clock, User, Server,
   Globe, ChevronRight, Target, Zap, Send, CheckCircle2, XCircle, TrendingUp,
-  Eye, FileText, Activity, X,
+  Eye, FileText, Activity, X, GitBranch, Star, DollarSign,
 } from "lucide-react";
+
+// --- Attack Graph types ---
+type GraphNode = {
+  id: string;
+  label: string;
+  type: "actor" | "asset" | "identity" | "tool" | "infrastructure" | "containment";
+  phase: "recon" | "initial-access" | "persistence" | "lateral" | "exfil" | "impact" | "response";
+  x: number;
+  y: number;
+  detail?: string;
+};
+type GraphEdge = { from: string; to: string; label?: string; kind: "attack" | "lateral" | "exfil" | "response" };
+type AttackGraph = { nodes: GraphNode[]; edges: GraphEdge[] };
 
 // --- Data ---
 const incidents = [
+  {
+    id: 0,
+    title: "Converged Double-Extortion — Cl0p + BlackCat",
+    severity: "Critical",
+    status: "Contained",
+    alerts: 412,
+    icon: AlertTriangle,
+    color: "#DC2626",
+    featured: true,
+    caseRef: "CASE-AC2023-MASTER",
+    impact: "$42.8M projected · 0 exfil chunks completed",
+    summary:
+      "At 02:14 UTC the CET engine fused four independent signals — a 21-day dormant Cl0p MOVEit staging trend, an impossible-travel SSO anomaly on m.harris@acmeco.local, a vector-space TTP match against BlackCat (ALPHV) playbooks, and a graph-centrality spike on jumpbox-ops-03 — into a single converged-intrusion verdict at confidence 0.94. The adversary had chained CVE-2023-34362 on the MOVEit edge for low-and-slow staging while a second affiliate cluster prepared a BlackCat key-exchange via a stolen Okta session, intending to exfiltrate 2,600 chunks (≈4.2 TB of treasury, M&A and PCI data) through 45.141.215.88 before triggering encryption. Autonomous containment fired 3 actions in 432ms — NAC quarantine of jumpbox-ops-03, Okta SSO revoke + step-up for the cohort, and a Cloudflare edge block with STIX/TAXII broadcast of 6 IOCs to peer SOCs — halting the campaign after chunk 14 of the planned 2,600 and preventing an estimated $42.8M in regulatory, ransom, and recovery cost.",
+    triage: {
+      severity: "Critical",
+      category: "Converged Intrusion (Initial Access + Exfil + Pre-encryption)",
+      owner: "M. Webb · IR Lead · auto-paged 02:14 UTC",
+      reasoning:
+        "Four-signal confluence (geo + UEBA + vector TTP + graph centrality) at 0.94 with active staging on PCI-adjacent jumpbox. SLA mandates auto-contain at 0.85+; human-in-the-loop notified post-action.",
+    },
+    technical: [
+      "Cl0p MOVEit exploit (CVE-2023-34362) on moveit-edge-01.acmeco.local — webshell human2.aspx dropped 21 days prior, dormant until BlackCat trigger",
+      "Stolen SSO session on m.harris@acmeco.local replayed from Bucharest 09:41 UTC after São Paulo login at 09:14 — impossible-travel velocity 11,200 km/h",
+      "Lateral via PsExec from sso-idp.acmeco.local → jumpbox-ops-03 → 4 domain controllers in 87 seconds; mimikatz LSASS dump intercepted by EDR",
+      "Exfil sink 45.141.215.88 (Cl0p criminal infra, cross-validated Mandiant + MISP + CISA AA23-158A) received 14 of 2,600 planned chunks before edge block",
+      "BlackCat (ALPHV) key-exchange beacon to cdn.attacker[.]xyz blocked at egress; ransomware payload (SHA256 8a3f7b…) staged in C:\\ProgramData\\.run\\enc.exe but never detonated",
+      "STIX 2.1 bundle with 6 IOCs broadcast to 6 TAXII peers (Mandiant ISAC, FS-ISAC, retail-ISAC) in 432ms — peer SOCs reported pre-emptive blocks within 14 minutes",
+    ],
+    mitre: [
+      "T1190 — Exploit Public-Facing Application (MOVEit)",
+      "T1078.004 — Valid Accounts: Cloud (Okta SSO replay)",
+      "T1021.002 — Lateral Movement: SMB / PsExec",
+      "T1003.001 — OS Credential Dumping: LSASS",
+      "T1567.002 — Exfiltration to Cloud Storage",
+      "T1486 — Data Encrypted for Impact (pre-execution intercepted)",
+    ],
+    entities: [
+      "moveit-edge-01.acmeco.local (DMZ)",
+      "sso-idp.acmeco.local (Okta)",
+      "jumpbox-ops-03.acmeco.local (Tier-0 PAW)",
+      "m.harris@acmeco.local (Treasury Director)",
+      "svc-moveit@acmeco.local (service account)",
+      "45.141.215.88 (Cl0p exfil sink)",
+      "Cloudflare edge + Palo FW01/02",
+      "STIX/TAXII peers (Mandiant, FS-ISAC, retail-ISAC)",
+    ],
+    timeline: [
+      { t: "−21d", label: "MOVEit dropped", color: "#F59E0B" },
+      { t: "02:11", label: "SSO replay", color: "#EF4444" },
+      { t: "02:13", label: "PsExec lateral", color: "#DC2626" },
+      { t: "02:14", label: "CET converge 0.94", color: "#3B82F6" },
+      { t: "02:14:432ms", label: "Auto-contain", color: "#22C55E" },
+      { t: "02:28", label: "Peers IOC-pre-block", color: "#22C55E" },
+    ],
+    actions: [
+      "Validate post-containment: confirm 0 of 2,600 exfil chunks completed and re-image jumpbox-ops-03 from clean baseline",
+      "Rotate krbtgt twice with 12h interval; revoke all m.harris@ tokens and require FIDO2 step-up for treasury cohort",
+      "Patch MOVEit to 2024.1.2 across all 7 edge instances and deploy honeytokens in /staging directories",
+      "File SEC Form 8-K material disclosure within 4 business days; engage outside counsel for Cl0p ransom-note review",
+      "Brief board within 24h with this single-paragraph narrative and the attack graph — do not send 40 Slack pages",
+      "Schedule post-incident review with Mandiant + Okta + Cloudflare to verify TAXII broadcast quality and reduce false-positive blast",
+    ],
+    confidence: 94,
+    graph: {
+      nodes: [
+        { id: "cl0p", label: "Cl0p (ext)", type: "actor", phase: "recon", x: 80, y: 60, detail: "FIN11-affiliated; CVE-2023-34362 weaponizer" },
+        { id: "moveit", label: "moveit-edge-01", type: "asset", phase: "initial-access", x: 240, y: 60, detail: "DMZ — human2.aspx webshell, dormant 21d" },
+        { id: "harris", label: "m.harris@", type: "identity", phase: "initial-access", x: 80, y: 200, detail: "Treasury Director — São Paulo→Bucharest impossible travel" },
+        { id: "sso", label: "sso-idp (Okta)", type: "asset", phase: "persistence", x: 240, y: 200, detail: "Session cookie replayed, MFA bypassed via AiTM" },
+        { id: "jumpbox", label: "jumpbox-ops-03", type: "asset", phase: "lateral", x: 420, y: 130, detail: "Tier-0 PAW · mimikatz LSASS dump · PsExec to DCs" },
+        { id: "blackcat", label: "BlackCat key-exch", type: "tool", phase: "impact", x: 600, y: 60, detail: "ALPHV affiliate · enc.exe staged, never detonated" },
+        { id: "exfil", label: "45.141.215.88", type: "infrastructure", phase: "exfil", x: 600, y: 200, detail: "Cl0p sink · 14/2600 chunks before block" },
+        { id: "edge", label: "Cloudflare edge", type: "containment", phase: "response", x: 780, y: 130, detail: "WAF rule live · 6 IOCs broadcast TAXII · 432ms" },
+      ],
+      edges: [
+        { from: "cl0p", to: "moveit", label: "exploit", kind: "attack" },
+        { from: "moveit", to: "jumpbox", label: "stage", kind: "attack" },
+        { from: "harris", to: "sso", label: "creds", kind: "attack" },
+        { from: "sso", to: "jumpbox", label: "PsExec", kind: "lateral" },
+        { from: "jumpbox", to: "blackcat", label: "key-exch", kind: "attack" },
+        { from: "jumpbox", to: "exfil", label: "exfil", kind: "exfil" },
+        { from: "exfil", to: "edge", label: "blocked", kind: "response" },
+        { from: "blackcat", to: "edge", label: "blocked", kind: "response" },
+      ],
+    } as AttackGraph,
+  },
   { id: 1, title: "Credential Theft Campaign", severity: "Critical", status: "Active", alerts: 47, icon: Shield, color: "#EF4444",
     summary: "A sophisticated credential theft campaign targeting executive accounts was detected across multiple authentication systems, employing adversary-in-the-middle (AiTM) proxy infrastructure to bypass MFA protections in real time. The attacker leveraged phishing emails with convincing Microsoft 365 login pages hosted on compromised Azure tenants to harvest credentials from 12 senior staff members. Lateral movement was observed within 30 minutes of initial compromise, indicating automated post-exploitation tooling with pre-staged scripts. Forensic analysis of email headers reveals the phishing kit used EvilProxy framework with session cookie replay capabilities, allowing persistent access even after password resets.",
     triage: { severity: "Critical", category: "Credential Access", owner: "Sarah Chen, SOC Lead", reasoning: "Multiple executive accounts compromised with evidence of lateral movement and MFA bypass. Immediate containment required with full token revocation across all identity providers." },
@@ -105,10 +204,135 @@ const suggestedQuestions = [
   "What regulatory notifications are required?",
 ];
 
+// --- Attack Graph renderer ---
+function nodeColor(type: GraphNode["type"]): string {
+  switch (type) {
+    case "actor": return "#F87171";
+    case "asset": return "#FB7185";
+    case "identity": return "#FBBF24";
+    case "tool": return "#22D3EE";
+    case "infrastructure": return "#22D3EE";
+    case "containment": return "#34D399";
+  }
+}
+
+function edgeColor(kind: GraphEdge["kind"]): string {
+  switch (kind) {
+    case "attack": return "#F87171";
+    case "lateral": return "#FB923C";
+    case "exfil": return "#A78BFA";
+    case "response": return "#34D399";
+  }
+}
+
+function AttackGraphSVG({ graph }: { graph: AttackGraph }) {
+  const [hover, setHover] = useState<string | null>(null);
+  const W = 880, H = 280;
+  const nodeMap = new Map(graph.nodes.map((n) => [n.id, n]));
+
+  return (
+    <div className="relative w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 720 }}>
+        <defs>
+          <marker id="ag-arrow-attack" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#F87171" />
+          </marker>
+          <marker id="ag-arrow-lateral" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#FB923C" />
+          </marker>
+          <marker id="ag-arrow-exfil" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#A78BFA" />
+          </marker>
+          <marker id="ag-arrow-response" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#34D399" />
+          </marker>
+          <radialGradient id="ag-glow">
+            <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#3B82F6" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
+        {/* phase columns guide */}
+        {["Recon", "Initial Access", "Lateral / Persistence", "Impact / Exfil", "Response"].map((p, i) => (
+          <text key={p} x={80 + i * 175} y="20" textAnchor="middle" fontSize="9" fill="#64748B" letterSpacing="2" style={{ textTransform: "uppercase", fontWeight: 600 }}>
+            {p}
+          </text>
+        ))}
+
+        {/* edges */}
+        {graph.edges.map((e, i) => {
+          const a = nodeMap.get(e.from);
+          const b = nodeMap.get(e.to);
+          if (!a || !b) return null;
+          const stroke = edgeColor(e.kind);
+          const marker = `url(#ag-arrow-${e.kind})`;
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const len = Math.hypot(dx, dy);
+          const ux = dx / len, uy = dy / len;
+          const x1 = a.x + ux * 26, y1 = a.y + uy * 26;
+          const x2 = b.x - ux * 30, y2 = b.y - uy * 30;
+          const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+          return (
+            <g key={i}>
+              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={stroke} strokeWidth="1.6" strokeDasharray={e.kind === "response" ? "4 3" : "0"} markerEnd={marker} opacity={0.85}>
+                {e.kind === "exfil" && (
+                  <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="1.5s" repeatCount="indefinite" />
+                )}
+              </line>
+              {e.label && (
+                <g>
+                  <rect x={mx - 26} y={my - 8} width="52" height="14" rx="4" fill="#0F172A" stroke={stroke} strokeOpacity="0.3" />
+                  <text x={mx} y={my + 2} textAnchor="middle" fontSize="9" fill={stroke} fontFamily="ui-monospace, monospace">
+                    {e.label}
+                  </text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+
+        {/* nodes */}
+        {graph.nodes.map((n) => {
+          const c = nodeColor(n.type);
+          const isHover = hover === n.id;
+          return (
+            <g key={n.id} onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)} style={{ cursor: "pointer" }}>
+              {isHover && <circle cx={n.x} cy={n.y} r="36" fill="url(#ag-glow)" />}
+              <circle cx={n.x} cy={n.y} r="22" fill={c} fillOpacity="0.18" stroke={c} strokeWidth={isHover ? 2.2 : 1.6} />
+              <circle cx={n.x} cy={n.y} r="6" fill={c}>
+                {n.type === "containment" && (
+                  <animate attributeName="r" values="6;9;6" dur="2s" repeatCount="indefinite" />
+                )}
+              </circle>
+              <text x={n.x} y={n.y + 38} textAnchor="middle" fontSize="10" fill="#E2E8F0" fontFamily="ui-monospace, monospace" fontWeight={600}>
+                {n.label}
+              </text>
+              <text x={n.x} y={n.y + 50} textAnchor="middle" fontSize="8" fill="#64748B" style={{ textTransform: "uppercase", letterSpacing: 1 }}>
+                {n.type}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {hover && (() => {
+        const n = nodeMap.get(hover);
+        if (!n?.detail) return null;
+        return (
+          <div className="absolute top-2 right-2 max-w-xs bg-slate-900/95 border border-slate-700 rounded-lg p-3 text-xs text-slate-200 shadow-2xl">
+            <div className="font-mono text-amber-300 mb-1">{n.label}</div>
+            <div>{n.detail}</div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
 // --- Component ---
 export default function AIIncidentSummarizer() {
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [phase, setPhase] = useState<"idle" | "processing" | "typing" | "done">("idle");
+  const [selectedId, setSelectedId] = useState<number | null>(0);
+  const [phase, setPhase] = useState<"idle" | "processing" | "typing" | "done">("processing");
   const [typedText, setTypedText] = useState("");
   const [visibleSections, setVisibleSections] = useState<number>(0);
   const [showRaw, setShowRaw] = useState(false);
@@ -119,7 +343,7 @@ export default function AIIncidentSummarizer() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const typingRef = useRef(false);
 
-  const selected = incidents.find((i) => i.id === selectedId) ?? null;
+  const selected = (incidents as any[]).find((i) => i.id === selectedId) ?? null;
 
   // Neural-net background
   useEffect(() => {
@@ -170,6 +394,12 @@ export default function AIIncidentSummarizer() {
   }, [phase]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatTyping]);
+
+  // Kick off the master-case typewriter on mount
+  useEffect(() => {
+    const t = setTimeout(() => setPhase("typing"), 1400);
+    return () => clearTimeout(t);
+  }, []);
 
   const selectIncident = useCallback((id: number) => {
     typingRef.current = false;
@@ -244,6 +474,7 @@ export default function AIIncidentSummarizer() {
                   <div className="p-2 rounded-lg bg-slate-700/40" style={{ color: inc.color }}><Icon className="w-4 h-4" /></div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
+                      {(inc as any).featured && <Star className="w-3 h-3 text-amber-400 shrink-0 fill-amber-400" />}
                       <span className="text-sm font-medium text-white truncate">{inc.title}</span>
                       <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-bold rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">AI</span>
                     </div>
@@ -281,13 +512,33 @@ export default function AIIncidentSummarizer() {
           <div className="p-6 space-y-5 max-w-4xl mx-auto">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <selected.icon className="w-5 h-5" style={{ color: selected.color }} />
                 <h2 className="text-xl font-bold text-white">{selected.title}</h2>
                 <span className={`px-2 py-0.5 rounded border text-xs font-semibold ${sevColor(selected.severity)}`}>{selected.severity}</span>
+                {selected.caseRef && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800/70 border border-slate-600/60 text-slate-300">
+                    {selected.caseRef}
+                  </span>
+                )}
               </div>
               <button onClick={() => { typingRef.current = false; setSelectedId(null); setPhase("idle"); }} className="p-1 rounded hover:bg-slate-700/50 text-slate-400"><X className="w-4 h-4" /></button>
             </div>
+
+            {selected.featured && selected.impact && (
+              <div className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-slate-800/40 p-4">
+                <div className="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-amber-500/10 blur-3xl" />
+                <div className="relative flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-amber-500/20 border border-amber-500/30">
+                    <DollarSign className="w-5 h-5 text-amber-300" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-amber-400 font-bold">CISO 2AM brief — single paragraph below</div>
+                    <div className="text-sm text-white font-semibold">{selected.impact}</div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Executive Summary */}
             <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
@@ -381,6 +632,27 @@ export default function AIIncidentSummarizer() {
                 </div>
               </div>
             </Section>
+
+            {/* Attack Graph */}
+            {selected.graph && (
+              <Section visible={visibleSections >= 5}>
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <GitBranch className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-semibold text-cyan-400 uppercase tracking-wider">Attack Graph · Full Kill-Chain</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-400" />actor/asset</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" />identity</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400" />tool/infra</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" />containment</span>
+                    </div>
+                  </div>
+                  <AttackGraphSVG graph={selected.graph as AttackGraph} />
+                </div>
+              </Section>
+            )}
 
             {/* Recommended Actions */}
             <Section visible={visibleSections >= 6}>
