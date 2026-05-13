@@ -14,6 +14,66 @@ const SEVERITY_COLORS: Record<string, number> = {
   critical: 0xef4444, high: 0xf97316, medium: 0xf59e0b, low: 0x22d3ee,
 };
 
+// Radial glow sprite texture (cached)
+let _glowTex: THREE.Texture | null = null;
+function getGlowTexture(): THREE.Texture {
+  if (_glowTex) return _glowTex;
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.18, 'rgba(255,255,255,0.85)');
+  g.addColorStop(0.4, 'rgba(255,255,255,0.35)');
+  g.addColorStop(0.75, 'rgba(255,255,255,0.06)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  _glowTex = new THREE.CanvasTexture(c);
+  _glowTex.colorSpace = THREE.SRGBColorSpace;
+  return _glowTex;
+}
+
+// Hex-grid ring texture for centroid halos (scanline feel)
+let _ringTex: THREE.Texture | null = null;
+function getRingTexture(): THREE.Texture {
+  if (_ringTex) return _ringTex;
+  const w = 256, h = 32;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.5, 'rgba(255,255,255,1)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  // tick marks
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  for (let i = 0; i < 32; i++) {
+    if (i % 2 === 0) ctx.fillRect((i / 32) * w, 0, 2, h);
+  }
+  _ringTex = new THREE.CanvasTexture(c);
+  _ringTex.wrapS = THREE.RepeatWrapping;
+  _ringTex.colorSpace = THREE.SRGBColorSpace;
+  return _ringTex;
+}
+
+function makeGlowSprite(colorHex: number, scale: number, opacity = 0.9): THREE.Sprite {
+  const mat = new THREE.SpriteMaterial({
+    map: getGlowTexture(),
+    color: colorHex,
+    transparent: true,
+    opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const s = new THREE.Sprite(mat);
+  s.scale.setScalar(scale);
+  return s;
+}
+
 export default function ChronoWeave() {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -121,30 +181,57 @@ export default function ChronoWeave() {
     el.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    scene.add(new THREE.AmbientLight(0x6080a0, 0.55));
-    const key = new THREE.PointLight(0x22d3ee, 1.2, 200);
-    key.position.set(20, 40, 30);
-    scene.add(key);
-    const rim = new THREE.PointLight(0xef4444, 0.8, 200);
-    rim.position.set(-30, 20, -25);
-    scene.add(rim);
+    scene.add(new THREE.AmbientLight(0x4060a0, 0.45));
+    const key = new THREE.PointLight(0x22d3ee, 1.4, 240);
+    key.position.set(25, 50, 35); scene.add(key);
+    const rim = new THREE.PointLight(0xff2a6d, 1.0, 240);
+    rim.position.set(-35, 22, -28); scene.add(rim);
+    const fill = new THREE.PointLight(0x05d9ff, 0.7, 220);
+    fill.position.set(0, -20, 0); scene.add(fill);
 
-    // Grid disk
-    const grid = new THREE.GridHelper(120, 24, 0x1e293b, 0x0f1729);
-    (grid.material as THREE.Material).transparent = true;
-    (grid.material as any).opacity = 0.35;
-    scene.add(grid);
+    // Hex/cyber grid floor (two layers)
+    const gridA = new THREE.GridHelper(180, 36, 0x00f0ff, 0x0a1a2a);
+    (gridA.material as THREE.Material).transparent = true;
+    (gridA.material as any).opacity = 0.22;
+    gridA.position.y = -22;
+    scene.add(gridA);
+    const gridB = new THREE.GridHelper(180, 12, 0x00f0ff, 0x0a1a2a);
+    (gridB.material as THREE.Material).transparent = true;
+    (gridB.material as any).opacity = 0.12;
+    gridB.position.y = -22.05;
+    scene.add(gridB);
 
-    // Particle starfield
-    const starGeom = new THREE.BufferGeometry();
-    const starPos = new Float32Array(800 * 3);
-    for (let i = 0; i < 800; i++) {
-      starPos[i * 3] = (Math.random() - 0.5) * 600;
-      starPos[i * 3 + 1] = (Math.random() - 0.5) * 600;
-      starPos[i * 3 + 2] = (Math.random() - 0.5) * 600;
+    // Glowing horizon ring
+    const horizonGeom = new THREE.RingGeometry(78, 86, 96, 1);
+    const horizonMat = new THREE.MeshBasicMaterial({
+      color: 0x00f0ff, transparent: true, opacity: 0.25, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const horizon = new THREE.Mesh(horizonGeom, horizonMat);
+    horizon.rotation.x = -Math.PI / 2;
+    horizon.position.y = -21.9;
+    scene.add(horizon);
+
+    // Layered starfield (depth + color variance)
+    for (const layer of [
+      { count: 600, color: 0x1e3a5f, size: 0.5, range: 700 },
+      { count: 400, color: 0x06b6d4, size: 0.4, range: 500 },
+      { count: 220, color: 0xf472b6, size: 0.6, range: 400 },
+    ]) {
+      const g = new THREE.BufferGeometry();
+      const p = new Float32Array(layer.count * 3);
+      for (let i = 0; i < layer.count; i++) {
+        p[i * 3] = (Math.random() - 0.5) * layer.range;
+        p[i * 3 + 1] = (Math.random() - 0.5) * layer.range;
+        p[i * 3 + 2] = (Math.random() - 0.5) * layer.range;
+      }
+      g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+      scene.add(new THREE.Points(g, new THREE.PointsMaterial({
+        color: layer.color, size: layer.size,
+        transparent: true, opacity: 0.85,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      })));
     }
-    starGeom.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-    scene.add(new THREE.Points(starGeom, new THREE.PointsMaterial({ color: 0x334155, size: 0.6 })));
 
     const eg = new THREE.Group(); scene.add(eg); edgeGroupRef.current = eg;
     const lg = new THREE.Group(); scene.add(lg); linkGroupRef.current = lg;
@@ -229,20 +316,71 @@ export default function ChronoWeave() {
       camera.position.z = tgt.z + r.dist * Math.sin(r.phi) * Math.sin(r.theta);
       camera.lookAt(tgt.x, tgt.y, tgt.z);
 
-      // Pulse malicious nodes
-      const t = performance.now() * 0.002;
+      const t = performance.now() * 0.001;
+
+      // Slowly drift the floor grid
+      gridA.position.x = Math.sin(t * 0.1) * 4;
+      gridB.position.x = -Math.cos(t * 0.07) * 4;
+      horizon.rotation.z = t * 0.05;
+      (horizon.material as THREE.MeshBasicMaterial).opacity = 0.18 + Math.sin(t * 0.6) * 0.08;
+
+      // Pulse nodes (different cadence for malicious vs benign)
       nodeMeshRef.current.forEach((m) => {
         const ud = m.userData as any;
         if (ud.malicious) {
-          const s = 1 + Math.sin(t + ud.seed) * 0.18;
+          const s = 1 + Math.sin(t * 2.5 + ud.seed) * 0.28;
           m.scale.setScalar(s);
+          m.rotation.x += 0.018;
+          m.rotation.y += 0.022;
+          if (ud.glow) {
+            const g = 0.85 + Math.sin(t * 3 + ud.seed) * 0.15;
+            (ud.glow.material as THREE.SpriteMaterial).opacity = g;
+          }
+        } else {
+          m.rotation.y += 0.005;
         }
       });
-      centroidMeshRef.current.forEach((m, _id) => {
+
+      // Centroid orchestration
+      centroidMeshRef.current.forEach((m) => {
         const ud = m.userData as any;
-        m.rotation.y += 0.01;
-        const s = 1 + Math.sin(t * 1.5 + ud.seed) * 0.08;
+        m.rotation.x += 0.006;
+        m.rotation.y += 0.012;
+        const s = 1 + Math.sin(t * 1.6 + ud.seed) * 0.12;
         m.scale.setScalar(s);
+
+        const ctr: THREE.Vector3 = ud.center;
+        if (ud.wire) { ud.wire.rotation.y -= 0.008; ud.wire.rotation.x -= 0.005; }
+        if (ud.ring) ud.ring.rotation.z += 0.012;
+        if (ud.ring2) { ud.ring2.rotation.x += 0.009; ud.ring2.rotation.y += 0.006; }
+        // animate scanline texture
+        if (ud.ring && (ud.ring.material as THREE.MeshBasicMaterial).map) {
+          (ud.ring.material as THREE.MeshBasicMaterial).map!.offset.x = (t * 0.4) % 1;
+        }
+        // Electrons orbit the core
+        if (ud.electron1 && ud.electron2 && ctr) {
+          const oa = t * 1.8 + ud.seed;
+          const ob = -t * 2.2 + ud.seed * 1.7;
+          const orad1 = 4.4, orad2 = 5.8;
+          ud.electron1.position.set(
+            ctr.x + Math.cos(oa) * orad1,
+            ctr.y + Math.sin(oa * 1.3) * 1.5,
+            ctr.z + Math.sin(oa) * orad1,
+          );
+          ud.electron2.position.set(
+            ctr.x + Math.cos(ob) * orad2,
+            ctr.y + Math.cos(ob * 0.9) * 1.8,
+            ctr.z + Math.sin(ob) * orad2,
+          );
+        }
+        // Beam pulse
+        if (ud.beam) {
+          (ud.beam.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(t * 2 + ud.seed) * 0.08;
+        }
+        // Outer glow breathing
+        if (ud.glowOuter) {
+          (ud.glowOuter.material as THREE.SpriteMaterial).opacity = 0.28 + Math.sin(t * 1.2 + ud.seed) * 0.12;
+        }
       });
 
       renderer.render(scene, camera);
@@ -266,42 +404,115 @@ export default function ChronoWeave() {
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
-    centroidMeshRef.current.forEach(m => { scene.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); });
+    centroidMeshRef.current.forEach(m => {
+      const ud = m.userData as any;
+      [m, ud.glow, ud.glowOuter, ud.ring, ud.ring2, ud.wire, ud.electron1, ud.electron2, ud.beam].forEach((o: any) => {
+        if (!o) return;
+        scene.remove(o);
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          if (Array.isArray(o.material)) o.material.forEach((mm: THREE.Material) => mm.dispose());
+          else (o.material as THREE.Material).dispose();
+        }
+      });
+    });
     centroidMeshRef.current.clear();
     if (!showCentroids || mode === 'raw') return;
 
     centroids.forEach((c, i) => {
       if (actorFilter !== 'all' && c.actor_class !== actorFilter) return;
       const a = (i / centroids.length) * Math.PI * 2;
-      const r = 38;
+      const r = 42;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
-      const y = (c.severity === 'critical' ? 18 : 12) + Math.sin(i) * 4;
-      const geom = new THREE.IcosahedronGeometry(2.4, 1);
+      const y = (c.severity === 'critical' ? 16 : 10) + Math.sin(i * 1.7) * 5;
       const col = new THREE.Color(c.color || '#ef4444');
+      const colHex = col.getHex();
+
+      // Core: faceted gem-like orb
+      const geom = new THREE.IcosahedronGeometry(2.0, 1);
       const mat = new THREE.MeshStandardMaterial({
-        color: col, emissive: col, emissiveIntensity: 0.7,
-        metalness: 0.5, roughness: 0.25, transparent: true, opacity: 0.85,
-        wireframe: false,
+        color: col, emissive: col, emissiveIntensity: 1.1,
+        metalness: 0.85, roughness: 0.18,
+        transparent: true, opacity: 0.95,
       });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(x, y, z);
-      mesh.userData = {
-        label: c.name,
-        sub: `${c.actor_class}${c.actor_country ? ' / ' + c.actor_country : ''} -- ${c.severity.toUpperCase()}`,
-        color: c.color, seed: i, isCentroid: true,
-      };
       scene.add(mesh);
 
-      // Halo ring
-      const ringGeom = new THREE.TorusGeometry(3.6, 0.08, 8, 48);
-      const ringMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.5 });
+      // Wireframe shell
+      const wireGeom = new THREE.IcosahedronGeometry(2.6, 1);
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: col, wireframe: true, transparent: true, opacity: 0.55,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const wire = new THREE.Mesh(wireGeom, wireMat);
+      wire.position.copy(mesh.position);
+      scene.add(wire);
+
+      // Glow sprites (inner + outer halo)
+      const glow = makeGlowSprite(colHex, 14, 0.85);
+      glow.position.copy(mesh.position);
+      scene.add(glow);
+      const glowOuter = makeGlowSprite(colHex, 28, 0.35);
+      glowOuter.position.copy(mesh.position);
+      scene.add(glowOuter);
+
+      // Scanline rings (textured)
+      const ringGeom = new THREE.TorusGeometry(4.2, 0.18, 12, 96);
+      const tex = getRingTexture().clone();
+      tex.needsUpdate = true;
+      tex.repeat.set(6, 1);
+      const ringMat = new THREE.MeshBasicMaterial({
+        map: tex, color: col, transparent: true, opacity: 0.85,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      });
       const ring = new THREE.Mesh(ringGeom, ringMat);
       ring.position.copy(mesh.position);
       ring.rotation.x = Math.PI / 2;
       scene.add(ring);
-      mesh.userData.ring = ring;
 
+      const ring2Geom = new THREE.TorusGeometry(5.6, 0.06, 8, 96);
+      const ring2Mat = new THREE.MeshBasicMaterial({
+        color: col, transparent: true, opacity: 0.55,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const ring2 = new THREE.Mesh(ring2Geom, ring2Mat);
+      ring2.position.copy(mesh.position);
+      ring2.rotation.x = Math.PI / 2.4;
+      ring2.rotation.z = Math.PI / 5;
+      scene.add(ring2);
+
+      // Orbiting electrons
+      const eGeom = new THREE.SphereGeometry(0.22, 12, 12);
+      const eMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+      const electron1 = new THREE.Mesh(eGeom, eMat);
+      const electron2 = new THREE.Mesh(eGeom.clone(), eMat.clone());
+      scene.add(electron1); scene.add(electron2);
+      const eGlow1 = makeGlowSprite(colHex, 1.6, 0.95);
+      const eGlow2 = makeGlowSprite(colHex, 1.6, 0.95);
+      electron1.add(eGlow1); electron2.add(eGlow2);
+
+      // Vertical light beam down to floor (critical only)
+      let beam: THREE.Mesh | null = null;
+      if (c.severity === 'critical') {
+        const bGeom = new THREE.CylinderGeometry(0.12, 1.4, Math.abs(y - (-22)), 16, 1, true);
+        const bMat = new THREE.MeshBasicMaterial({
+          color: col, transparent: true, opacity: 0.18,
+          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        });
+        beam = new THREE.Mesh(bGeom, bMat);
+        beam.position.set(x, (y + (-22)) / 2, z);
+        scene.add(beam);
+      }
+
+      mesh.userData = {
+        label: c.name,
+        sub: `${c.actor_class}${c.actor_country ? ' / ' + c.actor_country : ''} -- ${c.severity.toUpperCase()}`,
+        color: c.color, seed: i, isCentroid: true,
+        glow, glowOuter, ring, ring2, wire, electron1, electron2, beam,
+        center: mesh.position.clone(),
+      };
       centroidMeshRef.current.set(c.id, mesh);
     });
   }, [centroids, mode, showCentroids, actorFilter]);
@@ -340,37 +551,55 @@ export default function ChronoWeave() {
     if (!scene) return;
 
     const seenIds = new Set<string>();
+    const disposeNode = (mesh: THREE.Mesh) => {
+      const ud = mesh.userData as any;
+      [mesh, ud.glow].forEach((o: any) => {
+        if (!o) return;
+        scene.remove(o);
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) (o.material as THREE.Material).dispose();
+      });
+    };
     nodes.forEach((n) => {
       seenIds.add(n.id);
       let mesh = nodeMeshRef.current.get(n.id);
       const malicious = !n.is_benign;
       if (sweepBenign && !malicious) {
-        if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); (mesh.material as THREE.Material).dispose(); nodeMeshRef.current.delete(n.id); }
+        if (mesh) { disposeNode(mesh); nodeMeshRef.current.delete(n.id); }
         return;
       }
       if (!mesh) {
-        const geom = malicious ? new THREE.OctahedronGeometry(0.65, 0) : new THREE.SphereGeometry(0.32, 10, 10);
         let color = 0x22d3ee;
         if (malicious) {
           const c = centroids.find(x => x.id === n.best_centroid_id);
           color = c ? new THREE.Color(c.color).getHex() : 0xef4444;
         } else {
-          color = 0x334155;
+          color = 0x06b6d4;
         }
+
+        // Core: tiny faceted gem (octa for malicious, dodeca for benign)
+        const geom = malicious
+          ? new THREE.OctahedronGeometry(0.55, 0)
+          : new THREE.DodecahedronGeometry(0.28, 0);
         const mat = new THREE.MeshStandardMaterial({
           color, emissive: color,
-          emissiveIntensity: malicious ? 0.85 : 0.15,
-          metalness: 0.4, roughness: 0.4,
-          transparent: true, opacity: malicious ? 0.95 : 0.55,
+          emissiveIntensity: malicious ? 1.6 : 0.6,
+          metalness: 0.7, roughness: 0.25,
+          transparent: true, opacity: 0.95,
         });
         mesh = new THREE.Mesh(geom, mat);
+
+        // Glow halo sprite (this is what makes it pop)
+        const glow = makeGlowSprite(color, malicious ? 4.2 : 1.6, malicious ? 0.95 : 0.45);
+        mesh.add(glow);
+
         mesh.userData = {
           label: n.label,
           sub: malicious
             ? `${(centroids.find(c => c.id === n.best_centroid_id)?.name) || 'Unknown actor'}  sim ${(n.best_similarity * 100).toFixed(1)}%`
             : `benign / ${n.entity_type}`,
-          color: malicious ? '#ef4444' : '#64748b',
-          malicious, seed: Math.random() * 6.28,
+          color: malicious ? '#ef4444' : '#06b6d4',
+          malicious, seed: Math.random() * 6.28, glow, baseColor: color,
         };
         scene.add(mesh);
         nodeMeshRef.current.set(n.id, mesh);
@@ -434,16 +663,17 @@ export default function ChronoWeave() {
         const isAttack = e.kind === 'attack-chain';
         const geom = new THREE.BufferGeometry().setFromPoints([a.position.clone(), b.position.clone()]);
         const mat = new THREE.LineBasicMaterial({
-          color: isAttack ? 0xef4444 : 0x1e293b,
+          color: isAttack ? 0xff2a6d : 0x06b6d4,
           transparent: true,
-          opacity: isAttack ? 0.55 : 0.18,
+          opacity: isAttack ? 0.85 : 0.22,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
         });
         eg.add(new THREE.Line(geom, mat));
       }
     }
 
     if (mode !== 'raw') {
-      // Similarity links: malicious nodes -> their centroid (highest sim only)
       nodes.forEach((n) => {
         if (n.is_benign || !n.best_centroid_id) return;
         const a = nodeMeshRef.current.get(n.id);
@@ -453,7 +683,9 @@ export default function ChronoWeave() {
         const col = new THREE.Color((b.material as THREE.MeshStandardMaterial).color);
         const mat = new THREE.LineBasicMaterial({
           color: col, transparent: true,
-          opacity: 0.15 + n.best_similarity * 0.55,
+          opacity: 0.25 + n.best_similarity * 0.65,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
         });
         lg.add(new THREE.Line(geom, mat));
       });
