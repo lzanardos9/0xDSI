@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords } from 'lucide-react';
+import { Shield, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { trackView, setCurrentView } from '../lib/activityTracker';
 import ThreatGlobe from './ThreatGlobe';
@@ -64,6 +64,7 @@ import ReportBuilder from './ReportBuilder';
 import PlatformEconomics from './PlatformEconomics';
 import IndustryThreatsHub from './industry-threats/IndustryThreatsHub';
 import FeatureLab from './FeatureLab';
+import ChronoWeave from './ChronoWeave';
 import DetectionSLM from './DetectionSLM';
 import DetectionConfluence from './DetectionConfluence';
 import SwarmCrucible from './SwarmCrucible';
@@ -299,6 +300,7 @@ const Dashboard = () => {
         { id: 'swarmcrucible', label: 'Swarm Crucible', icon: Swords },
         { id: 'trendengine', label: 'CET Trend Engine', icon: GitBranch },
         { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
+        { id: 'chronoweave', label: 'ChronoWeave', icon: Atom },
         { id: 'detectionslm', label: 'Detection SLM (Beta)', icon: Brain },
         { id: 'confluence', label: 'Detection Confluence', icon: Layers },
       ]
@@ -1005,6 +1007,7 @@ const Dashboard = () => {
           {selectedView === 'financialthreat' && <FinancialThreatIntel />}
           {selectedView === 'industrythreats' && <IndustryThreatsHub />}
           {selectedView === 'featurelab' && <FeatureLab />}
+          {selectedView === 'chronoweave' && <div className="p-4"><ChronoWeave /></div>}
           {selectedView === 'detectionslm' && <DetectionSLM />}
           {selectedView === 'confluence' && <DetectionConfluence />}
           {selectedView === 'swarmcrucible' && <SwarmCrucible />}
