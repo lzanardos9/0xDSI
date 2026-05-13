@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Activity, Atom, Maximize2, Minimize2, Pause, Play, RotateCcw, Sparkles, Eye, EyeOff, Filter, Target, Globe as Globe2, ShieldAlert, Zap } from 'lucide-react';
 import {
   CWCentroid, CWEdge, CWHit, CWNode,
-  cosine, createSession, loadCentroids, tickSession,
+  cosine, createSession, loadCentroids, tickSession, maybeSpawnCentroid,
 } from '../lib/chronoweave';
 
 type ViewMode = 'raw' | 'vector' | 'fusion';
@@ -103,6 +103,7 @@ export default function ChronoWeave() {
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [actorFilter, setActorFilter] = useState<string>('all');
   const [stats, setStats] = useState({ total: 0, malicious: 0, hits: 0, topCentroid: '' });
+  const [emergeFlash, setEmergeFlash] = useState<CWCentroid | null>(null);
 
   // Initialize session + centroids
   useEffect(() => {
@@ -139,6 +140,16 @@ export default function ChronoWeave() {
         setEdges(prev => [...prev, ...newEdges].slice(-3000));
         setHits(prev => [...prev, ...newHits].slice(-1500));
         setTickIndex(t => t + 1);
+
+        // Discover a brand new bad centroid every ~5 ticks (probabilistic)
+        if (tickIndex > 2 && Math.random() < 0.22) {
+          const spawned = await maybeSpawnCentroid(centroids);
+          if (spawned && !cancelled) {
+            setCentroids(prev => [...prev, spawned]);
+            setEmergeFlash(spawned);
+            setTimeout(() => setEmergeFlash(null), 5500);
+          }
+        }
       } catch (e) {
         console.error('tick failed', e);
       }
@@ -787,6 +798,23 @@ export default function ChronoWeave() {
       <div className="flex-1 grid grid-cols-[1fr_320px] min-h-0">
         {/* Canvas */}
         <div ref={containerRef} className="relative bg-[#05070d] cursor-grab active:cursor-grabbing">
+          {emergeFlash && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-4 py-2.5 rounded-xl bg-slate-900/90 border-2 backdrop-blur-md shadow-2xl animate-pulse"
+              style={{ borderColor: emergeFlash.color, boxShadow: `0 0 40px ${emergeFlash.color}55, inset 0 0 20px ${emergeFlash.color}22` }}>
+              <div className="flex items-center gap-3">
+                <div className="w-2.5 h-2.5 rounded-full animate-ping" style={{ background: emergeFlash.color }} />
+                <div className="absolute w-2.5 h-2.5 rounded-full" style={{ background: emergeFlash.color, marginLeft: 0 }} />
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-mono font-bold tracking-[0.2em]" style={{ color: emergeFlash.color }}>NEW THREAT EMERGED</span>
+                    <span className="text-[9px] font-mono text-slate-500">tick #{tickIndex.toString().padStart(4, '0')}</span>
+                  </div>
+                  <div className="text-[12px] font-bold text-white mt-0.5">{emergeFlash.name}</div>
+                  <div className="text-[10px] text-slate-400">{emergeFlash.actor_class}{emergeFlash.actor_country && ` / ${emergeFlash.actor_country}`} -- {emergeFlash.severity.toUpperCase()}</div>
+                </div>
+              </div>
+            </div>
+          )}
           {hover && (
             <div className="absolute pointer-events-none z-20 px-3 py-2 rounded-lg bg-slate-900/95 border border-cyan-500/40 backdrop-blur-sm shadow-2xl shadow-cyan-500/20"
               style={{ left: hover.x + 14, top: hover.y + 14, maxWidth: 280 }}>
@@ -818,6 +846,10 @@ export default function ChronoWeave() {
             <div className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 backdrop-blur-sm">
               <div className="text-[9px] text-amber-300 font-mono">SIM HITS</div>
               <div className="text-sm font-bold text-amber-200 font-mono">{stats.hits.toLocaleString()}</div>
+            </div>
+            <div className="px-3 py-1.5 rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/30 backdrop-blur-sm">
+              <div className="text-[9px] text-fuchsia-300 font-mono">THREAT ACTORS</div>
+              <div className="text-sm font-bold text-fuchsia-200 font-mono">{centroids.length}</div>
             </div>
           </div>
         </div>
