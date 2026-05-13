@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import { Swords, Megaphone, AlertOctagon, Flame, Activity, Briefcase, Landmark, Banknote, ShieldAlert, RefreshCw, X, Globe as Globe2, Radar } from 'lucide-react';
+import { Swords, Megaphone, AlertOctagon, Flame, Activity, Briefcase, Landmark, Banknote, ShieldAlert, RefreshCw, X, Globe as Globe2, Radar, Link2, Target } from 'lucide-react';
 import {
   createEarthTexture, latLonToVector3, createArcCurve, findNearestCity,
   SEVERITY_COLORS, ATTACK_TYPES, ATMOSPHERE_VS, ATMOSPHERE_INNER_FS,
   ATMOSPHERE_OUTER_FS, GLOBE_RADIUS, KNOWN_CITIES,
 } from '../lib/globeGeometry';
 import {
-  fetchGeopoliticalEvents, fetchExposureZones, refreshFeeds, categoryMeta,
-  type GeopoliticalEvent, type ExposureZone,
+  fetchGeopoliticalEvents, fetchExposureZones, fetchCyberGeoCorrelations, refreshFeeds, categoryMeta,
+  type GeopoliticalEvent, type ExposureZone, type CyberGeoCorrelation,
 } from '../lib/geopoliticalRisk';
 
 interface ThreatData {
@@ -46,7 +46,17 @@ interface RiskMarker {
   event: GeopoliticalEvent;
 }
 
-type Mode = 'cyber' | 'geopolitical';
+type Mode = 'cyber' | 'geopolitical' | 'correlated';
+
+interface CorrelationVisual {
+  correlation: CyberGeoCorrelation;
+  line: THREE.Line;
+  sourceMarker: THREE.Mesh;
+  targetMarker: THREE.Mesh;
+  pulseRing: THREE.Mesh;
+  flowParticle: THREE.Mesh;
+  curve: THREE.CubicBezierCurve3;
+}
 
 const CATEGORY_ICONS: Record<string, typeof Swords> = {
   armed_conflict: Swords,
@@ -77,14 +87,20 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
 
   const [geoEvents, setGeoEvents] = useState<GeopoliticalEvent[]>([]);
   const [zones, setZones] = useState<ExposureZone[]>([]);
+  const [correlations, setCorrelations] = useState<CyberGeoCorrelation[]>([]);
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<GeopoliticalEvent | null>(null);
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [hoveredCorrelation, setHoveredCorrelation] = useState<CyberGeoCorrelation | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [selectedCorrelation, setSelectedCorrelation] = useState<CyberGeoCorrelation | null>(null);
 
   const geoLayerRef = useRef<THREE.Group | null>(null);
   const zonesLayerRef = useRef<THREE.Group | null>(null);
+  const correlationLayerRef = useRef<THREE.Group | null>(null);
+  const correlationVisualsRef = useRef<CorrelationVisual[]>([]);
   const markersRef = useRef<RiskMarker[]>([]);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -97,12 +113,14 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
   const loadGeoData = useCallback(async () => {
     setLoadingGeo(true);
     try {
-      const [events, zoneData] = await Promise.all([
+      const [events, zoneData, corrData] = await Promise.all([
         fetchGeopoliticalEvents(200),
         fetchExposureZones(),
+        fetchCyberGeoCorrelations(),
       ]);
       setGeoEvents(events);
       setZones(zoneData);
+      setCorrelations(corrData);
       setLastRefresh(new Date());
     } finally {
       setLoadingGeo(false);
@@ -264,6 +282,11 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     zonesLayer.visible = false;
     scene.add(zonesLayer);
     zonesLayerRef.current = zonesLayer;
+
+    const correlationLayer = new THREE.Group();
+    correlationLayer.visible = false;
+    scene.add(correlationLayer);
+    correlationLayerRef.current = correlationLayer;
 
     function spawnArc() {
       const available = threatsRef.current;
@@ -446,6 +469,21 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
         mat.opacity = 0.55 - (markerPulse - 1) * 0.6;
       }
 
+      // Animate cyber-geo correlation flows
+      if (modeRef.current === 'correlated') {
+        const corrPulse = 1 + Math.sin(now * 0.005) * 0.5;
+        for (const v of correlationVisualsRef.current) {
+          v.flowParticle.userData.progress = ((v.flowParticle.userData.progress as number) + 0.006 * delta) % 1;
+          const p = v.flowParticle.userData.progress as number;
+          const pos = v.curve.getPoint(p);
+          v.flowParticle.position.copy(pos);
+          v.pulseRing.scale.setScalar(corrPulse);
+          (v.pulseRing.material as THREE.MeshBasicMaterial).opacity = 0.6 - (corrPulse - 1) * 0.5;
+          const sourceScale = 1 + Math.sin(now * 0.006) * 0.25;
+          v.sourceMarker.scale.setScalar(sourceScale);
+        }
+      }
+
       if (arcs.length !== prevArcCount) {
         prevArcCount = arcs.length;
         setStats({ total: totalRef.current, active: arcs.length, critical: criticalRef.current });
@@ -474,21 +512,47 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
       cam.downY = e.clientY;
     };
     const onMouseMove = (e: MouseEvent) => {
-      if (!cam.dragging) return;
-      const dx = e.clientX - cam.prevX;
-      const dy = e.clientY - cam.prevY;
-      if (Math.abs(e.clientX - cam.downX) > 4 || Math.abs(e.clientY - cam.downY) > 4) {
-        cam.dragMoved = true;
+      if (cam.dragging) {
+        const dx = e.clientX - cam.prevX;
+        const dy = e.clientY - cam.prevY;
+        if (Math.abs(e.clientX - cam.downX) > 4 || Math.abs(e.clientY - cam.downY) > 4) {
+          cam.dragMoved = true;
+        }
+        cam.tTheta -= dx * 0.005;
+        cam.tPhi = Math.max(0.3, Math.min(Math.PI - 0.3, cam.tPhi + dy * 0.005));
+        cam.prevX = e.clientX;
+        cam.prevY = e.clientY;
+        return;
       }
-      cam.tTheta -= dx * 0.005;
-      cam.tPhi = Math.max(0.3, Math.min(Math.PI - 0.3, cam.tPhi + dy * 0.005));
-      cam.prevX = e.clientX;
-      cam.prevY = e.clientY;
+      if (modeRef.current === 'correlated') {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const ndc = new THREE.Vector2(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1,
+        );
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(ndc, camera);
+        const meshes: THREE.Object3D[] = [];
+        for (const v of correlationVisualsRef.current) {
+          meshes.push(v.sourceMarker, v.targetMarker, v.flowParticle);
+        }
+        const hits = ray.intersectObjects(meshes, false);
+        if (hits.length > 0) {
+          const c = hits[0].object.userData.correlation as CyberGeoCorrelation | undefined;
+          if (c) {
+            setHoveredCorrelation(c);
+            setHoverPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+            renderer.domElement.style.cursor = 'pointer';
+            return;
+          }
+        }
+        setHoveredCorrelation(null);
+        renderer.domElement.style.cursor = '';
+      }
     };
     const onMouseUp = () => { cam.dragging = false; };
     const onClick = (e: MouseEvent) => {
       if (cam.dragMoved) return;
-      if (modeRef.current !== 'geopolitical') return;
       const rect = renderer.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -496,12 +560,24 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
       );
       const ray = new THREE.Raycaster();
       ray.setFromCamera(ndc, camera);
-      const meshes = markersRef.current.map((m) => m.core);
-      const hits = ray.intersectObjects(meshes, false);
-      if (hits.length > 0) {
-        const hit = hits[0].object;
-        const marker = markersRef.current.find((m) => m.core === hit);
-        if (marker) setSelectedEvent(marker.event);
+      if (modeRef.current === 'geopolitical') {
+        const meshes = markersRef.current.map((m) => m.core);
+        const hits = ray.intersectObjects(meshes, false);
+        if (hits.length > 0) {
+          const hit = hits[0].object;
+          const marker = markersRef.current.find((m) => m.core === hit);
+          if (marker) setSelectedEvent(marker.event);
+        }
+      } else if (modeRef.current === 'correlated') {
+        const meshes: THREE.Object3D[] = [];
+        for (const v of correlationVisualsRef.current) {
+          meshes.push(v.sourceMarker, v.targetMarker, v.flowParticle);
+        }
+        const hits = ray.intersectObjects(meshes, false);
+        if (hits.length > 0) {
+          const c = hits[0].object.userData.correlation as CyberGeoCorrelation | undefined;
+          if (c) setSelectedCorrelation(c);
+        }
       }
     };
     const onWheel = (e: WheelEvent) => {
@@ -579,9 +655,10 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
 
   // Sync mode visibility on layers
   useEffect(() => {
-    if (geoLayerRef.current) geoLayerRef.current.visible = mode === 'geopolitical';
-    if (zonesLayerRef.current) zonesLayerRef.current.visible = mode === 'geopolitical';
+    if (geoLayerRef.current) geoLayerRef.current.visible = mode === 'geopolitical' || mode === 'correlated';
+    if (zonesLayerRef.current) zonesLayerRef.current.visible = mode === 'geopolitical' || mode === 'correlated';
     if (arcGroupRef.current) arcGroupRef.current.visible = mode === 'cyber';
+    if (correlationLayerRef.current) correlationLayerRef.current.visible = mode === 'correlated';
   }, [mode]);
 
   // Re-render exposure zones layer
@@ -684,6 +761,90 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     }
   }, [geoEvents, activeFilters]);
 
+  // Re-render cyber-geo correlation arcs
+  useEffect(() => {
+    const layer = correlationLayerRef.current;
+    if (!layer) return;
+    for (const v of correlationVisualsRef.current) {
+      layer.remove(v.line);
+      layer.remove(v.sourceMarker);
+      layer.remove(v.targetMarker);
+      layer.remove(v.pulseRing);
+      layer.remove(v.flowParticle);
+      v.line.geometry.dispose();
+      (v.line.material as THREE.Material).dispose();
+      v.sourceMarker.geometry.dispose();
+      (v.sourceMarker.material as THREE.Material).dispose();
+      v.targetMarker.geometry.dispose();
+      (v.targetMarker.material as THREE.Material).dispose();
+      v.pulseRing.geometry.dispose();
+      (v.pulseRing.material as THREE.Material).dispose();
+      v.flowParticle.geometry.dispose();
+      (v.flowParticle.material as THREE.Material).dispose();
+    }
+    correlationVisualsRef.current = [];
+
+    for (const c of correlations) {
+      const sevColor = c.severity >= 85 ? 0xef4444 : c.severity >= 70 ? 0xf97316 : 0xfbbf24;
+      const curve = createArcCurve(
+        { lat: c.cyber_source_lat, lon: c.cyber_source_lon },
+        { lat: c.target_lat, lon: c.target_lon },
+        GLOBE_RADIUS * 1.02,
+      );
+      const points = curve.getPoints(80);
+      const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+      const lineMat = new THREE.LineBasicMaterial({
+        color: sevColor, transparent: true, opacity: 0.85,
+      });
+      const line = new THREE.Line(lineGeo, lineMat);
+      layer.add(line);
+
+      const srcPos = latLonToVector3(c.cyber_source_lat, c.cyber_source_lon, GLOBE_RADIUS * 1.02);
+      const srcGeo = new THREE.SphereGeometry(0.04, 14, 14);
+      const srcMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+      const sourceMarker = new THREE.Mesh(srcGeo, srcMat);
+      sourceMarker.position.copy(srcPos);
+      sourceMarker.userData.correlation = c;
+      sourceMarker.userData.role = 'cyber_source';
+      layer.add(sourceMarker);
+
+      const tgtPos = latLonToVector3(c.target_lat, c.target_lon, GLOBE_RADIUS * 1.02);
+      const tgtGeo = new THREE.SphereGeometry(0.05, 14, 14);
+      const tgtMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24 });
+      const targetMarker = new THREE.Mesh(tgtGeo, tgtMat);
+      targetMarker.position.copy(tgtPos);
+      targetMarker.userData.correlation = c;
+      targetMarker.userData.role = 'geo_target';
+      layer.add(targetMarker);
+
+      const ringGeo = new THREE.RingGeometry(0.06, 0.1, 32);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: sevColor, transparent: true, opacity: 0.5, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      const pulseRing = new THREE.Mesh(ringGeo, ringMat);
+      pulseRing.position.copy(tgtPos);
+      pulseRing.lookAt(tgtPos.clone().multiplyScalar(2));
+      layer.add(pulseRing);
+
+      const partGeo = new THREE.SphereGeometry(0.045, 10, 10);
+      const partMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+      });
+      const flowParticle = new THREE.Mesh(partGeo, partMat);
+      flowParticle.position.copy(srcPos);
+      flowParticle.userData.correlation = c;
+      flowParticle.userData.role = 'flow';
+      flowParticle.userData.progress = Math.random();
+      layer.add(flowParticle);
+
+      correlationVisualsRef.current.push({
+        correlation: c, line, sourceMarker, targetMarker, pulseRing, flowParticle, curve,
+      });
+    }
+  }, [correlations]);
+
   const toggleAutoRotate = useCallback(() => setIsAutoRotating((p) => !p), []);
 
   const sevDot = (s: string) => {
@@ -739,6 +900,17 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
           }`}
         >
           <Globe2 className="w-3.5 h-3.5" /> Geopolitical Risk
+        </button>
+        <button
+          onClick={() => setMode('correlated')}
+          className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg flex items-center gap-1.5 transition-all ${
+            mode === 'correlated' ? 'bg-rose-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)]' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Link2 className="w-3.5 h-3.5" /> Cyber x Geo
+          <span className={`ml-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
+            mode === 'correlated' ? 'bg-rose-500/40 text-white' : 'bg-slate-700/60 text-slate-300'
+          }`}>{correlations.length}</span>
         </button>
       </div>
 
@@ -905,13 +1077,121 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
         </>
       )}
 
+      {mode === 'correlated' && (
+        <>
+          <div className="absolute top-14 left-3 z-10 max-w-md flex items-center gap-2 bg-slate-900/70 backdrop-blur-md border border-rose-500/30 rounded-xl px-3 py-2">
+            <Target className="w-3.5 h-3.5 text-rose-300" />
+            <div className="text-[10px] text-rose-200 font-semibold uppercase tracking-wider">Cross-Domain Correlations</div>
+            <span className="text-[9px] text-slate-400">Hover an arc to read why these events are linked</span>
+          </div>
+
+          <div className="absolute bottom-3 left-3 z-10 w-[22rem] bg-slate-900/85 backdrop-blur-md border border-rose-500/25 rounded-xl p-3 shadow-[0_0_24px_rgba(244,63,94,0.18)]">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Link2 className="w-3.5 h-3.5 text-rose-300" />
+              <span className="text-[10px] font-bold text-rose-300 uppercase tracking-wider">Correlated Cyber x Geo Threats</span>
+            </div>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {correlations.length === 0 && <div className="text-[11px] text-slate-500 py-2">No correlations detected.</div>}
+              {correlations.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setSelectedCorrelation(c)}
+                  onMouseEnter={() => setHoveredCorrelation(c)}
+                  onMouseLeave={() => setHoveredCorrelation(null)}
+                  className="w-full text-left flex gap-2 py-2 px-2 rounded-lg border border-slate-800/50 hover:border-rose-500/40 hover:bg-slate-800/40 transition-all"
+                >
+                  <div className="flex flex-col items-center pt-0.5 shrink-0">
+                    <div className="w-2 h-2 rounded-full bg-red-500" />
+                    <div className="w-0.5 h-3 bg-gradient-to-b from-red-500 to-amber-400" />
+                    <div className="w-2 h-2 rounded-full bg-amber-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] text-white font-semibold leading-tight">
+                      {c.cyber_attack_type.replace(/_/g, ' ')} -&gt; {c.geo_event_headline.split(' - ')[0].slice(0, 48)}{c.geo_event_headline.length > 48 ? '...' : ''}
+                    </div>
+                    <div className="text-[9px] text-slate-400 mt-0.5">
+                      {c.cyber_threat_actor} · {c.cyber_source_country} · confidence {c.confidence_score}%
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end shrink-0">
+                    <div className={`text-[10px] font-bold tabular-nums ${
+                      c.severity >= 85 ? 'text-rose-300' : c.severity >= 70 ? 'text-orange-300' : 'text-amber-300'
+                    }`}>{c.severity}</div>
+                    <div className="text-[8px] text-slate-600 uppercase tracking-wider">sev</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="absolute bottom-3 right-3 z-10 bg-slate-900/70 backdrop-blur-md border border-slate-700/30 rounded-xl p-3">
+            <div className="grid grid-cols-3 gap-x-5 gap-y-1">
+              <div className="text-center">
+                <div className="text-base font-bold text-rose-300 tabular-nums">{correlations.length}</div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">Linked</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-orange-300 tabular-nums">{correlations.filter((c) => c.severity >= 80).length}</div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">High Sev</div>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-bold text-cyan-300 tabular-nums">
+                  {correlations.length === 0 ? 0 : Math.round(correlations.reduce((s, c) => s + c.confidence_score, 0) / correlations.length)}%
+                </div>
+                <div className="text-[8px] text-slate-500 uppercase tracking-wider">Avg Conf</div>
+              </div>
+            </div>
+          </div>
+
+          {hoveredCorrelation && (
+            <div
+              className="absolute z-20 pointer-events-none w-80 bg-slate-950/95 backdrop-blur-md border border-rose-500/40 rounded-xl p-3 shadow-[0_0_30px_rgba(244,63,94,0.35)]"
+              style={{
+                left: Math.min(hoverPos.x + 16, (containerRef.current?.clientWidth ?? 800) - 336),
+                top: Math.min(hoverPos.y + 16, (containerRef.current?.clientHeight ?? 600) - 280),
+              }}
+            >
+              <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-slate-800">
+                <Link2 className="w-3 h-3 text-rose-400" />
+                <span className="text-[9px] font-bold text-rose-300 uppercase tracking-wider">Why are these correlated?</span>
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <div className="text-[8px] uppercase tracking-wider text-red-300/80 font-bold">Cyber threat</div>
+                  <div className="text-[11px] text-white font-semibold leading-tight">
+                    {hoveredCorrelation.cyber_attack_type.replace(/_/g, ' ')}
+                  </div>
+                  <div className="text-[10px] text-slate-400">{hoveredCorrelation.cyber_threat_actor} ({hoveredCorrelation.cyber_source_country})</div>
+                </div>
+                <div>
+                  <div className="text-[8px] uppercase tracking-wider text-amber-300/80 font-bold">Geopolitical event</div>
+                  <div className="text-[11px] text-white leading-tight line-clamp-2">{hoveredCorrelation.geo_event_headline}</div>
+                </div>
+                <div className="pt-2 border-t border-slate-800">
+                  <div className="text-[8px] uppercase tracking-wider text-rose-300 font-bold mb-1">Correlation narrative</div>
+                  <p className="text-[10.5px] text-slate-200 leading-relaxed">{hoveredCorrelation.correlation_narrative}</p>
+                </div>
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-800/60">
+                  <span className="text-[9px] text-slate-500">Confidence</span>
+                  <span className="text-[10px] font-bold text-cyan-300">{hoveredCorrelation.confidence_score}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       <div className="absolute bottom-1 left-1/2 -translate-x-1/2 z-10
         text-[9px] text-slate-600/50 select-none pointer-events-none">
-        Drag to orbit · Scroll to zoom · {mode === 'geopolitical' ? 'Click markers for impact brief' : 'Live cyber telemetry'}
+        Drag to orbit · Scroll to zoom · {mode === 'geopolitical' ? 'Click markers for impact brief' : mode === 'correlated' ? 'Hover arcs to see why threats are linked' : 'Live cyber telemetry'}
       </div>
 
       {selectedEvent && (
         <EventDrilldown event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      )}
+
+      {selectedCorrelation && (
+        <CorrelationDrilldown correlation={selectedCorrelation} onClose={() => setSelectedCorrelation(null)} />
       )}
     </div>
   );
@@ -1004,6 +1284,81 @@ function EventDrilldown({ event, onClose }: { event: GeopoliticalEvent; onClose:
               Source: {event.source}
             </a>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CorrelationDrilldown({ correlation, onClose }: { correlation: CyberGeoCorrelation; onClose: () => void }) {
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="relative w-full max-w-2xl max-h-[85%] overflow-y-auto bg-slate-900 border border-rose-500/40 rounded-2xl shadow-[0_0_40px_rgba(244,63,94,0.25)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 p-4 border-b border-slate-800">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="p-2 rounded-lg bg-rose-500/15 border border-rose-500/40">
+              <Link2 className="w-5 h-5 text-rose-300" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap text-[10px] uppercase tracking-wider">
+                <span className="px-2 py-0.5 rounded font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">Cyber x Geo Correlation</span>
+                <span className="text-slate-500">severity {correlation.severity}/100</span>
+                <span className="text-cyan-400">confidence {correlation.confidence_score}%</span>
+              </div>
+              <h3 className="mt-2 text-base font-bold text-white leading-tight">
+                {correlation.cyber_attack_type.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())} correlated with geopolitical event
+              </h3>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <section className="bg-red-500/5 border border-red-500/30 rounded-xl p-3">
+              <div className="text-[10px] uppercase tracking-wider text-red-300 font-bold mb-1.5">Cyber threat</div>
+              <div className="text-sm font-bold text-white">{correlation.cyber_attack_type.replace(/_/g, ' ')}</div>
+              <div className="text-[11px] text-slate-300 mt-1">{correlation.cyber_threat_actor}</div>
+              <div className="text-[10px] text-slate-500 mt-1">Origin: {correlation.cyber_source_country}</div>
+            </section>
+            <section className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-3">
+              <div className="text-[10px] uppercase tracking-wider text-amber-300 font-bold mb-1.5">Geopolitical event</div>
+              <div className="text-sm font-bold text-white leading-tight line-clamp-3">{correlation.geo_event_headline}</div>
+            </section>
+          </div>
+
+          <section className="bg-rose-500/5 border border-rose-500/30 rounded-xl p-3">
+            <div className="text-[10px] uppercase tracking-wider text-rose-300 font-bold mb-1.5">Why these are correlated</div>
+            <p className="text-sm text-slate-200 leading-relaxed">{correlation.correlation_narrative}</p>
+          </section>
+
+          <section>
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5">Acmeco impact</div>
+            <p className="text-xs text-slate-300 leading-relaxed">{correlation.acmeco_impact}</p>
+          </section>
+
+          {correlation.detected_iocs && correlation.detected_iocs.length > 0 && (
+            <section>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5">Detected IOCs</div>
+              <div className="space-y-1">
+                {correlation.detected_iocs.map((ioc, i) => (
+                  <code key={i} className="block text-[11px] text-cyan-300 bg-slate-950/60 border border-slate-800 rounded px-2 py-1 font-mono">
+                    {ioc}
+                  </code>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="bg-cyan-500/5 border border-cyan-500/25 rounded-xl p-3">
+            <div className="text-[10px] uppercase tracking-wider text-cyan-300 font-bold mb-1">Recommended action</div>
+            <p className="text-xs text-slate-200 leading-relaxed">{correlation.recommended_action}</p>
+          </section>
         </div>
       </div>
     </div>

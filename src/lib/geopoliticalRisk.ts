@@ -75,6 +75,35 @@ export async function fetchExposureZones(): Promise<ExposureZone[]> {
   return (data ?? []) as ExposureZone[];
 }
 
+export interface CyberGeoCorrelation {
+  id: string;
+  geo_event_id: string;
+  geo_event_headline: string;
+  cyber_attack_type: string;
+  cyber_threat_actor: string;
+  cyber_source_country: string;
+  cyber_source_lat: number;
+  cyber_source_lon: number;
+  target_lat: number;
+  target_lon: number;
+  severity: number;
+  confidence_score: number;
+  correlation_narrative: string;
+  detected_iocs: string[];
+  acmeco_impact: string;
+  recommended_action: string;
+  occurred_at: string;
+}
+
+export async function fetchCyberGeoCorrelations(): Promise<CyberGeoCorrelation[]> {
+  const { data, error } = await supabase
+    .from('cyber_geo_correlations')
+    .select('*')
+    .order('occurred_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as CyberGeoCorrelation[];
+}
+
 export async function refreshFeeds(): Promise<{ ok: boolean; total_ingested: number }> {
   const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/geopolitical-risk-fetch`;
   const resp = await fetch(url, {
