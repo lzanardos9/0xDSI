@@ -106,6 +106,8 @@ export default function ChronoWeave() {
   const [emergeFlash, setEmergeFlash] = useState<CWCentroid | null>(null);
   const pendingCentroidsRef = useRef<CWCentroid[]>([]);
   const recentHitsRef = useRef<Map<string, number>>(new Map());
+  const [focusCentroid, setFocusCentroid] = useState<string | null>(null);
+  const focusRef = useRef<string | null>(null);
 
   // Initialize session + centroids
   useEffect(() => {
@@ -280,10 +282,42 @@ export default function ChronoWeave() {
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
 
+    const downStartRef = { x: 0, y: 0, t: 0 };
     const onDown = (e: MouseEvent) => {
       dragRef.current = { down: true, lx: e.clientX, ly: e.clientY, btn: e.button };
+      downStartRef.x = e.clientX;
+      downStartRef.y = e.clientY;
+      downStartRef.t = performance.now();
     };
-    const onUp = () => { dragRef.current.down = false; };
+    const onUp = (e: MouseEvent) => {
+      const wasClick =
+        Math.abs(e.clientX - downStartRef.x) < 4 &&
+        Math.abs(e.clientY - downStartRef.y) < 4 &&
+        performance.now() - downStartRef.t < 350;
+      dragRef.current.down = false;
+      if (!wasClick) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const cmeshes = Array.from(centroidMeshRef.current.values());
+      const hit = raycaster.intersectObjects(cmeshes, false)[0];
+      if (hit) {
+        const m = hit.object as THREE.Mesh;
+        let cid: string | null = null;
+        centroidMeshRef.current.forEach((mesh, id) => { if (mesh === m) cid = id; });
+        if (cid) {
+          focusRef.current = focusRef.current === cid ? null : cid;
+          setFocusCentroid(focusRef.current);
+        }
+      } else {
+        // click on empty space clears focus
+        if (focusRef.current) {
+          focusRef.current = null;
+          setFocusCentroid(null);
+        }
+      }
+    };
     const onMove = (e: MouseEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -707,6 +741,51 @@ export default function ChronoWeave() {
     });
   }, [nodes, mode, sweepBenign, centroids]);
 
+  // Apply focus highlight: dim non-related nodes/centroids when a centroid is focused
+  useEffect(() => {
+    nodes.forEach((n) => {
+      const m = nodeMeshRef.current.get(n.id);
+      if (!m) return;
+      const ud = m.userData as any;
+      const mat = m.material as THREE.MeshStandardMaterial;
+      const glowMat = ud.glow ? (ud.glow.material as THREE.SpriteMaterial) : null;
+      const malicious = !n.is_benign;
+      if (!focusCentroid) {
+        mat.opacity = malicious ? 0.95 : 0.75;
+        mat.emissiveIntensity = malicious ? 1.6 : 0.6;
+        if (glowMat) glowMat.opacity = malicious ? 0.95 : 0.45;
+        m.visible = true;
+        return;
+      }
+      const isRelated = malicious && n.best_centroid_id === focusCentroid;
+      if (isRelated) {
+        mat.opacity = 1;
+        mat.emissiveIntensity = 2.4;
+        if (glowMat) glowMat.opacity = 1;
+        m.visible = true;
+      } else {
+        mat.opacity = 0.05;
+        mat.emissiveIntensity = 0.05;
+        if (glowMat) glowMat.opacity = 0.02;
+        m.visible = malicious;
+      }
+    });
+    centroidMeshRef.current.forEach((m, cid) => {
+      const dim = focusCentroid !== null && cid !== focusCentroid;
+      const ud = m.userData as any;
+      (m.material as THREE.MeshStandardMaterial).opacity = dim ? 0.15 : 0.95;
+      [ud.wire, ud.ring, ud.ring2, ud.beam, ud.glow, ud.glowOuter, ud.electron1, ud.electron2].forEach((o: any) => {
+        if (!o || !o.material) return;
+        if (dim) {
+          (o.material as any).opacity = (o.material as any).opacity * 0.1;
+          o.visible = false;
+        } else {
+          o.visible = true;
+        }
+      });
+    });
+  }, [focusCentroid, nodes]);
+
   // Render edges (raw graph) and similarity links (vector/fusion)
   useEffect(() => {
     const eg = edgeGroupRef.current;
@@ -729,6 +808,14 @@ export default function ChronoWeave() {
         const b = nodeMeshRef.current.get(e.target_id);
         if (!a || !b) continue;
         const isAttack = e.kind === 'attack-chain';
+        // when focused, only show edges that touch a related (focused-centroid) malicious node
+        if (focusCentroid) {
+          const ns = nodes.get(e.source_id);
+          const nt = nodes.get(e.target_id);
+          const sRel = ns && !ns.is_benign && ns.best_centroid_id === focusCentroid;
+          const tRel = nt && !nt.is_benign && nt.best_centroid_id === focusCentroid;
+          if (!sRel && !tRel) continue;
+        }
         const geom = new THREE.BufferGeometry().setFromPoints([a.position.clone(), b.position.clone()]);
         const mat = new THREE.LineBasicMaterial({
           color: isAttack ? 0xff2a6d : 0x06b6d4,
@@ -744,6 +831,7 @@ export default function ChronoWeave() {
     if (mode !== 'raw') {
       nodes.forEach((n) => {
         if (n.is_benign || !n.best_centroid_id) return;
+        if (focusCentroid && n.best_centroid_id !== focusCentroid) return;
         const a = nodeMeshRef.current.get(n.id);
         const b = centroidMeshRef.current.get(n.best_centroid_id);
         if (!a || !b) return;
@@ -751,14 +839,14 @@ export default function ChronoWeave() {
         const col = new THREE.Color((b.material as THREE.MeshStandardMaterial).color);
         const mat = new THREE.LineBasicMaterial({
           color: col, transparent: true,
-          opacity: 0.25 + n.best_similarity * 0.65,
+          opacity: focusCentroid ? Math.min(1, 0.45 + n.best_similarity * 0.55) : 0.25 + n.best_similarity * 0.65,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
         });
         lg.add(new THREE.Line(geom, mat));
       });
     }
-  }, [edges, nodes, mode]);
+  }, [edges, nodes, mode, focusCentroid]);
 
   const reset = useCallback(async () => {
     nodeMeshRef.current.forEach(m => { sceneRef.current?.remove(m); m.geometry.dispose(); (m.material as THREE.Material).dispose(); });
@@ -855,6 +943,29 @@ export default function ChronoWeave() {
       <div className="flex-1 grid grid-cols-[1fr_320px] min-h-0">
         {/* Canvas */}
         <div ref={containerRef} className="relative bg-[#05070d] cursor-grab active:cursor-grabbing">
+          {focusCentroid && (() => {
+            const c = centroids.find(x => x.id === focusCentroid);
+            if (!c) return null;
+            const related = Array.from(nodes.values()).filter(n => !n.is_benign && n.best_centroid_id === focusCentroid).length;
+            return (
+              <div className="absolute top-3 right-3 z-30 px-4 py-2.5 rounded-xl bg-slate-900/90 border-2 backdrop-blur-md shadow-2xl"
+                style={{ borderColor: c.color, boxShadow: `0 0 30px ${c.color}55` }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ background: c.color, boxShadow: `0 0 10px ${c.color}` }} />
+                  <div className="flex flex-col">
+                    <div className="text-[9px] font-mono font-bold tracking-[0.2em]" style={{ color: c.color }}>FOCUSED THREAT</div>
+                    <div className="text-[12px] font-bold text-white">{c.name}</div>
+                    <div className="text-[10px] text-slate-400">{related} related events highlighted</div>
+                  </div>
+                  <button
+                    onClick={() => { focusRef.current = null; setFocusCentroid(null); }}
+                    className="ml-2 px-2 py-1 rounded text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
           {emergeFlash && (
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-4 py-2.5 rounded-xl bg-slate-900/90 border-2 backdrop-blur-md shadow-2xl animate-pulse"
               style={{ borderColor: emergeFlash.color, boxShadow: `0 0 40px ${emergeFlash.color}55, inset 0 0 20px ${emergeFlash.color}22` }}>
@@ -886,6 +997,7 @@ export default function ChronoWeave() {
             <span className="px-2 py-1 rounded bg-slate-900/60 border border-slate-800">drag = orbit</span>
             <span className="px-2 py-1 rounded bg-slate-900/60 border border-slate-800">shift+drag = pan</span>
             <span className="px-2 py-1 rounded bg-slate-900/60 border border-slate-800">scroll = zoom</span>
+            <span className="px-2 py-1 rounded bg-cyan-500/10 border border-cyan-500/40 text-cyan-300">click centroid = focus</span>
           </div>
           <div className="absolute top-3 left-3 flex items-center gap-2">
             <div className="px-3 py-1.5 rounded-lg bg-slate-900/70 border border-slate-800 backdrop-blur-sm">
