@@ -420,12 +420,9 @@ export default function AIIncidentSummarizer() {
     return () => { clearInterval(iv); typingRef.current = false; };
   }, [phase, selected]);
 
-  // Sequential fade-in
+  // Reveal all sections as soon as typing starts so toggles & chat are immediately usable
   useEffect(() => {
-    if (phase !== "done") return;
-    let count = 0;
-    const iv = setInterval(() => { count++; setVisibleSections(count); if (count >= 7) clearInterval(iv); }, 350);
-    return () => clearInterval(iv);
+    if (phase === "typing" || phase === "done") setVisibleSections(7);
   }, [phase]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, chatTyping]);
@@ -618,7 +615,7 @@ Provide a precise, technically grounded answer. Reference specific entities, IPs
   };
 
   const Section = ({ visible, children, delay }: { visible: boolean; children: React.ReactNode; delay?: number }) => (
-    <div className={`transition-all duration-500 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`} style={{ transitionDelay: `${delay ?? 0}ms` }}>
+    <div className={`transition-all duration-500 ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`} style={{ transitionDelay: `${delay ?? 0}ms` }}>
       {children}
     </div>
   );
