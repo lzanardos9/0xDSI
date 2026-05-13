@@ -441,12 +441,8 @@ export default function AIIncidentSummarizer() {
     setTimeout(() => setPhase("typing"), 1800);
   }, []);
 
-  const openRawAlert = useCallback(async (index: number, text: string) => {
+  const openRawAlert = (index: number, text: string) => {
     if (!selected) return;
-    setSelectedRawAlert({ index, text });
-    setRawAlertDetail(null);
-    setRawAlertLoading(true);
-
     const detail: any = {
       alertId: `ALERT-${selected.caseRef ?? `INC-${selected.id}`}-${String(index + 1).padStart(3, "0")}`,
       timestamp: new Date(Date.now() - (selected.alerts - index) * 14_300).toISOString(),
@@ -457,47 +453,44 @@ export default function AIIncidentSummarizer() {
       entity: selected.entities[index % selected.entities.length],
       iocs: extractIOCs(text),
       tags: extractTags(text, selected.title),
+      correlatedEvents: [],
     };
+    setSelectedRawAlert({ index, text });
+    setRawAlertDetail(detail);
+    setRawAlertLoading(false);
 
-    try {
-      const ipMatches = (text.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) ?? []) as string[];
-      const hostMatches = (text.match(/\b[a-z][a-z0-9-]+\.(?:acmeco\.local|internal|local)\b/gi) ?? []) as string[];
-      const queries: any[] = [];
-      for (const ip of ipMatches.slice(0, 2)) {
-        queries.push(
-          supabase
-            .from("events")
-            .select("event_type, severity, source_ip, dest_ip, hostname, username, description, event_timestamp")
-            .or(`source_ip.eq.${ip},dest_ip.eq.${ip}`)
-            .limit(3),
-        );
-      }
-      for (const host of hostMatches.slice(0, 1)) {
-        queries.push(
-          supabase
-            .from("events")
-            .select("event_type, severity, source_ip, dest_ip, hostname, username, description, event_timestamp")
-            .ilike("hostname", `%${host}%`)
-            .limit(3),
-        );
-      }
-      if (queries.length > 0) {
-        const results = await Promise.all(queries);
+    const ipMatches = (text.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) ?? []) as string[];
+    const hostMatches = (text.match(/\b[a-z][a-z0-9-]+\.(?:acmeco\.local|internal|local)\b/gi) ?? []) as string[];
+    const queries: any[] = [];
+    for (const ip of ipMatches.slice(0, 2)) {
+      queries.push(
+        supabase
+          .from("events")
+          .select("event_type, severity, source_ip, dest_ip, hostname, username, description, event_timestamp")
+          .or(`source_ip.eq.${ip},dest_ip.eq.${ip}`)
+          .limit(3),
+      );
+    }
+    for (const host of hostMatches.slice(0, 1)) {
+      queries.push(
+        supabase
+          .from("events")
+          .select("event_type, severity, source_ip, dest_ip, hostname, username, description, event_timestamp")
+          .ilike("hostname", `%${host}%`)
+          .limit(3),
+      );
+    }
+    if (queries.length === 0) return;
+    Promise.all(queries)
+      .then((results) => {
         const correlated: any[] = [];
         for (const r of results) {
           if (r?.data) correlated.push(...r.data);
         }
-        detail.correlatedEvents = correlated.slice(0, 6);
-      } else {
-        detail.correlatedEvents = [];
-      }
-    } catch {
-      detail.correlatedEvents = [];
-    }
-
-    setRawAlertDetail(detail);
-    setRawAlertLoading(false);
-  }, [selected]);
+        setRawAlertDetail((prev: any) => prev ? { ...prev, correlatedEvents: correlated.slice(0, 6) } : prev);
+      })
+      .catch(() => {});
+  };
 
   const sendChat = useCallback(async (text: string) => {
     if (!text.trim() || chatTyping || !selected) return;
@@ -730,8 +723,9 @@ Provide a precise, technically grounded answer. Reference specific entities, IPs
                     {selected.technical.map((t, i) => (
                       <button
                         key={i}
-                        onClick={() => openRawAlert(i, t)}
-                        className="w-full text-left flex items-start gap-2 py-1 px-2 -mx-2 rounded hover:bg-slate-800/70 hover:text-slate-200 transition-colors group"
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openRawAlert(i, t); }}
+                        className="w-full text-left flex items-start gap-2 py-1 px-2 -mx-2 rounded hover:bg-slate-800/70 hover:text-slate-200 transition-colors group cursor-pointer"
                       >
                         <XCircle className="w-3 h-3 text-red-400 mt-0.5 shrink-0" />
                         <span className="flex-1">{`[ALERT-${String(i + 1).padStart(3, "0")}] RAW: ${t}`}</span>
@@ -917,10 +911,10 @@ Provide a precise, technically grounded answer. Reference specific entities, IPs
               </button>
             </div>
 
-            {rawAlertLoading || !rawAlertDetail ? (
+            {!rawAlertDetail ? (
               <div className="p-10 flex flex-col items-center gap-3 text-slate-400">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
-                <span className="text-xs">Correlating with live SOC data...</span>
+                <span className="text-xs">Loading...</span>
               </div>
             ) : (
               <div className="p-5 space-y-4">
