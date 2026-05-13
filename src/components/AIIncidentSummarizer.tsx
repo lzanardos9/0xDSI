@@ -738,7 +738,7 @@ Provide a precise, technically grounded answer. Reference specific entities, IPs
                         <ChevronRight className="w-3 h-3 text-slate-600 group-hover:text-slate-300 mt-0.5 shrink-0" />
                       </button>
                     ))}
-                    <div className="text-slate-500 mt-2 not-italic font-sans">... +{selected.alerts - 4} more unstructured alerts</div>
+                    <div className="text-slate-500 mt-2 not-italic font-sans">... +{Math.max(0, selected.alerts - selected.technical.length)} more unstructured alerts</div>
                   </div>
                 ) : (
                   <div className="text-xs text-slate-300 space-y-1 bg-slate-900/30 p-3 rounded-lg">
