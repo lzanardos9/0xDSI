@@ -2,8 +2,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Brain, Sparkles, MessageSquare, Shield, AlertTriangle, Clock, User, Server,
   Globe, ChevronRight, Target, Zap, Send, CheckCircle2, XCircle, TrendingUp,
-  Eye, FileText, Activity, X, GitBranch, Star, DollarSign,
+  Eye, FileText, Activity, X, GitBranch, Star, DollarSign, Loader2, Hash,
+  Network, Tag,
 } from "lucide-react";
+import { supabase } from "../lib/supabase";
 
 // --- Attack Graph types ---
 type GraphNode = {
@@ -204,6 +206,36 @@ const suggestedQuestions = [
   "What regulatory notifications are required?",
 ];
 
+function extractIOCs(text: string): { type: string; value: string }[] {
+  const out: { type: string; value: string }[] = [];
+  const ips = text.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) ?? [];
+  for (const ip of ips) out.push({ type: "ipv4", value: ip });
+  const domains = text.match(/\b[a-z0-9-]+(?:\[?\.\]?[a-z0-9-]+)+\.[a-z]{2,}\b/gi) ?? [];
+  for (const d of domains.slice(0, 4)) out.push({ type: "domain", value: d.replace(/\[\.\]/g, ".") });
+  const hashes = text.match(/\b[a-f0-9]{32,64}\b/gi) ?? [];
+  for (const h of hashes.slice(0, 2)) out.push({ type: "hash", value: h });
+  const cves = text.match(/CVE-\d{4}-\d{4,7}/g) ?? [];
+  for (const c of cves) out.push({ type: "cve", value: c });
+  return out;
+}
+
+function extractTags(text: string, title: string): string[] {
+  const tags = new Set<string>();
+  const t = (text + " " + title).toLowerCase();
+  if (t.includes("ransomware") || t.includes("encryption")) tags.add("ransomware");
+  if (t.includes("phish")) tags.add("phishing");
+  if (t.includes("c2") || t.includes("beacon")) tags.add("c2");
+  if (t.includes("exfil")) tags.add("exfiltration");
+  if (t.includes("lateral")) tags.add("lateral-movement");
+  if (t.includes("persistence")) tags.add("persistence");
+  if (t.includes("mfa") || t.includes("sso") || t.includes("okta")) tags.add("identity");
+  if (t.includes("dns")) tags.add("dns-tunneling");
+  if (t.includes("supply chain") || t.includes("nexus") || t.includes("maven")) tags.add("supply-chain");
+  if (t.includes("firmware") || t.includes("ipmi") || t.includes("bmc")) tags.add("firmware");
+  if (t.includes("apt")) tags.add("apt");
+  return [...tags];
+}
+
 // --- Attack Graph renderer ---
 function nodeColor(type: GraphNode["type"]): string {
   switch (type) {
@@ -336,6 +368,9 @@ export default function AIIncidentSummarizer() {
   const [typedText, setTypedText] = useState("");
   const [visibleSections, setVisibleSections] = useState<number>(0);
   const [showRaw, setShowRaw] = useState(false);
+  const [selectedRawAlert, setSelectedRawAlert] = useState<{ index: number; text: string } | null>(null);
+  const [rawAlertDetail, setRawAlertDetail] = useState<any | null>(null);
+  const [rawAlertLoading, setRawAlertLoading] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: string; text: string }[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatTyping, setChatTyping] = useState(false);
@@ -405,25 +440,161 @@ export default function AIIncidentSummarizer() {
     typingRef.current = false;
     setSelectedId(id); setPhase("processing"); setTypedText(""); setVisibleSections(0);
     setChatMessages([]); setChatInput(""); setShowRaw(false);
+    setSelectedRawAlert(null); setRawAlertDetail(null);
     setTimeout(() => setPhase("typing"), 1800);
   }, []);
 
-  const sendChat = useCallback((text: string) => {
-    if (!text.trim() || chatTyping) return;
+  const openRawAlert = useCallback(async (index: number, text: string) => {
+    if (!selected) return;
+    setSelectedRawAlert({ index, text });
+    setRawAlertDetail(null);
+    setRawAlertLoading(true);
+
+    const detail: any = {
+      alertId: `ALERT-${selected.caseRef ?? `INC-${selected.id}`}-${String(index + 1).padStart(3, "0")}`,
+      timestamp: new Date(Date.now() - (selected.alerts - index) * 14_300).toISOString(),
+      severity: selected.severity,
+      source: selected.title,
+      raw: text,
+      mitre: selected.mitre[index % selected.mitre.length],
+      entity: selected.entities[index % selected.entities.length],
+      iocs: extractIOCs(text),
+      tags: extractTags(text, selected.title),
+    };
+
+    try {
+      const ipMatches = (text.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) ?? []) as string[];
+      const hostMatches = (text.match(/\b[a-z][a-z0-9-]+\.(?:acmeco\.local|internal|local)\b/gi) ?? []) as string[];
+      const queries: any[] = [];
+      for (const ip of ipMatches.slice(0, 2)) {
+        queries.push(
+          supabase
+            .from("events")
+            .select("event_type, severity, source_ip, dest_ip, hostname, username, description, event_timestamp")
+            .or(`source_ip.eq.${ip},dest_ip.eq.${ip}`)
+            .limit(3),
+        );
+      }
+      for (const host of hostMatches.slice(0, 1)) {
+        queries.push(
+          supabase
+            .from("events")
+            .select("event_type, severity, source_ip, dest_ip, hostname, username, description, event_timestamp")
+            .ilike("hostname", `%${host}%`)
+            .limit(3),
+        );
+      }
+      if (queries.length > 0) {
+        const results = await Promise.all(queries);
+        const correlated: any[] = [];
+        for (const r of results) {
+          if (r?.data) correlated.push(...r.data);
+        }
+        detail.correlatedEvents = correlated.slice(0, 6);
+      } else {
+        detail.correlatedEvents = [];
+      }
+    } catch {
+      detail.correlatedEvents = [];
+    }
+
+    setRawAlertDetail(detail);
+    setRawAlertLoading(false);
+  }, [selected]);
+
+  const sendChat = useCallback(async (text: string) => {
+    if (!text.trim() || chatTyping || !selected) return;
     const q = text.trim();
     setChatInput("");
-    setChatMessages((prev) => [...prev, { role: "user", text: q }]);
+    const userMessages = [...chatMessages, { role: "user", text: q }];
+    setChatMessages(userMessages);
     setChatTyping(true);
-    const response = `Based on the incident analysis, ${q.toLowerCase().includes("blast") ? "the blast radius encompasses 3 network segments, 47 user accounts, and 2 critical business applications. Secondary impact includes potential supply chain exposure through the CI/CD pipeline." : q.toLowerCase().includes("similar") ? "there were 3 similar incidents in the past 90 days: INC-2847 (Mar 15), INC-2691 (Feb 28), and INC-2534 (Jan 30). Pattern analysis suggests a coordinated campaign with increasing sophistication." : "regulatory review indicates GDPR Article 33 notification required within 72 hours, SEC Form 8-K may apply if material impact confirmed, and state breach notification laws triggered for 3 jurisdictions."}`;
-    let i = 0;
+
     const partial = { role: "ai", text: "" };
     setChatMessages((prev) => [...prev, partial]);
-    const iv = setInterval(() => {
-      i++;
-      setChatMessages((prev) => { const copy = [...prev]; copy[copy.length - 1] = { role: "ai", text: response.slice(0, i) }; return copy; });
-      if (i >= response.length) { clearInterval(iv); setChatTyping(false); }
-    }, 14);
-  }, [chatTyping]);
+
+    const incidentContext = `You are answering a question about a specific security incident. Anchor your response in the incident context below and CROSS-REFERENCE with the live SOC data you have access to.
+
+INCIDENT CONTEXT:
+- Title: ${selected.title}
+- Severity: ${selected.severity}
+- Status: ${selected.status}
+- Case Ref: ${selected.caseRef ?? `INC-${selected.id}`}
+- Alerts ingested: ${selected.alerts}
+- Confidence: ${selected.confidence}%
+${selected.impact ? `- Impact: ${selected.impact}` : ""}
+
+EXECUTIVE SUMMARY:
+${selected.summary}
+
+TRIAGE:
+- Category: ${selected.triage.category}
+- Owner: ${selected.triage.owner}
+- Reasoning: ${selected.triage.reasoning}
+
+TECHNICAL FINDINGS:
+${selected.technical.map((t: string, i: number) => `${i + 1}. ${t}`).join("\n")}
+
+MITRE ATT&CK: ${selected.mitre.join(" | ")}
+
+AFFECTED ENTITIES: ${selected.entities.join(", ")}
+
+TIMELINE: ${selected.timeline.map((t: any) => `${t.t} ${t.label}`).join(" -> ")}
+
+RECOMMENDED ACTIONS:
+${selected.actions.map((a: string, i: number) => `${i + 1}. ${a}`).join("\n")}
+
+USER QUESTION: ${q}
+
+Provide a precise, technically grounded answer. Reference specific entities, IPs, MITRE techniques, and any related live SOC data you can pull. Keep it tight (8-12 sentences max), use bullets when listing.`;
+
+    const conversationHistory = chatMessages.map((m) => ({
+      role: m.role === "ai" ? "assistant" : "user",
+      content: m.text,
+    }));
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-assistant`;
+      const resp = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ question: incidentContext, conversationHistory }),
+      });
+
+      let answer: string;
+      if (resp.ok) {
+        const json = await resp.json();
+        answer = json.answer || "I could not generate a response. Try rephrasing your question.";
+      } else {
+        answer = `I could not reach the AI backend (${resp.status}). Please verify the LLM integration.`;
+      }
+
+      let i = 0;
+      const iv = setInterval(() => {
+        i++;
+        setChatMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = { role: "ai", text: answer.slice(0, i) };
+          return copy;
+        });
+        if (i >= answer.length) {
+          clearInterval(iv);
+          setChatTyping(false);
+        }
+      }, 8);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setChatMessages((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { role: "ai", text: `Error contacting LLM: ${msg}` };
+        return copy;
+      });
+      setChatTyping(false);
+    }
+  }, [chatTyping, selected, chatMessages]);
 
   const sevColor = (s: string) => s === "Critical" ? "text-red-400 bg-red-500/15 border-red-500/30" : s === "High" ? "text-amber-400 bg-amber-500/15 border-amber-500/30" : "text-blue-400 bg-blue-500/15 border-blue-500/30";
   const statusColor = (s: string) => s === "Active" ? "text-red-400" : s === "Contained" ? "text-green-400" : s === "Mitigated" ? "text-emerald-400" : s === "Investigating" ? "text-amber-400" : "text-blue-400";
@@ -557,9 +728,20 @@ export default function AIIncidentSummarizer() {
                   <button onClick={() => setShowRaw(!showRaw)} className="text-xs px-3 py-1 rounded-full border border-slate-600 text-slate-300 hover:bg-slate-700/50 transition-colors">{showRaw ? "Show AI Output" : "Show Raw Alerts"}</button>
                 </div>
                 {showRaw ? (
-                  <div className="font-mono text-xs text-slate-400 space-y-1 bg-slate-900/50 p-3 rounded-lg max-h-32 overflow-y-auto">
-                    {selected.technical.map((t, i) => <div key={i} className="flex items-start gap-2"><XCircle className="w-3 h-3 text-red-400 mt-0.5 shrink-0" /><span>{`[ALERT-${String(i + 1).padStart(3, "0")}] RAW: ${t}`}</span></div>)}
-                    <div className="text-slate-500 mt-2">... +{selected.alerts - 4} more unstructured alerts</div>
+                  <div className="font-mono text-xs text-slate-400 space-y-1 bg-slate-900/50 p-3 rounded-lg max-h-48 overflow-y-auto">
+                    <div className="text-[10px] text-slate-500 mb-1.5 not-italic font-sans">Click any row to drill down</div>
+                    {selected.technical.map((t, i) => (
+                      <button
+                        key={i}
+                        onClick={() => openRawAlert(i, t)}
+                        className="w-full text-left flex items-start gap-2 py-1 px-2 -mx-2 rounded hover:bg-slate-800/70 hover:text-slate-200 transition-colors group"
+                      >
+                        <XCircle className="w-3 h-3 text-red-400 mt-0.5 shrink-0" />
+                        <span className="flex-1">{`[ALERT-${String(i + 1).padStart(3, "0")}] RAW: ${t}`}</span>
+                        <ChevronRight className="w-3 h-3 text-slate-600 group-hover:text-slate-300 mt-0.5 shrink-0" />
+                      </button>
+                    ))}
+                    <div className="text-slate-500 mt-2 not-italic font-sans">... +{selected.alerts - 4} more unstructured alerts</div>
                   </div>
                 ) : (
                   <div className="text-xs text-slate-300 space-y-1 bg-slate-900/30 p-3 rounded-lg">
@@ -701,6 +883,197 @@ export default function AIIncidentSummarizer() {
           </div>
         )}
       </div>
+
+      {selectedRawAlert && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6"
+          onClick={() => setSelectedRawAlert(null)}
+        >
+          <div
+            className="relative w-full max-w-3xl max-h-[88vh] overflow-y-auto bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-800">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="p-2.5 rounded-lg bg-red-500/15 border border-red-500/30">
+                  <AlertTriangle className="w-5 h-5 text-red-400" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap text-[10px] uppercase tracking-wider mb-2">
+                    <span className="px-2 py-0.5 rounded font-bold bg-red-500/20 text-red-300 border border-red-500/40">
+                      Raw Alert Drilldown
+                    </span>
+                    {rawAlertDetail && (
+                      <span className="font-mono text-slate-400">{rawAlertDetail.alertId}</span>
+                    )}
+                  </div>
+                  <h3 className="text-base font-bold text-white leading-tight">
+                    {selectedRawAlert.text}
+                  </h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedRawAlert(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {rawAlertLoading || !rawAlertDetail ? (
+              <div className="p-10 flex flex-col items-center gap-3 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                <span className="text-xs">Correlating with live SOC data...</span>
+              </div>
+            ) : (
+              <div className="p-5 space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                    <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-1">Severity</div>
+                    <div className={`text-sm font-bold ${selected && sevColor(selected.severity)} inline-block px-2 py-0.5 rounded border`}>
+                      {rawAlertDetail.severity}
+                    </div>
+                  </div>
+                  <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                    <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-1">Timestamp</div>
+                    <div className="text-xs font-mono text-slate-200">
+                      {new Date(rawAlertDetail.timestamp).toUTCString().replace("GMT", "UTC")}
+                    </div>
+                  </div>
+                  <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                    <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-1">Source incident</div>
+                    <div className="text-xs text-slate-200 font-medium truncate">{rawAlertDetail.source}</div>
+                  </div>
+                </div>
+
+                <section>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5 flex items-center gap-1.5">
+                    <Hash className="w-3 h-3" /> Raw payload
+                  </div>
+                  <pre className="text-[11px] font-mono text-slate-300 bg-slate-950/70 border border-slate-800 rounded-lg p-3 whitespace-pre-wrap break-words">
+{rawAlertDetail.raw}
+                  </pre>
+                </section>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <section className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-red-300 font-bold mb-1.5 flex items-center gap-1.5">
+                      <Shield className="w-3 h-3" /> MITRE ATT&CK
+                    </div>
+                    <div className="text-xs text-slate-200 font-mono">{rawAlertDetail.mitre}</div>
+                  </section>
+                  <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-emerald-300 font-bold mb-1.5 flex items-center gap-1.5">
+                      <Server className="w-3 h-3" /> Primary entity
+                    </div>
+                    <div className="text-xs text-slate-200 font-mono break-all">{rawAlertDetail.entity}</div>
+                  </section>
+                </div>
+
+                {rawAlertDetail.iocs && rawAlertDetail.iocs.length > 0 && (
+                  <section>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5 flex items-center gap-1.5">
+                      <Network className="w-3 h-3" /> Extracted IOCs
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {rawAlertDetail.iocs.map((ioc: any, i: number) => (
+                        <span
+                          key={i}
+                          className="text-[11px] font-mono px-2 py-1 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30"
+                        >
+                          <span className="text-cyan-500/70 mr-1">{ioc.type}:</span>
+                          {ioc.value}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {rawAlertDetail.tags && rawAlertDetail.tags.length > 0 && (
+                  <section>
+                    <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5 flex items-center gap-1.5">
+                      <Tag className="w-3 h-3" /> Tags
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {rawAlertDetail.tags.map((tag: string) => (
+                        <span
+                          key={tag}
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                <section>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1.5 flex items-center gap-1.5">
+                    <Activity className="w-3 h-3" /> Correlated live SOC events
+                  </div>
+                  {rawAlertDetail.correlatedEvents && rawAlertDetail.correlatedEvents.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {rawAlertDetail.correlatedEvents.map((ev: any, i: number) => (
+                        <div
+                          key={i}
+                          className="text-xs bg-slate-800/50 border border-slate-700/40 rounded-lg p-2.5"
+                        >
+                          <div className="flex items-center gap-2 mb-1 text-[10px]">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-200 font-mono">
+                              {ev.event_type ?? "event"}
+                            </span>
+                            {ev.severity && (
+                              <span className={`px-1.5 py-0.5 rounded ${sevColor(String(ev.severity).charAt(0).toUpperCase() + String(ev.severity).slice(1))}`}>
+                                {ev.severity}
+                              </span>
+                            )}
+                            {ev.event_timestamp && (
+                              <span className="text-slate-500 ml-auto">
+                                {new Date(ev.event_timestamp).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-slate-300 leading-snug">{ev.description ?? "(no description)"}</div>
+                          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-500 font-mono">
+                            {ev.source_ip && <span>src: {ev.source_ip}</span>}
+                            {ev.dest_ip && <span>dst: {ev.dest_ip}</span>}
+                            {ev.hostname && <span>host: {ev.hostname}</span>}
+                            {ev.username && <span>user: {ev.username}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500 italic bg-slate-800/30 border border-slate-700/30 rounded-lg p-3">
+                      No live events matched the IOCs in this raw alert.
+                    </div>
+                  )}
+                </section>
+
+                <div className="pt-2 border-t border-slate-800 flex gap-2">
+                  <button
+                    onClick={() => {
+                      const q = `Explain raw alert ${rawAlertDetail.alertId} ("${selectedRawAlert.text.slice(0, 80)}...") in plain language. What does it mean for this incident, and what next steps would you take?`;
+                      setSelectedRawAlert(null);
+                      sendChat(q);
+                    }}
+                    className="flex-1 text-xs px-3 py-2 rounded-lg bg-blue-500/15 border border-blue-500/40 text-blue-300 hover:bg-blue-500/25 font-semibold flex items-center justify-center gap-2"
+                  >
+                    <Brain className="w-3.5 h-3.5" />
+                    Ask AI to explain this alert
+                  </button>
+                  <button
+                    onClick={() => setSelectedRawAlert(null)}
+                    className="text-xs px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
