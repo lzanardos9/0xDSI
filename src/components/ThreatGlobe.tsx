@@ -187,12 +187,8 @@ const ThreatGlobe = ({ threats }: { threats: ThreatData[] }) => {
     const canvasTexture = createEarthTexture();
     let activeTexture: THREE.Texture = canvasTexture;
     const globeGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 128, 64);
-    const globeMat = new THREE.MeshPhongMaterial({
+    const globeMat = new THREE.MeshBasicMaterial({
       map: canvasTexture,
-      emissive: 0x061420,
-      emissiveIntensity: 0.25,
-      shininess: 15,
-      specular: 0x1a4a6e,
     });
     new THREE.TextureLoader().load('/earth-dark.webp', (tex) => {
       tex.wrapS = THREE.RepeatWrapping;
