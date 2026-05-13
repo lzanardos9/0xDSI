@@ -102,6 +102,39 @@ export default function ChronoWeave() {
   const [fullscreen, setFullscreen] = useState(false);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [actorFilter, setActorFilter] = useState<string>('all');
+  const [regionFilter, setRegionFilter] = useState<string>('all');
+  const [severityFilter, setSeverityFilter] = useState<string>('all');
+  const [tacticFilter, setTacticFilter] = useState<string>('all');
+  const [activityFilter, setActivityFilter] = useState<string>('all');
+
+  const passesFilters = (c: CWCentroid): boolean => {
+    if (actorFilter !== 'all' && c.actor_class !== actorFilter) return false;
+    if (severityFilter !== 'all' && c.severity !== severityFilter) return false;
+    if (regionFilter !== 'all') {
+      const country = (c.actor_country || '').toUpperCase();
+      const REGIONS: Record<string, string[]> = {
+        americas: ['US', 'CA', 'MX', 'BR', 'AR'],
+        emea: ['BY', 'RU', 'IR', 'IL', 'SA', 'AE', 'GB', 'DE', 'FR', 'TR'],
+        apac: ['CN', 'KP', 'JP', 'IN', 'KR', 'VN', 'TH', 'AU'],
+        unattributed: [''],
+      };
+      const list = REGIONS[regionFilter] || [];
+      if (regionFilter === 'unattributed') {
+        if (country !== '') return false;
+      } else if (!list.includes(country)) return false;
+    }
+    if (tacticFilter !== 'all') {
+      const tactics = (c.mitre_tactics || []).map(x => x.toLowerCase());
+      if (!tactics.includes(tacticFilter)) return false;
+    }
+    if (activityFilter !== 'all') {
+      const lastHit = recentHitsRef.current.get(c.id) || 0;
+      const ageMs = Date.now() - lastHit;
+      if (activityFilter === 'active' && (!lastHit || ageMs > 8000)) return false;
+      if (activityFilter === 'dormant' && lastHit && ageMs <= 8000) return false;
+    }
+    return true;
+  };
   const [stats, setStats] = useState({ total: 0, malicious: 0, hits: 0, topCentroid: '' });
   const [emergeFlash, setEmergeFlash] = useState<CWCentroid | null>(null);
   const pendingCentroidsRef = useRef<CWCentroid[]>([]);
@@ -522,7 +555,7 @@ export default function ChronoWeave() {
     if (!showCentroids || mode === 'raw') return;
 
     centroids.forEach((c, i) => {
-      if (actorFilter !== 'all' && c.actor_class !== actorFilter) return;
+      if (!passesFilters(c)) return;
       const a = (i / centroids.length) * Math.PI * 2;
       const r = 42;
       const x = Math.cos(a) * r;
@@ -617,7 +650,7 @@ export default function ChronoWeave() {
       };
       centroidMeshRef.current.set(c.id, mesh);
     });
-  }, [centroids, mode, showCentroids, actorFilter]);
+  }, [centroids, mode, showCentroids, actorFilter, regionFilter, severityFilter, tacticFilter, activityFilter]);
 
   // Inter-bad similarity edges
   useEffect(() => {
@@ -634,7 +667,7 @@ export default function ChronoWeave() {
     for (let i = 0; i < centroids.length; i++) {
       for (let j = i + 1; j < centroids.length; j++) {
         const ci = centroids[i], cj = centroids[j];
-        if (actorFilter !== 'all' && (ci.actor_class !== actorFilter || cj.actor_class !== actorFilter)) continue;
+        if (!passesFilters(ci) || !passesFilters(cj)) continue;
         const sim = cosine(ci.embedding, cj.embedding);
         if (sim < 0.84) continue;
         const mi = centroidMeshRef.current.get(ci.id);
@@ -645,7 +678,7 @@ export default function ChronoWeave() {
         grp.add(new THREE.Line(geom, mat));
       }
     }
-  }, [centroids, mode, showCentroids, actorFilter]);
+  }, [centroids, mode, showCentroids, actorFilter, regionFilter, severityFilter, tacticFilter, activityFilter]);
 
   // Render nodes
   useEffect(() => {
@@ -1026,11 +1059,22 @@ export default function ChronoWeave() {
         {/* Right panel */}
         <div className="border-l border-slate-800 bg-[#070b15] overflow-y-auto">
           <div className="p-3 border-b border-slate-800">
-            <div className="flex items-center gap-2 mb-2">
-              <Filter size={11} className="text-slate-400" />
-              <div className="text-[10px] font-bold text-slate-300 tracking-wider uppercase">Actor filter</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Filter size={11} className="text-slate-400" />
+                <div className="text-[10px] font-bold text-slate-300 tracking-wider uppercase">Filters</div>
+              </div>
+              {(actorFilter !== 'all' || regionFilter !== 'all' || severityFilter !== 'all' || tacticFilter !== 'all' || activityFilter !== 'all') && (
+                <button
+                  onClick={() => { setActorFilter('all'); setRegionFilter('all'); setSeverityFilter('all'); setTacticFilter('all'); setActivityFilter('all'); }}
+                  className="text-[9px] font-mono text-cyan-400 hover:text-cyan-200 underline">
+                  reset all
+                </button>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-1">
+
+            <div className="text-[9px] font-mono text-slate-500 mb-1">ACTOR CLASS</div>
+            <div className="grid grid-cols-2 gap-1 mb-3">
               {[
                 { id: 'all', label: 'All actors' },
                 { id: 'state-sponsored', label: 'State-sponsored' },
@@ -1041,6 +1085,82 @@ export default function ChronoWeave() {
                 <button key={o.id} onClick={() => setActorFilter(o.id)}
                   className={`px-2 py-1.5 rounded text-[10px] font-semibold transition-colors ${actorFilter === o.id
                     ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40'
+                    : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-[9px] font-mono text-slate-500 mb-1">REGION</div>
+            <div className="grid grid-cols-2 gap-1 mb-3">
+              {[
+                { id: 'all', label: 'Worldwide' },
+                { id: 'americas', label: 'Americas' },
+                { id: 'emea', label: 'EMEA' },
+                { id: 'apac', label: 'APAC' },
+                { id: 'unattributed', label: 'Unattributed' },
+              ].map(o => (
+                <button key={o.id} onClick={() => setRegionFilter(o.id)}
+                  className={`px-2 py-1.5 rounded text-[10px] font-semibold transition-colors ${regionFilter === o.id
+                    ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40'
+                    : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-[9px] font-mono text-slate-500 mb-1">SEVERITY</div>
+            <div className="grid grid-cols-4 gap-1 mb-3">
+              {[
+                { id: 'all', label: 'Any' },
+                { id: 'critical', label: 'Crit' },
+                { id: 'high', label: 'High' },
+                { id: 'medium', label: 'Med' },
+              ].map(o => (
+                <button key={o.id} onClick={() => setSeverityFilter(o.id)}
+                  className={`px-1.5 py-1.5 rounded text-[10px] font-semibold transition-colors ${severityFilter === o.id
+                    ? 'bg-rose-500/20 text-rose-200 border border-rose-500/40'
+                    : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-[9px] font-mono text-slate-500 mb-1">MITRE TACTIC</div>
+            <div className="grid grid-cols-2 gap-1 mb-3">
+              {[
+                { id: 'all', label: 'Any tactic' },
+                { id: 'initial-access', label: 'Initial access' },
+                { id: 'persistence', label: 'Persistence' },
+                { id: 'credential-access', label: 'Credential' },
+                { id: 'lateral-movement', label: 'Lateral move' },
+                { id: 'collection', label: 'Collection' },
+                { id: 'exfiltration', label: 'Exfiltration' },
+                { id: 'command-and-control', label: 'C2' },
+                { id: 'impact', label: 'Impact' },
+                { id: 'defense-evasion', label: 'Evasion' },
+                { id: 'execution', label: 'Execution' },
+                { id: 'ml-model-tampering', label: 'ML tamper' },
+              ].map(o => (
+                <button key={o.id} onClick={() => setTacticFilter(o.id)}
+                  className={`px-2 py-1.5 rounded text-[10px] font-semibold transition-colors ${tacticFilter === o.id
+                    ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40'
+                    : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'}`}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-[9px] font-mono text-slate-500 mb-1">ACTIVITY</div>
+            <div className="grid grid-cols-3 gap-1">
+              {[
+                { id: 'all', label: 'Any' },
+                { id: 'active', label: 'Active' },
+                { id: 'dormant', label: 'Dormant' },
+              ].map(o => (
+                <button key={o.id} onClick={() => setActivityFilter(o.id)}
+                  className={`px-2 py-1.5 rounded text-[10px] font-semibold transition-colors ${activityFilter === o.id
+                    ? 'bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-500/40'
                     : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200'}`}>
                   {o.label}
                 </button>
@@ -1081,7 +1201,7 @@ export default function ChronoWeave() {
             </div>
             <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
               {centroids
-                .filter(c => actorFilter === 'all' || c.actor_class === actorFilter)
+                .filter(passesFilters)
                 .map(c => (
                   <div key={c.id} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-900">
                     <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c.color }} />
