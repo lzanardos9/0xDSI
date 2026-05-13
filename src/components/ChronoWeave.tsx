@@ -104,6 +104,8 @@ export default function ChronoWeave() {
   const [actorFilter, setActorFilter] = useState<string>('all');
   const [stats, setStats] = useState({ total: 0, malicious: 0, hits: 0, topCentroid: '' });
   const [emergeFlash, setEmergeFlash] = useState<CWCentroid | null>(null);
+  const pendingCentroidsRef = useRef<CWCentroid[]>([]);
+  const recentHitsRef = useRef<Map<string, number>>(new Map());
 
   // Initialize session + centroids
   useEffect(() => {
@@ -111,7 +113,12 @@ export default function ChronoWeave() {
     (async () => {
       const cs = await loadCentroids();
       if (!mounted) return;
-      setCentroids(cs);
+      // Reveal only a small starter set; the rest will emerge over time
+      const shuffled = [...cs].sort(() => Math.random() - 0.5);
+      const initial = shuffled.slice(0, 3);
+      const queued = shuffled.slice(3);
+      pendingCentroidsRef.current = queued;
+      setCentroids(initial);
       const sid = await createSession(`ChronoWeave ${new Date().toLocaleTimeString()}`);
       if (!mounted) return;
       setSessionId(sid);
@@ -127,22 +134,43 @@ export default function ChronoWeave() {
     const loop = async () => {
       if (cancelled) return;
       try {
-        const recent = Array.from(nodes.values()).slice(-40);
+        const recent = Array.from(nodes.values()).slice(-30);
         const { nodes: newNodes, edges: newEdges, hits: newHits } = await tickSession(
-          sessionId, centroids, recent, tickIndex, 8,
+          sessionId, centroids, recent, tickIndex, 3,
         );
         if (cancelled) return;
         setNodes(prev => {
           const next = new Map(prev);
           for (const n of newNodes) next.set(n.id, n);
+          // cap total nodes for visual clarity
+          if (next.size > 400) {
+            const arr = Array.from(next.entries());
+            arr.sort((a, b) => new Date(a[1].created_at).getTime() - new Date(b[1].created_at).getTime());
+            const trimmed = arr.slice(-400);
+            return new Map(trimmed);
+          }
           return next;
         });
-        setEdges(prev => [...prev, ...newEdges].slice(-3000));
-        setHits(prev => [...prev, ...newHits].slice(-1500));
+        setEdges(prev => [...prev, ...newEdges].slice(-800));
+        setHits(prev => {
+          const merged = [...prev, ...newHits].slice(-600);
+          // Track recent activations (used to drive glow)
+          const now = Date.now();
+          for (const h of newHits) recentHitsRef.current.set(h.centroid_id, now);
+          return merged;
+        });
         setTickIndex(t => t + 1);
 
-        // Discover a brand new bad centroid every ~5 ticks (probabilistic)
-        if (tickIndex > 2 && Math.random() < 0.22) {
+        // Slow drip: emerge a new threat actor every ~6 ticks, only one at a time
+        if (tickIndex > 4 && Math.random() < 0.16 && pendingCentroidsRef.current.length) {
+          const next = pendingCentroidsRef.current.shift();
+          if (next && !cancelled) {
+            setCentroids(prev => [...prev, next]);
+            setEmergeFlash(next);
+            setTimeout(() => setEmergeFlash(null), 5500);
+          }
+        } else if (tickIndex > 8 && pendingCentroidsRef.current.length === 0 && Math.random() < 0.06) {
+          // Once seeded pool exhausted, occasionally spawn a brand-new one from code pool
           const spawned = await maybeSpawnCentroid(centroids);
           if (spawned && !cancelled) {
             setCentroids(prev => [...prev, spawned]);
@@ -153,9 +181,9 @@ export default function ChronoWeave() {
       } catch (e) {
         console.error('tick failed', e);
       }
-      timer = setTimeout(loop, 2500);
+      timer = setTimeout(loop, 5000);
     };
-    timer = setTimeout(loop, 500);
+    timer = setTimeout(loop, 800);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [sessionId, running, centroids, tickIndex, nodes]);
 
@@ -352,26 +380,48 @@ export default function ChronoWeave() {
         }
       });
 
-      // Centroid orchestration
-      centroidMeshRef.current.forEach((m) => {
-        const ud = m.userData as any;
-        m.rotation.x += 0.006;
-        m.rotation.y += 0.012;
-        const s = 1 + Math.sin(t * 1.6 + ud.seed) * 0.12;
-        m.scale.setScalar(s);
+      // Centroid orchestration - dim baseline, glow strongly on activation
+      const now = Date.now();
+      centroidMeshRef.current.forEach((mesh, cid) => {
+        const ud = mesh.userData as any;
+        // activation = how recently this centroid had a similarity hit (0..1)
+        const lastHit = recentHitsRef.current.get(cid) || 0;
+        const ageMs = now - lastHit;
+        const activation = lastHit ? Math.max(0, 1 - ageMs / 6000) : 0;
+        // baseline slow rotation; faster when active
+        const rotSpeed = 0.003 + activation * 0.02;
+        mesh.rotation.x += rotSpeed * 0.5;
+        mesh.rotation.y += rotSpeed;
+        const s = 1 + (0.04 + activation * 0.18) * Math.sin(t * (1 + activation * 2) + ud.seed);
+        mesh.scale.setScalar(s);
+
+        // Core glow ramps with activation
+        const coreMat = mesh.material as THREE.MeshStandardMaterial;
+        coreMat.emissiveIntensity = 0.18 + activation * 1.6;
+        coreMat.opacity = 0.85 + activation * 0.13;
 
         const ctr: THREE.Vector3 = ud.center;
-        if (ud.wire) { ud.wire.rotation.y -= 0.008; ud.wire.rotation.x -= 0.005; }
-        if (ud.ring) ud.ring.rotation.z += 0.012;
-        if (ud.ring2) { ud.ring2.rotation.x += 0.009; ud.ring2.rotation.y += 0.006; }
-        // animate scanline texture
-        if (ud.ring && (ud.ring.material as THREE.MeshBasicMaterial).map) {
-          (ud.ring.material as THREE.MeshBasicMaterial).map!.offset.x = (t * 0.4) % 1;
+        if (ud.wire) {
+          ud.wire.rotation.y -= 0.003 + activation * 0.012;
+          ud.wire.rotation.x -= 0.002 + activation * 0.008;
+          (ud.wire.material as THREE.MeshBasicMaterial).opacity = 0.18 + activation * 0.5;
         }
-        // Electrons orbit the core
+        if (ud.ring) {
+          ud.ring.rotation.z += 0.004 + activation * 0.018;
+          (ud.ring.material as THREE.MeshBasicMaterial).opacity = 0.22 + activation * 0.7;
+          if ((ud.ring.material as THREE.MeshBasicMaterial).map) {
+            (ud.ring.material as THREE.MeshBasicMaterial).map!.offset.x = (t * (0.15 + activation * 0.6)) % 1;
+          }
+        }
+        if (ud.ring2) {
+          ud.ring2.rotation.x += 0.003 + activation * 0.014;
+          ud.ring2.rotation.y += 0.002 + activation * 0.01;
+          (ud.ring2.material as THREE.MeshBasicMaterial).opacity = 0.18 + activation * 0.55;
+        }
+        // Electrons only orbit visibly when active
         if (ud.electron1 && ud.electron2 && ctr) {
-          const oa = t * 1.8 + ud.seed;
-          const ob = -t * 2.2 + ud.seed * 1.7;
+          const oa = t * 1.6 + ud.seed;
+          const ob = -t * 2.0 + ud.seed * 1.7;
           const orad1 = 4.4, orad2 = 5.8;
           ud.electron1.position.set(
             ctr.x + Math.cos(oa) * orad1,
@@ -383,14 +433,21 @@ export default function ChronoWeave() {
             ctr.y + Math.cos(ob * 0.9) * 1.8,
             ctr.z + Math.sin(ob) * orad2,
           );
+          ud.electron1.visible = activation > 0.05;
+          ud.electron2.visible = activation > 0.05;
         }
-        // Beam pulse
+        // Beam: dim baseline, strong pulse on activation
         if (ud.beam) {
-          (ud.beam.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(t * 2 + ud.seed) * 0.08;
+          (ud.beam.material as THREE.MeshBasicMaterial).opacity = 0.04 + activation * (0.25 + Math.sin(t * 4 + ud.seed) * 0.12);
         }
-        // Outer glow breathing
+        // Halos
+        if (ud.glow) {
+          (ud.glow.material as THREE.SpriteMaterial).opacity = 0.12 + activation * (0.85 + Math.sin(t * 3 + ud.seed) * 0.15);
+          ud.glow.scale.setScalar(8 + activation * 12);
+        }
         if (ud.glowOuter) {
-          (ud.glowOuter.material as THREE.SpriteMaterial).opacity = 0.28 + Math.sin(t * 1.2 + ud.seed) * 0.12;
+          (ud.glowOuter.material as THREE.SpriteMaterial).opacity = 0.05 + activation * 0.45;
+          ud.glowOuter.scale.setScalar(16 + activation * 18);
         }
       });
 
@@ -440,32 +497,32 @@ export default function ChronoWeave() {
       const col = new THREE.Color(c.color || '#ef4444');
       const colHex = col.getHex();
 
-      // Core: faceted gem-like orb
+      // Core: faceted gem-like orb (starts dim/raw, glows when activated)
       const geom = new THREE.IcosahedronGeometry(2.0, 1);
       const mat = new THREE.MeshStandardMaterial({
-        color: col, emissive: col, emissiveIntensity: 1.1,
-        metalness: 0.85, roughness: 0.18,
-        transparent: true, opacity: 0.95,
+        color: col, emissive: col, emissiveIntensity: 0.18,
+        metalness: 0.85, roughness: 0.45,
+        transparent: true, opacity: 0.85,
       });
       const mesh = new THREE.Mesh(geom, mat);
       mesh.position.set(x, y, z);
       scene.add(mesh);
 
-      // Wireframe shell
+      // Wireframe shell (dim by default)
       const wireGeom = new THREE.IcosahedronGeometry(2.6, 1);
       const wireMat = new THREE.MeshBasicMaterial({
-        color: col, wireframe: true, transparent: true, opacity: 0.55,
+        color: col, wireframe: true, transparent: true, opacity: 0.18,
         blending: THREE.AdditiveBlending, depthWrite: false,
       });
       const wire = new THREE.Mesh(wireGeom, wireMat);
       wire.position.copy(mesh.position);
       scene.add(wire);
 
-      // Glow sprites (inner + outer halo)
-      const glow = makeGlowSprite(colHex, 14, 0.85);
+      // Glow sprites (inner + outer halo) - dormant by default
+      const glow = makeGlowSprite(colHex, 8, 0.12);
       glow.position.copy(mesh.position);
       scene.add(glow);
-      const glowOuter = makeGlowSprite(colHex, 28, 0.35);
+      const glowOuter = makeGlowSprite(colHex, 16, 0.05);
       glowOuter.position.copy(mesh.position);
       scene.add(glowOuter);
 
@@ -475,7 +532,7 @@ export default function ChronoWeave() {
       tex.needsUpdate = true;
       tex.repeat.set(6, 1);
       const ringMat = new THREE.MeshBasicMaterial({
-        map: tex, color: col, transparent: true, opacity: 0.85,
+        map: tex, color: col, transparent: true, opacity: 0.22,
         blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
       });
       const ring = new THREE.Mesh(ringGeom, ringMat);
@@ -485,7 +542,7 @@ export default function ChronoWeave() {
 
       const ring2Geom = new THREE.TorusGeometry(5.6, 0.06, 8, 96);
       const ring2Mat = new THREE.MeshBasicMaterial({
-        color: col, transparent: true, opacity: 0.55,
+        color: col, transparent: true, opacity: 0.18,
         blending: THREE.AdditiveBlending, depthWrite: false,
       });
       const ring2 = new THREE.Mesh(ring2Geom, ring2Mat);
