@@ -3,7 +3,7 @@ import {
   Sparkles, Loader2, Maximize2, Minimize2, Pin, PinOff,
   Trash2, Eye, Code, LayoutGrid, Clock, ChevronRight,
   Zap, FlaskConical, X, RefreshCw, Download, Copy, Check,
-  CheckCircle2, FileCode, Layers, Globe, Wand2,
+  CheckCircle2, FileCode, Layers, Globe, Wand2, Atom,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import PlanReview from './feature-lab/PlanReview';
@@ -12,6 +12,7 @@ import LifecyclePanel from './feature-lab/LifecyclePanel';
 import BMADAgentPanel from './feature-lab/BMADAgentPanel';
 import BMADLiveTheater from './feature-lab/BMADLiveTheater';
 import PublishToSOCButton from './feature-lab/PublishToSOCButton';
+import ChronoWeave from './ChronoWeave';
 
 interface Creation {
   id: string;
@@ -71,7 +72,7 @@ export default function FeatureLab() {
   const [generatedTitle, setGeneratedTitle] = useState('');
   const [savedCreation, setSavedCreation] = useState<Creation | null>(null);
   const [creations, setCreations] = useState<Creation[]>([]);
-  const [view, setView] = useState<'create' | 'gallery'>('create');
+  const [view, setView] = useState<'create' | 'gallery' | 'chronoweave'>('create');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -324,6 +325,7 @@ export default function FeatureLab() {
           <div className="flex items-center gap-1 mt-4 -mb-4">
             {[
               { id: 'create' as const, label: 'Create', icon: Sparkles },
+              { id: 'chronoweave' as const, label: 'ChronoWeave', icon: Atom },
               { id: 'gallery' as const, label: `Gallery (${creations.length})`, icon: LayoutGrid },
             ].map(tab => {
               const Icon = tab.icon;
@@ -591,6 +593,12 @@ export default function FeatureLab() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {view === 'chronoweave' && (
+            <div className="p-4">
+              <ChronoWeave />
             </div>
           )}
 
