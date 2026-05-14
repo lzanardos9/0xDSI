@@ -13,6 +13,12 @@ import { graphCorrelationVectorDetectionNotebook } from './graphCorrelationVecto
 import { agentSOCSchemasNotebook } from './agentSOCSchemas';
 import { agentSOCPipelineNotebook } from './agentSOCPipeline';
 import { agentSOCOrchestratorNotebook } from './agentSOCOrchestrator';
+import { chronoweaveFusionNotebook } from './chronoweaveNotebooks';
+import { geopoliticalCyberCorrelationNotebook } from './geopoliticalCorrelationNotebook';
+import { incidentDrilldownEnrichmentNotebook } from './incidentDrilldownNotebook';
+import { featureLabRuntimeNotebook } from './featureLabRuntimeNotebook';
+import { detectionConfluenceNotebook } from './detectionConfluenceNotebook';
+import { negativeCorrelationNotebook } from './negativeCorrelationNotebook';
 
 export const allNotebooks: DatabricksNotebook[] = [
   ...correlationNotebooks,
@@ -29,6 +35,12 @@ export const allNotebooks: DatabricksNotebook[] = [
   agentSOCSchemasNotebook,
   agentSOCPipelineNotebook,
   agentSOCOrchestratorNotebook,
+  chronoweaveFusionNotebook,
+  geopoliticalCyberCorrelationNotebook,
+  incidentDrilldownEnrichmentNotebook,
+  featureLabRuntimeNotebook,
+  detectionConfluenceNotebook,
+  negativeCorrelationNotebook,
 ];
 
 export {
@@ -46,4 +58,10 @@ export {
   agentSOCSchemasNotebook,
   agentSOCPipelineNotebook,
   agentSOCOrchestratorNotebook,
+  chronoweaveFusionNotebook,
+  geopoliticalCyberCorrelationNotebook,
+  incidentDrilldownEnrichmentNotebook,
+  featureLabRuntimeNotebook,
+  detectionConfluenceNotebook,
+  negativeCorrelationNotebook,
 };
