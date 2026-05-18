@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit, Trash2, Shield, Lock, Unlock, Clock, Search, Filter, X, Check, AlertTriangle, Eye, UserCog, History, Award, Network } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit, Trash2, Shield, Lock, Unlock, Clock, Search, Filter, X, Check, AlertTriangle, Eye, EyeOff, UserCog, History, Award, Network, KeyRound } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import UserActivityLineage from './UserActivityLineage';
 
@@ -58,6 +58,7 @@ const UserManagement = () => {
     user_id: '',
     full_name: '',
     email: '',
+    password: '',
     department: '',
     title: '',
     role: 'analyst',
@@ -70,6 +71,9 @@ const UserManagement = () => {
     emergency_contact: '',
     notes: '',
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -122,11 +126,16 @@ const UserManagement = () => {
 
   const handleCreateUser = async () => {
     try {
+      const { password, ...profileData } = formData;
       const { error } = await supabase
         .from('user_profiles')
-        .insert([formData]);
+        .insert([profileData]);
 
       if (error) throw error;
+
+      if (password) {
+        await setUserPassword(formData.email || `${formData.user_id}@soc.local`, password, formData.full_name, formData.user_id);
+      }
 
       setShowCreateModal(false);
       loadUsers();
@@ -134,6 +143,47 @@ const UserManagement = () => {
     } catch (error) {
       console.error('Error creating user:', error);
       alert('Failed to create user');
+    }
+  };
+
+  const setUserPassword = async (email: string, password: string, fullName: string, userId: string) => {
+    const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`;
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password, full_name: fullName, user_id: userId, username: userId }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      console.error('Password set failed:', result.error);
+    }
+    return result;
+  };
+
+  const handleSetPassword = async () => {
+    if (!selectedUser || !formData.password) return;
+    setPasswordLoading(true);
+    setPasswordMessage(null);
+    try {
+      const result = await setUserPassword(
+        selectedUser.email,
+        formData.password,
+        selectedUser.full_name,
+        selectedUser.user_id
+      );
+      if (result.success) {
+        setPasswordMessage({ type: 'success', text: 'Password updated successfully' });
+        setFormData({ ...formData, password: '' });
+      } else {
+        setPasswordMessage({ type: 'error', text: result.error || 'Failed to set password' });
+      }
+    } catch (error: any) {
+      setPasswordMessage({ type: 'error', text: error.message || 'Failed to set password' });
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -209,6 +259,7 @@ const UserManagement = () => {
       user_id: '',
       full_name: '',
       email: '',
+      password: '',
       department: '',
       title: '',
       role: 'analyst',
@@ -221,6 +272,8 @@ const UserManagement = () => {
       emergency_contact: '',
       notes: '',
     });
+    setShowPassword(false);
+    setPasswordMessage(null);
   };
 
   const openEditModal = (user: UserProfile) => {
@@ -572,6 +625,25 @@ const UserManagement = () => {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Set login password"
+                      className="w-full bg-slate-800/50 text-slate-200 px-4 py-2 pr-10 rounded-lg border border-slate-700 focus:border-blue-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">Department</label>
                   <input
                     type="text"
@@ -791,6 +863,42 @@ const UserManagement = () => {
                   rows={3}
                   className="w-full bg-slate-800/50 text-slate-200 px-4 py-2 rounded-lg border border-slate-700 focus:border-blue-500 focus:outline-none"
                 />
+              </div>
+              <div className="border-t border-slate-700 pt-4 mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <KeyRound className="w-4 h-4 text-amber-400" />
+                  <label className="text-sm font-medium text-slate-200">Set / Reset Password</label>
+                </div>
+                <div className="flex gap-3">
+                  <div className="relative flex-1">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Enter new password"
+                      className="w-full bg-slate-800/50 text-slate-200 px-4 py-2 pr-10 rounded-lg border border-slate-700 focus:border-blue-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleSetPassword}
+                    disabled={!formData.password || passwordLoading}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    {passwordLoading ? 'Setting...' : 'Set Password'}
+                  </button>
+                </div>
+                {passwordMessage && (
+                  <p className={`mt-2 text-sm ${passwordMessage.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {passwordMessage.text}
+                  </p>
+                )}
               </div>
             </div>
             <div className="p-6 border-t border-slate-700 flex justify-end space-x-3">
