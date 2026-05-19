@@ -192,6 +192,183 @@ resources:
               training_days: "30"
 
     # ─────────────────────────────────────────────────────
+    # ADDITIONAL CORRELATION AGENTS
+    # ─────────────────────────────────────────────────────
+    graph_correlation:
+      name: "[0xDSI] Agent 08 - Graph Correlation"
+      schedule:
+        quartz_cron_expression: "0 */10 * * * ?"  # Every 10 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: graph_correlate
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+          notebook_task:
+            notebook_path: ../notebooks/correlation/03_graph_correlation
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+
+    temporal_window_correlator:
+      name: "[0xDSI] Agent 09 - Temporal Window Correlator"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"
+        timezone_id: "UTC"
+      job_clusters:
+        - job_cluster_key: streaming_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+      tasks:
+        - task_key: temporal_correlate
+          job_cluster_key: streaming_cluster
+          notebook_task:
+            notebook_path: ../notebooks/correlation/04_temporal_window_correlator
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # INGESTION - ADDITIONAL
+    # ─────────────────────────────────────────────────────
+    schema_enforcement:
+      name: "[0xDSI] Agent 03 - Schema Enforcement"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"  # Every 5 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: enforce_schema
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/03_schema_enforcement
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    quarantine_handler:
+      name: "[0xDSI] Agent 04 - Quarantine Handler"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"  # Every 15 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: handle_quarantine
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/04_quarantine_handler
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # LLM-POWERED AGENTS
+    # ─────────────────────────────────────────────────────
+    triage_agent:
+      name: "[0xDSI] Agent 25 - LLM Triage Agent"
+      schedule:
+        quartz_cron_expression: "0 */3 * * * ?"  # Every 3 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: triage_alerts
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/01_triage_agent
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              model_endpoint: "databricks-meta-llama-3-1-70b-instruct"
+              batch_size: "10"
+
+    enrichment_agent:
+      name: "[0xDSI] Agent 26 - LLM Enrichment Agent"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"  # Every 5 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: enrich_alerts
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/02_enrichment_agent
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              model_endpoint: "databricks-meta-llama-3-1-70b-instruct"
+
+    threat_hunter_agent:
+      name: "[0xDSI] Agent 27 - Autonomous Threat Hunter"
+      schedule:
+        quartz_cron_expression: "0 0 */4 * * ?"  # Every 4 hours
+        timezone_id: "UTC"
+      tasks:
+        - task_key: hunt_threats
+          new_cluster:
+            spark_version: "15.4.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+          notebook_task:
+            notebook_path: ../notebooks/agents/03_threat_hunter_agent
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              model_endpoint: "databricks-meta-llama-3-1-70b-instruct"
+              hunt_type: "intelligence"
+
+    agent_orchestrator:
+      name: "[0xDSI] Agent 30 - Multi-Agent Orchestrator"
+      schedule:
+        quartz_cron_expression: "0 */10 * * * ?"  # Every 10 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: orchestrate
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/04_orchestrator
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              pattern: "sequential"
+              model_endpoint: "databricks-meta-llama-3-1-70b-instruct"
+
+    # ─────────────────────────────────────────────────────
+    # ML - ADDITIONAL
+    # ─────────────────────────────────────────────────────
+    feature_engineering:
+      name: "[0xDSI] Agent 21 - Feature Engineering"
+      schedule:
+        quartz_cron_expression: "0 0 1 * * ?"  # Daily at 1am
+        timezone_id: "UTC"
+      tasks:
+        - task_key: compute_features
+          new_cluster:
+            spark_version: "15.4.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+          notebook_task:
+            notebook_path: ../notebooks/ml_training/02_feature_engineering
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_days: "30"
+
+    # ─────────────────────────────────────────────────────
     # SETUP (Run Once)
     # ─────────────────────────────────────────────────────
     initial_setup:

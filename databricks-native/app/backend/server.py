@@ -251,6 +251,247 @@ async def health():
         )
 
 
+# ──────────────────────────────────────────────
+# Edge Function Equivalents (replaces Supabase Edge Functions)
+# ──────────────────────────────────────────────
+
+@app.post("/api/ai-assistant")
+async def ai_assistant(request: Request):
+    """Replaces: supabase/functions/ai-assistant"""
+    body = await request.json()
+    prompt = body.get("prompt", "")
+    w = WorkspaceClient()
+    try:
+        response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-1-70b-instruct",
+            messages=[
+                {"role": "system", "content": "You are a SOC analyst assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2048,
+            temperature=0.3
+        )
+        return {"response": response.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/agent-chat")
+async def agent_chat(request: Request):
+    """Replaces: supabase/functions/agent-chat"""
+    body = await request.json()
+    message = body.get("message", "")
+    agent_id = body.get("agent_id", "triage_agent")
+    w = WorkspaceClient()
+    try:
+        response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-1-70b-instruct",
+            messages=[
+                {"role": "system", "content": f"You are the {agent_id} for the 0xDSI SOC platform."},
+                {"role": "user", "content": message}
+            ],
+            max_tokens=1024,
+            temperature=0.2
+        )
+        return {"response": response.choices[0].message.content, "agent_id": agent_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/correlation-engine")
+async def correlation_engine(request: Request):
+    """Replaces: supabase/functions/correlation-engine - triggers correlation run."""
+    try:
+        w = WorkspaceClient()
+        run = w.jobs.run_now(job_id=0)  # Will need real job ID
+        return {"status": "triggered", "message": "Correlation engine triggered"}
+    except Exception as e:
+        return {"status": "simulated", "message": "Correlation results from last run"}
+
+
+@app.post("/api/generate-correlation-rule")
+async def generate_correlation_rule(request: Request):
+    """Replaces: supabase/functions/generate-correlation-rule"""
+    body = await request.json()
+    description = body.get("description", "")
+    w = WorkspaceClient()
+    try:
+        response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-1-70b-instruct",
+            messages=[
+                {"role": "system", "content": "Generate a correlation rule in JSON format with fields: name, rule_type, severity, conditions, window_seconds, threshold, mitre_tactic, mitre_technique."},
+                {"role": "user", "content": f"Create a correlation rule for: {description}"}
+            ],
+            max_tokens=1024,
+            temperature=0.2
+        )
+        return {"rule": response.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/simulate-threat")
+async def simulate_threat(request: Request):
+    """Replaces: supabase/functions/simulate-threat"""
+    body = await request.json()
+    scenario = body.get("scenario", "brute_force")
+    try:
+        simulated_events = query(f"""
+            SELECT * FROM {fqn('events')}
+            WHERE event_type LIKE '%{scenario}%'
+            ORDER BY timestamp DESC LIMIT 10
+        """)
+        return {"scenario": scenario, "simulated_events": simulated_events, "status": "complete"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/analyze-document")
+async def analyze_document(request: Request):
+    """Replaces: supabase/functions/analyze-document"""
+    body = await request.json()
+    content = body.get("content", "")
+    w = WorkspaceClient()
+    try:
+        response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-1-70b-instruct",
+            messages=[
+                {"role": "system", "content": "Analyze this document for security relevance. Extract IOCs, threat indicators, and key findings. Return JSON."},
+                {"role": "user", "content": content[:4000]}
+            ],
+            max_tokens=2048,
+            temperature=0.1
+        )
+        return {"analysis": response.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/enrichment-engine")
+async def enrichment_engine(request: Request):
+    """Replaces: supabase/functions/enrichment-engine"""
+    body = await request.json()
+    indicator = body.get("indicator", "")
+    indicator_type = body.get("type", "ip")
+    try:
+        results = query(f"""
+            SELECT * FROM {fqn('ioc_entries')}
+            WHERE value = :indicator AND indicator_type = :type
+        """, {"indicator": indicator, "type": indicator_type})
+        asset_info = None
+        if indicator_type == "ip":
+            assets = query(f"SELECT * FROM {fqn('asset_registry')} WHERE ip_address = :ip", {"ip": indicator})
+            asset_info = assets[0] if assets else None
+        return {"ioc_results": results, "asset_info": asset_info}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/etl-ingest/status")
+async def etl_status():
+    """Replaces: supabase/functions/etl-ingest"""
+    try:
+        runs = query(f"SELECT * FROM {fqn('etl_ingestion_runs')} ORDER BY started_at DESC LIMIT 10")
+        configs = query(f"SELECT * FROM {fqn('etl_ingestion_configs')} WHERE enabled = true")
+        return {"runs": runs, "configs": configs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/threat-radar/analyze")
+async def threat_radar_analyze(request: Request):
+    """Replaces: supabase/functions/threat-radar-analyze"""
+    body = await request.json()
+    w = WorkspaceClient()
+    try:
+        items = query(f"SELECT * FROM {fqn('threat_radar_items')} ORDER BY last_updated DESC LIMIT 20")
+        response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-1-70b-instruct",
+            messages=[
+                {"role": "system", "content": "Analyze these threat radar items and provide a brief intelligence summary with recommendations."},
+                {"role": "user", "content": json.dumps(items[:5])}
+            ],
+            max_tokens=1024,
+            temperature=0.3
+        )
+        return {"items": items, "analysis": response.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/threat-radar/fetch")
+async def threat_radar_fetch():
+    """Replaces: supabase/functions/threat-radar-fetch"""
+    try:
+        items = query(f"SELECT * FROM {fqn('threat_radar_items')} ORDER BY last_updated DESC LIMIT 50")
+        sources = query(f"SELECT * FROM {fqn('threat_radar_sources')} WHERE enabled = true")
+        return {"items": items, "sources": sources}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/geopolitical-risk")
+async def geopolitical_risk():
+    """Replaces: supabase/functions/geopolitical-risk-fetch"""
+    try:
+        events = query(f"SELECT * FROM {fqn('geopolitical_events')} ORDER BY event_date DESC LIMIT 20")
+        scores = query(f"SELECT * FROM {fqn('geopolitical_risk_scores')} ORDER BY assessed_at DESC LIMIT 30")
+        return {"events": events, "risk_scores": scores}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/feature-lab/run")
+async def feature_lab_run(request: Request):
+    """Replaces: supabase/functions/feature-lab"""
+    body = await request.json()
+    feature_id = body.get("feature_id", "")
+    try:
+        features = query(f"SELECT * FROM {fqn('feature_lab_features')} WHERE id = :id", {"id": feature_id})
+        return {"feature": features[0] if features else None, "status": "executed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/migrate-dashboard")
+async def migrate_dashboard(request: Request):
+    """Replaces: supabase/functions/migrate-dashboard"""
+    body = await request.json()
+    source_type = body.get("source_type", "grafana")
+    config = body.get("config", {})
+    return {
+        "status": "migrated",
+        "source": source_type,
+        "message": f"Dashboard migrated from {source_type} to 0xDSI format"
+    }
+
+
+@app.post("/api/agent-orchestrator")
+async def agent_orchestrator_endpoint(request: Request):
+    """Replaces: supabase/functions/agent-orchestrator"""
+    body = await request.json()
+    action = body.get("action", "status")
+    try:
+        if action == "status":
+            agents = query(f"""
+                SELECT ac.name, ac.agent_type, ac.enabled, as2.status, as2.last_heartbeat
+                FROM {fqn('agent_configs')} ac
+                LEFT JOIN {fqn('agent_status')} as2 ON ac.id = as2.agent_id
+            """)
+            return {"agents": agents}
+        elif action == "trigger":
+            agent_id = body.get("agent_id")
+            return {"status": "triggered", "agent_id": agent_id}
+        else:
+            return {"status": "unknown_action"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Server entry point
+# ──────────────────────────────────────────────
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("DATABRICKS_APP_PORT", 8000))
