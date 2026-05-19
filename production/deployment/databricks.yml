@@ -1,0 +1,212 @@
+# Databricks Asset Bundles (DABs) configuration
+# Deploy with: databricks bundle deploy --target prod
+
+bundle:
+  name: 0xdsi-security-platform
+
+variables:
+  catalog:
+    description: Unity Catalog name
+    default: main
+  schema:
+    description: Schema for security tables
+    default: security
+  kafka_bootstrap:
+    description: Kafka bootstrap servers
+    default: ""
+  environment:
+    description: Deployment environment
+    default: production
+
+workspace:
+  host: ${var.databricks_host}
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      catalog: dev_security
+      schema: security
+      environment: development
+
+  staging:
+    variables:
+      catalog: staging_security
+      schema: security
+      environment: staging
+
+  prod:
+    mode: production
+    variables:
+      catalog: main
+      schema: security
+      environment: production
+    run_as:
+      service_principal_name: security-platform-sp
+
+resources:
+  # === DLT PIPELINES ===
+  pipelines:
+    ingestion_pipeline:
+      name: "[${var.environment}] Security Event Ingestion"
+      target: ${var.catalog}.${var.schema}
+      development: false
+      continuous: true
+      channel: CURRENT
+      photon: true
+      configuration:
+        pipeline.catalog: ${var.catalog}
+        pipeline.schema: ${var.schema}
+        pipeline.kafka_bootstrap: ${var.kafka_bootstrap}
+        pipeline.kafka_topics: security-events
+      libraries:
+        - notebook:
+            path: ../pipelines/bronze_ingestion.py
+        - notebook:
+            path: ../pipelines/silver_normalization.py
+        - notebook:
+            path: ../pipelines/gold_analytics.py
+      clusters:
+        - label: default
+          autoscale:
+            min_workers: 2
+            max_workers: 8
+            mode: ENHANCED
+
+  # === STREAMING JOBS ===
+  jobs:
+    streaming_correlation:
+      name: "[${var.environment}] Streaming Correlation Engine"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: UTC
+      tasks:
+        - task_key: correlation_engine
+          notebook_task:
+            notebook_path: ../notebooks/correlation/01_streaming_correlation_engine.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              processing_time: "10 seconds"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS4_v2"
+            autoscale:
+              min_workers: 2
+              max_workers: 6
+            spark_conf:
+              spark.databricks.delta.optimizeWrite.enabled: "true"
+              spark.sql.streaming.stateStore.providerClass: "com.databricks.sql.streaming.state.RocksDBStateStoreProvider"
+
+    temporal_correlation:
+      name: "[${var.environment}] Temporal Window Correlator"
+      tasks:
+        - task_key: temporal_detection
+          notebook_task:
+            notebook_path: ../notebooks/correlation/02_temporal_window_correlator.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              processing_time: "30 seconds"
+              watermark_delay: "5 minutes"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS4_v2"
+            autoscale:
+              min_workers: 2
+              max_workers: 4
+
+    graph_correlation:
+      name: "[${var.environment}] Graph Correlation (Scheduled)"
+      schedule:
+        quartz_cron_expression: "0 0 * * * ?"  # Every hour
+        timezone_id: UTC
+      tasks:
+        - task_key: graph_detection
+          notebook_task:
+            notebook_path: ../notebooks/correlation/03_graph_correlation.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS5_v2"  # Larger for graph compute
+            num_workers: 4
+            spark_conf:
+              spark.jars.packages: "graphframes:graphframes:0.8.3-spark3.5-s_2.12"
+
+    negative_correlation:
+      name: "[${var.environment}] Negative Correlation Engine"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"  # Every 15 minutes
+        timezone_id: UTC
+      tasks:
+        - task_key: negative_detection
+          notebook_task:
+            notebook_path: ../notebooks/correlation/04_negative_correlation.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS4_v2"
+            num_workers: 2
+
+    # === ENRICHMENT ===
+    enrichment_pipeline:
+      name: "[${var.environment}] Event Enrichment Stream"
+      tasks:
+        - task_key: enrich_events
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/03_enrichment_pipeline.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              processing_time: "30 seconds"
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS4_v2"
+            autoscale:
+              min_workers: 2
+              max_workers: 4
+
+    # === OPERATIONAL ===
+    quarantine_handler:
+      name: "[${var.environment}] Quarantine Handler"
+      schedule:
+        quartz_cron_expression: "0 0 */4 * * ?"  # Every 4 hours
+        timezone_id: UTC
+      tasks:
+        - task_key: handle_quarantine
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/04_quarantine_handler.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 1
+
+    data_quality_check:
+      name: "[${var.environment}] Data Quality Validation"
+      schedule:
+        quartz_cron_expression: "0 0 * * * ?"  # Every hour
+        timezone_id: UTC
+      tasks:
+        - task_key: quality_check
+          notebook_task:
+            notebook_path: ../notebooks/operational/02_data_quality_checks.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+          new_cluster:
+            spark_version: "14.3.x-scala2.12"
+            node_type_id: "Standard_DS3_v2"
+            num_workers: 1
+      email_notifications:
+        on_failure:
+          - security-platform-alerts@company.com
