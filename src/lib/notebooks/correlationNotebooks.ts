@@ -40,7 +40,6 @@ from datetime import datetime, timedelta
 from pyspark.sql import functions as F
 from pyspark.sql.types import *
 from pyspark.sql.window import Window
-import random
 import uuid
 
 catalog = "soc_platform"
@@ -115,124 +114,51 @@ PARTITIONED BY (severity);`
       },
       {
         type: 'code',
-        content: `# Cell 3: Generate Realistic Mock Security Events
-def generate_security_events(num_events=12000):
-    events = []
-    base_time = datetime.now() - timedelta(hours=24)
+        content: `# Cell 3: Load Security Events from Production Source
+dbutils.widgets.text("events_table", "soc_platform.graph_silver.silver_events")
+events_table = dbutils.widgets.get("events_table")
 
-    attacker_ips = ["10.0.5.77", "192.168.1.200", "172.16.8.99", "10.0.3.150"]
-    target_ips = ["10.0.1.10", "10.0.1.20", "10.0.2.50", "10.0.2.100", "10.0.3.5"]
-    server_ips = ["10.0.10.1", "10.0.10.2", "10.0.10.3", "10.0.10.4", "10.0.10.5"]
-    usernames = ["jsmith", "admin", "svc_backup", "dbadmin", "root", "operator"]
-    hostnames = ["WS-FIN-001", "WS-HR-042", "SRV-DC-01", "SRV-DB-03", "SRV-WEB-01", "SRV-MAIL-01"]
+# Read production events from the upstream silver events table
+df_source_events = spark.table(events_table)
 
-    event_templates = [
-        {"event_type": "authentication", "action": "login_failed", "outcome": "failure", "severity": "medium", "ocsf_category": 3, "ocsf_class": 3002},
-        {"event_type": "authentication", "action": "login_success", "outcome": "success", "severity": "low", "ocsf_category": 3, "ocsf_class": 3002},
-        {"event_type": "authentication", "action": "privilege_escalation", "outcome": "success", "severity": "critical", "ocsf_category": 3, "ocsf_class": 3003},
-        {"event_type": "network", "action": "port_scan", "outcome": "success", "severity": "high", "ocsf_category": 4, "ocsf_class": 4001},
-        {"event_type": "network", "action": "lateral_movement", "outcome": "success", "severity": "critical", "ocsf_category": 4, "ocsf_class": 4002},
-        {"event_type": "network", "action": "c2_beacon", "outcome": "success", "severity": "critical", "ocsf_category": 4, "ocsf_class": 4003},
-        {"event_type": "file", "action": "data_access", "outcome": "success", "severity": "medium", "ocsf_category": 1, "ocsf_class": 1001},
-        {"event_type": "file", "action": "bulk_download", "outcome": "success", "severity": "high", "ocsf_category": 1, "ocsf_class": 1002},
-        {"event_type": "file", "action": "encryption_detected", "outcome": "success", "severity": "critical", "ocsf_category": 1, "ocsf_class": 1003},
-        {"event_type": "dns", "action": "query", "outcome": "success", "severity": "low", "ocsf_category": 4, "ocsf_class": 4003},
-        {"event_type": "dns", "action": "tunneling_detected", "outcome": "success", "severity": "critical", "ocsf_category": 4, "ocsf_class": 4003},
-        {"event_type": "process", "action": "suspicious_execution", "outcome": "success", "severity": "high", "ocsf_category": 1, "ocsf_class": 1007},
-        {"event_type": "email", "action": "phishing_detected", "outcome": "blocked", "severity": "high", "ocsf_category": 5, "ocsf_class": 5001},
-    ]
+# Map source events to the local security_events schema
+df_mapped = (
+    df_source_events
+    .select(
+        F.coalesce(F.col("event_id"), F.expr("uuid()")).alias("event_id"),
+        F.col("timestamp"),
+        F.col("event_type"),
+        F.col("severity"),
+        F.col("source_ip"),
+        F.col("destination_ip"),
+        F.col("source_port").cast("int"),
+        F.col("destination_port").cast("int"),
+        F.col("protocol"),
+        F.col("user_id"),
+        F.col("hostname"),
+        F.col("action"),
+        F.col("outcome"),
+        F.col("raw_log"),
+        F.col("ocsf_category").cast("int"),
+        F.col("ocsf_class").cast("int"),
+    )
+    .withColumn("ingestion_time", F.current_timestamp())
+)
 
-    # Generate attack chains (realistic multi-stage attacks)
-    attack_chains = [
-        # Chain 1: Brute Force -> Credential Access -> Lateral Movement -> Exfiltration
-        [
-            (0, "authentication", "login_failed", "failure", "high"),
-            (2, "authentication", "login_failed", "failure", "high"),
-            (5, "authentication", "login_failed", "failure", "high"),
-            (8, "authentication", "login_failed", "failure", "high"),
-            (12, "authentication", "login_success", "success", "medium"),
-            (15, "authentication", "privilege_escalation", "success", "critical"),
-            (20, "network", "lateral_movement", "success", "critical"),
-            (25, "file", "bulk_download", "success", "high"),
-            (30, "network", "c2_beacon", "success", "critical"),
-        ],
-        # Chain 2: Phishing -> Malware -> C2 -> Data Theft
-        [
-            (0, "email", "phishing_detected", "success", "high"),
-            (5, "process", "suspicious_execution", "success", "high"),
-            (10, "network", "c2_beacon", "success", "critical"),
-            (20, "file", "data_access", "success", "medium"),
-            (25, "file", "bulk_download", "success", "high"),
-            (30, "dns", "tunneling_detected", "success", "critical"),
-        ],
-        # Chain 3: Reconnaissance -> Exploitation -> Persistence
-        [
-            (0, "network", "port_scan", "success", "high"),
-            (10, "authentication", "login_failed", "failure", "medium"),
-            (15, "authentication", "login_success", "success", "medium"),
-            (20, "process", "suspicious_execution", "success", "high"),
-            (25, "file", "encryption_detected", "success", "critical"),
-        ],
-    ]
+# Delta MERGE into local security_events table (upsert by event_id)
+df_mapped.createOrReplaceTempView("staged_security_events")
 
-    # Inject attack chains
-    for chain_idx, chain in enumerate(attack_chains):
-        for repeat in range(3):
-            chain_start = base_time + timedelta(hours=random.randint(0, 20))
-            attacker = random.choice(attacker_ips)
-            target = random.choice(target_ips)
-            user = random.choice(usernames)
-            host = random.choice(hostnames)
+spark.sql("""
+    MERGE INTO security_events AS target
+    USING staged_security_events AS source
+    ON target.event_id = source.event_id
+    WHEN MATCHED THEN UPDATE SET *
+    WHEN NOT MATCHED THEN INSERT *
+""")
 
-            for offset_min, etype, action, outcome, severity in chain:
-                events.append({
-                    "event_id": str(uuid.uuid4()),
-                    "timestamp": chain_start + timedelta(minutes=offset_min, seconds=random.randint(0, 59)),
-                    "event_type": etype,
-                    "severity": severity,
-                    "source_ip": attacker,
-                    "destination_ip": target,
-                    "source_port": random.randint(1024, 65535),
-                    "destination_port": random.choice([22, 80, 443, 445, 3389, 8080, 3306]),
-                    "protocol": random.choice(["TCP", "UDP", "HTTPS"]),
-                    "user_id": user,
-                    "hostname": host,
-                    "action": action,
-                    "outcome": outcome,
-                    "raw_log": json.dumps({"chain": chain_idx, "stage": action}),
-                    "ocsf_category": 3 if etype == "authentication" else 4,
-                    "ocsf_class": 3002,
-                })
-
-    # Fill with background noise
-    for _ in range(num_events - len(events)):
-        template = random.choice(event_templates)
-        events.append({
-            "event_id": str(uuid.uuid4()),
-            "timestamp": base_time + timedelta(seconds=random.randint(0, 86400)),
-            "event_type": template["event_type"],
-            "severity": template["severity"],
-            "source_ip": f"10.0.{random.randint(1,254)}.{random.randint(1,254)}",
-            "destination_ip": random.choice(target_ips + server_ips),
-            "source_port": random.randint(1024, 65535),
-            "destination_port": random.choice([22, 80, 443, 445, 3389, 8080]),
-            "protocol": random.choice(["TCP", "UDP", "HTTPS", "DNS"]),
-            "user_id": random.choice(usernames),
-            "hostname": random.choice(hostnames),
-            "action": template["action"],
-            "outcome": template["outcome"],
-            "raw_log": json.dumps({"source": "syslog", "facility": random.randint(0, 23)}),
-            "ocsf_category": template["ocsf_category"],
-            "ocsf_class": template["ocsf_class"],
-        })
-
-    return events
-
-events = generate_security_events(12000)
-df_events = spark.createDataFrame(events)
-df_events.write.mode("overwrite").saveAsTable("security_events")
-print(f"Generated {df_events.count()} security events")
-display(df_events.groupBy("event_type", "severity").count().orderBy("event_type", "severity"))`
+event_count = spark.table("security_events").count()
+print(f"Loaded {event_count} security events from {events_table}")
+display(spark.table("security_events").groupBy("event_type", "severity").count().orderBy("event_type", "severity"))`
       },
       {
         type: 'code',
@@ -507,7 +433,7 @@ This notebook implements a **supply chain security correlation engine** that:
         content: `# Cell 1: Setup
 from pyspark.sql import functions as F
 from pyspark.sql.types import *
-import json, random, uuid
+import json, uuid
 from datetime import datetime, timedelta
 
 catalog = "soc_platform"
@@ -570,84 +496,97 @@ CREATE TABLE IF NOT EXISTS supply_chain_risk_scores (
       },
       {
         type: 'code',
-        content: `# Cell 3: Generate Mock Supply Chain Data
-packages_data = []
-ecosystems = ["npm", "pypi", "maven", "nuget", "go"]
-publishers = ["@databricks", "@apache", "@microsoft", "community", "verified-publisher", "unknown"]
-licenses_list = ["MIT", "Apache-2.0", "BSD-3", "GPL-3.0", "ISC", "LGPL-2.1"]
+        content: `# Cell 3: Load Supply Chain Data from Production Sources
+dbutils.widgets.text("sbom_table", "soc_platform.supply_chain.software_packages")
+dbutils.widgets.text("deps_table", "soc_platform.supply_chain.package_dependencies")
+dbutils.widgets.text("cve_feed_table", "soc_platform.vulnerability_feeds.cve_entries")
 
-pkg_names = {
-    "npm": ["express", "lodash", "axios", "react", "webpack", "moment", "jsonwebtoken", "bcrypt", "cors", "dotenv", "passport", "socket.io", "mongoose", "sequelize", "jest", "nodemon", "chalk", "commander", "uuid", "dayjs"],
-    "pypi": ["requests", "flask", "django", "numpy", "pandas", "boto3", "sqlalchemy", "celery", "redis", "cryptography", "paramiko", "pyjwt", "pillow", "scipy", "scikit-learn", "tensorflow", "pytest", "black", "mypy", "pydantic"],
-    "maven": ["spring-boot", "jackson", "log4j", "guava", "commons-io", "httpclient", "junit", "mockito", "lombok", "netty"],
-    "nuget": ["Newtonsoft.Json", "Serilog", "AutoMapper", "MediatR", "FluentValidation", "Polly", "Dapper", "EntityFramework"],
-    "go": ["gin", "cobra", "viper", "zap", "grpc", "protobuf", "testify", "mux"]
-}
+sbom_table = dbutils.widgets.get("sbom_table")
+deps_table = dbutils.widgets.get("deps_table")
+cve_feed_table = dbutils.widgets.get("cve_feed_table")
 
-for eco in ecosystems:
-    for name in pkg_names[eco]:
-        pkg_id = str(uuid.uuid4())
-        packages_data.append({
-            "package_id": pkg_id,
-            "name": f"{name}",
-            "version": f"{random.randint(1,5)}.{random.randint(0,20)}.{random.randint(0,10)}",
-            "ecosystem": eco,
-            "publisher": random.choice(publishers),
-            "license": random.choice(licenses_list),
-            "last_updated": datetime.now() - timedelta(days=random.randint(1, 365)),
-            "download_count": random.randint(1000, 50000000),
-            "direct_risk_score": 0.0,
-            "transitive_risk_score": 0.0,
-            "combined_risk_score": 0.0,
-        })
+# --- Load SBOM / Software Packages ---
+df_source_packages = spark.table(sbom_table)
+df_packages_mapped = (
+    df_source_packages
+    .select(
+        F.coalesce(F.col("package_id"), F.expr("uuid()")).alias("package_id"),
+        F.col("name"),
+        F.col("version"),
+        F.col("ecosystem"),
+        F.col("publisher"),
+        F.col("license"),
+        F.col("last_updated").cast("timestamp"),
+        F.col("download_count").cast("bigint"),
+        F.lit(0.0).alias("direct_risk_score"),
+        F.lit(0.0).alias("transitive_risk_score"),
+        F.lit(0.0).alias("combined_risk_score"),
+    )
+)
+df_packages_mapped.createOrReplaceTempView("staged_packages")
 
-df_packages = spark.createDataFrame(packages_data)
-df_packages.write.mode("overwrite").saveAsTable("software_packages")
+spark.sql("""
+    MERGE INTO software_packages AS target
+    USING staged_packages AS source
+    ON target.package_id = source.package_id
+    WHEN MATCHED THEN UPDATE SET *
+    WHEN NOT MATCHED THEN INSERT *
+""")
 
-# Generate dependency relationships
-deps = []
-pkg_ids = [p["package_id"] for p in packages_data]
-for pkg in packages_data:
-    num_deps = random.randint(0, 8)
-    for depth in range(1, min(num_deps + 1, 6)):
-        child = random.choice(pkg_ids)
-        if child != pkg["package_id"]:
-            deps.append({
-                "dependency_id": str(uuid.uuid4()),
-                "parent_package_id": pkg["package_id"],
-                "child_package_id": child,
-                "dependency_type": random.choice(["runtime", "dev", "peer", "optional"]),
-                "version_constraint": random.choice(["^1.0.0", "~2.3.0", ">=3.0.0", "latest", "*"]),
-                "depth": depth,
-            })
+# --- Load Dependency Relationships ---
+df_source_deps = spark.table(deps_table)
+df_deps_mapped = (
+    df_source_deps
+    .select(
+        F.coalesce(F.col("dependency_id"), F.expr("uuid()")).alias("dependency_id"),
+        F.col("parent_package_id"),
+        F.col("child_package_id"),
+        F.col("dependency_type"),
+        F.col("version_constraint"),
+        F.coalesce(F.col("depth"), F.lit(1)).alias("depth"),
+    )
+)
+df_deps_mapped.createOrReplaceTempView("staged_deps")
 
-df_deps = spark.createDataFrame(deps)
-df_deps.write.mode("overwrite").saveAsTable("package_dependencies")
+spark.sql("""
+    MERGE INTO package_dependencies AS target
+    USING staged_deps AS source
+    ON target.dependency_id = source.dependency_id
+    WHEN MATCHED THEN UPDATE SET *
+    WHEN NOT MATCHED THEN INSERT *
+""")
 
-# Generate CVEs
-cves = []
-vuln_packages = random.sample(pkg_ids, min(40, len(pkg_ids)))
-for pkg_id in vuln_packages:
-    for _ in range(random.randint(1, 5)):
-        cvss = round(random.uniform(2.0, 10.0), 1)
-        severity = "critical" if cvss >= 9.0 else "high" if cvss >= 7.0 else "medium" if cvss >= 4.0 else "low"
-        cves.append({
-            "cve_id": f"CVE-{random.randint(2020, 2025)}-{random.randint(10000, 99999)}",
-            "package_id": pkg_id,
-            "severity": severity,
-            "cvss_score": cvss,
-            "description": f"Remote code execution via crafted input in dependency",
-            "published_date": datetime.now() - timedelta(days=random.randint(1, 730)),
-            "exploitability_score": round(random.uniform(1.0, 4.0), 1),
-            "impact_score": round(random.uniform(1.0, 6.0), 1),
-            "patch_available": random.choice([True, True, False]),
-        })
+# --- Load CVE Data from Vulnerability Feed ---
+df_source_cves = spark.table(cve_feed_table)
+df_cves_mapped = (
+    df_source_cves
+    .select(
+        F.col("cve_id"),
+        F.col("package_id"),
+        F.col("severity"),
+        F.col("cvss_score").cast("double"),
+        F.col("description"),
+        F.col("published_date").cast("timestamp"),
+        F.col("exploitability_score").cast("double"),
+        F.col("impact_score").cast("double"),
+        F.col("patch_available").cast("boolean"),
+    )
+)
+df_cves_mapped.createOrReplaceTempView("staged_cves")
 
-df_cves = spark.createDataFrame(cves)
-df_cves.write.mode("overwrite").saveAsTable("supply_chain_cves")
+spark.sql("""
+    MERGE INTO supply_chain_cves AS target
+    USING staged_cves AS source
+    ON target.cve_id = source.cve_id AND target.package_id = source.package_id
+    WHEN MATCHED THEN UPDATE SET *
+    WHEN NOT MATCHED THEN INSERT *
+""")
 
-print(f"Packages: {len(packages_data)}, Dependencies: {len(deps)}, CVEs: {len(cves)}")
-display(df_cves.groupBy("severity").count().orderBy("severity"))`
+pkg_count = spark.table("software_packages").count()
+dep_count = spark.table("package_dependencies").count()
+cve_count = spark.table("supply_chain_cves").count()
+print(f"Packages: {pkg_count}, Dependencies: {dep_count}, CVEs: {cve_count}")
+display(spark.table("supply_chain_cves").groupBy("severity").count().orderBy("severity"))`
       },
       {
         type: 'code',
@@ -738,7 +677,7 @@ Monitors the entire CI/CD pipeline for:
         type: 'code',
         content: `# Cell 1: Setup
 from pyspark.sql import functions as F
-import json, random, uuid
+import json, uuid
 from datetime import datetime, timedelta
 
 catalog = "soc_platform"
@@ -767,62 +706,50 @@ CREATE TABLE IF NOT EXISTS pipeline_anomalies (
       },
       {
         type: 'code',
-        content: `# Cell 3: Generate Mock Pipeline Security Data
-pipelines = ["frontend-deploy", "api-service", "ml-training", "infra-terraform", "mobile-app", "data-etl"]
-stages = ["source", "build", "test", "security-scan", "artifact-publish", "deploy-staging", "deploy-prod"]
-actors = ["dev-alice", "dev-bob", "ci-bot", "release-manager", "dev-charlie", "unknown-user"]
-repos = ["app-frontend", "api-gateway", "ml-models", "infrastructure", "mobile-ios", "data-pipelines"]
-branches = ["main", "develop", "feature/auth", "hotfix/security", "release/v2.1"]
+        content: `# Cell 3: Load Pipeline Events from Production CI/CD Telemetry
+dbutils.widgets.text("cicd_events_table", "soc_platform.devops_telemetry.pipeline_events")
 
-events = []
-base_time = datetime.now() - timedelta(hours=48)
+cicd_events_table = dbutils.widgets.get("cicd_events_table")
 
-# Normal pipeline runs
-for _ in range(500):
-    pipeline = random.choice(pipelines)
-    actor = random.choice(actors[:4])
-    repo = random.choice(repos)
-    branch = random.choice(branches)
-    sha = uuid.uuid4().hex[:12]
-    run_start = base_time + timedelta(minutes=random.randint(0, 2880))
+# Read production CI/CD telemetry from the upstream table
+df_source_pipeline = spark.table(cicd_events_table)
 
-    for i, stage in enumerate(stages):
-        events.append({
-            "event_id": str(uuid.uuid4()), "pipeline_id": f"run-{uuid.uuid4().hex[:8]}",
-            "pipeline_name": pipeline, "stage": stage,
-            "event_type": "stage_complete", "status": "success", "severity": "info",
-            "actor": actor, "repository": repo, "branch": branch, "commit_sha": sha,
-            "artifact_hash": uuid.uuid4().hex, "timestamp": run_start + timedelta(minutes=i*3),
-            "metadata": json.dumps({"duration_sec": random.randint(30, 600)}), "slsa_level": 3,
-        })
+# Map source data to the local pipeline_events schema
+df_pipeline_mapped = (
+    df_source_pipeline
+    .select(
+        F.coalesce(F.col("event_id"), F.expr("uuid()")).alias("event_id"),
+        F.col("pipeline_id"),
+        F.col("pipeline_name"),
+        F.col("stage"),
+        F.col("event_type"),
+        F.col("status"),
+        F.col("severity"),
+        F.col("actor"),
+        F.col("repository"),
+        F.col("branch"),
+        F.col("commit_sha"),
+        F.col("artifact_hash"),
+        F.col("timestamp").cast("timestamp"),
+        F.col("metadata"),
+        F.coalesce(F.col("slsa_level"), F.lit(0)).cast("int").alias("slsa_level"),
+    )
+)
 
-# Inject anomalous events
-anomaly_templates = [
-    {"event_type": "secret_detected", "severity": "critical", "stage": "security-scan", "status": "failed"},
-    {"event_type": "unauthorized_deploy", "severity": "critical", "stage": "deploy-prod", "status": "blocked"},
-    {"event_type": "force_push", "severity": "high", "stage": "source", "status": "success"},
-    {"event_type": "artifact_tamper", "severity": "critical", "stage": "artifact-publish", "status": "alert"},
-    {"event_type": "dependency_vuln", "severity": "high", "stage": "security-scan", "status": "warning"},
-    {"event_type": "policy_violation", "severity": "high", "stage": "deploy-staging", "status": "blocked"},
-]
+# Delta MERGE into local pipeline_events table (upsert by event_id)
+df_pipeline_mapped.createOrReplaceTempView("staged_pipeline_events")
 
-for _ in range(80):
-    anom = random.choice(anomaly_templates)
-    events.append({
-        "event_id": str(uuid.uuid4()), "pipeline_id": f"run-{uuid.uuid4().hex[:8]}",
-        "pipeline_name": random.choice(pipelines), "stage": anom["stage"],
-        "event_type": anom["event_type"], "status": anom["status"], "severity": anom["severity"],
-        "actor": random.choice(actors), "repository": random.choice(repos),
-        "branch": random.choice(branches), "commit_sha": uuid.uuid4().hex[:12],
-        "artifact_hash": uuid.uuid4().hex,
-        "timestamp": base_time + timedelta(minutes=random.randint(0, 2880)),
-        "metadata": json.dumps({"anomaly": True, "detail": anom["event_type"]}), "slsa_level": 0,
-    })
+spark.sql("""
+    MERGE INTO pipeline_events AS target
+    USING staged_pipeline_events AS source
+    ON target.event_id = source.event_id
+    WHEN MATCHED THEN UPDATE SET *
+    WHEN NOT MATCHED THEN INSERT *
+""")
 
-df = spark.createDataFrame(events)
-df.write.mode("overwrite").saveAsTable("pipeline_events")
-print(f"Generated {len(events)} pipeline events")
-display(df.groupBy("event_type", "severity").count().orderBy(F.desc("count")))`
+event_count = spark.table("pipeline_events").count()
+print(f"Loaded {event_count} pipeline events from {cicd_events_table}")
+display(spark.table("pipeline_events").groupBy("event_type", "severity").count().orderBy(F.desc("count")))`
       },
       {
         type: 'code',
@@ -880,9 +807,9 @@ Covers AWS, Azure, and GCP with:
       },
       {
         type: 'code',
-        content: `# Cell 1: Setup & Mock Cloud Configuration Data
+        content: `# Cell 1: Setup & Load Cloud Configuration Data from Production Sources
 from pyspark.sql import functions as F
-import json, random, uuid
+import json, uuid
 from datetime import datetime, timedelta
 
 catalog = "soc_platform"
@@ -891,51 +818,66 @@ spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
 spark.sql(f"USE {catalog}.{schema}")
 
-# Generate cloud resources with configurations
-resources = []
-clouds = ["aws", "azure", "gcp"]
-resource_types = {
-    "aws": ["S3 Bucket", "EC2 Instance", "IAM Role", "RDS Database", "Lambda Function", "Security Group", "KMS Key", "CloudTrail", "VPC", "ELB"],
-    "azure": ["Storage Account", "Virtual Machine", "Key Vault", "SQL Database", "App Service", "NSG", "AKS Cluster"],
-    "gcp": ["GCS Bucket", "Compute Instance", "IAM Policy", "Cloud SQL", "Cloud Function", "Firewall Rule"],
-}
+# Parameterize the source cloud configuration snapshot table
+dbutils.widgets.text("cloud_config_table", "soc_platform.cloud_inventory.resource_configurations")
 
-misconfig_types = [
-    ("Public access enabled", "critical", "CIS 2.1.1"),
-    ("Encryption at rest disabled", "high", "CIS 2.1.2"),
-    ("Logging not enabled", "medium", "CIS 3.1"),
-    ("MFA not enforced", "critical", "CIS 1.2"),
-    ("Overly permissive IAM", "high", "CIS 1.16"),
-    ("Default credentials", "critical", "CIS 1.1"),
-    ("Unencrypted transit", "high", "CIS 2.2"),
-    ("No backup configured", "medium", "CIS 4.1"),
-]
+cloud_config_table = dbutils.widgets.get("cloud_config_table")
 
-for cloud in clouds:
-    for rtype in resource_types[cloud]:
-        for i in range(random.randint(5, 15)):
-            compliant = random.random() > 0.3
-            misconfigs = [] if compliant else random.sample(misconfig_types, random.randint(1, 3))
-            resources.append({
-                "resource_id": str(uuid.uuid4()),
-                "cloud_provider": cloud,
-                "resource_type": rtype,
-                "resource_name": f"{cloud}-{rtype.lower().replace(' ', '-')}-{i:03d}",
-                "region": random.choice(["us-east-1", "eu-west-1", "ap-southeast-1"]),
-                "compliant": compliant,
-                "misconfigurations": json.dumps([m[0] for m in misconfigs]),
-                "max_severity": misconfigs[0][1] if misconfigs else "none",
-                "cis_controls": json.dumps([m[2] for m in misconfigs]),
-                "risk_score": round(random.uniform(0.7, 1.0), 2) if misconfigs else round(random.uniform(0.0, 0.3), 2),
-                "last_scanned": datetime.now() - timedelta(hours=random.randint(1, 48)),
-            })
+# Read production cloud resource configurations from the upstream snapshot table
+df_source_resources = spark.table(cloud_config_table)
 
-df = spark.createDataFrame(resources)
-df.write.mode("overwrite").saveAsTable("cloud_resources")
-print(f"Generated {len(resources)} cloud resources across {len(clouds)} providers")
+# Map source data to the local cloud_resources schema
+df_resources_mapped = (
+    df_source_resources
+    .select(
+        F.coalesce(F.col("resource_id"), F.expr("uuid()")).alias("resource_id"),
+        F.col("cloud_provider"),
+        F.col("resource_type"),
+        F.col("resource_name"),
+        F.col("region"),
+        F.col("compliant").cast("boolean"),
+        F.col("misconfigurations"),
+        F.col("max_severity"),
+        F.col("cis_controls"),
+        F.col("risk_score").cast("double"),
+        F.col("last_scanned").cast("timestamp"),
+    )
+)
+
+# Create the cloud_resources table if it does not exist
+spark.sql("""
+    CREATE TABLE IF NOT EXISTS cloud_resources (
+        resource_id STRING,
+        cloud_provider STRING,
+        resource_type STRING,
+        resource_name STRING,
+        region STRING,
+        compliant BOOLEAN,
+        misconfigurations STRING,
+        max_severity STRING,
+        cis_controls STRING,
+        risk_score DOUBLE,
+        last_scanned TIMESTAMP
+    ) USING DELTA
+""")
+
+# Delta MERGE into local cloud_resources table (upsert by resource_id)
+df_resources_mapped.createOrReplaceTempView("staged_cloud_resources")
+
+spark.sql("""
+    MERGE INTO cloud_resources AS target
+    USING staged_cloud_resources AS source
+    ON target.resource_id = source.resource_id
+    WHEN MATCHED THEN UPDATE SET *
+    WHEN NOT MATCHED THEN INSERT *
+""")
+
+resource_count = spark.table("cloud_resources").count()
+provider_count = spark.table("cloud_resources").select("cloud_provider").distinct().count()
+print(f"Loaded {resource_count} cloud resources across {provider_count} providers from {cloud_config_table}")
 
 # Summary
-display(df.groupBy("cloud_provider", "compliant").count().orderBy("cloud_provider"))`
+display(spark.table("cloud_resources").groupBy("cloud_provider", "compliant").count().orderBy("cloud_provider"))`
       },
       {
         type: 'code',

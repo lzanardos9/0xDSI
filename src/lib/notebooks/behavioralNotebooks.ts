@@ -4,280 +4,179 @@ export const behavioralNotebooks: DatabricksNotebook[] = [
   {
     id: 'ueba-engine',
     title: 'User & Entity Behavior Analytics (UEBA)',
-    subtitle: 'Baseline modeling and deviation detection for insider threat identification',
+    subtitle: 'Streaming behavioral baseline modeling with Z-score anomaly detection',
     category: 'behavioral',
-    tags: ['UEBA', 'Insider Threat', 'Behavioral Baseline', 'Anomaly Score', 'Risk Profile'],
-    description: 'Builds behavioral baselines for users and entities using historical activity patterns. Detects deviations that indicate compromised accounts, insider threats, or policy violations. Implements multi-dimensional scoring across login patterns, data access, network activity, and temporal behaviors.',
-    estimatedRuntime: '8 min',
-    clusterRequirements: 'DBR 14.3 LTS ML, 4+ workers',
+    tags: ['UEBA', 'Insider Threat', 'Behavioral Baseline', 'Anomaly Score', 'Z-Score'],
+    description: 'Builds rolling behavioral baselines from real authentication and activity logs in the silver layer, then computes multi-dimensional Z-score deviations to surface compromised accounts, insider threats, and policy violations.',
+    estimatedRuntime: 'Continuous (streaming) or 8 min (batch)',
+    clusterRequirements: 'DBR 14.3 LTS ML, 4+ workers, SSD state store',
     cells: [
       {
         type: 'markdown',
         content: `# User & Entity Behavior Analytics (UEBA) Engine
-## Behavioral Baseline Modeling & Insider Threat Detection
+## Rolling Baseline Modeling & Anomaly Detection on Real Data
 
-### Behavioral Dimensions Analyzed
-1. **Login Patterns** - Time, location, device, success/failure rates
+### Behavioral Dimensions
+1. **Login Patterns** - Time-of-day, location, device, success/failure rates
 2. **Data Access** - Volume, sensitivity level, access frequency
 3. **Network Activity** - Connections, data transfers, protocol usage
-4. **Application Usage** - Apps accessed, session duration, activity patterns
-5. **Temporal Patterns** - After-hours activity, weekend work, schedule deviations
+4. **Temporal Patterns** - After-hours activity, weekend work, schedule deviations
 
 ### Scoring Model
 \`\`\`
-Risk Score = w1*Login_Anomaly + w2*Data_Anomaly + w3*Network_Anomaly + w4*Temporal_Anomaly
-           = 0.25 * LA + 0.30 * DA + 0.25 * NA + 0.20 * TA
-\`\`\``
+Risk Score = w1*Login_Z + w2*Data_Z + w3*Network_Z + w4*Temporal_Z
+           = 0.25 * LZ + 0.30 * DZ + 0.25 * NZ + 0.20 * TZ
+\`\`\`
+
+### Data Sources
+- \`silver_events\` (authentication, endpoint, network categories)
+- \`user_profiles\` (department, role, peer group)
+- \`asset_registry\` (host criticality)`
       },
       {
         type: 'code',
-        content: `# Cell 1: Setup & Generate User Activity Data
+        content: `# Cell 1: Configuration & Data Ingest
+dbutils.widgets.text("catalog", "main")
+dbutils.widgets.text("schema", "security")
+dbutils.widgets.text("baseline_days", "30")
+dbutils.widgets.text("detection_days", "7")
+dbutils.widgets.text("z_threshold_high", "3.0")
+dbutils.widgets.text("z_threshold_critical", "5.0")
+
+catalog = dbutils.widgets.get("catalog")
+schema = dbutils.widgets.get("schema")
+baseline_days = int(dbutils.widgets.get("baseline_days"))
+detection_days = int(dbutils.widgets.get("detection_days"))
+z_high = float(dbutils.widgets.get("z_threshold_high"))
+z_critical = float(dbutils.widgets.get("z_threshold_critical"))
+
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
-import numpy as np
-import json, random, uuid
 from datetime import datetime, timedelta
 
-catalog = "soc_platform"
-schema = "ueba"
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
-spark.sql(f"USE {catalog}.{schema}")
+cutoff_baseline = (datetime.now() - timedelta(days=baseline_days + detection_days)).isoformat()
+cutoff_detection = (datetime.now() - timedelta(days=detection_days)).isoformat()
 
-# User profiles with baseline behaviors
-users = []
-departments = ["Engineering", "Finance", "HR", "Security", "Executive", "Research", "Sales", "Legal"]
-normal_hours = {
-    "Engineering": (8, 20), "Finance": (7, 18), "HR": (8, 17),
-    "Security": (0, 24), "Executive": (7, 22), "Research": (9, 21),
-    "Sales": (8, 19), "Legal": (8, 18),
-}
+events = spark.table(f"{catalog}.{schema}.silver_events")
+auth_events = events.filter(
+    (F.col("ocsf_category") == "authentication") &
+    (F.col("time") >= cutoff_baseline)
+)
+activity_events = events.filter(
+    (F.col("ocsf_category").isin(["endpoint", "network"])) &
+    (F.col("time") >= cutoff_baseline)
+)
 
-for i in range(60):
-    dept = random.choice(departments)
-    hours = normal_hours[dept]
-    users.append({
-        "user_id": f"user_{i:03d}",
-        "department": dept,
-        "title": random.choice(["Analyst", "Manager", "Director", "VP", "Engineer", "Specialist"]),
-        "normal_login_hour_start": hours[0],
-        "normal_login_hour_end": hours[1],
-        "avg_daily_logins": random.randint(2, 8),
-        "avg_daily_data_access_mb": random.randint(10, 500),
-        "avg_daily_network_connections": random.randint(50, 500),
-        "typical_locations": json.dumps(random.sample(["HQ-NYC", "Office-SF", "Office-LON", "Remote-US", "VPN"], random.randint(1, 3))),
-        "risk_tier": random.choice(["standard", "elevated", "privileged"]),
-    })
-
-df_users = spark.createDataFrame(users)
-df_users.write.mode("overwrite").saveAsTable("user_baselines")
-
-# Generate 30 days of activity data
-activities = []
-base_date = datetime.now() - timedelta(days=30)
-
-# Identify "insider threat" users (5% of population)
-insider_threats = random.sample(range(60), 3)
-
-for day in range(30):
-    current_date = base_date + timedelta(days=day)
-    for user in users:
-        uid = int(user["user_id"].split("_")[1])
-        is_insider = uid in insider_threats and day > 20  # Anomaly starts after day 20
-
-        # Generate daily activities
-        num_logins = user["avg_daily_logins"]
-        if is_insider:
-            num_logins = num_logins * random.randint(3, 5)
-
-        for login_num in range(num_logins):
-            if is_insider:
-                login_hour = random.choice([2, 3, 4, 23, 0, 1])
-                data_accessed_mb = user["avg_daily_data_access_mb"] * random.uniform(5, 20)
-                location = random.choice(["Unknown-VPN", "TOR-Exit", "Foreign-IP"])
-            else:
-                login_hour = random.randint(user["normal_login_hour_start"], min(23, user["normal_login_hour_end"]))
-                data_accessed_mb = user["avg_daily_data_access_mb"] * random.uniform(0.5, 1.5)
-                location = random.choice(json.loads(user["typical_locations"]))
-
-            activities.append({
-                "activity_id": str(uuid.uuid4()),
-                "user_id": user["user_id"],
-                "department": user["department"],
-                "timestamp": current_date.replace(hour=login_hour, minute=random.randint(0, 59)),
-                "activity_type": random.choice(["login", "file_access", "email", "app_usage", "network"]),
-                "login_hour": login_hour,
-                "data_accessed_mb": round(data_accessed_mb, 2),
-                "network_connections": int(user["avg_daily_network_connections"] * (random.uniform(3, 10) if is_insider else random.uniform(0.5, 1.5))),
-                "location": location,
-                "device": random.choice(["Laptop-Corp", "Desktop-Corp"]) if not is_insider else random.choice(["Personal-Device", "Unknown-Device"]),
-                "failed_auth": random.randint(0, 1) if not is_insider else random.randint(2, 10),
-                "sensitive_files_accessed": random.randint(0, 3) if not is_insider else random.randint(10, 50),
-                "is_after_hours": login_hour < user["normal_login_hour_start"] or login_hour > user["normal_login_hour_end"],
-                "is_weekend": current_date.weekday() >= 5,
-                "is_anomalous": is_insider,
-            })
-
-df_activities = spark.createDataFrame(activities)
-df_activities.write.mode("overwrite").saveAsTable("user_activities")
-print(f"Generated {len(activities)} user activities over 30 days for {len(users)} users")
-print(f"Insider threat users: {[f'user_{i:03d}' for i in insider_threats]}")`
+print(f"Auth events loaded: {auth_events.count():,}")
+print(f"Activity events loaded: {activity_events.count():,}")`
       },
       {
         type: 'code',
-        content: `# Cell 2: Build Behavioral Baselines (First 20 Days)
-df = spark.table("user_activities")
+        content: `# Cell 2: Build Behavioral Baselines (Rolling Window)
 
-# Split: first 20 days for baseline, last 10 for detection
-df = df.withColumn("day_num", F.datediff(F.col("timestamp"), F.lit(datetime.now() - timedelta(days=30))))
-baseline_df = df.filter(F.col("day_num") <= 20)
-detection_df = df.filter(F.col("day_num") > 20)
+baseline_auth = auth_events.filter(F.col("time") < cutoff_detection)
+baseline_activity = activity_events.filter(F.col("time") < cutoff_detection)
 
-# Compute baselines per user
-baselines = (
-    baseline_df
-    .groupBy("user_id", "department")
+user_baselines = (
+    baseline_auth
+    .groupBy("actor_user_id")
     .agg(
-        F.avg("login_hour").alias("baseline_avg_login_hour"),
-        F.stddev("login_hour").alias("baseline_std_login_hour"),
-        F.avg("data_accessed_mb").alias("baseline_avg_data_mb"),
-        F.stddev("data_accessed_mb").alias("baseline_std_data_mb"),
-        F.avg("network_connections").alias("baseline_avg_connections"),
-        F.stddev("network_connections").alias("baseline_std_connections"),
-        F.avg("failed_auth").alias("baseline_avg_failed_auth"),
-        F.avg("sensitive_files_accessed").alias("baseline_avg_sensitive"),
-        F.avg(F.when(F.col("is_after_hours"), 1).otherwise(0).cast("double")).alias("baseline_after_hours_ratio"),
+        F.avg(F.hour("time").cast("double")).alias("baseline_avg_login_hour"),
+        F.stddev(F.hour("time").cast("double")).alias("baseline_std_login_hour"),
+        F.count("*").alias("baseline_event_count"),
+        F.countDistinct("src_ip").alias("baseline_unique_ips"),
+        F.sum(F.when(F.col("status_id") == 0, 1).otherwise(0)).alias("baseline_failed_count"),
+        F.avg(F.when(
+            (F.hour("time") < 7) | (F.hour("time") > 20), 1
+        ).otherwise(0).cast("double")).alias("baseline_after_hours_ratio"),
+        F.collect_set("src_ip").alias("baseline_known_ips"),
+        F.collect_set(F.col("src_geo_country")).alias("baseline_known_countries"),
     )
-    .fillna(1.0)
+    .fillna({"baseline_std_login_hour": 1.0})
 )
 
-baselines.write.mode("overwrite").saveAsTable("computed_baselines")
-print("Behavioral baselines computed for first 20 days")
-display(baselines.limit(10))`
+data_baselines = (
+    baseline_activity
+    .groupBy("actor_user_id")
+    .agg(
+        F.avg(F.when(F.col("ocsf_category") == "network",
+              F.coalesce(F.col("bytes_out"), F.lit(0))).otherwise(0)).alias("baseline_avg_bytes"),
+        F.stddev(F.when(F.col("ocsf_category") == "network",
+                 F.coalesce(F.col("bytes_out"), F.lit(0))).otherwise(0)).alias("baseline_std_bytes"),
+        F.avg(F.size(F.collect_set("dst_ip")).over(
+            Window.partitionBy("actor_user_id").rangeBetween(Window.unboundedPreceding, Window.unboundedFollowing)
+        )).alias("baseline_avg_unique_dests"),
+    )
+    .fillna({"baseline_std_bytes": 1.0})
+)
+
+baselines = user_baselines.join(data_baselines, "actor_user_id", "left")
+baselines.write.format("delta").mode("overwrite").saveAsTable(f"{catalog}.{schema}.user_baselines")
+print(f"Baselines computed for {baselines.count()} users")`
       },
       {
         type: 'code',
-        content: `# Cell 3: Anomaly Detection - Compare Detection Window to Baseline
-baselines = spark.table("computed_baselines")
-df = spark.table("user_activities")
-detection_df = df.filter(F.datediff(F.col("timestamp"), F.lit(datetime.now() - timedelta(days=30))) > 20)
+        content: `# Cell 3: Anomaly Detection - Z-Score Deviation from Baselines
 
-# Aggregate detection window per user
-detection_agg = (
-    detection_df
-    .groupBy("user_id")
+detection_auth = auth_events.filter(F.col("time") >= cutoff_detection)
+detection_activity = activity_events.filter(F.col("time") >= cutoff_detection)
+
+det_agg = (
+    detection_auth
+    .groupBy("actor_user_id")
     .agg(
-        F.avg("login_hour").alias("det_avg_login_hour"),
-        F.avg("data_accessed_mb").alias("det_avg_data_mb"),
-        F.avg("network_connections").alias("det_avg_connections"),
-        F.avg("failed_auth").alias("det_avg_failed_auth"),
-        F.avg("sensitive_files_accessed").alias("det_avg_sensitive"),
-        F.avg(F.when(F.col("is_after_hours"), 1).otherwise(0).cast("double")).alias("det_after_hours_ratio"),
-        F.sum(F.when(F.col("is_anomalous"), 1).otherwise(0)).alias("actual_anomalies"),
+        F.avg(F.hour("time").cast("double")).alias("det_avg_login_hour"),
+        F.countDistinct("src_ip").alias("det_unique_ips"),
+        F.sum(F.when(F.col("status_id") == 0, 1).otherwise(0)).alias("det_failed_count"),
+        F.avg(F.when(
+            (F.hour("time") < 7) | (F.hour("time") > 20), 1
+        ).otherwise(0).cast("double")).alias("det_after_hours_ratio"),
+        F.count("*").alias("det_event_count"),
     )
 )
 
-# Compute Z-scores
+baselines = spark.table(f"{catalog}.{schema}.user_baselines")
+
 scored = (
-    detection_agg
-    .join(baselines, "user_id")
-    .withColumn("login_z", F.abs(F.col("det_avg_login_hour") - F.col("baseline_avg_login_hour")) /
-                F.greatest(F.col("baseline_std_login_hour"), F.lit(0.1)))
-    .withColumn("data_z", F.abs(F.col("det_avg_data_mb") - F.col("baseline_avg_data_mb")) /
-                F.greatest(F.col("baseline_std_data_mb"), F.lit(0.1)))
-    .withColumn("network_z", F.abs(F.col("det_avg_connections") - F.col("baseline_avg_connections")) /
-                F.greatest(F.col("baseline_std_connections"), F.lit(0.1)))
-    .withColumn("after_hours_z", F.abs(F.col("det_after_hours_ratio") - F.col("baseline_after_hours_ratio")) /
-                F.lit(0.1))
+    det_agg
+    .join(baselines, "actor_user_id")
+    .withColumn("login_z",
+        F.abs(F.col("det_avg_login_hour") - F.col("baseline_avg_login_hour")) /
+        F.greatest(F.col("baseline_std_login_hour"), F.lit(0.1)))
+    .withColumn("ip_anomaly_z",
+        (F.col("det_unique_ips") - F.col("baseline_unique_ips")).cast("double") /
+        F.greatest(F.col("baseline_unique_ips").cast("double") * 0.3, F.lit(1.0)))
+    .withColumn("after_hours_z",
+        F.abs(F.col("det_after_hours_ratio") - F.col("baseline_after_hours_ratio")) / F.lit(0.1))
+    .withColumn("failed_auth_z",
+        (F.col("det_failed_count") - F.col("baseline_failed_count")).cast("double") /
+        F.greatest(F.col("baseline_failed_count").cast("double") * 0.3, F.lit(1.0)))
     .withColumn("composite_risk_score",
-        F.col("login_z") * 0.25 + F.col("data_z") * 0.30 +
-        F.col("network_z") * 0.25 + F.col("after_hours_z") * 0.20)
+        F.col("login_z") * 0.25 + F.col("ip_anomaly_z") * 0.20 +
+        F.col("after_hours_z") * 0.20 + F.col("failed_auth_z") * 0.35)
     .withColumn("risk_level",
-        F.when(F.col("composite_risk_score") > 5.0, "critical")
-         .when(F.col("composite_risk_score") > 3.0, "high")
+        F.when(F.col("composite_risk_score") > z_critical, "critical")
+         .when(F.col("composite_risk_score") > z_high, "high")
          .when(F.col("composite_risk_score") > 1.5, "medium")
          .otherwise("low"))
     .orderBy(F.desc("composite_risk_score"))
 )
 
-print("=== UEBA Risk Scores (Detection Window) ===")
-display(scored.select("user_id", "department", "composite_risk_score", "risk_level",
-                       "login_z", "data_z", "network_z", "actual_anomalies").limit(20))
+scored.write.format("delta").mode("overwrite").saveAsTable(f"{catalog}.{schema}.ueba_risk_scores")
 
-# How well did we detect the insider threats?
-high_risk = scored.filter(F.col("risk_level").isin(["critical", "high"]))
-detected_insiders = high_risk.filter(F.col("actual_anomalies") > 0).count()
-total_insiders = scored.filter(F.col("actual_anomalies") > 0).count()
-print(f"\\nInsider Threat Detection: {detected_insiders}/{total_insiders} detected as high/critical risk")`
-      },
-      {
-        type: 'code',
-        content: `# Cell 4: UEBA Dashboard Visualization
-import matplotlib.pyplot as plt
-import pandas as pd
+display(scored.select(
+    "actor_user_id", "composite_risk_score", "risk_level",
+    "login_z", "ip_anomaly_z", "after_hours_z", "failed_auth_z",
+    "det_event_count"
+).limit(25))
 
-scored_pdf = scored.toPandas()
-activities_pdf = spark.table("user_activities").toPandas()
-
-fig, axes = plt.subplots(2, 3, figsize=(22, 12))
-fig.suptitle("UEBA - User & Entity Behavior Analytics Dashboard", fontsize=16, fontweight="bold")
-
-# Risk score distribution
-axes[0,0].hist(scored_pdf["composite_risk_score"], bins=30, color="#3b82f6", edgecolor="#1e40af", alpha=0.8)
-axes[0,0].axvline(x=3.0, color="#f59e0b", linestyle="--", label="High threshold")
-axes[0,0].axvline(x=5.0, color="#ef4444", linestyle="--", label="Critical threshold")
-axes[0,0].set_title("Composite Risk Score Distribution")
-axes[0,0].legend()
-
-# Risk level breakdown
-risk_counts = scored_pdf["risk_level"].value_counts()
-colors_map = {"critical": "#ef4444", "high": "#f59e0b", "medium": "#3b82f6", "low": "#10b981"}
-risk_counts.plot(kind="pie", ax=axes[0,1], autopct="%1.1f%%",
-                colors=[colors_map.get(r, "#6b7280") for r in risk_counts.index])
-axes[0,1].set_title("Users by Risk Level")
-
-# Z-score components for top users
-top10 = scored_pdf.nlargest(10, "composite_risk_score")
-x = range(len(top10))
-w = 0.2
-axes[0,2].bar([i-1.5*w for i in x], top10["login_z"], w, label="Login", color="#3b82f6")
-axes[0,2].bar([i-0.5*w for i in x], top10["data_z"], w, label="Data", color="#10b981")
-axes[0,2].bar([i+0.5*w for i in x], top10["network_z"], w, label="Network", color="#f59e0b")
-axes[0,2].bar([i+1.5*w for i in x], top10["after_hours_z"], w, label="After Hours", color="#ef4444")
-axes[0,2].set_xticks(x)
-axes[0,2].set_xticklabels(top10["user_id"], rotation=45, fontsize=7)
-axes[0,2].set_title("Z-Score Components (Top 10 Users)")
-axes[0,2].legend(fontsize=7)
-
-# Activity timeline (anomalous vs normal)
-activities_pdf["date"] = pd.to_datetime(activities_pdf["timestamp"]).dt.date
-daily = activities_pdf.groupby(["date", "is_anomalous"]).size().unstack(fill_value=0)
-if True in daily.columns:
-    daily[True].plot(ax=axes[1,0], color="#ef4444", label="Anomalous", linewidth=2)
-if False in daily.columns:
-    daily[False].plot(ax=axes[1,0], color="#10b981", label="Normal", alpha=0.5)
-axes[1,0].set_title("Activity Volume Over 30 Days")
-axes[1,0].legend()
-
-# Department risk
-dept_risk = scored_pdf.groupby("department")["composite_risk_score"].mean().sort_values()
-dept_risk.plot(kind="barh", ax=axes[1,1], color="#3b82f6")
-axes[1,1].set_title("Average Risk by Department")
-
-# Data access vs sensitive files scatter
-axes[1,2].scatter(activities_pdf[~activities_pdf["is_anomalous"]]["data_accessed_mb"],
-                  activities_pdf[~activities_pdf["is_anomalous"]]["sensitive_files_accessed"],
-                  c="#10b981", alpha=0.1, s=5, label="Normal")
-axes[1,2].scatter(activities_pdf[activities_pdf["is_anomalous"]]["data_accessed_mb"],
-                  activities_pdf[activities_pdf["is_anomalous"]]["sensitive_files_accessed"],
-                  c="#ef4444", alpha=0.5, s=15, label="Anomalous")
-axes[1,2].set_title("Data Access vs Sensitive Files")
-axes[1,2].set_xlabel("Data Accessed (MB)")
-axes[1,2].set_ylabel("Sensitive Files")
-axes[1,2].legend()
-
-plt.tight_layout()
-plt.show()`
+print(f"""
+UEBA Analysis Complete:
+  Total users scored:  {scored.count()}
+  Critical risk:       {scored.filter(F.col('risk_level') == 'critical').count()}
+  High risk:           {scored.filter(F.col('risk_level') == 'high').count()}
+  Medium risk:         {scored.filter(F.col('risk_level') == 'medium').count()}
+""")`
       },
     ],
   },
@@ -285,17 +184,17 @@ plt.show()`
   {
     id: 'threat-escalation-engine',
     title: 'Automated Threat Escalation Engine',
-    subtitle: 'Multi-factor escalation scoring with SLA tracking and runbook automation',
+    subtitle: 'Multi-factor escalation scoring with SLA tracking from real alert data',
     category: 'behavioral',
     tags: ['Escalation', 'SLA', 'Runbook', 'Prioritization', 'Triage'],
-    description: 'Automates alert triage and escalation decisions using a multi-factor scoring model that considers alert severity, asset criticality, threat intelligence context, historical patterns, and analyst workload. Includes SLA tracking and automated runbook execution.',
-    estimatedRuntime: '5 min',
+    description: 'Computes escalation scores for real alerts by combining alert severity, asset criticality, threat intelligence context, and historical pattern signals. Tracks SLA compliance per tier and analyst workload.',
+    estimatedRuntime: '5 min (batch)',
     clusterRequirements: 'DBR 14.3 LTS, 2+ workers',
     cells: [
       {
         type: 'markdown',
         content: `# Automated Threat Escalation Engine
-## Multi-Factor Alert Triage & Escalation
+## Multi-Factor Alert Triage & Escalation from Production Alerts
 
 ### Escalation Score Formula
 \`\`\`
@@ -311,251 +210,230 @@ Score = (severity_weight * 0.30) + (asset_criticality * 0.25) + (intel_context *
       },
       {
         type: 'code',
-        content: `# Cell 1: Generate Alert & Escalation Data
+        content: `# Cell 1: Load Real Alerts & Enrich with Asset Criticality
+dbutils.widgets.text("catalog", "main")
+dbutils.widgets.text("schema", "security")
+dbutils.widgets.text("lookback_hours", "72")
+
+catalog = dbutils.widgets.get("catalog")
+schema = dbutils.widgets.get("schema")
+lookback = int(dbutils.widgets.get("lookback_hours"))
+
 from pyspark.sql import functions as F
-import json, random, uuid
 from datetime import datetime, timedelta
 
-catalog = "soc_platform"
-schema = "escalation"
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
-spark.sql(f"USE {catalog}.{schema}")
+cutoff = (datetime.now() - timedelta(hours=lookback)).isoformat()
 
-severity_weights = {"critical": 1.0, "high": 0.75, "medium": 0.50, "low": 0.25}
-asset_categories = {"crown_jewel": 1.0, "critical_infra": 0.8, "business_app": 0.6, "standard": 0.3, "dev": 0.1}
+alerts = (
+    spark.table(f"{catalog}.{schema}.alerts")
+    .filter(F.col("created_at") >= cutoff)
+)
 
-alerts = []
-base_time = datetime.now() - timedelta(hours=72)
+assets = spark.table(f"{catalog}.{schema}.asset_registry").select(
+    F.col("hostname"), F.col("criticality").alias("asset_criticality_label"),
+    F.when(F.col("criticality") == "crown_jewel", 1.0)
+     .when(F.col("criticality") == "critical", 0.8)
+     .when(F.col("criticality") == "high", 0.6)
+     .when(F.col("criticality") == "medium", 0.4)
+     .otherwise(0.2).alias("asset_score")
+)
 
-alert_types = [
-    {"name": "Brute Force Attack", "base_severity": "high", "mitre": "T1110"},
-    {"name": "Data Exfiltration Attempt", "base_severity": "critical", "mitre": "T1041"},
-    {"name": "Malware Detection", "base_severity": "critical", "mitre": "T1059"},
-    {"name": "Privilege Escalation", "base_severity": "critical", "mitre": "T1068"},
-    {"name": "Suspicious DNS Query", "base_severity": "medium", "mitre": "T1071"},
-    {"name": "Policy Violation", "base_severity": "low", "mitre": "T1078"},
-    {"name": "Anomalous Login", "base_severity": "medium", "mitre": "T1078"},
-    {"name": "Ransomware Indicator", "base_severity": "critical", "mitre": "T1486"},
-    {"name": "Insider Threat Signal", "base_severity": "high", "mitre": "T1567"},
-    {"name": "C2 Communication", "base_severity": "critical", "mitre": "T1071.001"},
-]
+ioc_hits = (
+    spark.table(f"{catalog}.{schema}.threat_feed_items")
+    .filter(F.col("is_active") == True)
+    .select("ioc_value", "confidence")
+    .withColumnRenamed("confidence", "intel_confidence")
+)
 
-for _ in range(1500):
-    alert_type = random.choice(alert_types)
-    severity = alert_type["base_severity"]
-    asset_cat = random.choice(list(asset_categories.keys()))
+severity_map = F.when(F.col("severity") == "critical", 1.0) \
+    .when(F.col("severity") == "high", 0.75) \
+    .when(F.col("severity") == "medium", 0.50) \
+    .otherwise(0.25)
 
-    sev_score = severity_weights[severity]
-    asset_score = asset_categories[asset_cat]
-    intel_score = round(random.uniform(0.0, 1.0), 3)
-    hist_score = round(random.uniform(0.0, 1.0), 3)
-    time_score = round(random.uniform(0.0, 1.0), 3)
+enriched = (
+    alerts
+    .withColumn("severity_score", severity_map)
+    .join(assets, "hostname", "left")
+    .withColumn("asset_score", F.coalesce("asset_score", F.lit(0.3)))
+    .join(ioc_hits, alerts["source_ip"] == ioc_hits["ioc_value"], "left")
+    .withColumn("intel_score", F.coalesce("intel_confidence", F.lit(0.0)))
+)
 
-    escalation_score = round(
-        sev_score * 0.30 + asset_score * 0.25 + intel_score * 0.20 +
-        hist_score * 0.15 + time_score * 0.10, 3)
-
-    tier = 4 if escalation_score > 0.8 else 3 if escalation_score > 0.6 else 2 if escalation_score > 0.3 else 1
-    sla_minutes = {1: 1440, 2: 240, 3: 60, 4: 15}[tier]
-
-    created_at = base_time + timedelta(minutes=random.randint(0, 4320))
-    response_time = random.randint(5, sla_minutes * 2)
-
-    alerts.append({
-        "alert_id": str(uuid.uuid4()),
-        "alert_name": alert_type["name"],
-        "severity": severity,
-        "asset_category": asset_cat,
-        "mitre_technique": alert_type["mitre"],
-        "severity_score": sev_score,
-        "asset_score": asset_score,
-        "intel_score": intel_score,
-        "historical_score": hist_score,
-        "time_sensitivity_score": time_score,
-        "escalation_score": escalation_score,
-        "escalation_tier": tier,
-        "sla_minutes": sla_minutes,
-        "response_time_minutes": response_time,
-        "sla_breached": response_time > sla_minutes,
-        "status": random.choice(["open", "investigating", "resolved", "false_positive"]),
-        "assigned_to": f"analyst_{random.randint(1,8):02d}",
-        "created_at": created_at,
-    })
-
-df = spark.createDataFrame(alerts)
-df.write.mode("overwrite").saveAsTable("escalation_alerts")
-print(f"Generated {len(alerts)} alerts with escalation scoring")
-display(df.groupBy("escalation_tier", "severity").count().orderBy("escalation_tier"))`
+print(f"Alerts loaded: {enriched.count()}")`
       },
       {
         type: 'code',
-        content: `# Cell 2: Escalation Analytics & SLA Compliance
-df = spark.table("escalation_alerts")
+        content: `# Cell 2: Compute Escalation Scores & SLA Compliance
 
-# SLA compliance by tier
+historical_counts = (
+    spark.table(f"{catalog}.{schema}.correlation_matches")
+    .groupBy("entity_value")
+    .agg(F.count("*").alias("prior_match_count"))
+)
+
+hours_since = (F.unix_timestamp(F.current_timestamp()) - F.unix_timestamp("created_at")) / 3600.0
+
+scored = (
+    enriched
+    .join(historical_counts,
+          enriched["source_ip"] == historical_counts["entity_value"], "left")
+    .withColumn("historical_score",
+        F.least(F.coalesce("prior_match_count", F.lit(0)).cast("double") / 10.0, F.lit(1.0)))
+    .withColumn("time_score",
+        F.least(hours_since / 24.0, F.lit(1.0)))
+    .withColumn("escalation_score", F.round(
+        F.col("severity_score") * 0.30 +
+        F.col("asset_score") * 0.25 +
+        F.col("intel_score") * 0.20 +
+        F.col("historical_score") * 0.15 +
+        F.col("time_score") * 0.10, 3))
+    .withColumn("escalation_tier",
+        F.when(F.col("escalation_score") > 0.8, 4)
+         .when(F.col("escalation_score") > 0.6, 3)
+         .when(F.col("escalation_score") > 0.3, 2)
+         .otherwise(1))
+    .withColumn("sla_minutes",
+        F.when(F.col("escalation_tier") == 4, 15)
+         .when(F.col("escalation_tier") == 3, 60)
+         .when(F.col("escalation_tier") == 2, 240)
+         .otherwise(1440))
+)
+
+scored.write.format("delta").mode("overwrite").saveAsTable(
+    f"{catalog}.{schema}.escalation_scored_alerts")
+
 sla_summary = (
-    df.groupBy("escalation_tier")
+    scored
+    .groupBy("escalation_tier")
     .agg(
         F.count("*").alias("total_alerts"),
-        F.sum(F.when(F.col("sla_breached"), 1).otherwise(0)).alias("sla_breaches"),
-        F.avg("response_time_minutes").alias("avg_response_min"),
         F.avg("escalation_score").alias("avg_score"),
+        F.sum(F.when(F.col("status") == "resolved", 1).otherwise(0)).alias("resolved"),
     )
-    .withColumn("sla_compliance_pct", F.round((1 - F.col("sla_breaches") / F.col("total_alerts")) * 100, 1))
     .orderBy("escalation_tier")
 )
+
 display(sla_summary)
-
-# Analyst workload
-analyst_load = (
-    df.filter(F.col("status").isin(["open", "investigating"]))
-    .groupBy("assigned_to")
-    .agg(
-        F.count("*").alias("active_alerts"),
-        F.avg("escalation_score").alias("avg_severity"),
-        F.sum(F.when(F.col("sla_breached"), 1).otherwise(0)).alias("sla_breaches"),
-    )
-    .orderBy(F.desc("active_alerts"))
-)
-print("\\n=== Analyst Workload ===")
-display(analyst_load)
-
-print(f"""
-=== ESCALATION ENGINE SUMMARY ===
-  Total Alerts:      {df.count()}
-  Tier 4 (Critical): {df.filter(F.col('escalation_tier') == 4).count()}
-  SLA Breaches:      {df.filter(F.col('sla_breached')).count()}
-  Open Alerts:       {df.filter(F.col('status') == 'open').count()}
-""")`
+print(f"Tier 4 (Critical): {scored.filter(F.col('escalation_tier') == 4).count()} alerts")`
       },
     ],
   },
 
   {
-    id: 'red-team-automation',
-    title: 'Red Team Automation & Attack Simulation',
-    subtitle: 'MITRE ATT&CK-based adversary simulation with detection validation',
+    id: 'red-team-validation',
+    title: 'Red Team Detection Validation Engine',
+    subtitle: 'MITRE ATT&CK detection coverage analysis from real campaign telemetry',
     category: 'behavioral',
-    tags: ['Red Team', 'MITRE ATT&CK', 'Purple Team', 'Detection Validation', 'Atomic Tests'],
-    description: 'Automates adversary simulation campaigns based on MITRE ATT&CK framework. Generates realistic attack telemetry, validates detection coverage, measures mean time to detect (MTTD), and identifies gaps in defensive capabilities.',
-    estimatedRuntime: '6 min',
+    tags: ['Red Team', 'MITRE ATT&CK', 'Purple Team', 'Detection Validation', 'Coverage'],
+    description: 'Analyzes real red team campaign results stored in the red_team_campaigns table, correlates executed techniques against detection hits in alerts and correlation_matches, computes MTTD and detection coverage gaps per MITRE tactic.',
+    estimatedRuntime: '5 min (batch)',
     clusterRequirements: 'DBR 14.3 LTS, 2+ workers',
     cells: [
       {
         type: 'markdown',
-        content: `# Red Team Automation & Attack Simulation Engine
-## MITRE ATT&CK-Based Purple Team Validation
+        content: `# Red Team Detection Validation Engine
+## MITRE ATT&CK Coverage Analysis from Real Campaign Data
 
-Automates the full red team lifecycle:
-1. **Campaign Planning** - Select ATT&CK techniques and objectives
-2. **Attack Execution** - Generate realistic attack telemetry
-3. **Detection Validation** - Verify which attacks were detected
-4. **Gap Analysis** - Identify missing detection capabilities
-5. **MTTD Measurement** - Mean Time to Detect across technique categories`
+Analyzes actual red team campaigns against detection telemetry:
+1. **Campaign Correlation** - Match campaign steps to alert/correlation hits
+2. **Detection Coverage** - Percentage of techniques detected per tactic
+3. **MTTD Measurement** - Mean Time to Detect per technique category
+4. **Gap Analysis** - Identify undetected techniques for rule improvements`
       },
       {
         type: 'code',
-        content: `# Cell 1: MITRE ATT&CK Technique Library & Campaign Generation
+        content: `# Cell 1: Load Real Campaign & Detection Data
+dbutils.widgets.text("catalog", "main")
+dbutils.widgets.text("schema", "security")
+
+catalog = dbutils.widgets.get("catalog")
+schema = dbutils.widgets.get("schema")
+
 from pyspark.sql import functions as F
-import json, random, uuid
-from datetime import datetime, timedelta
 
-catalog = "soc_platform"
-schema = "red_team"
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
-spark.sql(f"USE {catalog}.{schema}")
+campaigns = spark.table(f"{catalog}.{schema}.red_team_campaigns")
+alerts = spark.table(f"{catalog}.{schema}.alerts")
+corr_matches = spark.table(f"{catalog}.{schema}.correlation_matches")
 
-# MITRE ATT&CK technique library
-techniques = [
-    {"id": "T1566.001", "tactic": "Initial Access", "name": "Spearphishing Attachment", "difficulty": "easy"},
-    {"id": "T1059.001", "tactic": "Execution", "name": "PowerShell", "difficulty": "easy"},
-    {"id": "T1053.005", "tactic": "Persistence", "name": "Scheduled Task", "difficulty": "medium"},
-    {"id": "T1548.002", "tactic": "Privilege Escalation", "name": "UAC Bypass", "difficulty": "medium"},
-    {"id": "T1027", "tactic": "Defense Evasion", "name": "Obfuscated Files", "difficulty": "medium"},
-    {"id": "T1003.001", "tactic": "Credential Access", "name": "LSASS Memory", "difficulty": "hard"},
-    {"id": "T1087.002", "tactic": "Discovery", "name": "Domain Account Discovery", "difficulty": "easy"},
-    {"id": "T1021.002", "tactic": "Lateral Movement", "name": "SMB/Windows Admin Shares", "difficulty": "medium"},
-    {"id": "T1560.001", "tactic": "Collection", "name": "Archive via Utility", "difficulty": "easy"},
-    {"id": "T1071.001", "tactic": "Command & Control", "name": "Web Protocols", "difficulty": "medium"},
-    {"id": "T1041", "tactic": "Exfiltration", "name": "Exfiltration Over C2", "difficulty": "hard"},
-    {"id": "T1486", "tactic": "Impact", "name": "Data Encrypted for Impact", "difficulty": "hard"},
-    {"id": "T1190", "tactic": "Initial Access", "name": "Exploit Public-Facing App", "difficulty": "hard"},
-    {"id": "T1547.001", "tactic": "Persistence", "name": "Registry Run Keys", "difficulty": "easy"},
-    {"id": "T1055.001", "tactic": "Defense Evasion", "name": "DLL Injection", "difficulty": "hard"},
-    {"id": "T1110.003", "tactic": "Credential Access", "name": "Password Spraying", "difficulty": "easy"},
-]
+campaign_steps = (
+    campaigns
+    .select(
+        "campaign_id", "campaign_name", "step_order",
+        "technique_id", "tactic", "technique_name",
+        "executed_at", "target_host", "operator"
+    )
+)
 
-# Generate attack campaigns
-campaigns = []
-for camp_idx in range(10):
-    num_techniques = random.randint(4, 10)
-    selected = random.sample(techniques, num_techniques)
-    campaign_start = datetime.now() - timedelta(days=random.randint(1, 60))
+detection_hits = (
+    alerts
+    .select(
+        F.explode("mitre_techniques").alias("detected_technique"),
+        "created_at", "hostname", "severity"
+    )
+    .unionByName(
+        corr_matches
+        .filter(F.col("match_type") == "sequence")
+        .select(
+            F.lit("matched").alias("detected_technique"),
+            F.col("fired_at").alias("created_at"),
+            F.col("entity_value").alias("hostname"),
+            "severity"
+        ),
+        allowMissingColumns=True
+    )
+)
 
-    for step, tech in enumerate(selected):
-        detected = random.random() < (0.8 if tech["difficulty"] == "easy" else 0.5 if tech["difficulty"] == "medium" else 0.3)
-        detection_time = random.randint(5, 1440) if detected else None
-
-        campaigns.append({
-            "campaign_id": f"CAMP-{camp_idx+1:03d}",
-            "campaign_name": f"Operation {random.choice(['Shadow', 'Phoenix', 'Cobra', 'Thunder', 'Eclipse', 'Storm'])} {random.choice(['Strike', 'Dawn', 'Rain', 'Wind', 'Fire'])}",
-            "step_order": step + 1,
-            "technique_id": tech["id"],
-            "tactic": tech["tactic"],
-            "technique_name": tech["name"],
-            "difficulty": tech["difficulty"],
-            "executed_at": campaign_start + timedelta(hours=step * random.randint(1, 4)),
-            "was_detected": detected,
-            "detection_time_minutes": detection_time,
-            "detection_source": random.choice(["EDR", "SIEM", "NDR", "UEBA", "Firewall"]) if detected else None,
-            "target_host": f"TARGET-{random.randint(1,20):03d}",
-            "operator": f"operator_{random.randint(1,5):02d}",
-        })
-
-df = spark.createDataFrame(campaigns)
-df.write.mode("overwrite").saveAsTable("red_team_campaigns")
-print(f"Generated {len(campaigns)} attack simulation steps across 10 campaigns")
-display(df.groupBy("tactic", "was_detected").count().orderBy("tactic"))`
+print(f"Campaign steps: {campaign_steps.count()}")
+print(f"Detection hits: {detection_hits.count()}")`
       },
       {
         type: 'code',
         content: `# Cell 2: Detection Coverage & MTTD Analysis
-df = spark.table("red_team_campaigns")
 
-# Detection coverage by tactic
 coverage = (
-    df.groupBy("tactic")
+    campaign_steps.alias("c")
+    .join(
+        detection_hits.alias("d"),
+        (F.col("c.technique_id") == F.col("d.detected_technique")) &
+        (F.col("c.target_host") == F.col("d.hostname")) &
+        (F.col("d.created_at") >= F.col("c.executed_at")) &
+        (F.col("d.created_at") <= F.date_add(F.col("c.executed_at"), 1)),
+        "left"
+    )
+    .withColumn("was_detected", F.col("d.created_at").isNotNull())
+    .withColumn("detection_delay_min",
+        F.when(F.col("was_detected"),
+               (F.unix_timestamp("d.created_at") - F.unix_timestamp("c.executed_at")) / 60.0))
+)
+
+tactic_coverage = (
+    coverage
+    .groupBy("tactic")
     .agg(
         F.count("*").alias("total_tests"),
         F.sum(F.when(F.col("was_detected"), 1).otherwise(0)).alias("detected"),
-        F.avg(F.when(F.col("was_detected"), F.col("detection_time_minutes"))).alias("avg_mttd_min"),
+        F.avg(F.col("detection_delay_min")).alias("avg_mttd_min"),
     )
-    .withColumn("detection_rate", F.round(F.col("detected") / F.col("total_tests") * 100, 1))
+    .withColumn("detection_rate_pct",
+        F.round(F.col("detected") / F.col("total_tests") * 100, 1))
     .orderBy("tactic")
 )
 
-display(coverage)
+display(tactic_coverage)
 
-# Gap analysis
-gaps = df.filter(~F.col("was_detected")).groupBy("technique_id", "technique_name", "tactic", "difficulty").count()
-print("\\n=== Detection Gaps (Undetected Techniques) ===")
-display(gaps.orderBy(F.desc("count")))
-
-# Campaign success rates
-campaign_summary = (
-    df.groupBy("campaign_id", "campaign_name")
-    .agg(
-        F.count("*").alias("total_steps"),
-        F.sum(F.when(F.col("was_detected"), 1).otherwise(0)).alias("detected_steps"),
-        F.avg(F.when(F.col("was_detected"), F.col("detection_time_minutes"))).alias("avg_mttd"),
-    )
-    .withColumn("stealth_rate", F.round(1 - F.col("detected_steps") / F.col("total_steps"), 2))
-    .orderBy(F.desc("stealth_rate"))
+gaps = (
+    coverage
+    .filter(~F.col("was_detected"))
+    .groupBy("technique_id", "technique_name", "tactic")
+    .agg(F.count("*").alias("undetected_count"))
+    .orderBy(F.desc("undetected_count"))
 )
-print("\\n=== Campaign Stealth Analysis ===")
-display(campaign_summary)`
+
+print("\\n=== Detection Gaps (Undetected Techniques) ===")
+display(gaps.limit(20))
+
+overall_rate = coverage.filter(F.col("was_detected")).count() / max(coverage.count(), 1) * 100
+print(f"\\nOverall Detection Rate: {overall_rate:.1f}%")`
       },
     ],
   },

@@ -112,7 +112,7 @@ from pyspark.sql.types import *
 from pyspark.sql.window import Window
 from delta.tables import DeltaTable
 from datetime import datetime, timedelta
-import json, random, uuid, hashlib
+import json, uuid, hashlib
 
 CATALOG = "soc_platform"
 SCHEMA = "agentic_soc"
@@ -781,273 +781,419 @@ for a in AGENT_CONFIGS:
     },
     {
       type: 'code',
-      content: `# Cell 7: Generate Realistic Sample Events
+      content: `# Cell 7: Ingest Events from Silver Layer
 
-def generate_events(num_events=10000):
-    """Generate realistic security events with OCSF categorization."""
+# --- Parameterize source table ---
+dbutils.widgets.text("source_events_table", "soc_platform.graph_silver.silver_events")
+SOURCE_EVENTS_TABLE = dbutils.widgets.get("source_events_table")
 
-    event_templates = [
-        {"event_type": "login_success", "category": "authentication", "ocsf_class": "Authentication", "severity": "low", "weight": 0.30, "tactic": "TA0001", "technique": "T1078"},
-        {"event_type": "login_failure", "category": "authentication", "ocsf_class": "Authentication", "severity": "medium", "weight": 0.10, "tactic": "TA0006", "technique": "T1110"},
-        {"event_type": "privilege_escalation", "category": "authentication", "ocsf_class": "Authorization", "severity": "high", "weight": 0.03, "tactic": "TA0004", "technique": "T1068"},
-        {"event_type": "account_lockout", "category": "authentication", "ocsf_class": "Account Change", "severity": "medium", "weight": 0.02, "tactic": "TA0006", "technique": "T1110.003"},
-        {"event_type": "connection", "category": "network", "ocsf_class": "Network Activity", "severity": "low", "weight": 0.20, "tactic": None, "technique": None},
-        {"event_type": "dns_query", "category": "network", "ocsf_class": "DNS Activity", "severity": "low", "weight": 0.15, "tactic": "TA0011", "technique": "T1071.004"},
-        {"event_type": "firewall_block", "category": "network", "ocsf_class": "Network Activity", "severity": "medium", "weight": 0.05, "tactic": None, "technique": None},
-        {"event_type": "process_start", "category": "endpoint", "ocsf_class": "Process Activity", "severity": "low", "weight": 0.12, "tactic": "TA0002", "technique": "T1059"},
-        {"event_type": "file_access", "category": "endpoint", "ocsf_class": "File Activity", "severity": "low", "weight": 0.10, "tactic": "TA0009", "technique": "T1005"},
-        {"event_type": "file_download", "category": "endpoint", "ocsf_class": "File Activity", "severity": "medium", "weight": 0.05, "tactic": "TA0011", "technique": "T1105"},
-        {"event_type": "registry_modification", "category": "endpoint", "ocsf_class": "Registry Activity", "severity": "medium", "weight": 0.03, "tactic": "TA0003", "technique": "T1547.001"},
-        {"event_type": "malware_detected", "category": "security", "ocsf_class": "Security Finding", "severity": "critical", "weight": 0.015, "tactic": "TA0002", "technique": "T1204"},
-        {"event_type": "exploit_attempt", "category": "security", "ocsf_class": "Security Finding", "severity": "high", "weight": 0.02, "tactic": "TA0001", "technique": "T1190"},
-        {"event_type": "port_scan", "category": "network", "ocsf_class": "Network Activity", "severity": "medium", "weight": 0.04, "tactic": "TA0043", "technique": "T1046"},
-        {"event_type": "large_data_transfer", "category": "network", "ocsf_class": "Network Activity", "severity": "high", "weight": 0.02, "tactic": "TA0010", "technique": "T1048"},
-        {"event_type": "powershell_execution", "category": "endpoint", "ocsf_class": "Process Activity", "severity": "medium", "weight": 0.03, "tactic": "TA0002", "technique": "T1059.001"},
-        {"event_type": "scheduled_task_created", "category": "endpoint", "ocsf_class": "Scheduled Job", "severity": "medium", "weight": 0.02, "tactic": "TA0003", "technique": "T1053"},
-        {"event_type": "service_installed", "category": "endpoint", "ocsf_class": "Process Activity", "severity": "medium", "weight": 0.015, "tactic": "TA0003", "technique": "T1543"},
-    ]
+print(f"Reading events from: {SOURCE_EVENTS_TABLE}")
 
-    internal_ips = [f"10.0.{i}.{j}" for i in range(1, 10) for j in range(1, 50)]
-    external_ips = [f"203.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(0,255)}" for _ in range(200)]
-    malicious_ips = [f"185.{random.randint(100,200)}.{random.randint(0,255)}.{random.randint(0,255)}" for _ in range(30)]
-    usernames = [f"user{i}@company.com" for i in range(1, 51)]
-    admin_users = ["admin@company.com", "sysadmin@company.com", "dba@company.com"]
-    hostnames = [f"WS-{i:03d}" for i in range(1, 101)] + [f"SRV-{n}" for n in ["DC-01", "DC-02", "FS-01", "WEB-01", "WEB-02", "DB-01", "APP-01", "MAIL-01"]]
-    domains = ["google.com", "microsoft.com", "github.com", "aws.amazon.com", "office365.com",
-               "suspicious-site.ru", "malware-c2.cn", "phishing.xyz", "evil-download.top", "data-exfil.onion"]
-    processes = ["chrome.exe", "firefox.exe", "outlook.exe", "python.exe", "cmd.exe",
-                 "powershell.exe", "svchost.exe", "explorer.exe", "notepad.exe",
-                 "certutil.exe", "bitsadmin.exe", "mshta.exe", "regsvr32.exe", "rundll32.exe"]
+# --- Read from the existing silver events table ---
+silver_events = spark.table(SOURCE_EVENTS_TABLE)
 
-    weights = [t["weight"] for t in event_templates]
-    base_time = datetime.now() - timedelta(days=7)
-    events = []
+# --- Map / transform columns to fit the agentic_soc.events schema ---
+events_mapped = (
+    silver_events
+    .select(
+        F.coalesce(F.col("event_id"), F.expr("uuid()")).alias("id"),
+        F.col("event_timestamp").alias("timestamp"),
+        F.col("event_type"),
+        F.col("event_category"),
+        F.coalesce(F.col("severity"), F.lit("low")).alias("severity"),
+        F.col("src_ip").alias("source_ip"),
+        F.col("dst_ip").alias("dest_ip"),
+        F.col("src_port").cast("int").alias("source_port"),
+        F.col("dst_port").cast("int").alias("dest_port"),
+        F.col("protocol"),
+        F.col("username"),
+        F.col("hostname"),
+        F.col("domain"),
+        F.col("process_name"),
+        F.col("process_path"),
+        F.col("command_line"),
+        F.col("file_hash"),
+        F.col("file_path"),
+        F.coalesce(F.col("bytes_sent").cast("bigint"), F.lit(0)).alias("bytes_sent"),
+        F.coalesce(F.col("bytes_received").cast("bigint"), F.lit(0)).alias("bytes_received"),
+        F.coalesce(F.col("duration_ms").cast("int"), F.lit(0)).alias("duration_ms"),
+        F.col("geo_country"),
+        F.col("geo_city"),
+        F.col("description"),
+        F.col("raw_log"),
+        F.col("ocsf_category"),
+        F.col("ocsf_class"),
+        F.col("mitre_technique"),
+        F.col("mitre_tactic"),
+        F.col("data_source"),
+        F.current_timestamp().alias("ingestion_time"),
+    )
+)
 
-    for i in range(num_events):
-        template = random.choices(event_templates, weights=weights, k=1)[0]
+# --- Delta MERGE (upsert) into the events table ---
+target_events_table = f"{SCHEMA}.events"
 
-        is_suspicious = random.random() < 0.05
-        timestamp = base_time + timedelta(
-            days=random.randint(0, 7),
-            hours=random.randint(0, 23) if not is_suspicious else random.choice([1, 2, 3, 22, 23]),
-            minutes=random.randint(0, 59),
-            seconds=random.randint(0, 59),
+if DeltaTable.isDeltaTable(spark, f"spark-warehouse/{CATALOG}/{SCHEMA}/events") or spark.catalog.tableExists(target_events_table):
+    dt_events = DeltaTable.forName(spark, target_events_table)
+    merge_result = (
+        dt_events.alias("target")
+        .merge(
+            events_mapped.alias("source"),
+            "target.id = source.id"
         )
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+    print("Delta MERGE completed for events table.")
+else:
+    events_mapped.write.format("delta").mode("overwrite").saveAsTable(target_events_table)
+    print(f"Initial load written to {target_events_table}.")
 
-        src_ip = random.choice(malicious_ips if is_suspicious and random.random() < 0.3 else internal_ips)
-        dst_ip = random.choice(external_ips if random.random() > 0.3 else internal_ips)
-        if is_suspicious and template["category"] == "network":
-            dst_ip = random.choice(malicious_ips) if random.random() < 0.4 else dst_ip
+# --- Show ingestion metrics ---
+total_events = spark.table(target_events_table).count()
+ingestion_stats = (
+    spark.table(target_events_table)
+    .groupBy("event_category")
+    .agg(
+        F.count("*").alias("count"),
+        F.min("timestamp").alias("earliest"),
+        F.max("timestamp").alias("latest"),
+        F.countDistinct("source_ip").alias("unique_src_ips"),
+        F.countDistinct("username").alias("unique_users"),
+    )
+    .orderBy(F.desc("count"))
+)
 
-        user = None
-        if template["category"] == "authentication":
-            user = random.choice(admin_users if is_suspicious and random.random() < 0.3 else usernames)
-        elif random.random() < 0.5:
-            user = random.choice(usernames)
+print(f"\\nEvent ingestion metrics ({target_events_table}):")
+print(f"  Total events: {total_events:,}")
+ingestion_stats.show(truncate=False)
 
-        events.append({
-            "id": gen_uuid(),
-            "timestamp": timestamp,
-            "event_type": template["event_type"],
-            "event_category": template["category"],
-            "severity": "critical" if is_suspicious and template["severity"] in ["high", "critical"] else template["severity"],
-            "source_ip": src_ip,
-            "dest_ip": dst_ip,
-            "source_port": random.randint(1024, 65535),
-            "dest_port": random.choice([22, 80, 443, 3389, 445, 1433, 3306, 8080, 8443, random.randint(1024, 65535)]),
-            "protocol": random.choice(["TCP", "UDP"]) if template["category"] == "network" else "TCP",
-            "username": user,
-            "hostname": random.choice(hostnames),
-            "domain": random.choice(domains) if template["category"] == "network" else None,
-            "process_name": random.choice(processes) if template["category"] == "endpoint" else None,
-            "file_hash": hashlib.md5(gen_uuid().encode()).hexdigest() if "file" in template["event_type"] else None,
-            "bytes_sent": random.randint(100, 50000000 if is_suspicious else 1000000) if template["category"] == "network" else 0,
-            "bytes_received": random.randint(100, 1000000) if template["category"] == "network" else 0,
-            "duration_ms": random.randint(10, 30000),
-            "geo_country": random.choice(["CN", "RU", "IR", "KP"]) if is_suspicious and random.random() < 0.4 else random.choice(["US", "US", "US", "GB", "DE"]),
-            "description": f"{template['event_type']} from {src_ip}",
-            "raw_log": f"<14>{template['event_type']}|{src_ip}|{dst_ip}|{user or '-'}",
-            "ocsf_category": template["category"],
-            "ocsf_class": template["ocsf_class"],
-            "mitre_technique": template["technique"],
-            "mitre_tactic": template["tactic"],
-            "data_source": random.choice(["syslog", "edr", "firewall", "ids", "cloud_trail"]),
-        })
-
-    return events
-
-events = generate_events(10000)
-events_df = spark.createDataFrame(events)
-events_df.write.format("delta").mode("overwrite").saveAsTable(f"{SCHEMA}.events")
-
-event_counts = {}
-for e in events:
-    t = e["event_type"]
-    event_counts[t] = event_counts.get(t, 0) + 1
-
-print(f"Events generated: {len(events)}")
-for et in sorted(event_counts.keys()):
-    print(f"  {et:30s}: {event_counts[et]:>5,}")`
+severity_dist = (
+    spark.table(target_events_table)
+    .groupBy("severity")
+    .count()
+    .orderBy(F.desc("count"))
+)
+print("Severity distribution:")
+severity_dist.show(truncate=False)`
     },
     {
       type: 'code',
-      content: `# Cell 8: Generate Alerts, Threat Intel, User Baselines & Anomalies
+      content: `# Cell 8: Ingest Alerts, Threat Intel & Compute Baselines / Anomalies
 
-def generate_alerts(num_alerts=500):
-    """Generate realistic correlated alerts."""
-    alert_templates = [
-        ("Brute Force Attack Detected", "Multiple failed login attempts from single source IP exceeding threshold", "high", 75, ["T1110.003"], ["TA0006"]),
-        ("Potential Data Exfiltration", "Large outbound data transfer to external IP exceeding baseline by 3+ sigma", "critical", 85, ["T1048.003"], ["TA0010"]),
-        ("Malware C2 Communication", "Connection to known command-and-control server identified by threat feeds", "critical", 90, ["T1071.001"], ["TA0011"]),
-        ("Lateral Movement Detected", "Sequential RDP/SMB authentication across 3+ hosts within 30 minutes", "high", 70, ["T1021.001", "T1021.002"], ["TA0008"]),
-        ("Suspicious PowerShell Execution", "Encoded PowerShell command execution with network callback", "medium", 55, ["T1059.001", "T1027"], ["TA0002"]),
-        ("Port Scan Activity", "Sequential connection attempts to 50+ ports on single target", "medium", 45, ["T1046"], ["TA0043"]),
-        ("Unauthorized Privilege Escalation", "Non-admin user gained elevated privileges outside change window", "high", 80, ["T1068", "T1078.002"], ["TA0004"]),
-        ("Anomalous User Behavior", "User activity deviates from behavioral baseline by 4+ sigma", "medium", 60, ["T1078"], ["TA0001"]),
-        ("Ransomware Indicators Detected", "Rapid file encryption pattern detected across network shares", "critical", 95, ["T1486"], ["TA0040"]),
-        ("DNS Tunneling Suspected", "High-volume DNS queries with encoded payloads to rare domain", "high", 72, ["T1071.004"], ["TA0011"]),
-        ("Credential Dumping Detected", "LSASS memory access or SAM database extraction attempt", "critical", 88, ["T1003.001", "T1003.002"], ["TA0006"]),
-        ("Supply Chain Compromise", "Trusted binary modified or replaced with unsigned variant", "critical", 92, ["T1195.002"], ["TA0001"]),
-    ]
+# --- Parameterize source tables ---
+dbutils.widgets.text("source_alerts_table", "soc_platform.graph_silver.silver_alerts")
+dbutils.widgets.text("source_threat_feed_table", "soc_platform.graph_silver.threat_feed_items")
+dbutils.widgets.text("baseline_lookback_days", "30")
+dbutils.widgets.text("anomaly_z_threshold", "3.0")
 
-    base_time = datetime.now() - timedelta(days=7)
-    alerts = []
+SOURCE_ALERTS_TABLE = dbutils.widgets.get("source_alerts_table")
+SOURCE_THREAT_FEED_TABLE = dbutils.widgets.get("source_threat_feed_table")
+BASELINE_LOOKBACK_DAYS = int(dbutils.widgets.get("baseline_lookback_days"))
+ANOMALY_Z_THRESHOLD = float(dbutils.widgets.get("anomaly_z_threshold"))
 
-    for i in range(num_alerts):
-        title, desc, severity, base_risk, techniques, tactics = random.choice(alert_templates)
-        risk_score = min(100, max(0, base_risk + random.randint(-20, 20)))
+# =========================================================================
+# 1. ALERTS - Read from existing source and MERGE into agentic_soc.alerts
+# =========================================================================
+print(f"Reading alerts from: {SOURCE_ALERTS_TABLE}")
+silver_alerts = spark.table(SOURCE_ALERTS_TABLE)
 
-        alerts.append({
-            "id": gen_uuid(),
-            "title": title,
-            "description": desc,
-            "severity": severity,
-            "status": "new",
-            "source": random.choice(["correlation_engine", "ml_detector", "threat_feed_match", "behavioral_analytics"]),
-            "source_ip": f"10.0.{random.randint(1,9)}.{random.randint(1,254)}" if random.random() > 0.3 else f"185.{random.randint(100,200)}.{random.randint(0,255)}.{random.randint(0,255)}",
-            "dest_ip": f"203.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(0,255)}",
-            "username": f"user{random.randint(1,50)}@company.com" if random.random() > 0.3 else None,
-            "hostname": f"WS-{random.randint(1,100):03d}",
-            "risk_score": risk_score,
-            "event_count": random.randint(5, 200),
-            "correlated_event_ids": [gen_uuid() for _ in range(random.randint(3, 20))],
-            "correlation_rule_id": gen_uuid(),
-            "mitre_techniques": techniques,
-            "mitre_tactics": tactics,
-            "created_at": base_time + timedelta(days=random.randint(0, 7), hours=random.randint(0, 23), minutes=random.randint(0, 59)),
-        })
+alerts_mapped = (
+    silver_alerts
+    .select(
+        F.coalesce(F.col("alert_id"), F.expr("uuid()")).alias("id"),
+        F.col("title"),
+        F.col("description"),
+        F.coalesce(F.col("severity"), F.lit("medium")).alias("severity"),
+        F.coalesce(F.col("status"), F.lit("new")).alias("status"),
+        F.col("priority"),
+        F.col("source"),
+        F.col("source_ip"),
+        F.col("dest_ip"),
+        F.col("username"),
+        F.col("hostname"),
+        F.coalesce(F.col("risk_score").cast("int"), F.lit(0)).alias("risk_score"),
+        F.coalesce(F.col("event_count").cast("int"), F.lit(0)).alias("event_count"),
+        F.col("correlated_event_ids"),
+        F.col("correlation_rule_id"),
+        F.col("mitre_techniques"),
+        F.col("mitre_tactics"),
+        F.col("created_at"),
+    )
+)
 
-    return alerts
+target_alerts_table = f"{SCHEMA}.alerts"
+dt_alerts = DeltaTable.forName(spark, target_alerts_table)
+(
+    dt_alerts.alias("target")
+    .merge(alerts_mapped.alias("source"), "target.id = source.id")
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .execute()
+)
+print(f"Alerts MERGE complete. Total: {spark.table(target_alerts_table).count():,}")
 
+# =========================================================================
+# 2. THREAT FEED ITEMS - Read from existing source and MERGE
+# =========================================================================
+print(f"\\nReading threat feed items from: {SOURCE_THREAT_FEED_TABLE}")
+silver_threat = spark.table(SOURCE_THREAT_FEED_TABLE)
 
-def generate_threat_feeds(num_items=500):
-    """Generate threat intelligence IOCs."""
-    feeds = ["AlienVault OTX", "Abuse.ch", "MISP Community", "VirusTotal Livehunt", "Custom Intel", "Mandiant", "CrowdStrike"]
-    threat_types = ["malware", "c2_server", "phishing", "botnet", "ransomware", "apt", "cryptominer"]
-    tag_options = ["emotet", "cobalt_strike", "apt29", "lazarus", "fin7", "conti", "lockbit", "qakbot", "trickbot"]
+threat_mapped = (
+    silver_threat
+    .select(
+        F.coalesce(F.col("ioc_id"), F.expr("uuid()")).alias("id"),
+        F.col("feed_name"),
+        F.col("ioc_type"),
+        F.col("ioc_value"),
+        F.col("threat_type"),
+        F.coalesce(F.col("severity"), F.lit("medium")).alias("severity"),
+        F.coalesce(F.col("confidence").cast("double"), F.lit(0.5)).alias("confidence"),
+        F.col("tags"),
+        F.col("description"),
+        F.col("first_seen"),
+        F.col("last_seen"),
+        F.col("source_url"),
+        F.coalesce(F.col("is_active"), F.lit(True)).alias("is_active"),
+    )
+)
 
-    items = []
-    for _ in range(num_items):
-        ioc_type = random.choice(["ip", "domain", "hash", "url"])
-        if ioc_type == "ip":
-            ioc_value = f"185.{random.randint(100,200)}.{random.randint(0,255)}.{random.randint(0,255)}"
-        elif ioc_type == "domain":
-            ioc_value = f"malicious-{random.randint(1,2000)}.{random.choice(['ru', 'cn', 'xyz', 'top', 'onion'])}"
-        elif ioc_type == "url":
-            ioc_value = f"http://malicious-{random.randint(1,500)}.{random.choice(['ru', 'cn'])}/payload/{gen_uuid()[:8]}"
-        else:
-            ioc_value = hashlib.sha256(gen_uuid().encode()).hexdigest()
+target_threat_table = f"{SCHEMA}.threat_feed_items"
+dt_threat = DeltaTable.forName(spark, target_threat_table)
+(
+    dt_threat.alias("target")
+    .merge(threat_mapped.alias("source"), "target.id = source.id")
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+    .execute()
+)
+print(f"Threat feed MERGE complete. Total: {spark.table(target_threat_table).count():,}")
 
-        items.append({
-            "id": gen_uuid(),
-            "feed_name": random.choice(feeds),
-            "ioc_type": ioc_type,
-            "ioc_value": ioc_value,
-            "threat_type": random.choice(threat_types),
-            "severity": random.choice(["low", "medium", "high", "critical"]),
-            "confidence": round(random.uniform(0.5, 1.0), 2),
-            "tags": random.sample(tag_options, random.randint(1, 3)),
-            "description": f"Known {random.choice(threat_types)} indicator from {random.choice(feeds)}",
-            "first_seen": datetime.now() - timedelta(days=random.randint(1, 365)),
-            "last_seen": datetime.now() - timedelta(days=random.randint(0, 30)),
-            "is_active": random.random() > 0.1,
-        })
+# =========================================================================
+# 3. USER BEHAVIOR BASELINES - Computed from agentic_soc.events
+# =========================================================================
+print(f"\\nComputing user behavior baselines from {SCHEMA}.events (lookback={BASELINE_LOOKBACK_DAYS}d)...")
 
-    return items
+events_for_baselines = (
+    spark.table(f"{SCHEMA}.events")
+    .filter(F.col("timestamp") >= F.date_sub(F.current_date(), BASELINE_LOOKBACK_DAYS))
+    .filter(F.col("username").isNotNull())
+)
 
+baselines_computed = (
+    events_for_baselines
+    .groupBy("username")
+    .agg(
+        F.expr("uuid()").alias("id"),
+        # Login hour statistics (from authentication events)
+        F.avg(
+            F.when(F.col("event_category") == "authentication", F.hour("timestamp"))
+        ).alias("avg_login_hour"),
+        F.stddev(
+            F.when(F.col("event_category") == "authentication", F.hour("timestamp"))
+        ).alias("stddev_login_hour"),
+        # Common hosts (top 5 most frequent)
+        F.slice(
+            F.sort_array(F.collect_set("hostname"), asc=False), 1, 5
+        ).alias("common_hosts"),
+        # Common processes (top 5 most frequent)
+        F.slice(
+            F.sort_array(
+                F.collect_set(
+                    F.when(F.col("process_name").isNotNull(), F.col("process_name"))
+                ), asc=False
+            ), 1, 5
+        ).alias("common_processes"),
+        # Common geo locations
+        F.slice(
+            F.sort_array(
+                F.collect_set(
+                    F.when(F.col("geo_country").isNotNull(), F.col("geo_country"))
+                ), asc=False
+            ), 1, 3
+        ).alias("common_locations"),
+        # Average daily events
+        F.expr(f"cast(count(*) / {BASELINE_LOOKBACK_DAYS} as int)").alias("avg_daily_events"),
+        # Average bytes transferred
+        F.avg(
+            F.coalesce(F.col("bytes_sent"), F.lit(0)) + F.coalesce(F.col("bytes_received"), F.lit(0))
+        ).cast("bigint").alias("avg_bytes_transferred"),
+        # Average session duration
+        F.avg(F.col("duration_ms")).alias("avg_session_duration_min_raw"),
+    )
+    .withColumn("avg_session_duration_min", F.round(F.col("avg_session_duration_min_raw") / 60000.0, 1))
+    .withColumn("risk_score", F.lit(50))
+    .withColumn("peer_group", F.lit("default"))
+    .withColumn("last_updated", F.current_timestamp())
+    .drop("avg_session_duration_min_raw")
+)
 
-def generate_baselines(num_users=50):
-    """Generate user behavioral baselines."""
-    departments = ["Engineering", "Finance", "Sales", "HR", "IT", "Security", "Executive"]
-    roles = ["analyst", "engineer", "manager", "director", "admin"]
-    baselines = []
+target_baselines_table = f"{SCHEMA}.user_behavior_baselines"
+dt_baselines = DeltaTable.forName(spark, target_baselines_table)
+(
+    dt_baselines.alias("target")
+    .merge(baselines_computed.alias("source"), "target.username = source.username")
+    .whenMatchedUpdate(set={
+        "avg_login_hour": "source.avg_login_hour",
+        "stddev_login_hour": "source.stddev_login_hour",
+        "common_hosts": "source.common_hosts",
+        "common_processes": "source.common_processes",
+        "common_locations": "source.common_locations",
+        "avg_daily_events": "source.avg_daily_events",
+        "avg_bytes_transferred": "source.avg_bytes_transferred",
+        "avg_session_duration_min": "source.avg_session_duration_min",
+        "last_updated": "source.last_updated",
+    })
+    .whenNotMatchedInsertAll()
+    .execute()
+)
+num_baselines = spark.table(target_baselines_table).count()
+print(f"Baselines MERGE complete. Total user baselines: {num_baselines:,}")
 
-    for i in range(1, num_users + 1):
-        dept = random.choice(departments)
-        baselines.append({
-            "id": gen_uuid(),
-            "username": f"user{i}@company.com",
-            "department": dept,
-            "role": random.choice(roles),
-            "avg_login_hour": round(random.uniform(7, 10), 1),
-            "stddev_login_hour": round(random.uniform(0.5, 2), 1),
-            "common_locations": random.sample(["US", "UK", "DE", "CA", "JP"], random.randint(1, 2)),
-            "common_hosts": [f"WS-{i:03d}"],
-            "common_processes": random.sample(["chrome.exe", "outlook.exe", "excel.exe", "python.exe", "vscode.exe"], 3),
-            "avg_daily_events": random.randint(50, 500),
-            "avg_bytes_transferred": random.randint(10_000_000, 100_000_000),
-            "avg_session_duration_min": round(random.uniform(120, 600), 1),
-            "risk_score": random.randint(20, 60),
-            "peer_group": dept.lower(),
-            "last_updated": datetime.now(),
-        })
+# =========================================================================
+# 4. ANOMALY DETECTION - Z-score comparison against baselines
+# =========================================================================
+print(f"\\nDetecting anomalies (Z-score threshold={ANOMALY_Z_THRESHOLD})...")
 
-    return baselines
+# Compute current-period activity per user (last 24 hours)
+recent_window = (
+    spark.table(f"{SCHEMA}.events")
+    .filter(F.col("timestamp") >= F.expr("current_timestamp() - INTERVAL 24 HOURS"))
+    .filter(F.col("username").isNotNull())
+)
 
+current_activity = (
+    recent_window
+    .groupBy("username")
+    .agg(
+        F.avg(
+            F.when(F.col("event_category") == "authentication", F.hour("timestamp"))
+        ).alias("current_login_hour"),
+        F.count("*").alias("current_event_count"),
+        F.sum(
+            F.coalesce(F.col("bytes_sent"), F.lit(0)) + F.coalesce(F.col("bytes_received"), F.lit(0))
+        ).alias("current_bytes_transferred"),
+        F.collect_set("hostname").alias("current_hosts"),
+        F.collect_set(
+            F.when(F.col("process_name").isNotNull(), F.col("process_name"))
+        ).alias("current_processes"),
+        F.collect_set("geo_country").alias("current_locations"),
+    )
+)
 
-def generate_anomalies(baselines, count=100):
-    """Generate user anomalies based on baselines."""
-    anomaly_types = [
-        ("unusual_login_time", "Login outside normal hours"),
-        ("unusual_location", "Login from unusual geolocation"),
-        ("excessive_data_transfer", "Data transfer exceeding 3-sigma baseline"),
-        ("unusual_process", "Execution of rare process not in baseline"),
-        ("privilege_anomaly", "Accessed resources outside normal scope"),
-        ("velocity_anomaly", "Rapid sequential actions exceeding rate baseline"),
-    ]
+baselines_df = spark.table(target_baselines_table)
 
-    anomalies = []
-    for _ in range(count):
-        baseline = random.choice(baselines)
-        anomaly_type, desc = random.choice(anomaly_types)
-        anomalies.append({
-            "id": gen_uuid(),
-            "username": baseline["username"],
-            "anomaly_type": anomaly_type,
-            "anomaly_score": round(random.uniform(0.5, 1.0), 3),
-            "risk_score": random.randint(30, 95),
-            "details": json.dumps({"description": desc, "baseline_user": baseline["username"]}),
-            "baseline_value": str(baseline.get("avg_login_hour", "")),
-            "observed_value": str(round(random.uniform(0, 5), 1)),
-            "deviation_sigma": round(random.uniform(2.0, 6.0), 2),
-            "is_active": random.random() > 0.3,
-            "detected_at": datetime.now() - timedelta(hours=random.randint(1, 168)),
-        })
+# Join current activity with baselines and compute Z-scores
+joined = current_activity.alias("curr").join(
+    baselines_df.alias("bl"), "username", "inner"
+)
 
-    return anomalies
+# --- Login time anomaly ---
+login_time_anomalies = (
+    joined
+    .filter(F.col("curr.current_login_hour").isNotNull())
+    .filter(F.col("bl.stddev_login_hour") > 0)
+    .withColumn(
+        "z_login_hour",
+        F.abs((F.col("curr.current_login_hour") - F.col("bl.avg_login_hour")) / F.col("bl.stddev_login_hour"))
+    )
+    .filter(F.col("z_login_hour") >= ANOMALY_Z_THRESHOLD)
+    .select(
+        F.expr("uuid()").alias("id"),
+        F.col("username"),
+        F.lit("unusual_login_time").alias("anomaly_type"),
+        F.least(F.col("z_login_hour") / 10.0, F.lit(1.0)).alias("anomaly_score"),
+        F.least((F.col("z_login_hour") * 15).cast("int"), F.lit(100)).alias("risk_score"),
+        F.to_json(F.struct("current_login_hour", "avg_login_hour", "stddev_login_hour")).alias("details"),
+        F.col("bl.avg_login_hour").cast("string").alias("baseline_value"),
+        F.col("curr.current_login_hour").cast("string").alias("observed_value"),
+        F.col("z_login_hour").alias("deviation_sigma"),
+        F.lit(True).alias("is_active"),
+        F.current_timestamp().alias("detected_at"),
+    )
+)
 
+# --- Event volume anomaly ---
+volume_anomalies = (
+    joined
+    .filter(F.col("bl.avg_daily_events") > 0)
+    .withColumn(
+        "z_volume",
+        F.abs((F.col("curr.current_event_count") - F.col("bl.avg_daily_events")) / F.greatest(F.col("bl.avg_daily_events") * 0.2, F.lit(1)))
+    )
+    .filter(F.col("z_volume") >= ANOMALY_Z_THRESHOLD)
+    .select(
+        F.expr("uuid()").alias("id"),
+        F.col("username"),
+        F.lit("velocity_anomaly").alias("anomaly_type"),
+        F.least(F.col("z_volume") / 10.0, F.lit(1.0)).alias("anomaly_score"),
+        F.least((F.col("z_volume") * 15).cast("int"), F.lit(100)).alias("risk_score"),
+        F.to_json(F.struct("current_event_count", "avg_daily_events")).alias("details"),
+        F.col("bl.avg_daily_events").cast("string").alias("baseline_value"),
+        F.col("curr.current_event_count").cast("string").alias("observed_value"),
+        F.col("z_volume").alias("deviation_sigma"),
+        F.lit(True).alias("is_active"),
+        F.current_timestamp().alias("detected_at"),
+    )
+)
 
-alerts = generate_alerts(500)
-threat_items = generate_threat_feeds(500)
-baselines = generate_baselines(50)
-anomalies = generate_anomalies(baselines, 100)
+# --- Data transfer anomaly ---
+transfer_anomalies = (
+    joined
+    .filter(F.col("bl.avg_bytes_transferred") > 0)
+    .withColumn(
+        "z_transfer",
+        F.abs((F.col("curr.current_bytes_transferred") - F.col("bl.avg_bytes_transferred")) / F.greatest(F.col("bl.avg_bytes_transferred") * 0.3, F.lit(1)))
+    )
+    .filter(F.col("z_transfer") >= ANOMALY_Z_THRESHOLD)
+    .select(
+        F.expr("uuid()").alias("id"),
+        F.col("username"),
+        F.lit("excessive_data_transfer").alias("anomaly_type"),
+        F.least(F.col("z_transfer") / 10.0, F.lit(1.0)).alias("anomaly_score"),
+        F.least((F.col("z_transfer") * 15).cast("int"), F.lit(100)).alias("risk_score"),
+        F.to_json(F.struct("current_bytes_transferred", "avg_bytes_transferred")).alias("details"),
+        F.col("bl.avg_bytes_transferred").cast("string").alias("baseline_value"),
+        F.col("curr.current_bytes_transferred").cast("string").alias("observed_value"),
+        F.col("z_transfer").alias("deviation_sigma"),
+        F.lit(True).alias("is_active"),
+        F.current_timestamp().alias("detected_at"),
+    )
+)
 
-spark.createDataFrame(alerts).write.format("delta").mode("overwrite").saveAsTable(f"{SCHEMA}.alerts")
-spark.createDataFrame(threat_items).write.format("delta").mode("overwrite").saveAsTable(f"{SCHEMA}.threat_feed_items")
-spark.createDataFrame(baselines).write.format("delta").mode("overwrite").saveAsTable(f"{SCHEMA}.user_behavior_baselines")
-spark.createDataFrame(anomalies).write.format("delta").mode("overwrite").saveAsTable(f"{SCHEMA}.user_anomalies")
+# Union all anomaly types
+all_anomalies = login_time_anomalies.unionByName(volume_anomalies).unionByName(transfer_anomalies)
 
-print(f"Sample data generated:")
+# MERGE anomalies into user_anomalies table
+target_anomalies_table = f"{SCHEMA}.user_anomalies"
+dt_anomalies = DeltaTable.forName(spark, target_anomalies_table)
+(
+    dt_anomalies.alias("target")
+    .merge(
+        all_anomalies.alias("source"),
+        "target.username = source.username AND target.anomaly_type = source.anomaly_type AND target.is_active = true"
+    )
+    .whenMatchedUpdate(set={
+        "anomaly_score": "source.anomaly_score",
+        "risk_score": "source.risk_score",
+        "details": "source.details",
+        "observed_value": "source.observed_value",
+        "deviation_sigma": "source.deviation_sigma",
+        "detected_at": "source.detected_at",
+    })
+    .whenNotMatchedInsertAll()
+    .execute()
+)
+
+num_anomalies = spark.table(target_anomalies_table).count()
+new_anomalies = all_anomalies.count()
+print(f"Anomaly detection complete. New anomalies found: {new_anomalies}, Total in table: {num_anomalies:,}")
+
+# =========================================================================
+# Summary
+# =========================================================================
+print(f"\\n--- Ingestion Summary ---")
 print(f"  Events:          {spark.table(f'{SCHEMA}.events').count():>6,}")
 print(f"  Alerts:          {spark.table(f'{SCHEMA}.alerts').count():>6,}")
 print(f"  Threat Intel:    {spark.table(f'{SCHEMA}.threat_feed_items').count():>6,}")

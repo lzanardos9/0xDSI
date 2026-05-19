@@ -2,438 +2,595 @@ import { DatabricksNotebook } from '../databricksNotebooks';
 
 export const mockDataNotebooks: DatabricksNotebook[] = [
   {
-    id: 'mock-data-replay',
-    title: 'SOC Demo Data Replay Engine',
-    subtitle: 'Complete mock data generation and replay for all SOC platform engines',
-    category: 'mock-data',
-    tags: ['Mock Data', 'Demo', 'Data Generator', 'Replay', 'All Engines'],
-    description: 'Master data generation notebook that creates realistic, time-sequenced mock data for ALL SOC platform engines. Generates correlated events that flow through the entire detection pipeline, creating a compelling end-to-end demo experience.',
-    estimatedRuntime: '15 min',
-    clusterRequirements: 'DBR 14.3 LTS ML, 4+ workers, 64GB+ driver memory',
+    id: 'data-quality-engine',
+    title: 'Data Quality & Validation Engine',
+    subtitle: 'Automated data quality validation across all SOC platform tables',
+    category: 'data-ops',
+    tags: ['Data Quality', 'Validation', 'Completeness', 'Freshness', 'Schema Drift'],
+    description: 'Production data quality engine that validates completeness, freshness, volume, and schema consistency across every table in the SOC platform. Results are written to a central data_quality_metrics Delta table and visualized in a matplotlib dashboard for operational monitoring.',
+    estimatedRuntime: '8 min',
+    clusterRequirements: 'DBR 14.3 LTS, 2+ workers, 32GB+ driver memory',
     cells: [
       {
         type: 'markdown',
-        content: `# SOC Platform - Master Demo Data Replay Engine
-## Complete Data Generation for All Security Engines
+        content: `# Data Quality & Validation Engine
+## Automated Quality Assurance for SOC Platform Tables
 
-This notebook generates a **fully correlated demo dataset** that populates all tables across every engine in the SOC platform. Events are temporally linked so that you can trace an attack from initial phishing email through lateral movement to data exfiltration.
+This notebook performs **production data quality checks** across all tables in the SOC platform catalog. No data is generated -- every metric is derived by reading existing Delta tables.
 
-### Data Volume
-| Engine | Records | Time Span |
-|--------|---------|-----------|
-| Security Events | 50,000 | 7 days |
-| Threat Intel IOCs | 5,000 | 180 days |
-| Network Flows (DPI) | 20,000 | 48 hours |
-| User Activity (UEBA) | 30,000 | 30 days |
-| Malware Samples | 3,000 | 30 days |
-| Red Team Campaigns | 200 | 60 days |
-| Correlation Matches | 500+ | 7 days |
-| Alerts & Cases | 2,000 | 7 days |
+### Quality Dimensions
+| Dimension | Description | Method |
+|-----------|-------------|--------|
+| **Completeness** | Null ratio per column | \`COUNT(NULL) / COUNT(*)\` per column |
+| **Freshness** | Data recency | \`MAX(timestamp) vs CURRENT_TIMESTAMP\` |
+| **Volume** | Row count health | Actual count vs expected minimum thresholds |
+| **Schema Drift** | Structural consistency | Compare live schema against baseline snapshots |
 
-### Attack Scenarios Embedded
-1. **APT29 Simulation** - Spearphishing -> PowerShell -> LSASS dump -> Lateral -> Exfil
-2. **Insider Threat** - Gradual data access escalation over 3 weeks
-3. **Ransomware Deployment** - Initial access -> Discovery -> Encryption
-4. **Supply Chain Compromise** - Poisoned dependency -> Backdoor activation
-5. **Cloud Account Takeover** - Credential stuffing -> API abuse -> Data theft`
+### Outputs
+- All metrics written to \`data_quality_metrics\` Delta table via MERGE
+- Dashboard rendered with matplotlib for quick visual review
+- Any check that breaches its threshold is flagged for investigation`
       },
       {
         type: 'code',
-        content: `# Cell 1: Master Configuration
-import json
-from datetime import datetime, timedelta
+        content: `# Cell 1: Configuration & Table Registry
 from pyspark.sql import functions as F
-import random
-import uuid
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, LongType, TimestampType
+from datetime import datetime
 
-catalog = "soc_platform"
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+# --- Parameterized configuration via Databricks widgets ---
+dbutils.widgets.text("catalog", "soc_platform", "Catalog Name")
+dbutils.widgets.text("schema", "events", "Schema Name")
+dbutils.widgets.text("metrics_schema", "data_ops", "Metrics Output Schema")
 
-DEMO_CONFIG = {
-    "base_time": datetime.now() - timedelta(days=7),
-    "end_time": datetime.now(),
-    "num_internal_hosts": 150,
-    "num_users": 60,
-    "num_external_ips": 100,
-    "attack_scenarios": 5,
-    "event_multiplier": 1.0,  # Increase for larger datasets
-}
+catalog = dbutils.widgets.get("catalog")
+schema = dbutils.widgets.get("schema")
+metrics_schema = dbutils.widgets.get("metrics_schema")
 
-# Generate entity pools
-INTERNAL_IPS = [f"10.0.{random.randint(1,20)}.{random.randint(1,254)}" for _ in range(DEMO_CONFIG["num_internal_hosts"])]
-EXTERNAL_IPS = [f"{random.randint(60,220)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,254)}" for _ in range(DEMO_CONFIG["num_external_ips"])]
-USERS = [f"user_{i:03d}" for i in range(DEMO_CONFIG["num_users"])]
-HOSTNAMES = [f"WS-{dept}-{i:03d}" for dept in ["FIN", "HR", "ENG", "SEC", "OPS", "EXEC", "DEV", "QA"] for i in range(1, 20)]
-DEPARTMENTS = ["Engineering", "Finance", "HR", "Security", "Executive", "Research", "Sales", "Legal", "Operations"]
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{metrics_schema}")
 
-# Attack scenario actors
-APT_ACTOR_IP = "185.143.67.12"
-INSIDER_USER = "user_042"
-RANSOMWARE_IP = "91.234.56.78"
-SUPPLY_CHAIN_DOMAIN = "update-pkg-manager.com"
-CLOUD_ATTACKER_IP = "103.45.67.89"
-
-print(f"""
-=== SOC Demo Data Replay Configuration ===
-  Time Span:      {DEMO_CONFIG['base_time'].strftime('%Y-%m-%d')} to {DEMO_CONFIG['end_time'].strftime('%Y-%m-%d')}
-  Internal Hosts:  {len(INTERNAL_IPS)}
-  Users:           {len(USERS)}
-  External IPs:    {len(EXTERNAL_IPS)}
-  Hostnames:       {len(HOSTNAMES)}
-  Attack Scenarios: {DEMO_CONFIG['attack_scenarios']}
-""")`
-      },
-      {
-        type: 'code',
-        content: `# Cell 2: Generate Correlated Security Events (50K)
-def generate_all_events():
-    events = []
-    bt = DEMO_CONFIG["base_time"]
-
-    # SCENARIO 1: APT29 Kill Chain (Day 1-5)
-    apt_chain = [
-        (0, "email", "phishing_detected", "high", "TA0001"),
-        (0.5, "process", "suspicious_execution", "high", "TA0002"),
-        (1, "authentication", "privilege_escalation", "critical", "TA0004"),
-        (2, "process", "suspicious_execution", "critical", "TA0006"),  # LSASS
-        (3, "network", "lateral_movement", "critical", "TA0008"),
-        (3.5, "network", "lateral_movement", "critical", "TA0008"),
-        (4, "file", "bulk_download", "high", "TA0009"),
-        (4.5, "network", "c2_beacon", "critical", "TA0011"),
-        (5, "file", "data_exfiltration", "critical", "TA0010"),
-    ]
-
-    target_user = random.choice(USERS[:10])
-    target_host = random.choice(HOSTNAMES[:5])
-    for day_offset, etype, action, severity, tactic in apt_chain:
-        events.append({
-            "event_id": str(uuid.uuid4()),
-            "timestamp": bt + timedelta(days=day_offset, hours=random.randint(8, 18)),
-            "event_type": etype, "action": action, "severity": severity,
-            "source_ip": APT_ACTOR_IP, "destination_ip": random.choice(INTERNAL_IPS[:10]),
-            "user_id": target_user, "hostname": target_host,
-            "outcome": "success", "mitre_tactic": tactic,
-            "scenario": "apt29",
-        })
-
-    # SCENARIO 2: Insider Threat (Day 15-30 in UEBA window)
-    for day in range(15):
-        volume = 5 + day * 3  # Gradually increasing
-        for _ in range(volume):
-            events.append({
-                "event_id": str(uuid.uuid4()),
-                "timestamp": bt + timedelta(days=day, hours=random.choice([2, 3, 4, 22, 23])),
-                "event_type": "file", "action": "data_access", "severity": "medium",
-                "source_ip": random.choice(INTERNAL_IPS[50:55]),
-                "destination_ip": random.choice(INTERNAL_IPS[:5]),
-                "user_id": INSIDER_USER, "hostname": "WS-FIN-042",
-                "outcome": "success", "mitre_tactic": "TA0009",
-                "scenario": "insider_threat",
-            })
-
-    # SCENARIO 3: Ransomware (Day 6-7)
-    for stage, action, sev in [
-        ("network", "port_scan", "high"),
-        ("authentication", "login_failed", "medium"),
-        ("authentication", "login_success", "medium"),
-        ("process", "suspicious_execution", "critical"),
-        ("file", "encryption_detected", "critical"),
-        ("file", "encryption_detected", "critical"),
-    ]:
-        events.append({
-            "event_id": str(uuid.uuid4()),
-            "timestamp": bt + timedelta(days=6, hours=random.randint(0, 6)),
-            "event_type": stage, "action": action, "severity": sev,
-            "source_ip": RANSOMWARE_IP, "destination_ip": random.choice(INTERNAL_IPS),
-            "user_id": "unknown", "hostname": random.choice(HOSTNAMES),
-            "outcome": "success", "mitre_tactic": "TA0040",
-            "scenario": "ransomware",
-        })
-
-    # Background noise (48K+ events)
-    templates = [
-        ("authentication", "login_success", "low"), ("authentication", "login_failed", "medium"),
-        ("network", "connection", "low"), ("file", "data_access", "low"),
-        ("dns", "query", "low"), ("process", "execution", "low"),
-        ("email", "received", "low"), ("network", "scan_detected", "medium"),
-    ]
-
-    for _ in range(48000):
-        tmpl = random.choice(templates)
-        events.append({
-            "event_id": str(uuid.uuid4()),
-            "timestamp": bt + timedelta(seconds=random.randint(0, 604800)),
-            "event_type": tmpl[0], "action": tmpl[1], "severity": tmpl[2],
-            "source_ip": random.choice(INTERNAL_IPS + EXTERNAL_IPS[:20]),
-            "destination_ip": random.choice(INTERNAL_IPS),
-            "user_id": random.choice(USERS),
-            "hostname": random.choice(HOSTNAMES),
-            "outcome": random.choice(["success", "success", "success", "failure"]),
-            "mitre_tactic": "",
-            "scenario": "background",
-        })
-
-    return events
-
-all_events = generate_all_events()
-df_events = spark.createDataFrame(all_events)
-
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.events")
-spark.sql(f"USE {catalog}.events")
-df_events.write.mode("overwrite").saveAsTable("security_events_master")
-
-print(f"Generated {len(all_events)} security events")
-scenario_counts = df_events.groupBy("scenario").count().orderBy("scenario")
-display(scenario_counts)`
-      },
-      {
-        type: 'code',
-        content: `# Cell 3: Generate Correlated Alerts & Cases
-alerts = []
-cases_data = []
-bt = DEMO_CONFIG["base_time"]
-
-# Generate alerts from correlated events
-alert_templates = [
-    {"name": "APT29 Spearphishing Campaign Detected", "severity": "critical", "source": "Email Security", "scenario": "apt29"},
-    {"name": "LSASS Credential Dumping Attempt", "severity": "critical", "source": "EDR", "scenario": "apt29"},
-    {"name": "Lateral Movement via SMB Detected", "severity": "critical", "source": "NDR", "scenario": "apt29"},
-    {"name": "Data Exfiltration to External C2", "severity": "critical", "source": "DLP", "scenario": "apt29"},
-    {"name": "Insider Threat - Abnormal Data Access Pattern", "severity": "high", "source": "UEBA", "scenario": "insider"},
-    {"name": "After-Hours Access to Sensitive Files", "severity": "high", "source": "UEBA", "scenario": "insider"},
-    {"name": "Ransomware Encryption Activity Detected", "severity": "critical", "source": "EDR", "scenario": "ransomware"},
-    {"name": "Mass File Encryption in Progress", "severity": "critical", "source": "File Integrity", "scenario": "ransomware"},
-    {"name": "Brute Force Attack from External IP", "severity": "high", "source": "SIEM", "scenario": "general"},
-    {"name": "Suspicious DNS Query Pattern", "severity": "medium", "source": "DNS Security", "scenario": "general"},
-    {"name": "Unauthorized Port Scanning", "severity": "medium", "source": "NDR", "scenario": "general"},
-    {"name": "Policy Violation - Unapproved Software", "severity": "low", "source": "Endpoint", "scenario": "general"},
+# Registry of tables to validate with expected minimums and timestamp columns
+TABLE_REGISTRY = [
+    {"table": f"{catalog}.{schema}.security_events_master", "ts_col": "timestamp", "min_rows": 10000},
+    {"table": f"{catalog}.{schema}.alerts_master", "ts_col": "created_at", "min_rows": 500},
+    {"table": f"{catalog}.{schema}.cases_master", "ts_col": "created_at", "min_rows": 10},
+    {"table": f"{catalog}.compliance.compliance_controls", "ts_col": "last_assessed", "min_rows": 200},
+    {"table": f"{catalog}.threat_intel.ioc_master", "ts_col": "first_seen", "min_rows": 1000},
+    {"table": f"{catalog}.ueba.user_activity", "ts_col": "event_time", "min_rows": 5000},
+    {"table": f"{catalog}.network.flow_records", "ts_col": "flow_start", "min_rows": 5000},
 ]
 
-for _ in range(2000):
-    tmpl = random.choice(alert_templates)
-    alerts.append({
-        "alert_id": str(uuid.uuid4()),
-        "alert_name": tmpl["name"],
-        "severity": tmpl["severity"],
-        "source": tmpl["source"],
-        "scenario": tmpl["scenario"],
-        "status": random.choice(["open", "investigating", "resolved", "false_positive"]),
-        "assigned_to": f"analyst_{random.randint(1,8):02d}",
-        "created_at": bt + timedelta(seconds=random.randint(0, 604800)),
-        "resolved_at": bt + timedelta(seconds=random.randint(300, 700000)) if random.random() > 0.3 else None,
-    })
+# Baseline schemas captured from last known-good run (table_name -> list of expected columns)
+SCHEMA_BASELINES = {
+    f"{catalog}.{schema}.security_events_master": [
+        "event_id", "timestamp", "event_type", "action", "severity",
+        "source_ip", "destination_ip", "user_id", "hostname", "outcome", "mitre_tactic"
+    ],
+    f"{catalog}.{schema}.alerts_master": [
+        "alert_id", "alert_name", "severity", "source", "status",
+        "assigned_to", "created_at", "resolved_at"
+    ],
+    f"{catalog}.compliance.compliance_controls": [
+        "control_id", "framework", "function_area", "control_name",
+        "status", "compliance_score", "last_assessed"
+    ],
+}
 
-# Create investigation cases from critical alerts
-for i, scenario in enumerate(["APT29 Kill Chain Investigation", "Insider Threat - Finance Dept",
-                               "Ransomware Incident Response", "Supply Chain Compromise Analysis",
-                               "Cloud Account Takeover"]):
-    cases_data.append({
-        "case_id": f"CASE-{2025}-{i+1:04d}",
-        "title": scenario,
-        "severity": "critical",
-        "status": random.choice(["open", "investigating", "escalated"]),
-        "lead_analyst": f"analyst_{random.randint(1,3):02d}",
-        "alert_count": random.randint(5, 25),
-        "event_count": random.randint(50, 500),
-        "created_at": bt + timedelta(days=i),
-    })
-
-df_alerts = spark.createDataFrame(alerts)
-df_cases = spark.createDataFrame(cases_data)
-
-spark.sql(f"USE {catalog}.events")
-df_alerts.write.mode("overwrite").saveAsTable("alerts_master")
-df_cases.write.mode("overwrite").saveAsTable("cases_master")
-
-print(f"Generated {len(alerts)} alerts and {len(cases_data)} investigation cases")
-display(df_alerts.groupBy("severity", "status").count().orderBy("severity"))`
+run_ts = datetime.now()
+print(f"Data Quality Run: {run_ts.isoformat()}")
+print(f"Catalog: {catalog}")
+print(f"Tables to validate: {len(TABLE_REGISTRY)}")
+print(f"Schema baselines loaded for: {len(SCHEMA_BASELINES)} tables")`
       },
       {
         type: 'code',
-        content: `# Cell 4: Master Demo Summary Dashboard
+        content: `# Cell 2: Execute Quality Checks
+from pyspark.sql import Row
+from datetime import datetime
+
+quality_results = []
+run_timestamp = datetime.now()
+
+for entry in TABLE_REGISTRY:
+    table_name = entry["table"]
+    ts_col = entry["ts_col"]
+    min_rows = entry["min_rows"]
+
+    try:
+        df = spark.table(table_name)
+    except Exception as e:
+        quality_results.append({
+            "run_timestamp": run_timestamp,
+            "table_name": table_name,
+            "check_type": "existence",
+            "check_name": "table_exists",
+            "metric_value": 0.0,
+            "threshold": 1.0,
+            "passed": False,
+            "detail": str(e)[:500],
+        })
+        continue
+
+    # --- Volume Check ---
+    row_count = df.count()
+    volume_passed = row_count >= min_rows
+    quality_results.append({
+        "run_timestamp": run_timestamp,
+        "table_name": table_name,
+        "check_type": "volume",
+        "check_name": "row_count_minimum",
+        "metric_value": float(row_count),
+        "threshold": float(min_rows),
+        "passed": volume_passed,
+        "detail": f"actual={row_count}, expected_min={min_rows}",
+    })
+
+    # --- Freshness Check ---
+    if ts_col in df.columns:
+        max_ts_row = df.agg(F.max(F.col(ts_col)).alias("max_ts")).collect()[0]
+        max_ts = max_ts_row["max_ts"]
+        if max_ts is not None:
+            staleness_hours = (run_timestamp - max_ts).total_seconds() / 3600.0
+        else:
+            staleness_hours = -1.0
+        freshness_threshold = 48.0  # hours
+        quality_results.append({
+            "run_timestamp": run_timestamp,
+            "table_name": table_name,
+            "check_type": "freshness",
+            "check_name": "max_timestamp_staleness_hours",
+            "metric_value": round(staleness_hours, 2),
+            "threshold": freshness_threshold,
+            "passed": 0 <= staleness_hours <= freshness_threshold,
+            "detail": f"max_ts={max_ts}, staleness_hours={round(staleness_hours, 2)}",
+        })
+
+    # --- Completeness Check (null ratio per column) ---
+    total = float(row_count) if row_count > 0 else 1.0
+    for col_name in df.columns:
+        null_count = df.where(F.col(col_name).isNull()).count()
+        null_ratio = null_count / total
+        completeness_threshold = 0.10  # flag if >10% null
+        quality_results.append({
+            "run_timestamp": run_timestamp,
+            "table_name": table_name,
+            "check_type": "completeness",
+            "check_name": f"null_ratio_{col_name}",
+            "metric_value": round(null_ratio, 4),
+            "threshold": completeness_threshold,
+            "passed": null_ratio <= completeness_threshold,
+            "detail": f"nulls={null_count}, total={row_count}",
+        })
+
+    # --- Schema Drift Detection ---
+    if table_name in SCHEMA_BASELINES:
+        expected_cols = set(SCHEMA_BASELINES[table_name])
+        actual_cols = set(df.columns)
+        missing = expected_cols - actual_cols
+        added = actual_cols - expected_cols
+        drift_detected = len(missing) > 0 or len(added) > 0
+        quality_results.append({
+            "run_timestamp": run_timestamp,
+            "table_name": table_name,
+            "check_type": "schema_drift",
+            "check_name": "column_comparison",
+            "metric_value": float(len(missing) + len(added)),
+            "threshold": 0.0,
+            "passed": not drift_detected,
+            "detail": f"missing={sorted(missing)}, added={sorted(added)}" if drift_detected else "schema matches baseline",
+        })
+
+print(f"Executed {len(quality_results)} quality checks across {len(TABLE_REGISTRY)} tables")
+passed = sum(1 for r in quality_results if r["passed"])
+failed = len(quality_results) - passed
+print(f"Passed: {passed} | Failed: {failed}")`
+      },
+      {
+        type: 'code',
+        content: `# Cell 3: Write Metrics to Delta & Display Dashboard
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import pandas as pd
 
-events_pdf = spark.table("security_events_master").toPandas()
-alerts_pdf = spark.table("alerts_master").toPandas()
+# --- Write quality metrics to Delta via MERGE ---
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{metrics_schema}")
 
-fig, axes = plt.subplots(2, 3, figsize=(22, 12))
-fig.suptitle("SOC Platform - Demo Data Summary", fontsize=18, fontweight="bold", color="#1e293b")
+df_metrics = spark.createDataFrame(quality_results)
 
-# Events by scenario
-scenario_counts = events_pdf["scenario"].value_counts()
-colors = {"background": "#94a3b8", "apt29": "#ef4444", "insider_threat": "#f59e0b", "ransomware": "#dc2626", "supply_chain": "#8b5cf6"}
-scenario_counts.plot(kind="bar", ax=axes[0,0], color=[colors.get(s, "#3b82f6") for s in scenario_counts.index])
-axes[0,0].set_title("Events by Attack Scenario", fontweight="bold")
-axes[0,0].tick_params(axis='x', rotation=45)
+df_metrics.createOrReplaceTempView("new_quality_metrics")
 
-# Event timeline
-events_pdf["hour"] = pd.to_datetime(events_pdf["timestamp"]).dt.floor("4h")
-timeline = events_pdf.groupby("hour").size()
-timeline.plot(ax=axes[0,1], color="#3b82f6", linewidth=2)
-axes[0,1].set_title("Event Volume Timeline (4h windows)", fontweight="bold")
-axes[0,1].fill_between(timeline.index, timeline.values, alpha=0.2, color="#3b82f6")
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {catalog}.{metrics_schema}.data_quality_metrics (
+        run_timestamp TIMESTAMP,
+        table_name STRING,
+        check_type STRING,
+        check_name STRING,
+        metric_value DOUBLE,
+        threshold DOUBLE,
+        passed BOOLEAN,
+        detail STRING
+    )
+    USING DELTA
+""")
 
-# Severity pie
-sev_counts = events_pdf["severity"].value_counts()
-sev_colors = {"critical": "#ef4444", "high": "#f59e0b", "medium": "#3b82f6", "low": "#10b981"}
-sev_counts.plot(kind="pie", ax=axes[0,2], autopct="%1.0f%%",
-               colors=[sev_colors.get(s, "#6b7280") for s in sev_counts.index])
-axes[0,2].set_title("Event Severity Distribution", fontweight="bold")
+spark.sql(f"""
+    MERGE INTO {catalog}.{metrics_schema}.data_quality_metrics AS target
+    USING new_quality_metrics AS source
+    ON target.table_name = source.table_name
+       AND target.check_name = source.check_name
+       AND target.run_timestamp = source.run_timestamp
+    WHEN MATCHED THEN UPDATE SET *
+    WHEN NOT MATCHED THEN INSERT *
+""")
 
-# Alert status
-alert_status = alerts_pdf["status"].value_counts()
-status_colors = {"open": "#ef4444", "investigating": "#f59e0b", "resolved": "#10b981", "false_positive": "#6b7280"}
-alert_status.plot(kind="bar", ax=axes[1,0], color=[status_colors.get(s, "#3b82f6") for s in alert_status.index])
-axes[1,0].set_title("Alert Status Distribution", fontweight="bold")
+print(f"Wrote {len(quality_results)} metrics to {catalog}.{metrics_schema}.data_quality_metrics")
 
-# MITRE Tactics
-tactics = events_pdf[events_pdf["mitre_tactic"] != ""]["mitre_tactic"].value_counts().head(10)
-tactics.plot(kind="barh", ax=axes[1,1], color="#ef4444")
-axes[1,1].set_title("MITRE ATT&CK Tactics (Attack Events)", fontweight="bold")
+# --- Dashboard ---
+metrics_pdf = df_metrics.toPandas()
 
-# Summary stats
-stats_text = f"""
-DEMO DATA SUMMARY
-{'='*30}
-Total Events:     {len(events_pdf):,}
-Total Alerts:     {len(alerts_pdf):,}
-Investigation Cases: 5
+fig, axes = plt.subplots(2, 2, figsize=(18, 12))
+fig.suptitle("Data Quality Dashboard", fontsize=18, fontweight="bold", color="#1e293b")
 
-ATTACK SCENARIOS
-{'='*30}
-APT29 Kill Chain:    Active
-Insider Threat:      Active
-Ransomware:          Active
-Supply Chain:        Active
-Cloud Takeover:      Active
+# 1. Pass/Fail by Check Type
+check_summary = metrics_pdf.groupby(["check_type", "passed"]).size().unstack(fill_value=0)
+check_summary.plot(kind="bar", stacked=True, ax=axes[0, 0],
+                   color={"True": "#10b981", "False": "#ef4444", True: "#10b981", False: "#ef4444"})
+axes[0, 0].set_title("Pass / Fail by Check Type", fontweight="bold")
+axes[0, 0].set_xlabel("")
+axes[0, 0].tick_params(axis="x", rotation=30)
+axes[0, 0].legend(["Fail", "Pass"])
 
-COVERAGE
-{'='*30}
-Time Span:        7 days
-Internal Hosts:   {len(INTERNAL_IPS)}
-Users:            {len(USERS)}
-MITRE Tactics:    12
+# 2. Volume: actual row counts per table
+volume_df = metrics_pdf[metrics_pdf["check_type"] == "volume"].copy()
+volume_df["short_table"] = volume_df["table_name"].apply(lambda t: t.split(".")[-1])
+bars = axes[0, 1].barh(volume_df["short_table"], volume_df["metric_value"], color="#3b82f6")
+for i, (val, threshold) in enumerate(zip(volume_df["metric_value"], volume_df["threshold"])):
+    color = "#10b981" if val >= threshold else "#ef4444"
+    bars[i].set_color(color)
+axes[0, 1].set_title("Row Counts vs Minimum Thresholds", fontweight="bold")
+axes[0, 1].axvline(x=0, color="#94a3b8", linewidth=0.5)
+
+# 3. Freshness: staleness in hours per table
+fresh_df = metrics_pdf[metrics_pdf["check_type"] == "freshness"].copy()
+if not fresh_df.empty:
+    fresh_df["short_table"] = fresh_df["table_name"].apply(lambda t: t.split(".")[-1])
+    bar_colors = ["#10b981" if p else "#ef4444" for p in fresh_df["passed"]]
+    axes[1, 0].barh(fresh_df["short_table"], fresh_df["metric_value"], color=bar_colors)
+    axes[1, 0].axvline(x=48, color="#f59e0b", linestyle="--", linewidth=1.5, label="48h threshold")
+    axes[1, 0].set_title("Data Freshness (Staleness Hours)", fontweight="bold")
+    axes[1, 0].legend()
+else:
+    axes[1, 0].text(0.5, 0.5, "No freshness data", ha="center", va="center", transform=axes[1, 0].transAxes)
+    axes[1, 0].set_title("Data Freshness", fontweight="bold")
+
+# 4. Summary stats
+total_checks = len(metrics_pdf)
+total_passed = metrics_pdf["passed"].sum()
+total_failed = total_checks - total_passed
+pass_rate = (total_passed / total_checks * 100) if total_checks > 0 else 0
+tables_checked = metrics_pdf["table_name"].nunique()
+
+summary_text = f"""
+DATA QUALITY SUMMARY
+{'=' * 35}
+Run Timestamp:   {run_timestamp.strftime('%Y-%m-%d %H:%M')}
+Tables Checked:  {tables_checked}
+Total Checks:    {total_checks}
+Passed:          {total_passed}
+Failed:          {total_failed}
+Pass Rate:       {pass_rate:.1f}%
+
+CHECK BREAKDOWN
+{'=' * 35}
+Volume:          {len(metrics_pdf[metrics_pdf['check_type'] == 'volume'])}
+Freshness:       {len(metrics_pdf[metrics_pdf['check_type'] == 'freshness'])}
+Completeness:    {len(metrics_pdf[metrics_pdf['check_type'] == 'completeness'])}
+Schema Drift:    {len(metrics_pdf[metrics_pdf['check_type'] == 'schema_drift'])}
 """
-axes[1,2].text(0.1, 0.5, stats_text, transform=axes[1,2].transAxes,
-              fontsize=9, verticalalignment='center', fontfamily='monospace',
-              bbox=dict(boxstyle='round', facecolor='#f1f5f9', alpha=0.8))
-axes[1,2].axis('off')
-axes[1,2].set_title("Platform Summary", fontweight="bold")
+axes[1, 1].text(0.05, 0.5, summary_text, transform=axes[1, 1].transAxes,
+                fontsize=10, verticalalignment="center", fontfamily="monospace",
+                bbox=dict(boxstyle="round", facecolor="#f1f5f9", alpha=0.8))
+axes[1, 1].axis("off")
+axes[1, 1].set_title("Run Summary", fontweight="bold")
 
 plt.tight_layout()
 plt.show()
 
-print("\\nDemo data generation complete! All engines are ready for demonstration.")`
+print("\\nData quality validation complete. Review failed checks above for remediation.")`
       },
     ],
   },
 
   {
-    id: 'compliance-data-generator',
-    title: 'Compliance & Regulatory Data Generator',
-    subtitle: 'Generate compliance check data for NIST, SOC2, HIPAA, PCI-DSS, and ISO 27001',
-    category: 'mock-data',
-    tags: ['Compliance', 'NIST', 'SOC2', 'HIPAA', 'PCI-DSS', 'ISO 27001'],
-    description: 'Generates comprehensive compliance monitoring data across multiple regulatory frameworks. Creates control assessment records, audit findings, remediation tracking, and compliance trend data for executive dashboards.',
-    estimatedRuntime: '4 min',
+    id: 'compliance-posture-engine',
+    title: 'Compliance Posture Assessment Engine',
+    subtitle: 'Compute compliance posture scores from real control and evidence data',
+    category: 'compliance',
+    tags: ['Compliance', 'Posture', 'NIST', 'SOC2', 'HIPAA', 'PCI-DSS', 'ISO 27001', 'Assessment'],
+    description: 'Production compliance assessment engine that reads existing compliance control definitions and evidence records, computes per-framework and per-function posture scores, identifies control gaps, and writes assessment results to Delta. No data is generated -- all metrics are derived from live tables.',
+    estimatedRuntime: '5 min',
     clusterRequirements: 'DBR 14.3 LTS, 2+ workers',
     cells: [
       {
         type: 'markdown',
-        content: `# Compliance & Regulatory Data Generator
-## Multi-Framework Compliance Monitoring Data
+        content: `# Compliance Posture Assessment Engine
+## Real-Time Compliance Scoring from Control & Evidence Data
 
-Generates data for:
-- **NIST CSF** - 108 subcategories across 5 functions
-- **SOC 2** - Trust Service Criteria (Security, Availability, Processing Integrity, Confidentiality, Privacy)
-- **HIPAA** - Administrative, Physical, and Technical Safeguards
-- **PCI-DSS 4.0** - 12 requirements with sub-controls
-- **ISO 27001** - Annex A controls (114 controls)`
+This notebook reads **existing compliance control definitions and evidence records** from the SOC platform catalog and computes posture scores. No data is generated -- every metric is derived from live Delta tables.
+
+### Assessment Approach
+1. **Read** control definitions from \`compliance_controls\` table
+2. **Join** with evidence records from \`compliance_evidence\` table
+3. **Score** each control based on evidence completeness, recency, and validation status
+4. **Aggregate** scores per framework, per function area, and overall
+5. **Identify gaps** -- controls with no evidence or stale/rejected evidence
+6. **Write** assessment results to \`compliance_posture_assessments\` Delta table via MERGE
+
+### Scoring Model
+| Evidence State | Score |
+|----------------|-------|
+| Valid evidence within review period | 100% |
+| Valid evidence but approaching expiry | 75% |
+| Stale evidence (past review period) | 40% |
+| Rejected or insufficient evidence | 20% |
+| No evidence on file | 0% |`
       },
       {
         type: 'code',
-        content: `# Cell 1: Generate Multi-Framework Compliance Data
+        content: `# Cell 1: Configuration & Data Ingestion
 from pyspark.sql import functions as F
-import json, random, uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
-catalog = "soc_platform"
-schema = "compliance"
-spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
-spark.sql(f"USE {catalog}.{schema}")
+# --- Parameterized configuration via Databricks widgets ---
+dbutils.widgets.text("catalog", "soc_platform", "Catalog Name")
+dbutils.widgets.text("compliance_schema", "compliance", "Compliance Schema")
+dbutils.widgets.text("output_schema", "compliance", "Output Schema")
+dbutils.widgets.text("evidence_staleness_days", "90", "Evidence Staleness Threshold (days)")
 
-frameworks = {
-    "NIST CSF": {
-        "functions": ["Identify", "Protect", "Detect", "Respond", "Recover"],
-        "controls_per_function": 20,
-    },
-    "SOC 2": {
-        "functions": ["Security", "Availability", "Processing Integrity", "Confidentiality", "Privacy"],
-        "controls_per_function": 15,
-    },
-    "HIPAA": {
-        "functions": ["Administrative Safeguards", "Physical Safeguards", "Technical Safeguards"],
-        "controls_per_function": 25,
-    },
-    "PCI-DSS 4.0": {
-        "functions": [f"Req {i}" for i in range(1, 13)],
-        "controls_per_function": 8,
-    },
-    "ISO 27001": {
-        "functions": ["A.5 Info Security Policies", "A.6 Organization", "A.7 Human Resource",
-                       "A.8 Asset Management", "A.9 Access Control", "A.10 Cryptography",
-                       "A.12 Operations Security", "A.13 Communications", "A.14 System Acquisition"],
-        "controls_per_function": 12,
-    },
-}
+catalog = dbutils.widgets.get("catalog")
+compliance_schema = dbutils.widgets.get("compliance_schema")
+output_schema = dbutils.widgets.get("output_schema")
+staleness_days = int(dbutils.widgets.get("evidence_staleness_days"))
 
-controls = []
-base_time = datetime.now()
+run_timestamp = datetime.now()
 
-for framework, config in frameworks.items():
-    for func in config["functions"]:
-        for i in range(config["controls_per_function"]):
-            status = random.choices(
-                ["compliant", "partial", "non_compliant", "not_applicable"],
-                weights=[55, 25, 15, 5]
-            )[0]
-            score = {"compliant": random.uniform(80, 100), "partial": random.uniform(40, 79),
-                     "non_compliant": random.uniform(0, 39), "not_applicable": 100}[status]
+# --- Read source tables ---
+df_controls = spark.table(f"{catalog}.{compliance_schema}.compliance_controls")
+df_evidence = spark.table(f"{catalog}.{compliance_schema}.compliance_evidence")
 
-            controls.append({
-                "control_id": str(uuid.uuid4()),
-                "framework": framework,
-                "function_area": func,
-                "control_name": f"{func[:3].upper()}-{i+1:03d}",
-                "description": f"{framework} control for {func}",
-                "status": status,
-                "compliance_score": round(score, 1),
-                "evidence_count": random.randint(0, 15),
-                "last_assessed": base_time - timedelta(days=random.randint(0, 90)),
-                "next_review": base_time + timedelta(days=random.randint(1, 180)),
-                "risk_level": "high" if status == "non_compliant" else "medium" if status == "partial" else "low",
-                "remediation_owner": f"team_{random.choice(['infosec', 'it_ops', 'dev', 'compliance', 'legal'])}",
-            })
+control_count = df_controls.count()
+evidence_count = df_evidence.count()
+frameworks = [row["framework"] for row in df_controls.select("framework").distinct().collect()]
 
-df = spark.createDataFrame(controls)
-df.write.mode("overwrite").saveAsTable("compliance_controls")
-print(f"Generated {len(controls)} compliance controls across {len(frameworks)} frameworks")
+print(f"Compliance Posture Assessment Run: {run_timestamp.isoformat()}")
+print(f"Controls loaded:  {control_count}")
+print(f"Evidence loaded:  {evidence_count}")
+print(f"Frameworks:       {', '.join(sorted(frameworks))}")
+print(f"Staleness cutoff: {staleness_days} days")`
+      },
+      {
+        type: 'code',
+        content: `# Cell 2: Compute Posture Scores & Identify Gaps
+from pyspark.sql import functions as F, Window
 
-# Framework summary
-summary = (
-    df.groupBy("framework")
+staleness_cutoff = F.date_sub(F.current_timestamp(), staleness_days)
+approaching_cutoff = F.date_sub(F.current_timestamp(), int(staleness_days * 0.75))
+
+# Join controls with their most recent evidence
+window_latest = Window.partitionBy("control_id").orderBy(F.desc("evidence_date"))
+
+df_evidence_ranked = (
+    df_evidence
+    .withColumn("evidence_rank", F.row_number().over(window_latest))
+    .where(F.col("evidence_rank") == 1)
+    .drop("evidence_rank")
+)
+
+df_joined = (
+    df_controls.alias("c")
+    .join(df_evidence_ranked.alias("e"), F.col("c.control_id") == F.col("e.control_id"), "left")
+    .select(
+        F.col("c.control_id"),
+        F.col("c.framework"),
+        F.col("c.function_area"),
+        F.col("c.control_name"),
+        F.col("c.status").alias("control_status"),
+        F.col("c.risk_level"),
+        F.col("e.evidence_id"),
+        F.col("e.evidence_date"),
+        F.col("e.validation_status"),
+    )
+)
+
+# Score each control based on evidence state
+df_scored = df_joined.withColumn(
+    "posture_score",
+    F.when(F.col("evidence_id").isNull(), 0.0)
+     .when(F.col("validation_status") == "rejected", 20.0)
+     .when(F.col("evidence_date") < staleness_cutoff, 40.0)
+     .when(F.col("evidence_date") < approaching_cutoff, 75.0)
+     .otherwise(100.0)
+).withColumn(
+    "gap_flag",
+    F.when(F.col("posture_score") <= 40.0, True).otherwise(False)
+).withColumn(
+    "gap_reason",
+    F.when(F.col("evidence_id").isNull(), "no_evidence")
+     .when(F.col("validation_status") == "rejected", "evidence_rejected")
+     .when(F.col("evidence_date") < staleness_cutoff, "evidence_stale")
+     .otherwise(None)
+)
+
+# --- Per-framework and per-function aggregation ---
+df_framework_posture = (
+    df_scored.groupBy("framework")
     .agg(
         F.count("*").alias("total_controls"),
-        F.avg("compliance_score").alias("avg_score"),
-        F.sum(F.when(F.col("status") == "compliant", 1).otherwise(0)).alias("compliant"),
-        F.sum(F.when(F.col("status") == "non_compliant", 1).otherwise(0)).alias("non_compliant"),
+        F.round(F.avg("posture_score"), 2).alias("avg_posture_score"),
+        F.sum(F.when(F.col("posture_score") == 100.0, 1).otherwise(0)).alias("fully_compliant"),
+        F.sum(F.when(F.col("gap_flag"), 1).otherwise(0)).alias("gap_count"),
     )
-    .withColumn("compliance_pct", F.round(F.col("compliant") / F.col("total_controls") * 100, 1))
+    .withColumn("compliance_pct", F.round(F.col("fully_compliant") / F.col("total_controls") * 100, 1))
     .orderBy(F.desc("compliance_pct"))
 )
-display(summary)`
+
+df_function_posture = (
+    df_scored.groupBy("framework", "function_area")
+    .agg(
+        F.count("*").alias("total_controls"),
+        F.round(F.avg("posture_score"), 2).alias("avg_posture_score"),
+        F.sum(F.when(F.col("gap_flag"), 1).otherwise(0)).alias("gap_count"),
+    )
+    .withColumn("compliance_pct", F.round((F.col("total_controls") - F.col("gap_count")) / F.col("total_controls") * 100, 1))
+    .orderBy("framework", F.desc("compliance_pct"))
+)
+
+# --- Gap report ---
+df_gaps = (
+    df_scored.where(F.col("gap_flag"))
+    .select("framework", "function_area", "control_name", "control_status",
+            "risk_level", "posture_score", "gap_reason")
+    .orderBy("framework", "risk_level")
+)
+
+gap_count = df_gaps.count()
+print(f"Posture scoring complete.")
+print(f"Gaps identified: {gap_count}")
+display(df_framework_posture)
+
+# --- Write assessment results to Delta via MERGE ---
+df_assessment_output = (
+    df_scored
+    .withColumn("run_timestamp", F.lit(run_timestamp))
+    .select(
+        "run_timestamp", "control_id", "framework", "function_area", "control_name",
+        "control_status", "risk_level", "evidence_id", "evidence_date",
+        "validation_status", "posture_score", "gap_flag", "gap_reason"
+    )
+)
+
+df_assessment_output.createOrReplaceTempView("new_assessments")
+
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {catalog}.{output_schema}.compliance_posture_assessments (
+        run_timestamp TIMESTAMP,
+        control_id STRING,
+        framework STRING,
+        function_area STRING,
+        control_name STRING,
+        control_status STRING,
+        risk_level STRING,
+        evidence_id STRING,
+        evidence_date TIMESTAMP,
+        validation_status STRING,
+        posture_score DOUBLE,
+        gap_flag BOOLEAN,
+        gap_reason STRING
+    )
+    USING DELTA
+""")
+
+spark.sql(f"""
+    MERGE INTO {catalog}.{output_schema}.compliance_posture_assessments AS target
+    USING new_assessments AS source
+    ON target.control_id = source.control_id
+       AND target.run_timestamp = source.run_timestamp
+    WHEN MATCHED THEN UPDATE SET *
+    WHEN NOT MATCHED THEN INSERT *
+""")
+
+print(f"Assessment results written to {catalog}.{output_schema}.compliance_posture_assessments")`
+      },
+      {
+        type: 'code',
+        content: `# Cell 3: Compliance Posture Dashboard
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import pandas as pd
+
+fw_pdf = df_framework_posture.toPandas()
+fn_pdf = df_function_posture.toPandas()
+gaps_pdf = df_gaps.toPandas()
+
+fig, axes = plt.subplots(2, 2, figsize=(20, 14))
+fig.suptitle("Compliance Posture Assessment Dashboard", fontsize=18, fontweight="bold", color="#1e293b")
+
+# 1. Overall posture score per framework
+bar_colors = []
+for score in fw_pdf["avg_posture_score"]:
+    if score >= 80:
+        bar_colors.append("#10b981")
+    elif score >= 60:
+        bar_colors.append("#f59e0b")
+    else:
+        bar_colors.append("#ef4444")
+axes[0, 0].barh(fw_pdf["framework"], fw_pdf["avg_posture_score"], color=bar_colors)
+axes[0, 0].set_xlim(0, 100)
+axes[0, 0].axvline(x=80, color="#10b981", linestyle="--", linewidth=1, alpha=0.7, label="Target (80%)")
+axes[0, 0].set_title("Average Posture Score by Framework", fontweight="bold")
+axes[0, 0].set_xlabel("Posture Score")
+axes[0, 0].legend()
+
+# 2. Compliance percentage per framework
+axes[0, 1].bar(fw_pdf["framework"], fw_pdf["compliance_pct"], color="#3b82f6")
+axes[0, 1].set_ylim(0, 100)
+axes[0, 1].axhline(y=90, color="#10b981", linestyle="--", linewidth=1, alpha=0.7, label="90% target")
+axes[0, 1].set_title("Fully Compliant Controls (%)", fontweight="bold")
+axes[0, 1].set_ylabel("Compliance %")
+axes[0, 1].tick_params(axis="x", rotation=30)
+axes[0, 1].legend()
+
+# 3. Gap distribution by framework and reason
+if not gaps_pdf.empty:
+    gap_pivot = gaps_pdf.groupby(["framework", "gap_reason"]).size().unstack(fill_value=0)
+    reason_colors = {"no_evidence": "#ef4444", "evidence_stale": "#f59e0b", "evidence_rejected": "#8b5cf6"}
+    gap_pivot.plot(kind="bar", stacked=True, ax=axes[1, 0],
+                   color=[reason_colors.get(c, "#6b7280") for c in gap_pivot.columns])
+    axes[1, 0].set_title("Control Gaps by Framework & Reason", fontweight="bold")
+    axes[1, 0].set_xlabel("")
+    axes[1, 0].tick_params(axis="x", rotation=30)
+    axes[1, 0].legend(title="Gap Reason")
+else:
+    axes[1, 0].text(0.5, 0.5, "No gaps found", ha="center", va="center",
+                     transform=axes[1, 0].transAxes, fontsize=14, color="#10b981")
+    axes[1, 0].set_title("Control Gaps", fontweight="bold")
+
+# 4. Summary statistics
+overall_score = fw_pdf["avg_posture_score"].mean() if not fw_pdf.empty else 0
+total_controls = fw_pdf["total_controls"].sum() if not fw_pdf.empty else 0
+total_compliant = fw_pdf["fully_compliant"].sum() if not fw_pdf.empty else 0
+total_gaps = fw_pdf["gap_count"].sum() if not fw_pdf.empty else 0
+
+summary_text = f"""
+COMPLIANCE POSTURE SUMMARY
+{'=' * 40}
+Assessment Time:    {run_timestamp.strftime('%Y-%m-%d %H:%M')}
+Frameworks:         {len(fw_pdf)}
+Total Controls:     {int(total_controls)}
+Fully Compliant:    {int(total_compliant)}
+Controls with Gaps: {int(total_gaps)}
+
+OVERALL POSTURE
+{'=' * 40}
+Average Score:      {overall_score:.1f} / 100
+Overall Rate:       {(total_compliant / total_controls * 100) if total_controls > 0 else 0:.1f}%
+
+GAP BREAKDOWN
+{'=' * 40}
+No Evidence:        {len(gaps_pdf[gaps_pdf['gap_reason'] == 'no_evidence']) if not gaps_pdf.empty else 0}
+Stale Evidence:     {len(gaps_pdf[gaps_pdf['gap_reason'] == 'evidence_stale']) if not gaps_pdf.empty else 0}
+Rejected Evidence:  {len(gaps_pdf[gaps_pdf['gap_reason'] == 'evidence_rejected']) if not gaps_pdf.empty else 0}
+"""
+axes[1, 1].text(0.05, 0.5, summary_text, transform=axes[1, 1].transAxes,
+                fontsize=10, verticalalignment="center", fontfamily="monospace",
+                bbox=dict(boxstyle="round", facecolor="#f1f5f9", alpha=0.8))
+axes[1, 1].axis("off")
+axes[1, 1].set_title("Assessment Summary", fontweight="bold")
+
+plt.tight_layout()
+plt.show()
+
+print("\\nCompliance posture assessment complete. Review gaps above for remediation prioritization.")`
       },
     ],
   },
