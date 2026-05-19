@@ -2,12 +2,378 @@ import { DatabricksNotebook } from '../databricksNotebooks';
 
 export const threatIntelNotebooks: DatabricksNotebook[] = [
   {
+    id: 'threat-feed-correlation',
+    title: 'Threat Intelligence Feed Correlation',
+    subtitle: 'Multi-source threat feed aggregation with confidence-weighted scoring',
+    category: 'threat-intel',
+    tags: ['Threat Feeds', 'IOC Enrichment', 'STIX/TAXII', 'Confidence Scoring', 'Deduplication'],
+    description: 'Aggregates threat intelligence from multiple OSINT and commercial feeds, deduplicates indicators, computes confidence-weighted scores, and correlates with internal security events to identify active threats.',
+    estimatedRuntime: '6 min',
+    clusterRequirements: 'DBR 14.3 LTS, 2+ workers',
+    cells: [
+      {
+        type: 'markdown',
+        content: `# Threat Intelligence Feed Correlation Engine
+## Multi-Source IOC Aggregation & Confidence Scoring
+
+### Feed Sources
+- AlienVault OTX, VirusTotal, AbuseIPDB, MISP, Shodan
+- CrowdStrike, Recorded Future, Mandiant
+- Internal Honeypot & Sandbox Results
+
+### Confidence Scoring Model
+\`\`\`
+Final Score = SUM(source_weight * source_confidence * freshness_factor) / SUM(source_weight)
+\`\`\`
+Where freshness_factor decays exponentially with age`
+      },
+      {
+        type: 'code',
+        content: `# Cell 1: Generate Multi-Source Threat Feed Data
+from pyspark.sql import functions as F
+import json, random, uuid, hashlib
+from datetime import datetime, timedelta
+
+catalog = "soc_platform"
+schema = "threat_intel"
+spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+spark.sql(f"USE {catalog}.{schema}")
+
+# Feed sources with reliability weights
+feed_sources = {
+    "AlienVault OTX": {"weight": 0.7, "avg_confidence": 0.65, "volume": "high"},
+    "VirusTotal": {"weight": 0.9, "avg_confidence": 0.85, "volume": "high"},
+    "AbuseIPDB": {"weight": 0.75, "avg_confidence": 0.70, "volume": "high"},
+    "MISP Community": {"weight": 0.6, "avg_confidence": 0.60, "volume": "medium"},
+    "Shodan": {"weight": 0.65, "avg_confidence": 0.55, "volume": "medium"},
+    "CrowdStrike": {"weight": 0.95, "avg_confidence": 0.90, "volume": "low"},
+    "Recorded Future": {"weight": 0.90, "avg_confidence": 0.85, "volume": "low"},
+    "Internal Honeypot": {"weight": 0.80, "avg_confidence": 0.95, "volume": "low"},
+    "Sandbox Analysis": {"weight": 0.85, "avg_confidence": 0.90, "volume": "low"},
+}
+
+# Generate IOCs across sources with overlapping indicators
+all_indicators = []
+base_time = datetime.now()
+
+# Create a pool of indicators that may appear across multiple feeds
+indicator_pool = []
+for _ in range(500):
+    itype = random.choice(["ipv4", "domain", "sha256", "url", "email"])
+    if itype == "ipv4":
+        value = f"{random.randint(1,223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
+    elif itype == "domain":
+        value = f"{uuid.uuid4().hex[:8]}.{random.choice(['com','net','xyz','top','ru','cn'])}"
+    elif itype == "sha256":
+        value = hashlib.sha256(f"sample-{random.randint(1,10000)}".encode()).hexdigest()
+    elif itype == "url":
+        value = f"https://{uuid.uuid4().hex[:6]}.com/{random.choice(['payload','login','update'])}"
+    else:
+        value = f"{uuid.uuid4().hex[:6]}@{random.choice(['evil.com','phish.net','malware.org'])}"
+    indicator_pool.append({"type": itype, "value": value})
+
+# Each feed reports a subset of indicators
+for source_name, source_info in feed_sources.items():
+    num_indicators = {"high": 300, "medium": 150, "low": 50}[source_info["volume"]]
+    selected = random.sample(indicator_pool, min(num_indicators, len(indicator_pool)))
+
+    for ind in selected:
+        confidence = min(1.0, max(0.0, round(random.gauss(source_info["avg_confidence"], 0.15), 3)))
+        age_days = random.randint(0, 180)
+        freshness = round(max(0.1, 1.0 - (age_days / 365.0)), 3)
+
+        all_indicators.append({
+            "indicator_id": str(uuid.uuid4()),
+            "source": source_name,
+            "source_weight": source_info["weight"],
+            "indicator_type": ind["type"],
+            "indicator_value": ind["value"],
+            "confidence": confidence,
+            "freshness_factor": freshness,
+            "severity": "critical" if confidence > 0.85 else "high" if confidence > 0.65 else "medium" if confidence > 0.40 else "low",
+            "tags": json.dumps(random.sample(["apt", "botnet", "c2", "phishing", "malware", "scanner", "tor", "ransomware"], random.randint(1, 3))),
+            "first_seen": base_time - timedelta(days=age_days),
+            "last_seen": base_time - timedelta(hours=random.randint(0, 72)),
+            "report_count": random.randint(1, 50),
+        })
+
+df_raw = spark.createDataFrame(all_indicators)
+df_raw.write.mode("overwrite").saveAsTable("raw_threat_feeds")
+print(f"Generated {len(all_indicators)} raw threat indicators from {len(feed_sources)} sources")`
+      },
+      {
+        type: 'code',
+        content: `# Cell 2: Deduplicate & Compute Weighted Confidence Scores
+df = spark.table("raw_threat_feeds")
+
+# Aggregate duplicate indicators across sources
+deduped = (
+    df.groupBy("indicator_type", "indicator_value")
+    .agg(
+        F.count("*").alias("source_count"),
+        F.collect_set("source").alias("sources"),
+        F.sum(F.col("source_weight") * F.col("confidence") * F.col("freshness_factor")).alias("weighted_score_sum"),
+        F.sum("source_weight").alias("weight_sum"),
+        F.max("confidence").alias("max_confidence"),
+        F.max("freshness_factor").alias("max_freshness"),
+        F.max("last_seen").alias("last_seen"),
+        F.min("first_seen").alias("first_seen"),
+        F.sum("report_count").alias("total_reports"),
+    )
+    .withColumn("final_confidence",
+        F.round(F.col("weighted_score_sum") / F.col("weight_sum"), 3))
+    .withColumn("multi_source_bonus",
+        F.when(F.col("source_count") >= 4, 0.10)
+         .when(F.col("source_count") >= 2, 0.05)
+         .otherwise(0.0))
+    .withColumn("adjusted_confidence",
+        F.least(F.col("final_confidence") + F.col("multi_source_bonus"), F.lit(1.0)))
+    .withColumn("severity",
+        F.when(F.col("adjusted_confidence") > 0.85, "critical")
+         .when(F.col("adjusted_confidence") > 0.65, "high")
+         .when(F.col("adjusted_confidence") > 0.40, "medium")
+         .otherwise("low"))
+    .orderBy(F.desc("adjusted_confidence"))
+)
+
+deduped.write.mode("overwrite").saveAsTable("enriched_indicators")
+print(f"Deduplicated to {deduped.count()} unique indicators from {df.count()} raw entries")
+
+display(deduped.select("indicator_type", "indicator_value", "source_count", "adjusted_confidence", "severity", "sources")
+    .limit(20))
+
+# Source contribution analysis
+source_stats = (
+    df.groupBy("source")
+    .agg(
+        F.count("*").alias("indicators_reported"),
+        F.avg("confidence").alias("avg_confidence"),
+        F.countDistinct("indicator_value").alias("unique_indicators"),
+    )
+    .orderBy(F.desc("indicators_reported"))
+)
+print("\\n=== Feed Source Statistics ===")
+display(source_stats)`
+      },
+      {
+        type: 'code',
+        content: `# Cell 3: Internal Event Correlation
+from pyspark.sql import functions as F
+
+enriched = spark.table("enriched_indicators")
+
+# Simulate internal network logs to correlate against
+import random, uuid
+from datetime import datetime, timedelta
+
+internal_logs = []
+indicator_values = enriched.select("indicator_value").rdd.flatMap(lambda x: x).collect()
+
+for _ in range(20000):
+    # 5% of logs match known threat indicators
+    if random.random() < 0.05:
+        value = random.choice(indicator_values[:100])
+    else:
+        value = f"10.0.{random.randint(1,10)}.{random.randint(1,254)}"
+
+    internal_logs.append({
+        "log_id": str(uuid.uuid4()),
+        "observed_value": value,
+        "event_type": random.choice(["dns_query", "http_request", "smtp_connection", "file_download"]),
+        "source_host": f"WS-{random.choice(['FIN','HR','ENG'])}-{random.randint(1,50):03d}",
+        "timestamp": datetime.now() - timedelta(hours=random.randint(0, 48)),
+    })
+
+df_logs = spark.createDataFrame(internal_logs)
+
+# Correlate internal logs with threat indicators
+correlated = (
+    df_logs.alias("log")
+    .join(enriched.alias("intel"),
+          F.col("log.observed_value") == F.col("intel.indicator_value"),
+          "inner")
+    .select(
+        "log.log_id", "log.observed_value", "log.event_type", "log.source_host", "log.timestamp",
+        "intel.indicator_type", "intel.adjusted_confidence", "intel.severity", "intel.source_count"
+    )
+)
+
+print(f"=== Threat Intel Matches Found: {correlated.count()} ===")
+display(correlated.orderBy(F.desc("adjusted_confidence")).limit(20))
+
+# Summary
+match_summary = (
+    correlated.groupBy("severity")
+    .agg(F.count("*").alias("matches"), F.countDistinct("source_host").alias("affected_hosts"))
+    .orderBy("severity")
+)
+display(match_summary)`
+      },
+    ],
+  },
+
+  {
+    id: 'dpi-dlp-engine',
+    title: 'Deep Packet Inspection & DLP Engine',
+    subtitle: 'Network traffic analysis with protocol anomaly detection and data loss prevention',
+    category: 'threat-intel',
+    tags: ['DPI', 'DLP', 'Network Analysis', 'Protocol Anomaly', 'Data Classification'],
+    description: 'Analyzes network packet metadata for protocol anomalies, tunneling detection, and data loss prevention. Classifies data sensitivity levels in network flows and detects exfiltration attempts through DNS tunneling, HTTP encoding abuse, and encrypted channel misuse.',
+    estimatedRuntime: '7 min',
+    clusterRequirements: 'DBR 14.3 LTS, 4+ workers',
+    cells: [
+      {
+        type: 'markdown',
+        content: `# Deep Packet Inspection & Data Loss Prevention Engine
+## Network Traffic Analysis for Security Operations
+
+### Detection Capabilities
+- **Protocol Anomaly Detection** - Unusual protocol usage, non-standard ports
+- **DNS Tunneling** - High-entropy DNS queries, excessive query volume
+- **Data Classification** - Detect sensitive data patterns in flows
+- **Encrypted Traffic Analysis** - JA3 fingerprinting, certificate anomalies
+- **Exfiltration Detection** - Unusual data volumes, timing patterns`
+      },
+      {
+        type: 'code',
+        content: `# Cell 1: Generate Network Traffic Data
+from pyspark.sql import functions as F
+import json, random, uuid, math
+from datetime import datetime, timedelta
+
+catalog = "soc_platform"
+schema = "dpi_dlp"
+spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+spark.sql(f"USE {catalog}.{schema}")
+
+flows = []
+base_time = datetime.now() - timedelta(hours=24)
+
+protocols = {
+    "HTTP": {"ports": [80, 8080], "normal_size": 5000},
+    "HTTPS": {"ports": [443, 8443], "normal_size": 8000},
+    "DNS": {"ports": [53], "normal_size": 200},
+    "SSH": {"ports": [22], "normal_size": 1000},
+    "SMTP": {"ports": [25, 587], "normal_size": 3000},
+    "FTP": {"ports": [21, 20], "normal_size": 10000},
+    "SMB": {"ports": [445, 139], "normal_size": 5000},
+}
+
+# Normal traffic
+for _ in range(15000):
+    proto = random.choice(list(protocols.keys()))
+    info = protocols[proto]
+    flow_bytes = max(64, int(random.gauss(info["normal_size"], info["normal_size"] * 0.5)))
+
+    flows.append({
+        "flow_id": str(uuid.uuid4()),
+        "source_ip": f"10.0.{random.randint(1,10)}.{random.randint(1,254)}",
+        "destination_ip": f"{random.randint(1,223)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,254)}",
+        "protocol": proto,
+        "source_port": random.randint(1024, 65535),
+        "destination_port": random.choice(info["ports"]),
+        "bytes_in": flow_bytes,
+        "bytes_out": max(64, int(flow_bytes * random.uniform(0.1, 2.0))),
+        "packets": max(1, flow_bytes // random.randint(100, 1500)),
+        "duration_ms": random.randint(10, 30000),
+        "entropy": round(random.uniform(3.0, 5.5), 3),
+        "timestamp": base_time + timedelta(seconds=random.randint(0, 86400)),
+        "dlp_classification": "none",
+        "anomaly_type": "normal",
+        "is_anomalous": False,
+    })
+
+# Inject anomalies
+anomaly_types = [
+    {"type": "dns_tunneling", "proto": "DNS", "port": 53, "entropy": (6.5, 7.5), "bytes": (500, 5000)},
+    {"type": "data_exfiltration", "proto": "HTTPS", "port": 443, "entropy": (5.0, 6.0), "bytes": (100000, 5000000)},
+    {"type": "protocol_abuse", "proto": "HTTP", "port": 80, "entropy": (6.0, 7.0), "bytes": (50000, 500000)},
+    {"type": "c2_communication", "proto": "HTTPS", "port": 443, "entropy": (4.0, 5.0), "bytes": (100, 500)},
+    {"type": "pii_leakage", "proto": "SMTP", "port": 587, "entropy": (4.5, 5.5), "bytes": (10000, 100000)},
+]
+
+for _ in range(500):
+    anom = random.choice(anomaly_types)
+    ent_lo, ent_hi = anom["entropy"]
+    bytes_lo, bytes_hi = anom["bytes"]
+    flow_bytes = random.randint(bytes_lo, bytes_hi)
+
+    flows.append({
+        "flow_id": str(uuid.uuid4()),
+        "source_ip": f"10.0.{random.randint(50,55)}.{random.randint(1,254)}",
+        "destination_ip": f"{random.randint(60,220)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,254)}",
+        "protocol": anom["proto"],
+        "source_port": random.randint(1024, 65535),
+        "destination_port": anom["port"],
+        "bytes_in": random.randint(64, 1000),
+        "bytes_out": flow_bytes,
+        "packets": max(1, flow_bytes // random.randint(100, 1500)),
+        "duration_ms": random.randint(100, 60000),
+        "entropy": round(random.uniform(ent_lo, ent_hi), 3),
+        "timestamp": base_time + timedelta(seconds=random.randint(0, 86400)),
+        "dlp_classification": random.choice(["pii", "credentials", "proprietary", "financial"]) if anom["type"] in ["data_exfiltration", "pii_leakage"] else "none",
+        "anomaly_type": anom["type"],
+        "is_anomalous": True,
+    })
+
+df = spark.createDataFrame(flows)
+df.write.mode("overwrite").saveAsTable("network_flows")
+print(f"Generated {len(flows)} network flows ({sum(1 for f in flows if f['is_anomalous'])} anomalous)")
+display(df.groupBy("anomaly_type").count().orderBy(F.desc("count")))`
+      },
+      {
+        type: 'code',
+        content: `# Cell 2: DPI Anomaly Detection & DLP Classification
+df = spark.table("network_flows")
+
+# Statistical baseline for each protocol
+baselines = (
+    df.filter(~F.col("is_anomalous"))
+    .groupBy("protocol")
+    .agg(
+        F.avg("bytes_out").alias("baseline_bytes"),
+        F.stddev("bytes_out").alias("std_bytes"),
+        F.avg("entropy").alias("baseline_entropy"),
+        F.stddev("entropy").alias("std_entropy"),
+        F.avg("duration_ms").alias("baseline_duration"),
+    )
+)
+
+# Score all flows against baselines
+scored = (
+    df.join(baselines, "protocol")
+    .withColumn("bytes_z", F.abs(F.col("bytes_out") - F.col("baseline_bytes")) / F.greatest(F.col("std_bytes"), F.lit(1)))
+    .withColumn("entropy_z", F.abs(F.col("entropy") - F.col("baseline_entropy")) / F.greatest(F.col("std_entropy"), F.lit(0.1)))
+    .withColumn("dpi_score", F.col("bytes_z") * 0.4 + F.col("entropy_z") * 0.6)
+    .withColumn("dpi_verdict",
+        F.when(F.col("dpi_score") > 5.0, "critical")
+         .when(F.col("dpi_score") > 3.0, "suspicious")
+         .when(F.col("dpi_score") > 1.5, "elevated")
+         .otherwise("normal"))
+)
+
+print("=== Top 20 Suspicious Flows ===")
+display(scored.filter(F.col("dpi_verdict").isin(["critical", "suspicious"]))
+    .select("flow_id", "source_ip", "destination_ip", "protocol", "bytes_out", "entropy", "dpi_score", "dpi_verdict", "anomaly_type")
+    .orderBy(F.desc("dpi_score")).limit(20))
+
+# DLP summary
+dlp = df.filter(F.col("dlp_classification") != "none")
+print(f"\\n=== DLP Alerts: {dlp.count()} flows with classified data ===")
+display(dlp.groupBy("dlp_classification", "protocol").count().orderBy(F.desc("count")))`
+      },
+    ],
+  },
+
+  {
     id: 'threat-feed-live-ingestion',
     title: 'Live Threat Feed Ingestion (TAXII/OTX/MISP)',
     subtitle: 'Real connectors for AlienVault OTX, MISP, and STIX/TAXII 2.1 endpoints',
     category: 'threat-intel',
     tags: ['STIX/TAXII', 'AlienVault OTX', 'MISP', 'Live Ingestion', 'Idempotent MERGE'],
-    description: 'Production-grade threat intelligence ingestion. Pulls real IOCs from AlienVault OTX, MISP, and any STIX/TAXII 2.1 collection, normalizes to a common schema, deduplicates by (type,value), and upserts into Delta via idempotent MERGE. Credentials from Databricks Secret Scope. Runs on a 15-minute schedule.',
+    description: 'Production-grade threat intelligence ingestion. Pulls real IOCs from AlienVault OTX, MISP, and any STIX/TAXII 2.1 collection, normalizes them to a common schema, deduplicates by (type,value), and upserts into Delta via idempotent MERGE. Credentials sourced from Databricks Secret Scope. Designed to run on a schedule (every 15 minutes).',
     estimatedRuntime: '4 min per run',
     clusterRequirements: 'DBR 14.3 LTS, 1+ workers, internet egress allowed',
     cells: [
@@ -15,7 +381,7 @@ export const threatIntelNotebooks: DatabricksNotebook[] = [
         type: 'markdown',
         content: `# Live Threat Feed Ingestion
 
-Production notebook connecting to real threat intelligence APIs:
+This notebook is the production replacement for mock-data feed generators. It connects to **real** threat intelligence APIs:
 
 | Source | Protocol | Auth |
 |---|---|---|
@@ -23,15 +389,14 @@ Production notebook connecting to real threat intelligence APIs:
 | MISP | REST | API key in secret scope |
 | Any STIX/TAXII 2.1 collection | TAXII 2.1 | Basic auth in secret scope |
 
-### Failure Semantics
-- Each connector runs independently; a failure in one source does NOT block others
-- All writes use Delta MERGE on (indicator_type, indicator_value) for idempotent reruns
-- Run failures are written to \`feed_run_log\` for observability
-- Schedule: every 15 minutes via Databricks Jobs`,
+### Failure semantics
+- Each connector runs in its own try/except. A failure in one source does NOT block others.
+- All writes use Delta MERGE on (indicator_type, indicator_value) -> idempotent reruns.
+- Run failures are written to \`feed_run_log\` for observability.`,
       },
       {
         type: 'code',
-        content: `# Cell 1: Configuration & Secret Scope
+        content: `# Cell 1: Configuration + secret scope
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     StructType, StructField, StringType, DoubleType, TimestampType, ArrayType, IntegerType,
@@ -42,8 +407,8 @@ import json
 import urllib.request
 import urllib.error
 
-dbutils.widgets.text("catalog", "main")
-dbutils.widgets.text("schema", "security")
+dbutils.widgets.text("catalog", "soc_platform")
+dbutils.widgets.text("schema", "threat_intel")
 dbutils.widgets.text("secret_scope", "soc-platform")
 dbutils.widgets.text("max_indicators_per_source", "5000")
 
@@ -52,6 +417,8 @@ SCHEMA = dbutils.widgets.get("schema")
 SECRET_SCOPE = dbutils.widgets.get("secret_scope")
 MAX_INDICATORS = int(dbutils.widgets.get("max_indicators_per_source"))
 
+spark.sql(f"CREATE CATALOG IF NOT EXISTS {CATALOG}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 spark.sql(f"USE {CATALOG}.{SCHEMA}")
 
 def get_secret(key: str, default=None):
@@ -71,7 +438,7 @@ TAXII_PASS = get_secret("taxii_pass")
 print("Configured sources:")
 print(f"  OTX:   {'YES' if OTX_API_KEY else 'no (skip)'}")
 print(f"  MISP:  {'YES' if MISP_URL and MISP_API_KEY else 'no (skip)'}")
-print(f"  TAXII: {'YES' if TAXII_URL else 'no (skip)'}") `,
+print(f"  TAXII: {'YES' if TAXII_URL else 'no (skip)'}")`,
       },
       {
         type: 'sql',
@@ -85,9 +452,9 @@ CREATE TABLE IF NOT EXISTS threat_indicators (
   tags ARRAY<STRING>,
   first_seen TIMESTAMP,
   last_seen TIMESTAMP,
-  report_count INT DEFAULT 1,
+  report_count INT,
   raw_payload STRING,
-  ingested_at TIMESTAMP DEFAULT current_timestamp(),
+  ingested_at TIMESTAMP,
   CONSTRAINT indicator_pk PRIMARY KEY (indicator_type, indicator_value, source) RELY
 ) USING DELTA
 PARTITIONED BY (indicator_type)
@@ -99,13 +466,13 @@ CREATE TABLE IF NOT EXISTS feed_run_log (
   started_at TIMESTAMP,
   finished_at TIMESTAMP,
   status STRING,
-  indicators_ingested INT DEFAULT 0,
+  indicators_ingested INT,
   error_message STRING
 ) USING DELTA;`,
       },
       {
         type: 'code',
-        content: `# Cell 3: Source Connectors
+        content: `# Cell 3: Connectors
 def _http_get_json(url, headers=None, timeout=30):
     req = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -136,7 +503,7 @@ def fetch_otx(api_key, max_indicators):
                         "source": "AlienVault OTX",
                         "confidence": 0.7,
                         "severity": "high" if "apt" in tags else "medium",
-                        "tags": tags[:10],
+                        "tags": tags,
                         "first_seen": ind.get("created"),
                         "last_seen": pulse.get("modified"),
                         "report_count": 1,
@@ -150,7 +517,6 @@ def fetch_otx(api_key, max_indicators):
     return out
 
 def fetch_misp(misp_url, api_key, max_indicators):
-    """MISP REST API -> normalized IOCs."""
     if not (misp_url and api_key):
         return []
     url = f"{misp_url.rstrip('/')}/attributes/restSearch"
@@ -210,6 +576,7 @@ def fetch_taxii(taxii_url, user, password, max_indicators):
             if obj.get("type") != "indicator":
                 continue
             pattern = obj.get("pattern", "")
+            # Naive STIX pattern parsing for the most common cases
             if "ipv4-addr:value" in pattern:
                 t = "ipv4"
             elif "domain-name:value" in pattern:
@@ -242,8 +609,8 @@ def fetch_taxii(taxii_url, user, password, max_indicators):
       },
       {
         type: 'code',
-        content: `# Cell 4: Execute all connectors with isolated error handling, then MERGE
-import uuid as _uuid
+        content: `# Cell 4: Run all connectors with isolated error handling, then MERGE
+import uuid
 
 INDICATOR_SCHEMA = StructType([
     StructField("indicator_type", StringType(), False),
@@ -259,7 +626,7 @@ INDICATOR_SCHEMA = StructType([
 ])
 
 def run_source(name, fetcher, *args):
-    run_id = str(_uuid.uuid4())
+    run_id = str(uuid.uuid4())
     started = datetime.now(timezone.utc)
     try:
         rows = fetcher(*args, MAX_INDICATORS)
@@ -297,14 +664,14 @@ def run_source(name, fetcher, *args):
         spark.createDataFrame([(run_id, name, started, finished, "success", ingested, None)],
                               ["run_id", "source", "started_at", "finished_at", "status",
                                "indicators_ingested", "error_message"]) \\
-            .write.format("delta").mode("append").saveAsTable(f"{CATALOG}.{SCHEMA}.feed_run_log")
+            .write.format("delta").mode("append").saveAsTable("feed_run_log")
         print(f"[{name}] ingested {ingested}")
     except Exception as exc:
         finished = datetime.now(timezone.utc)
         spark.createDataFrame([(run_id, name, started, finished, "failed", 0, str(exc)[:1000])],
                               ["run_id", "source", "started_at", "finished_at", "status",
                                "indicators_ingested", "error_message"]) \\
-            .write.format("delta").mode("append").saveAsTable(f"{CATALOG}.{SCHEMA}.feed_run_log")
+            .write.format("delta").mode("append").saveAsTable("feed_run_log")
         print(f"[{name}] FAILED: {exc}")
 
 run_source("OTX", fetch_otx, OTX_API_KEY)
@@ -313,7 +680,7 @@ run_source("TAXII", fetch_taxii, TAXII_URL, TAXII_USER, TAXII_PASS)`,
       },
       {
         type: 'sql',
-        content: `-- Cell 5: Run report & indicator summary
+        content: `-- Cell 5: Run report
 SELECT source,
        status,
        COUNT(*) AS runs,
@@ -324,365 +691,10 @@ WHERE started_at >= current_date() - INTERVAL 7 DAYS
 GROUP BY source, status
 ORDER BY source, status;
 
-SELECT indicator_type, source, COUNT(*) AS indicators, AVG(confidence) AS avg_confidence
+SELECT indicator_type, source, COUNT(*) AS indicators
 FROM threat_indicators
 GROUP BY indicator_type, source
 ORDER BY indicators DESC;`,
-      },
-    ],
-  },
-
-  {
-    id: 'ioc-correlation-engine',
-    title: 'IOC Correlation & Network Match Engine',
-    subtitle: 'Streaming correlation of threat indicators against live network telemetry',
-    category: 'threat-intel',
-    tags: ['IOC Matching', 'Streaming Join', 'Network Telemetry', 'Delta CDF', 'Broadcast Join'],
-    description: 'Production streaming pipeline that continuously correlates the latest threat indicators against live network flow data (DNS, HTTP, SMTP). Uses broadcast hash join on the IOC table and Spark Structured Streaming with watermarks. Outputs matches as high-fidelity alerts to the correlation_matches table.',
-    estimatedRuntime: 'Continuous (streaming)',
-    clusterRequirements: 'DBR 14.3 LTS, 4+ workers, SSD state store',
-    cells: [
-      {
-        type: 'markdown',
-        content: `# IOC Correlation & Network Match Engine
-## Streaming Threat-to-Telemetry Correlation
-
-Continuously joins threat indicators against live network flows:
-- **DNS queries** matched against domain IOCs
-- **HTTP/S connections** matched against IP and URL IOCs
-- **SMTP flows** matched against email IOCs
-- **File transfers** matched against hash IOCs
-
-### Design
-- Broadcast the IOC table (fits in memory) for map-side join
-- Read network telemetry as a streaming Delta source
-- Watermark: 10 minutes for late-arriving flows
-- Output: append-only \`ioc_matches\` table with alert generation`,
-      },
-      {
-        type: 'code',
-        content: `# Cell 1: Configuration
-from pyspark.sql import functions as F
-from pyspark.sql.types import StringType
-from delta.tables import DeltaTable
-
-dbutils.widgets.text("catalog", "main")
-dbutils.widgets.text("schema", "security")
-dbutils.widgets.text("checkpoint_path", "")
-dbutils.widgets.text("processing_time", "15 seconds")
-dbutils.widgets.text("watermark_duration", "10 minutes")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCHEMA = dbutils.widgets.get("schema")
-CHECKPOINT = dbutils.widgets.get("checkpoint_path") or f"/Volumes/{CATALOG}/{SCHEMA}/checkpoints/ioc_correlation"
-PROCESSING_TIME = dbutils.widgets.get("processing_time")
-WATERMARK = dbutils.widgets.get("watermark_duration")
-
-spark.sql(f"USE {CATALOG}.{SCHEMA}")
-
-# Load active IOCs as broadcast table
-iocs = (
-    spark.table(f"{CATALOG}.{SCHEMA}.threat_indicators")
-    .filter(F.col("confidence") >= 0.5)
-    .select(
-        F.col("indicator_type"),
-        F.col("indicator_value"),
-        F.col("source").alias("ioc_source"),
-        F.col("confidence").alias("ioc_confidence"),
-        F.col("severity").alias("ioc_severity"),
-        F.col("tags").alias("ioc_tags"),
-    )
-    .cache()
-)
-
-ioc_count = iocs.count()
-print(f"Loaded {ioc_count} active IOCs for correlation")
-iocs.groupBy("indicator_type").count().show()`,
-      },
-      {
-        type: 'code',
-        content: `# Cell 2: Create match output table
-spark.sql(f"""CREATE TABLE IF NOT EXISTS {CATALOG}.{SCHEMA}.ioc_matches (
-    match_id STRING NOT NULL,
-    flow_id STRING,
-    matched_value STRING,
-    indicator_type STRING,
-    ioc_source STRING,
-    ioc_confidence DOUBLE,
-    ioc_severity STRING,
-    ioc_tags ARRAY<STRING>,
-    flow_source_ip STRING,
-    flow_dest_ip STRING,
-    flow_protocol STRING,
-    flow_hostname STRING,
-    flow_timestamp TIMESTAMP,
-    match_context STRING,
-    alert_generated BOOLEAN DEFAULT false,
-    matched_at TIMESTAMP DEFAULT current_timestamp(),
-    partition_date STRING
-) USING DELTA
-PARTITIONED BY (partition_date)
-TBLPROPERTIES (
-    'delta.autoOptimize.optimizeWrite' = 'true',
-    'delta.autoOptimize.autoCompact' = 'true'
-)""")
-
-print("ioc_matches table ready")`,
-      },
-      {
-        type: 'code',
-        content: `# Cell 3: Streaming correlation join
-from pyspark.sql.functions import broadcast, current_timestamp, date_format, expr, lit
-
-# Read network flows as streaming source
-flows_stream = (
-    spark.readStream.format("delta")
-    .option("maxFilesPerTrigger", 500)
-    .option("ignoreChanges", "true")
-    .table(f"{CATALOG}.{SCHEMA}.network_flows")
-    .withWatermark("timestamp", WATERMARK)
-)
-
-# Normalize flow fields for multi-type matching
-normalized_flows = flows_stream.select(
-    F.col("flow_id"),
-    F.col("source_ip"),
-    F.col("destination_ip"),
-    F.col("protocol"),
-    F.col("hostname"),
-    F.col("timestamp"),
-    F.col("dns_query"),
-    F.col("url_path"),
-    F.col("file_hash"),
-    F.col("email_sender"),
-)
-
-# Explode into (value, type) pairs for join
-flow_values = normalized_flows.select(
-    "*",
-    F.explode(F.array(
-        F.struct(F.col("destination_ip").alias("val"), F.lit("ipv4").alias("typ")),
-        F.struct(F.col("source_ip").alias("val"), F.lit("ipv4").alias("typ")),
-        F.struct(F.col("dns_query").alias("val"), F.lit("domain").alias("typ")),
-        F.struct(F.col("url_path").alias("val"), F.lit("url").alias("typ")),
-        F.struct(F.col("file_hash").alias("val"), F.lit("sha256").alias("typ")),
-        F.struct(F.col("email_sender").alias("val"), F.lit("email").alias("typ")),
-    )).alias("check")
-).filter(F.col("check.val").isNotNull())
-
-# Broadcast join against IOC table
-matches = (
-    flow_values
-    .join(
-        broadcast(iocs),
-        (F.col("check.val") == F.col("indicator_value")) &
-        (F.col("check.typ") == F.col("indicator_type")),
-        "inner",
-    )
-    .select(
-        expr("uuid()").alias("match_id"),
-        F.col("flow_id"),
-        F.col("check.val").alias("matched_value"),
-        F.col("indicator_type"),
-        F.col("ioc_source"),
-        F.col("ioc_confidence"),
-        F.col("ioc_severity"),
-        F.col("ioc_tags"),
-        F.col("source_ip").alias("flow_source_ip"),
-        F.col("destination_ip").alias("flow_dest_ip"),
-        F.col("protocol").alias("flow_protocol"),
-        F.col("hostname").alias("flow_hostname"),
-        F.col("timestamp").alias("flow_timestamp"),
-        F.lit("streaming_match").alias("match_context"),
-        F.when(F.col("ioc_confidence") >= 0.8, True).otherwise(False).alias("alert_generated"),
-        current_timestamp().alias("matched_at"),
-        date_format(current_timestamp(), "yyyy-MM-dd").alias("partition_date"),
-    )
-)
-
-query = (
-    matches
-    .writeStream.format("delta")
-    .outputMode("append")
-    .option("checkpointLocation", f"{CHECKPOINT}/ioc_matches")
-    .trigger(processingTime=PROCESSING_TIME)
-    .queryName("ioc_network_correlation")
-    .toTable(f"{CATALOG}.{SCHEMA}.ioc_matches")
-)
-
-print(f"IOC correlation stream started: {query.id}")
-print(f"  Processing time: {PROCESSING_TIME}")
-print(f"  Watermark: {WATERMARK}")
-print(f"  IOCs loaded: {ioc_count}")`,
-      },
-      {
-        type: 'sql',
-        content: `-- Cell 4: Monitor active matches
-SELECT indicator_type, ioc_severity,
-       COUNT(*) AS total_matches,
-       COUNT(DISTINCT matched_value) AS unique_iocs_hit,
-       COUNT(DISTINCT flow_source_ip) AS affected_hosts,
-       MAX(matched_at) AS last_match
-FROM ioc_matches
-WHERE partition_date >= date_format(current_date() - INTERVAL 1 DAY, 'yyyy-MM-dd')
-GROUP BY indicator_type, ioc_severity
-ORDER BY total_matches DESC;`,
-      },
-    ],
-  },
-
-  {
-    id: 'dpi-anomaly-detection',
-    title: 'Deep Packet Inspection Anomaly Detection',
-    subtitle: 'Protocol-aware statistical anomaly scoring for network flows',
-    category: 'threat-intel',
-    tags: ['DPI', 'Network Anomaly', 'Z-Score', 'Protocol Analysis', 'Exfiltration'],
-    description: 'Production pipeline that computes per-protocol statistical baselines from network flow metadata and scores deviations in real-time. Detects DNS tunneling, data exfiltration, C2 beaconing, and protocol abuse without requiring payload inspection.',
-    estimatedRuntime: '8 min (batch) / continuous (streaming)',
-    clusterRequirements: 'DBR 14.3 LTS, 4+ workers',
-    cells: [
-      {
-        type: 'markdown',
-        content: `# Deep Packet Inspection Anomaly Detection
-## Protocol-Aware Statistical Scoring
-
-### Detection Capabilities
-| Category | Method | Indicators |
-|----------|--------|-----------|
-| DNS Tunneling | Entropy + volume | High-entropy queries, excessive volume to single domain |
-| Data Exfiltration | Bytes-out Z-score | Transfer volume > 3 sigma above protocol baseline |
-| C2 Beaconing | Periodicity | Regular interval connections with low jitter |
-| Protocol Abuse | Port mismatch | Non-standard protocol on standard ports |
-
-### Approach
-1. Compute rolling 7-day baseline per (protocol, subnet)
-2. Score current flows against baseline using Z-scores
-3. Combine entropy, volume, and timing scores into composite DPI score
-4. Write anomalies above threshold to \`dpi_anomalies\` for investigation`,
-      },
-      {
-        type: 'code',
-        content: `# Cell 1: Configuration & baseline computation
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
-from delta.tables import DeltaTable
-
-dbutils.widgets.text("catalog", "main")
-dbutils.widgets.text("schema", "security")
-dbutils.widgets.text("baseline_days", "7")
-dbutils.widgets.text("anomaly_threshold", "3.0")
-
-CATALOG = dbutils.widgets.get("catalog")
-SCHEMA = dbutils.widgets.get("schema")
-BASELINE_DAYS = int(dbutils.widgets.get("baseline_days"))
-THRESHOLD = float(dbutils.widgets.get("anomaly_threshold"))
-
-spark.sql(f"USE {CATALOG}.{SCHEMA}")
-
-# Compute per-protocol baselines from historical flows
-flows = (
-    spark.table(f"{CATALOG}.{SCHEMA}.network_flows")
-    .filter(F.col("timestamp") >= F.expr(f"current_timestamp() - INTERVAL {BASELINE_DAYS} DAYS"))
-    .withColumn("subnet", F.regexp_extract("source_ip", r"(\\d+\\.\\d+\\.\\d+)\\.\\d+", 1))
-)
-
-baselines = (
-    flows
-    .groupBy("protocol", "subnet")
-    .agg(
-        F.count("*").alias("flow_count"),
-        F.avg("bytes_out").alias("mean_bytes_out"),
-        F.stddev("bytes_out").alias("std_bytes_out"),
-        F.avg("bytes_in").alias("mean_bytes_in"),
-        F.stddev("bytes_in").alias("std_bytes_in"),
-        F.avg("entropy").alias("mean_entropy"),
-        F.stddev("entropy").alias("std_entropy"),
-        F.avg("duration_ms").alias("mean_duration"),
-        F.stddev("duration_ms").alias("std_duration"),
-        F.avg("packets").alias("mean_packets"),
-        F.stddev("packets").alias("std_packets"),
-    )
-    .filter(F.col("flow_count") >= 100)
-    .withColumn("std_bytes_out", F.greatest(F.col("std_bytes_out"), F.lit(1.0)))
-    .withColumn("std_bytes_in", F.greatest(F.col("std_bytes_in"), F.lit(1.0)))
-    .withColumn("std_entropy", F.greatest(F.col("std_entropy"), F.lit(0.01)))
-    .withColumn("std_duration", F.greatest(F.col("std_duration"), F.lit(1.0)))
-    .withColumn("std_packets", F.greatest(F.col("std_packets"), F.lit(1.0)))
-    .withColumn("computed_at", F.current_timestamp())
-)
-
-baselines.write.format("delta").mode("overwrite").saveAsTable(f"{CATALOG}.{SCHEMA}.dpi_baselines")
-print(f"Baselines computed: {baselines.count()} (protocol, subnet) pairs from {BASELINE_DAYS} days of data")`,
-      },
-      {
-        type: 'code',
-        content: `# Cell 2: Score flows against baselines
-baselines_df = spark.table(f"{CATALOG}.{SCHEMA}.dpi_baselines")
-
-# Score recent flows (last 24 hours)
-recent_flows = (
-    spark.table(f"{CATALOG}.{SCHEMA}.network_flows")
-    .filter(F.col("timestamp") >= F.expr("current_timestamp() - INTERVAL 24 HOURS"))
-    .withColumn("subnet", F.regexp_extract("source_ip", r"(\\d+\\.\\d+\\.\\d+)\\.\\d+", 1))
-)
-
-scored = (
-    recent_flows.alias("f")
-    .join(baselines_df.alias("b"), ["protocol", "subnet"], "inner")
-    .withColumn("z_bytes_out", (F.col("f.bytes_out") - F.col("b.mean_bytes_out")) / F.col("b.std_bytes_out"))
-    .withColumn("z_bytes_in", (F.col("f.bytes_in") - F.col("b.mean_bytes_in")) / F.col("b.std_bytes_in"))
-    .withColumn("z_entropy", (F.col("f.entropy") - F.col("b.mean_entropy")) / F.col("b.std_entropy"))
-    .withColumn("z_duration", (F.col("f.duration_ms") - F.col("b.mean_duration")) / F.col("b.std_duration"))
-    .withColumn("z_packets", (F.col("f.packets") - F.col("b.mean_packets")) / F.col("b.std_packets"))
-    .withColumn("dpi_score",
-        F.abs(F.col("z_bytes_out")) * 0.30 +
-        F.abs(F.col("z_entropy")) * 0.25 +
-        F.abs(F.col("z_duration")) * 0.15 +
-        F.abs(F.col("z_bytes_in")) * 0.15 +
-        F.abs(F.col("z_packets")) * 0.15
-    )
-    .withColumn("anomaly_category",
-        F.when((F.col("z_entropy") > 3) & (F.col("protocol") == "DNS"), F.lit("dns_tunneling"))
-        .when(F.col("z_bytes_out") > 4, F.lit("data_exfiltration"))
-        .when((F.col("z_duration") < -2) & (F.col("z_bytes_out") < 0), F.lit("c2_beaconing"))
-        .when(F.col("dpi_score") > THRESHOLD, F.lit("protocol_anomaly"))
-        .otherwise(F.lit("normal"))
-    )
-    .withColumn("severity",
-        F.when(F.col("dpi_score") >= 6.0, F.lit("critical"))
-        .when(F.col("dpi_score") >= 4.0, F.lit("high"))
-        .when(F.col("dpi_score") >= THRESHOLD, F.lit("medium"))
-        .otherwise(F.lit("low"))
-    )
-)
-
-# Write anomalies
-anomalies = scored.filter(F.col("dpi_score") >= THRESHOLD)
-
-spark.sql(f"""CREATE TABLE IF NOT EXISTS {CATALOG}.{SCHEMA}.dpi_anomalies (
-    flow_id STRING, source_ip STRING, destination_ip STRING, protocol STRING,
-    bytes_out BIGINT, bytes_in BIGINT, entropy DOUBLE, duration_ms INT, packets INT,
-    dpi_score DOUBLE, anomaly_category STRING, severity STRING,
-    z_bytes_out DOUBLE, z_entropy DOUBLE, z_duration DOUBLE,
-    detected_at TIMESTAMP, partition_date STRING
-) USING DELTA PARTITIONED BY (partition_date)
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')""")
-
-(
-    anomalies.select(
-        "f.flow_id", "f.source_ip", "f.destination_ip", "f.protocol",
-        "f.bytes_out", "f.bytes_in", "f.entropy", "f.duration_ms", "f.packets",
-        "dpi_score", "anomaly_category", "severity",
-        "z_bytes_out", "z_entropy", "z_duration",
-    )
-    .withColumn("detected_at", F.current_timestamp())
-    .withColumn("partition_date", F.date_format(F.current_timestamp(), "yyyy-MM-dd"))
-    .write.format("delta").mode("append").partitionBy("partition_date")
-    .saveAsTable(f"{CATALOG}.{SCHEMA}.dpi_anomalies")
-)
-
-print(f"DPI anomalies detected: {anomalies.count()} (threshold: {THRESHOLD})")
-anomalies.groupBy("anomaly_category", "severity").count().orderBy(F.desc("count")).show()`,
       },
     ],
   },

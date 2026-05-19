@@ -123,7 +123,9 @@ from pyspark.sql import functions as F
 from pyspark.sql.types import *
 import json
 from datetime import datetime, timedelta
+import random
 import uuid
+import math
 import hashlib
 
 CATALOG = "soc_platform"
@@ -537,32 +539,175 @@ TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true');`
     },
     {
       type: 'code',
-      content: `# Cell 4: Multi-Source Bronze Ingestion with Auto Loader
-# Production ingestion pipeline for all telemetry sources using Auto Loader.
-# Each source lands JSON in a dedicated prefix; Auto Loader handles schema
-# inference, evolution, and exactly-once delivery into the bronze table.
+      content: `# Cell 4: Multi-Source Bronze Event Generator with Deception Signals
+# Generates 30K enterprise telemetry events including honeypot interactions
+# and multi-stage attack chains that span across entity types.
 
-dbutils.widgets.text("ingest_base_path", "s3://soc-events-raw/graph-engine/")
-dbutils.widgets.text("checkpoint_root", f"/Volumes/{CATALOG}/{SCHEMA_BRONZE}/_checkpoints")
-dbutils.widgets.text("max_files_per_trigger", "500")
-dbutils.widgets.text("trigger_interval", "30 seconds")
+HONEYPOT_IPS = ["10.0.99.1", "10.0.99.2", "10.0.99.3"]
+HONEYPOT_HOSTS = ["HONEYPOT-SSH-01", "HONEYPOT-RDP-01", "HONEYPOT-WEB-01"]
+HONEYPOT_USERS = ["honey_admin", "honey_root", "honey_backup"]
+DECOY_DOMAINS = ["internal-secrets.corp.local", "admin-portal-backup.corp.local"]
 
-INGEST_PATH = dbutils.widgets.get("ingest_base_path")
-CHECKPOINT_ROOT = dbutils.widgets.get("checkpoint_root")
-MAX_FILES = int(dbutils.widgets.get("max_files_per_trigger"))
-TRIGGER = dbutils.widgets.get("trigger_interval")
+ATTACKER_IPS = ["185.220.101.44", "91.219.236.15", "45.33.32.156", "198.51.100.77"]
+INTERNAL_IPS = [f"10.0.{s}.{h}" for s in range(1, 6) for h in range(1, 50)]
+USERS = [
+    "jsmith", "admin", "svc_backup", "dbadmin", "mwilliams", "ljohnson",
+    "root", "operator", "svc_deploy", "cloud_admin", "klee", "dev_user",
+]
+HOSTS = [
+    "WS-FIN-001", "WS-HR-042", "SRV-DC-01", "SRV-DC-02", "SRV-DB-03",
+    "SRV-WEB-01", "SRV-MAIL-01", "SRV-JUMP-01", "SRV-CI-01", "WS-ENG-015",
+]
+DOMAINS = [
+    "login.microsoftonline.com", "s3.amazonaws.com", "github.com",
+    "pastebin.com", "transfer.sh", "c2-node-x1.evil.com",
+    "dl.dropbox.com", "raw.githubusercontent.com", "api.slack.com",
+    "update.microsoft.com", "cdn.cloudflare.com",
+    "exfil-dns.suspicious.io", "0x1a2b.onion.ly",
+]
+PROCESSES = [
+    "chrome.exe", "explorer.exe", "svchost.exe", "powershell.exe",
+    "cmd.exe", "python3", "ssh", "curl", "wget", "nc", "mimikatz.exe",
+    "psexec.exe", "wmic.exe", "certutil.exe", "rundll32.exe",
+    "bitsadmin.exe", "mshta.exe", "regsvr32.exe",
+]
+API_ACTIONS = [
+    "AssumeRole", "GetObject", "PutObject", "CreateUser", "AttachPolicy",
+    "RunInstances", "DescribeInstances", "GetCallerIdentity", "DeleteTrail",
+    "StopLogging", "CreateAccessKey", "PutBucketPolicy",
+]
+GEOS = [
+    ("US", "New York"), ("US", "San Francisco"), ("US", "Chicago"),
+    ("DE", "Berlin"), ("GB", "London"), ("JP", "Tokyo"),
+    ("RU", "Moscow"), ("CN", "Beijing"), ("KP", "Pyongyang"), ("BR", "Sao Paulo"),
+]
 
-SOURCE_PATHS = {
-    "iam": f"{INGEST_PATH}iam/",
-    "vpn": f"{INGEST_PATH}vpn/",
-    "edr": f"{INGEST_PATH}edr/",
-    "dns": f"{INGEST_PATH}dns/",
-    "network": f"{INGEST_PATH}network/",
-    "cloud_audit": f"{INGEST_PATH}cloud_audit/",
-    "email": f"{INGEST_PATH}email/",
-    "threat_intel": f"{INGEST_PATH}threat_intel/",
-    "honeypot": f"{INGEST_PATH}honeypot/",
-}
+def gen_session_id():
+    return f"sess-{uuid.uuid4().hex[:12]}"
+
+def generate_bronze_events(num_events=30000):
+    base_time = datetime.now() - timedelta(hours=72)
+    events = []
+
+    SOURCE_GENERATORS = {
+        "iam": lambda t: {
+            "timestamp": t.isoformat(), "type": "authentication",
+            "user": random.choice(USERS),
+            "src_ip": random.choice(INTERNAL_IPS + ATTACKER_IPS),
+            "host": random.choice(HOSTS),
+            "action": random.choice(["login_success", "login_failed", "mfa_challenge",
+                                     "password_change", "account_lockout", "privilege_grant"]),
+            "outcome": random.choice(["success", "failure", "failure", "failure"]),
+            "geo": random.choice(GEOS), "session_id": gen_session_id(),
+            "user_agent": random.choice(["Chrome/120", "Firefox/119", "curl/7.88", "python-requests/2.31"]),
+        },
+        "vpn": lambda t: {
+            "timestamp": t.isoformat(), "type": "vpn",
+            "user": random.choice(USERS),
+            "src_ip": f"{random.randint(1,223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}",
+            "assigned_ip": random.choice(INTERNAL_IPS),
+            "action": random.choice(["connect", "disconnect", "failed_auth", "geo_anomaly"]),
+            "geo": random.choice(GEOS), "duration_min": random.randint(1, 480),
+            "session_id": gen_session_id(),
+        },
+        "edr": lambda t: {
+            "timestamp": t.isoformat(), "type": "endpoint",
+            "host": random.choice(HOSTS), "user": random.choice(USERS),
+            "process": random.choice(PROCESSES),
+            "parent_process": random.choice(["explorer.exe", "svchost.exe", "cmd.exe", "services.exe"]),
+            "process_hash": uuid.uuid4().hex[:32],
+            "action": random.choice(["process_create", "file_write", "registry_mod",
+                                     "dll_load", "network_connect", "memory_inject"]),
+            "severity": random.choice(["low", "low", "medium", "high", "critical"]),
+            "dst_ip": random.choice(INTERNAL_IPS + ATTACKER_IPS + ["0.0.0.0"]),
+            "dst_port": random.choice([80, 443, 445, 3389, 8080, 53, 4444, 8443]),
+        },
+        "dns": lambda t: {
+            "timestamp": t.isoformat(), "type": "dns",
+            "src_ip": random.choice(INTERNAL_IPS),
+            "query": random.choice(DOMAINS + DECOY_DOMAINS),
+            "query_type": random.choice(["A", "AAAA", "CNAME", "TXT", "MX"]),
+            "response_code": random.choice(["NOERROR", "NOERROR", "NOERROR", "NXDOMAIN"]),
+            "response_ip": f"{random.randint(1,223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}",
+        },
+        "network": lambda t: {
+            "timestamp": t.isoformat(), "type": "network_flow",
+            "src_ip": random.choice(INTERNAL_IPS + ATTACKER_IPS),
+            "dst_ip": random.choice(INTERNAL_IPS + ATTACKER_IPS + HONEYPOT_IPS),
+            "src_port": random.randint(1024, 65535),
+            "dst_port": random.choice([22, 80, 443, 445, 3389, 8080, 53, 4444, 1433, 5432]),
+            "protocol": random.choice(["TCP", "UDP", "ICMP"]),
+            "bytes_sent": random.randint(64, 5000000),
+            "bytes_recv": random.randint(64, 5000000),
+            "packets": random.randint(1, 50000),
+        },
+        "cloud_audit": lambda t: {
+            "timestamp": t.isoformat(), "type": "cloud_api",
+            "user": random.choice(USERS),
+            "src_ip": random.choice(INTERNAL_IPS + ATTACKER_IPS),
+            "cloud_provider": random.choice(["aws", "azure", "gcp"]),
+            "region": random.choice(["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"]),
+            "api_action": random.choice(API_ACTIONS),
+            "resource": random.choice([
+                "arn:aws:s3:::prod-data-lake", "arn:aws:iam::123456:role/admin",
+                "arn:aws:ec2:us-east-1:i-0abc123", "projects/gcp-prod/instances/db-01",
+            ]),
+            "outcome": random.choice(["success", "success", "success", "denied", "error"]),
+            "user_agent": random.choice(["aws-cli/2.0", "boto3/1.26", "terraform/1.5"]),
+            "session_id": gen_session_id(),
+        },
+        "email": lambda t: {
+            "timestamp": t.isoformat(), "type": "email_security",
+            "recipient": f"{random.choice(USERS)}@corp.com",
+            "sender": f"{''.join(random.choices('abcdefghij', k=6))}@{random.choice(['legit.com', 'phishing-domain.com', 'sp00fed.com'])}",
+            "subject": random.choice(["Invoice attached", "Urgent: password reset", "Meeting notes"]),
+            "verdict": random.choice(["clean", "clean", "clean", "suspicious", "malicious"]),
+            "has_attachment": random.choice([True, False]),
+            "attachment_hash": uuid.uuid4().hex[:32] if random.random() > 0.5 else None,
+        },
+        "threat_intel": lambda t: {
+            "timestamp": t.isoformat(), "type": "threat_feed",
+            "ioc_type": random.choice(["ip", "domain", "hash", "url"]),
+            "ioc_value": random.choice(ATTACKER_IPS + ["c2-node-x1.evil.com", "exfil-dns.suspicious.io"]),
+            "threat_type": random.choice(["c2", "malware", "phishing", "botnet", "apt"]),
+            "confidence": round(random.uniform(0.5, 1.0), 2),
+            "source_feed": random.choice(["AlienVault OTX", "Recorded Future", "MISP", "CrowdStrike"]),
+        },
+        "honeypot": lambda t: {
+            "timestamp": t.isoformat(), "type": "deception",
+            "honeypot_id": random.choice(HONEYPOT_HOSTS),
+            "honeypot_ip": random.choice(HONEYPOT_IPS),
+            "src_ip": random.choice(INTERNAL_IPS + ATTACKER_IPS),
+            "src_user": random.choice(USERS + ["unknown"]),
+            "interaction": random.choice(["ssh_attempt", "rdp_scan", "http_probe", "smb_enum", "credential_test"]),
+            "severity": "critical",
+        },
+    }
+
+    source_weights = {
+        "iam": 0.18, "vpn": 0.07, "edr": 0.23, "dns": 0.17,
+        "network": 0.12, "cloud_audit": 0.10, "email": 0.04,
+        "threat_intel": 0.03, "honeypot": 0.06,
+    }
+
+    for _ in range(num_events):
+        source = random.choices(list(source_weights.keys()), weights=list(source_weights.values()))[0]
+        event_time = base_time + timedelta(seconds=random.randint(0, 259200))
+        payload = SOURCE_GENERATORS[source](event_time)
+        events.append({
+            "event_id": str(uuid.uuid4()),
+            "ingestion_time": datetime.now(),
+            "source_system": f"{source}-collector-01",
+            "source_type": source,
+            "event_time_raw": event_time.isoformat(),
+            "raw_payload": json.dumps(payload),
+            "raw_format": "json",
+            "schema_version": 1,
+            "is_deception": source == "honeypot",
+        })
+
+    return events
+
 BRONZE_SCHEMA = StructType([
     StructField("event_id", StringType(), False),
     StructField("ingestion_time", TimestampType(), False),
@@ -575,49 +720,15 @@ BRONZE_SCHEMA = StructType([
     StructField("is_deception", BooleanType(), True),
 ])
 
-# Auto Loader reads all source directories, inferring source_type from path
-df_raw = (
-    spark.readStream.format("cloudFiles")
-    .option("cloudFiles.format", "json")
-    .option("cloudFiles.schemaLocation", f"{CHECKPOINT_ROOT}/_schema_bronze")
-    .option("cloudFiles.inferColumnTypes", "true")
-    .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
-    .option("maxFilesPerTrigger", MAX_FILES)
-    .option("pathGlobFilter", "*.json")
-    .load(INGEST_PATH)
-)
+bronze_events = generate_bronze_events(30000)
+df_bronze = spark.createDataFrame(bronze_events, schema=BRONZE_SCHEMA)
+df_bronze.write.mode("overwrite").saveAsTable(f"{CATALOG}.{SCHEMA_BRONZE}.bronze_events")
 
-# Add metadata columns and normalize to bronze schema
-df_bronze = (
-    df_raw
-    .withColumn("event_id", F.coalesce(F.col("event_id"), F.expr("uuid()")))
-    .withColumn("ingestion_time", F.current_timestamp())
-    .withColumn("source_type", F.element_at(F.split(F.input_file_name(), "/"), -2))
-    .withColumn("source_system", F.concat(F.col("source_type"), F.lit("-collector-01")))
-    .withColumn("event_time_raw",
-        F.coalesce(F.col("timestamp"), F.col("event_time"), F.col("_metadata.file_modification_time")).cast("string"))
-    .withColumn("raw_payload", F.to_json(F.struct("*")))
-    .withColumn("raw_format", F.lit("json"))
-    .withColumn("schema_version", F.lit(1))
-    .withColumn("is_deception", F.col("source_type") == "honeypot")
-    .select([f.name for f in BRONZE_SCHEMA.fields])
-)
-
-# Write streaming to bronze table with exactly-once semantics
-query = (
-    df_bronze
-    .writeStream.format("delta")
-    .outputMode("append")
-    .option("checkpointLocation", f"{CHECKPOINT_ROOT}/bronze_events")
-    .trigger(processingTime=TRIGGER)
-    .queryName("graph_bronze_ingestion")
-    .toTable(f"{CATALOG}.{SCHEMA_BRONZE}.bronze_events")
-)
-
-print(f"Bronze ingestion stream started: {query.id}")
-print(f"  Sources: {list(SOURCE_PATHS.keys())}")
-print(f"  Trigger: {TRIGGER}, MaxFiles: {MAX_FILES}")
-print(f"  Checkpoint: {CHECKPOINT_ROOT}/bronze_events")`
+print(f"Bronze events generated: {len(bronze_events):,}")
+display(df_bronze.groupBy("source_type").agg(
+    F.count("*").alias("count"),
+    F.sum(F.when(F.col("is_deception"), 1).otherwise(0)).alias("deception_events"),
+).orderBy(F.desc("count")))`
     },
     {
       type: 'code',
