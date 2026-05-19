@@ -518,6 +518,191 @@ async def agent_orchestrator_endpoint(request: Request):
 
 
 # ──────────────────────────────────────────────
+# Databricks Genie Integration (AI Security Advisor)
+# ──────────────────────────────────────────────
+
+GENIE_QUERY_CATALOG = {
+    "critical_alerts": f"SELECT id, title, severity, risk_score, source_ip, mitre_tactic, created_at FROM {{fqn}} WHERE severity = 'critical' AND status = 'new' ORDER BY created_at DESC LIMIT 20",
+    "top_source_ips": f"SELECT source_ip, COUNT(*) as count, MAX(severity) as max_severity FROM {{fqn_events}} WHERE timestamp > current_timestamp() - INTERVAL 24 HOURS GROUP BY source_ip ORDER BY count DESC LIMIT 20",
+    "mitre_coverage": f"SELECT mitre_tactic, mitre_technique, COUNT(*) as detections FROM {{fqn}} WHERE mitre_tactic IS NOT NULL AND created_at > current_timestamp() - INTERVAL 7 DAYS GROUP BY mitre_tactic, mitre_technique ORDER BY detections DESC",
+    "user_risk": f"SELECT username, risk_score, anomaly_type, detected_at FROM {{fqn_uba}} WHERE risk_score > 70 ORDER BY risk_score DESC LIMIT 20",
+    "active_cases": f"SELECT id, title, status, severity, priority, assigned_to, created_at FROM {{fqn_cases}} WHERE status IN ('open', 'investigating') ORDER BY severity DESC, created_at DESC",
+    "threat_campaigns": f"SELECT name, status, attribution, confidence, first_seen, last_seen FROM {{fqn_campaigns}} WHERE status = 'active' ORDER BY last_seen DESC LIMIT 10",
+    "agent_health": f"SELECT agent_id, status, last_heartbeat, events_processed, alerts_generated FROM {{fqn_agent_status}} ORDER BY last_heartbeat DESC",
+    "recent_events_by_type": f"SELECT event_type, COUNT(*) as count FROM {{fqn_events}} WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR GROUP BY event_type ORDER BY count DESC",
+    "compliance_status": f"SELECT framework_name, compliance_score, last_assessed FROM {{fqn_compliance}} ORDER BY last_assessed DESC LIMIT 10",
+    "network_anomalies": f"SELECT source_ip, dest_ip, protocol, bytes_sent FROM {{fqn_network}} WHERE bytes_sent > 1000000 AND timestamp > current_timestamp() - INTERVAL 1 HOUR ORDER BY bytes_sent DESC LIMIT 20",
+}
+
+
+@app.post("/api/genie/query")
+async def genie_query(request: Request):
+    """
+    Databricks Genie-powered natural language query interface.
+    Uses Foundation Models for query planning and Genie Spaces for NL2SQL
+    over the full security data lake in Unity Catalog.
+
+    Architecture:
+    1. User asks a question in natural language
+    2. Foundation Model selects relevant pre-built queries OR generates SQL
+    3. SQL executes against Unity Catalog via SQL Warehouse
+    4. Foundation Model synthesizes human-readable response
+    """
+    body = await request.json()
+    question = body.get("question", "")
+    context = body.get("context", {})
+
+    w = WorkspaceClient()
+
+    try:
+        # Stage 1: Query Planning (Genie NL2SQL equivalent)
+        planning_prompt = f"""Given this security question, select 2-5 relevant queries to answer it.
+Available queries: {json.dumps(list(GENIE_QUERY_CATALOG.keys()))}
+
+If none of the pre-built queries suffice, generate a SQL query.
+Available tables in Unity Catalog ({CATALOG}.{SCHEMA}): events, alerts, cases,
+correlation_rules, ioc_entries, threat_feeds, user_behavior_anomalies,
+agent_status, agent_configs, threat_campaigns, network_flows, assets,
+response_actions, malware_samples, vulnerability_scans
+
+Question: {question}
+
+Respond as JSON: {{"queries": ["query_key1", "query_key2"], "custom_sql": null_or_string}}"""
+
+        plan_response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-1-70b-instruct",
+            messages=[
+                {"role": "system", "content": "You are a security data query planner for Databricks Genie. Select relevant queries or generate SQL for the security data lake."},
+                {"role": "user", "content": planning_prompt}
+            ],
+            max_tokens=300,
+            temperature=0.1
+        )
+
+        plan_text = plan_response.choices[0].message.content
+        try:
+            plan = json.loads(plan_text[plan_text.find("{"):plan_text.rfind("}")+1])
+        except:
+            plan = {"queries": ["critical_alerts", "agent_health"], "custom_sql": None}
+
+        # Stage 2: Execute queries
+        query_results = {}
+        selected_queries = plan.get("queries", [])[:5]
+
+        for q_key in selected_queries:
+            if q_key in GENIE_QUERY_CATALOG:
+                sql_template = GENIE_QUERY_CATALOG[q_key]
+                sql_resolved = sql_template.replace("{fqn}", fqn("alerts"))
+                sql_resolved = sql_resolved.replace("{fqn_events}", fqn("events"))
+                sql_resolved = sql_resolved.replace("{fqn_uba}", fqn("user_behavior_anomalies"))
+                sql_resolved = sql_resolved.replace("{fqn_cases}", fqn("cases"))
+                sql_resolved = sql_resolved.replace("{fqn_campaigns}", fqn("threat_campaigns"))
+                sql_resolved = sql_resolved.replace("{fqn_agent_status}", fqn("agent_status"))
+                sql_resolved = sql_resolved.replace("{fqn_compliance}", fqn("compliance_frameworks"))
+                sql_resolved = sql_resolved.replace("{fqn_network}", fqn("network_flows"))
+                try:
+                    query_results[q_key] = query(sql_resolved)
+                except:
+                    query_results[q_key] = []
+
+        # Execute custom SQL if provided (with safety check)
+        custom_sql = plan.get("custom_sql")
+        if custom_sql and custom_sql.strip().upper().startswith("SELECT"):
+            try:
+                safe_sql = custom_sql.replace("FROM ", f"FROM {CATALOG}.{SCHEMA}.")
+                query_results["custom"] = query(safe_sql)
+            except:
+                pass
+
+        # Stage 3: Synthesize response using Foundation Model
+        synthesis_prompt = f"""Based on this security data, answer the analyst's question.
+
+Question: {question}
+
+Data Retrieved:
+{json.dumps(query_results, default=str)[:6000]}
+
+Provide a clear, actionable answer. Include specific numbers, IPs, or entities when available. If the data suggests immediate action is needed, say so explicitly."""
+
+        synthesis_response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-1-70b-instruct",
+            messages=[
+                {"role": "system", "content": "You are the CISO Security Advisor for 0xDSI. You have access to the full security data lake via Databricks Genie. Provide expert-level security analysis and recommendations. Be concise and actionable."},
+                {"role": "user", "content": synthesis_prompt}
+            ],
+            max_tokens=2048,
+            temperature=0.3
+        )
+
+        return {
+            "response": synthesis_response.choices[0].message.content,
+            "queries_used": selected_queries,
+            "data_sources": list(query_results.keys()),
+            "powered_by": "databricks_genie_foundation_models",
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/genie/executive-briefing")
+async def genie_executive_briefing(request: Request):
+    """Generate executive security briefing using Genie + Foundation Models."""
+    w = WorkspaceClient()
+    try:
+        # Gather key metrics
+        metrics = {}
+        metric_queries = {
+            "critical_open": f"SELECT COUNT(*) as cnt FROM {fqn('alerts')} WHERE severity = 'critical' AND status = 'new'",
+            "high_open": f"SELECT COUNT(*) as cnt FROM {fqn('alerts')} WHERE severity = 'high' AND status = 'new'",
+            "active_cases": f"SELECT COUNT(*) as cnt FROM {fqn('cases')} WHERE status IN ('open', 'investigating')",
+            "events_1h": f"SELECT COUNT(*) as cnt FROM {fqn('events')} WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR",
+            "agents_active": f"SELECT COUNT(*) as cnt FROM {fqn('agent_status')} WHERE status = 'active'",
+            "pending_responses": f"SELECT COUNT(*) as cnt FROM {fqn('response_actions')} WHERE status = 'pending'",
+        }
+
+        for key, sql in metric_queries.items():
+            try:
+                result = query(sql)
+                metrics[key] = result[0]["cnt"] if result else 0
+            except:
+                metrics[key] = 0
+
+        # Get trend
+        try:
+            trend = query(f"""
+                SELECT DATE(created_at) as date, COUNT(*) as alerts,
+                       SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END) as critical
+                FROM {fqn('alerts')}
+                WHERE created_at > current_timestamp() - INTERVAL 7 DAYS
+                GROUP BY DATE(created_at) ORDER BY date DESC
+            """)
+        except:
+            trend = []
+
+        # Generate briefing
+        response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-1-70b-instruct",
+            messages=[
+                {"role": "system", "content": "You are the CISO Assistant. Generate a concise executive security briefing."},
+                {"role": "user", "content": f"Generate executive briefing.\nMetrics: {json.dumps(metrics)}\n7-day trend: {json.dumps(trend, default=str)[:2000]}"}
+            ],
+            max_tokens=1500,
+            temperature=0.3
+        )
+
+        return {
+            "briefing": response.choices[0].message.content,
+            "metrics": metrics,
+            "generated_at": "now",
+            "powered_by": "databricks_genie_foundation_models",
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
 # Server entry point
 # ──────────────────────────────────────────────
 

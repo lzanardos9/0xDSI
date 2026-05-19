@@ -396,3 +396,497 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # ENRICHMENT & INVESTIGATION AGENTS
+    # ─────────────────────────────────────────────────────
+    sage_enrichment:
+      name: "[0xDSI] Agent 05 - Sage Enrichment"
+      schedule:
+        quartz_cron_expression: "0 */5 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: sage_enrich
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/05_sage_enrichment
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    nova_investigation:
+      name: "[0xDSI] Agent 06 - Nova Investigation"
+      schedule:
+        quartz_cron_expression: "0 */10 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: nova_investigate
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/06_nova_investigation
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    vanguard_response:
+      name: "[0xDSI] Agent 07 - Vanguard Response"
+      schedule:
+        quartz_cron_expression: "0 */2 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: vanguard_respond
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/07_vanguard_response
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # INTELLIGENCE & ATTRIBUTION AGENTS
+    # ─────────────────────────────────────────────────────
+    cti_attribution:
+      name: "[0xDSI] Agent 08 - CTI Attribution"
+      schedule:
+        quartz_cron_expression: "0 0 */4 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: cti_attribute
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/08_cti_attribution
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    pattern_discovery:
+      name: "[0xDSI] Agent 09 - Pattern Discovery"
+      schedule:
+        quartz_cron_expression: "0 0 */2 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: discover_patterns
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 2
+          notebook_task:
+            notebook_path: ../notebooks/agents/09_pattern_discovery
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    vector_memory:
+      name: "[0xDSI] Agent 10 - Vector Memory"
+      schedule:
+        quartz_cron_expression: "0 */15 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: embed_alerts
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/10_vector_memory
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # ADVERSARIAL & TESTING AGENTS
+    # ─────────────────────────────────────────────────────
+    red_team:
+      name: "[0xDSI] Agent 11 - Red Team"
+      schedule:
+        quartz_cron_expression: "0 0 */6 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: red_team_sim
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/11_red_team
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    blue_team:
+      name: "[0xDSI] Agent 12 - Blue Team Coverage"
+      schedule:
+        quartz_cron_expression: "0 0 8 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: blue_team_audit
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/12_blue_team
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    forensics:
+      name: "[0xDSI] Agent 13 - Forensics"
+      schedule:
+        quartz_cron_expression: "0 */30 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: forensic_analysis
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/13_forensics
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    honeypot:
+      name: "[0xDSI] Agent 14 - Honeypot Monitor"
+      schedule:
+        quartz_cron_expression: "0 */5 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: honeypot_check
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/14_honeypot
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # AI & ASSISTANT AGENTS
+    # ─────────────────────────────────────────────────────
+    ciso_assistant:
+      name: "[0xDSI] Agent 15 - CISO Assistant (Genie)"
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: daily_briefing
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/15_ciso_assistant
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    playbook_generator:
+      name: "[0xDSI] Agent 16 - Playbook Generator"
+      schedule:
+        quartz_cron_expression: "0 0 */4 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: generate_playbooks
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/16_playbook_generator
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    incident_summarizer:
+      name: "[0xDSI] Agent 17 - Incident Summarizer"
+      schedule:
+        quartz_cron_expression: "0 */10 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: summarize_incidents
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/17_incident_summarizer
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    document_analyzer:
+      name: "[0xDSI] Agent 18 - Document Analyzer"
+      schedule:
+        quartz_cron_expression: "0 */15 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: analyze_docs
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/18_document_analyzer
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    malware_sandbox:
+      name: "[0xDSI] Agent 19 - Malware Sandbox"
+      schedule:
+        quartz_cron_expression: "0 */10 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: analyze_malware
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/19_malware_sandbox
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # GOVERNANCE & SECURITY AGENTS
+    # ─────────────────────────────────────────────────────
+    llm_guardrails:
+      name: "[0xDSI] Agent 20 - LLM Guardrails"
+      schedule:
+        quartz_cron_expression: "0 */5 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: scan_llm_interactions
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/20_llm_guardrails
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    model_poisoning_guard:
+      name: "[0xDSI] Agent 21 - Model Poisoning Guard"
+      schedule:
+        quartz_cron_expression: "0 0 */1 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: check_model_integrity
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/21_model_poisoning_guard
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    threat_simulator:
+      name: "[0xDSI] Agent 22 - Threat Simulator"
+      schedule:
+        quartz_cron_expression: "0 0 */8 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: simulate_campaign
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/22_threat_simulator
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    connector_adapter:
+      name: "[0xDSI] Agent 23 - Connector Adapter"
+      schedule:
+        quartz_cron_expression: "0 */5 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: normalize_feeds
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/23_connector_adapter
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    threat_radar:
+      name: "[0xDSI] Agent 24 - Threat Radar"
+      schedule:
+        quartz_cron_expression: "0 */15 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: fetch_and_correlate
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/24_threat_radar
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    alhf_learning:
+      name: "[0xDSI] Agent 25 - ALHF Learning"
+      schedule:
+        quartz_cron_expression: "0 0 */2 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: process_feedback
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/25_alhf_learning
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    realtime_graph_cep:
+      name: "[0xDSI] Agent 26 - Realtime Graph CEP"
+      schedule:
+        quartz_cron_expression: "0 */5 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: graph_cep_detect
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 2
+          notebook_task:
+            notebook_path: ../notebooks/agents/26_realtime_graph_cep
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    vector_scoring:
+      name: "[0xDSI] Agent 27 - Vector Augmented Scoring"
+      schedule:
+        quartz_cron_expression: "0 */10 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: vector_score
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/27_vector_scoring
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    ai_correlation:
+      name: "[0xDSI] Agent 28 - AI Correlation"
+      schedule:
+        quartz_cron_expression: "0 0 */3 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: ai_correlate
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/agents/28_ai_correlation
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # ADDITIONAL CORRELATION & ML
+    # ─────────────────────────────────────────────────────
+    supply_chain_correlation:
+      name: "[0xDSI] Correlation - Supply Chain Risk"
+      schedule:
+        quartz_cron_expression: "0 */10 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: supply_chain_check
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/correlation/05_supply_chain_risk
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    cloud_posture:
+      name: "[0xDSI] Correlation - Cloud Posture (CSPM)"
+      schedule:
+        quartz_cron_expression: "0 */10 * ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: cspm_check
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/correlation/06_cloud_posture
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    ueba_baseline:
+      name: "[0xDSI] ML - UEBA Behavioral Baseline"
+      schedule:
+        quartz_cron_expression: "0 0 2 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: build_baseline
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 2
+          notebook_task:
+            notebook_path: ../notebooks/ml_training/03_ueba_behavioral_baseline
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    graphrag_zero_day:
+      name: "[0xDSI] ML - GraphRAG Zero-Day Detection"
+      schedule:
+        quartz_cron_expression: "0 0 */4 ? * *"
+        timezone_id: "UTC"
+      tasks:
+        - task_key: zero_day_scan
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 2
+          notebook_task:
+            notebook_path: ../notebooks/ml_training/04_graphrag_zero_day
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
