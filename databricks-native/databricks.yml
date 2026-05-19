@@ -1,0 +1,35 @@
+bundle:
+  name: 0xdsi-agentic-soc
+
+workspace:
+  root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+
+variables:
+  catalog:
+    default: soc_platform
+  schema:
+    default: agentic_soc
+  warehouse_id:
+    description: "Serverless SQL Warehouse ID for the app backend"
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      catalog: soc_platform_dev
+      schema: agentic_soc
+
+  staging:
+    variables:
+      catalog: soc_platform_staging
+      schema: agentic_soc
+
+  production:
+    mode: production
+    variables:
+      catalog: soc_platform
+      schema: agentic_soc
+
+include:
+  - resources/*.yml

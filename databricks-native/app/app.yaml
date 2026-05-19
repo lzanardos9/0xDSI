@@ -1,0 +1,12 @@
+command:
+  - npm
+  - run
+  - start
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: ${var.warehouse_id}
+  - name: UNITY_CATALOG
+    value: ${var.catalog}
+  - name: UNITY_SCHEMA
+    value: ${var.schema}

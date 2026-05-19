@@ -1,0 +1,27 @@
+resources:
+  pipelines:
+    bronze_silver_gold:
+      name: "[0xDSI] Medallion Pipeline - Bronze/Silver/Gold"
+      target: ${var.schema}
+      catalog: ${var.catalog}
+      development: true
+      continuous: false
+      channel: "CURRENT"
+      photon: true
+      clusters:
+        - label: "default"
+          num_workers: 2
+          node_type_id: "i3.xlarge"
+          autoscale:
+            min_workers: 1
+            max_workers: 4
+      libraries:
+        - notebook:
+            path: ../notebooks/pipelines/bronze_ingestion
+        - notebook:
+            path: ../notebooks/pipelines/silver_normalization
+        - notebook:
+            path: ../notebooks/pipelines/gold_analytics
+      configuration:
+        catalog: ${var.catalog}
+        schema: ${var.schema}

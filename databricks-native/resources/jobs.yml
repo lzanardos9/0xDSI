@@ -1,0 +1,209 @@
+resources:
+  jobs:
+    # ─────────────────────────────────────────────────────
+    # INGESTION AGENTS (Streaming - Long-running)
+    # ─────────────────────────────────────────────────────
+    raw_event_ingestion:
+      name: "[0xDSI] Agent 01 - Raw Event Ingestion"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"  # Restarts daily (streaming job)
+        timezone_id: "UTC"
+      job_clusters:
+        - job_cluster_key: streaming_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+            spark_conf:
+              spark.databricks.delta.optimizeWrite.enabled: "true"
+            autoscale:
+              min_workers: 1
+              max_workers: 4
+      tasks:
+        - task_key: ingest_events
+          job_cluster_key: streaming_cluster
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/01_raw_event_ingestion
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              source_type: "kafka"
+
+    enrichment_pipeline:
+      name: "[0xDSI] Agent 02 - Enrichment Pipeline"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"
+        timezone_id: "UTC"
+      job_clusters:
+        - job_cluster_key: streaming_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+      tasks:
+        - task_key: enrich_events
+          job_cluster_key: streaming_cluster
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/02_enrichment_pipeline
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # CORRELATION AGENTS (Streaming + Scheduled)
+    # ─────────────────────────────────────────────────────
+    streaming_correlation:
+      name: "[0xDSI] Agent 05 - Streaming Correlation Engine"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"
+        timezone_id: "UTC"
+      job_clusters:
+        - job_cluster_key: correlation_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 3
+            spark_conf:
+              spark.sql.streaming.stateStore.providerClass: "org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider"
+      tasks:
+        - task_key: correlate_events
+          job_cluster_key: correlation_cluster
+          notebook_task:
+            notebook_path: ../notebooks/correlation/01_streaming_correlation_engine
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    negative_correlation:
+      name: "[0xDSI] Agent 07 - Negative Correlation"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"  # Every 5 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: check_absences
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/correlation/02_negative_correlation
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # DETECTION AGENTS (Scheduled)
+    # ─────────────────────────────────────────────────────
+    behavioral_anomaly:
+      name: "[0xDSI] Agent 10 - Behavioral Anomaly Detection"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"  # Every 15 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: detect_anomalies
+          new_cluster:
+            spark_version: "15.4.x-ml-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+          notebook_task:
+            notebook_path: ../notebooks/detection/01_behavioral_anomaly_detection
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+
+    threat_intel_matching:
+      name: "[0xDSI] Agent 12 - Threat Intel Matching"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"
+        timezone_id: "UTC"
+      job_clusters:
+        - job_cluster_key: streaming_cluster
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "i3.xlarge"
+            num_workers: 2
+      tasks:
+        - task_key: match_iocs
+          job_cluster_key: streaming_cluster
+          notebook_task:
+            notebook_path: ../notebooks/detection/02_threat_intel_matching
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # RESPONSE AGENTS (Scheduled)
+    # ─────────────────────────────────────────────────────
+    automated_response:
+      name: "[0xDSI] Agent 15 - Automated Response"
+      schedule:
+        quartz_cron_expression: "0 */2 * * * ?"  # Every 2 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: execute_responses
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/response/01_automated_response
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              auto_respond_threshold: "0.9"
+
+    case_management:
+      name: "[0xDSI] Agent 16 - Case Management"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"  # Every 5 minutes
+        timezone_id: "UTC"
+      tasks:
+        - task_key: manage_cases
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/response/02_case_management
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # ML TRAINING (Weekly)
+    # ─────────────────────────────────────────────────────
+    threat_scoring_training:
+      name: "[0xDSI] Agent 20 - Threat Scoring Model Training"
+      schedule:
+        quartz_cron_expression: "0 0 2 ? * SUN"  # Weekly Sunday 2am
+        timezone_id: "UTC"
+      tasks:
+        - task_key: train_model
+          new_cluster:
+            spark_version: "15.4.x-ml-scala2.12"
+            node_type_id: "i3.2xlarge"
+            num_workers: 4
+          notebook_task:
+            notebook_path: ../notebooks/ml_training/01_threat_scoring_model
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              training_days: "30"
+
+    # ─────────────────────────────────────────────────────
+    # SETUP (Run Once)
+    # ─────────────────────────────────────────────────────
+    initial_setup:
+      name: "[0xDSI] Setup - Create Unity Catalog Schema"
+      tasks:
+        - task_key: create_tables
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/setup/01_create_catalog_schema
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}

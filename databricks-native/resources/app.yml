@@ -1,0 +1,23 @@
+resources:
+  apps:
+    oxdsi_soc:
+      name: "0xdsi-agentic-soc"
+      description: "0xDSI Agentic SOC Platform - Real-time security operations center"
+      source_code_path: ../app
+      config:
+        command:
+          - npm
+          - run
+          - start
+        env:
+          - name: DATABRICKS_WAREHOUSE_ID
+            value: ${var.warehouse_id}
+          - name: UNITY_CATALOG
+            value: ${var.catalog}
+          - name: UNITY_SCHEMA
+            value: ${var.schema}
+      permissions:
+        - level: CAN_MANAGE
+          group_name: "soc_admins"
+        - level: CAN_USE
+          group_name: "soc_analysts"
