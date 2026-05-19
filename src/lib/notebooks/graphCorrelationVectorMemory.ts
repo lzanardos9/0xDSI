@@ -1703,13 +1703,14 @@ class SecurityEmbeddingTrainer:
         self.batch_size = batch_size
 
     def train(self, embeddings, technique_labels, campaign_labels,
-              malicious_labels, tactic_positions):
+              malicious_labels, tactic_positions, seed=42):
         self.model.train()
         n = len(embeddings)
         history = []
+        rng = np.random.default_rng(seed)
 
         for epoch in range(self.epochs):
-            indices = np.random.permutation(n)
+            indices = rng.permutation(n)
             epoch_loss = 0.0
             n_batches = 0
 
