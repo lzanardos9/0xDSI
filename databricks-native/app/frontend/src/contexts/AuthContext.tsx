@@ -1,7 +1,7 @@
 /**
  * Databricks-Native Authentication Context
  * Uses Databricks workspace SSO (the app inherits the user's Databricks session).
- * No Supabase dependency.
+ * Zero external auth dependencies.
  */
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';

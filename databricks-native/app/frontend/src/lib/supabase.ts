@@ -1,16 +1,15 @@
 /**
  * Databricks-Native Data Client
- * Drop-in replacement for @supabase/supabase-js.
- * All queries route through the FastAPI backend which queries Unity Catalog.
+ * Provides the query builder interface used by all UI components.
+ * All queries route through the FastAPI backend which queries Unity Catalog via SQL Warehouse.
  *
- * Usage: import { supabase } from './supabase'
- * Then use identically to the Supabase client API.
+ * This file exists at this path for import compatibility with the React component library.
  */
 
 const API_BASE = '/api';
 
 // ──────────────────────────────────────────────
-// Types (same as original)
+// Types
 // ──────────────────────────────────────────────
 
 export interface SecurityEvent {
@@ -75,7 +74,7 @@ export interface UserProfile {
 }
 
 // ──────────────────────────────────────────────
-// Query Builder (matches Supabase API shape)
+// Query Builder
 // ──────────────────────────────────────────────
 
 interface QueryResult<T> {
@@ -221,7 +220,7 @@ class QueryBuilder<T = Record<string, unknown>> {
 }
 
 // ──────────────────────────────────────────────
-// Auth (Databricks SSO - handled by workspace)
+// Auth Module (Databricks Workspace SSO)
 // ──────────────────────────────────────────────
 
 type AuthChangeCallback = (event: string, session: unknown) => void;
@@ -282,7 +281,6 @@ const authModule = {
 
   onAuthStateChange(callback: AuthChangeCallback) {
     this._listeners.push(callback);
-    // Immediately check current state
     this.getSession().then(({ data }) => {
       if (data?.session) callback('INITIAL_SESSION', data.session);
     });
@@ -299,10 +297,10 @@ const authModule = {
 };
 
 // ──────────────────────────────────────────────
-// Main Client (matches Supabase API)
+// Main Client (Databricks Data Client)
 // ──────────────────────────────────────────────
 
-class DatabricksSupabaseClient {
+class DatabricksDataClient {
   auth = authModule;
 
   from<T = Record<string, unknown>>(table: string): QueryBuilder<T> {
@@ -328,5 +326,5 @@ class DatabricksSupabaseClient {
   }
 }
 
-export const supabase = new DatabricksSupabaseClient();
+export const supabase = new DatabricksDataClient();
 export default supabase;

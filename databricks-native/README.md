@@ -18,7 +18,7 @@ databricks-native/
 │   ├── backend/
 │   │   └── server.py                 # FastAPI API server (queries SQL Warehouse)
 │   └── frontend/src/
-│       ├── lib/supabase.ts           # API-compatible query builder (routes to FastAPI)
+│       ├── lib/supabase.ts           # Query builder shim (named for import compat, routes to FastAPI)
 │       ├── lib/databricksClient.ts   # Direct Databricks data client
 │       └── contexts/AuthContext.tsx  # Databricks workspace SSO auth context
 │

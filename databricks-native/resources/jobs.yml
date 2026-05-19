@@ -372,7 +372,7 @@ resources:
     # SETUP (Run Once)
     # ─────────────────────────────────────────────────────
     initial_setup:
-      name: "[0xDSI] Setup - Create Unity Catalog Schema"
+      name: "[0xDSI] Setup - Create Schema and Seed Data"
       tasks:
         - task_key: create_tables
           new_cluster:
@@ -381,6 +381,18 @@ resources:
             num_workers: 1
           notebook_task:
             notebook_path: ../notebooks/setup/01_create_catalog_schema
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+        - task_key: seed_demo_data
+          depends_on:
+            - task_key: create_tables
+          new_cluster:
+            spark_version: "15.4.x-scala2.12"
+            node_type_id: "m5.large"
+            num_workers: 1
+          notebook_task:
+            notebook_path: ../notebooks/setup/02_seed_demo_data
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
