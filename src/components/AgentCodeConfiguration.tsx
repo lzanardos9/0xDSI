@@ -192,12 +192,23 @@ const AgentCodeConfiguration = () => {
     if (agent.production_code && agent.production_code.trim().length > 0) {
       return agent.production_code;
     }
-    const typeKey = (agent.type || agent.slug || '').toLowerCase();
+    const typeKey = (agent.type || agent.slug || agent.name || '').toLowerCase();
     if (typeKey.includes('triage')) return PRODUCTION_AGENT_CODE.triage;
     if (typeKey.includes('enrichment')) return PRODUCTION_AGENT_CODE.enrichment;
     if (typeKey.includes('hunt') || typeKey.includes('threat_hunter')) return PRODUCTION_AGENT_CODE.threat_hunter;
     if (typeKey.includes('orchestrat')) return PRODUCTION_AGENT_CODE.orchestrator;
-    if (typeKey.includes('response') || typeKey.includes('investigation')) return PRODUCTION_AGENT_CODE.agent_base;
+    if (typeKey.includes('correlat')) return PRODUCTION_AGENT_CODE.correlation;
+    if (typeKey.includes('response') || typeKey.includes('soar') || typeKey.includes('automat')) return PRODUCTION_AGENT_CODE.response;
+    if (typeKey.includes('discovery') || typeKey.includes('pattern')) return PRODUCTION_AGENT_CODE.discovery;
+    if (typeKey.includes('learn') || typeKey.includes('adapt') || typeKey.includes('drift')) return PRODUCTION_AGENT_CODE.learning;
+    if (typeKey.includes('adversar') || typeKey.includes('red_team') || typeKey.includes('emulat')) return PRODUCTION_AGENT_CODE.adversarial;
+    if (typeKey.includes('assistant') || typeKey.includes('chat') || typeKey.includes('ciso')) return PRODUCTION_AGENT_CODE.assistant;
+    if (typeKey.includes('threat_intel') || typeKey.includes('intel') || typeKey.includes('stix')) return PRODUCTION_AGENT_CODE.threat_intel;
+    if (typeKey.includes('malware') || typeKey.includes('sandbox') || typeKey.includes('detonat')) return PRODUCTION_AGENT_CODE.malware;
+    if (typeKey.includes('guardrail') || typeKey.includes('infra') || typeKey.includes('pii') || typeKey.includes('safety')) return PRODUCTION_AGENT_CODE.infra;
+    if (typeKey.includes('bmad') || typeKey.includes('build') || typeKey.includes('feature_lab')) return PRODUCTION_AGENT_CODE.build_time;
+    if (typeKey.includes('investigat') || typeKey.includes('forensic')) return PRODUCTION_AGENT_CODE.investigation;
+    if (typeKey.includes('tool') || typeKey.includes('registry')) return PRODUCTION_AGENT_CODE.tool_registry;
     return PRODUCTION_AGENT_CODE.agent_base;
   };
 

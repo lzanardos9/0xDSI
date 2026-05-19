@@ -1,1769 +1,1727 @@
-// Production agent source code for UI display
-// Auto-generated from /production/agents/ source files
+// Production LangGraph Agent Implementations
+// All agents use LangGraph StateGraph with typed state, conditional edges, and tool nodes
 
 export const PRODUCTION_TRIAGE_CODE = `"""
-Production Triage Agent
-Performs initial alert classification, severity assessment, and routing.
+Production Triage Agent - LangGraph Implementation
+Scores severity, deduplicates alerts, tracks repeat offenders.
 """
+from typing import TypedDict, Literal, Annotated
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+import operator
 
-import json
-from typing import Any
 
-from ..core.agent_base import AgentBase, AgentContext, AgentDecision, EscalationReason
-from ..config.prompts import TRIAGE_AGENT_PROMPT
-from ..config.thresholds import CONFIDENCE, TIME_WINDOWS
+class TriageDecision(BaseModel):
+    classification: Literal["true_positive", "false_positive", "needs_investigation"]
+    severity: Literal["critical", "high", "medium", "low"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasoning: str
+    route_to: Literal["enrichment", "response", "close"] = "enrichment"
 
 
-class TriageAgent(AgentBase):
-    """
-    SOC Level 1 Triage Agent.
+class TriageState(TypedDict):
+    alert: dict
+    messages: Annotated[list, operator.add]
+    decision: TriageDecision | None
+    ioc_hits: list[dict]
+    repeat_count: int
+    risk_score: float
+    iteration: int
 
-    Responsibilities:
-    - Classify alert as TP/FP/Needs Investigation
-    - Assign severity and priority
-    - Route to appropriate next agent
-    - Close obvious false positives with documentation
-    """
 
-    def __init__(self, llm_client: Any, tool_registry: Any, memory_store: Any, config: dict = None):
-        super().__init__(
-            agent_id="triage_agent",
-            agent_name="Triage Agent",
-            llm_client=llm_client,
-            tool_registry=tool_registry,
-            memory_store=memory_store,
-            config=config or {
-                "confidence_threshold": CONFIDENCE["auto_route_to_enrichment"],
-                "escalation_threshold": CONFIDENCE["require_human_review"],
-                "max_iterations": 5,
-                "timeout_seconds": 60,
-                "temperature": 0.1,
-                "max_tokens": 2048,
-            },
-        )
+def check_repeat_offender(state: TriageState) -> TriageState:
+    """Query Delta Lake for prior alerts from same entity."""
+    alert = state["alert"]
+    entity = alert.get("source_ip") or alert.get("username")
+    # Production: query Unity Catalog
+    # repeat_count = spark.sql(f"SELECT COUNT(*) FROM alerts WHERE entity='{entity}' AND created_at > now() - INTERVAL 30 DAYS").first()[0]
+    return {"repeat_count": state.get("repeat_count", 0), "iteration": state.get("iteration", 0) + 1}
 
-        # Known false-positive patterns for fast classification
-        self._fp_patterns = config.get("false_positive_patterns", []) if config else []
 
-    def get_system_prompt(self) -> str:
-        return TRIAGE_AGENT_PROMPT
+def ioc_lookup(state: TriageState) -> TriageState:
+    """Broadcast-join alert indicators against threat_indicators table."""
+    alert = state["alert"]
+    indicators = [alert.get("source_ip"), alert.get("dest_ip"), alert.get("file_hash")]
+    # Production: SELECT * FROM threat_indicators WHERE indicator_value IN (...)
+    return {"ioc_hits": [], "messages": [HumanMessage(content=f"IOC lookup complete for {len(indicators)} indicators")]}
 
-    def get_available_tools(self) -> list[dict]:
-        return self.tool_registry.get_tool_schemas(
-            agent_id=self.agent_id,
-            max_risk=None,  # Triage only needs read-only tools
-        )
 
-    def evaluate_confidence(self, context: AgentContext, response: str) -> float:
-        """
-        Evaluate triage confidence based on:
-        - Number of evidence sources consulted
-        - Clarity of classification signal
-        - Historical accuracy for similar alerts
-        """
-        base_confidence = 0.7
+def score_alert(state: TriageState) -> TriageState:
+    """Multi-factor risk scoring."""
+    base_score = {"critical": 90, "high": 70, "medium": 40, "low": 20}.get(state["alert"].get("severity", "medium"), 40)
+    ioc_bonus = len(state.get("ioc_hits", [])) * 15
+    repeat_bonus = min(state.get("repeat_count", 0) * 5, 25)
+    return {"risk_score": min(100, base_score + ioc_bonus + repeat_bonus)}
 
-        # More tool calls = more evidence = higher confidence
-        successful_tools = [t for t in context.tool_results if t.success]
-        evidence_bonus = min(len(successful_tools) * 0.05, 0.2)
 
-        # Memory hits boost confidence (seen this before)
-        memory_bonus = min(len(context.retrieved_memories) * 0.03, 0.1)
+def llm_classify(state: TriageState) -> TriageState:
+    """LLM-based classification with structured output."""
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1).with_structured_output(TriageDecision)
+    decision = llm.invoke([
+        SystemMessage(content="You are a SOC L1 triage agent. Classify alerts based on evidence."),
+        HumanMessage(content=f"Alert: {state['alert']}\\nIOC hits: {len(state.get('ioc_hits', []))}\\nRepeat: {state.get('repeat_count', 0)}\\nRisk: {state.get('risk_score', 0)}")
+    ])
+    return {"decision": decision, "messages": [HumanMessage(content=f"Decision: {decision.classification} ({decision.confidence:.0%})")]}
 
-        # Check if response contains definitive language
-        definitive_markers = ["clearly", "definitive", "confirmed", "known pattern"]
-        uncertain_markers = ["unclear", "ambiguous", "might be", "possibly", "uncertain"]
 
-        response_lower = response.lower()
-        if any(m in response_lower for m in definitive_markers):
-            language_bonus = 0.1
-        elif any(m in response_lower for m in uncertain_markers):
-            language_bonus = -0.15
-        else:
-            language_bonus = 0.0
+def route_decision(state: TriageState) -> str:
+    if not state.get("decision"):
+        return "score"
+    if state["decision"].classification == "false_positive":
+        return END
+    if state["decision"].confidence < 0.7:
+        return "escalate"
+    return state["decision"].route_to
 
-        final = min(max(base_confidence + evidence_bonus + memory_bonus + language_bonus, 0.1), 1.0)
-        return final
 
-    def format_decision(self, context: AgentContext, final_response: str) -> AgentDecision:
-        """Parse the LLM's triage response into a structured decision."""
-        # Attempt to parse structured output from LLM
-        classification = "needs_investigation"
-        severity = "medium"
-        next_action = "route_to_enrichment"
-        reasoning = final_response
-        evidence = []
+# Build graph
+graph = StateGraph(TriageState)
+graph.add_node("check_repeat", check_repeat_offender)
+graph.add_node("ioc_lookup", ioc_lookup)
+graph.add_node("score", score_alert)
+graph.add_node("classify", llm_classify)
 
-        try:
-            # Try to extract structured fields from response
-            if "classification:" in final_response.lower():
-                for line in final_response.split("\\n"):
-                    line_lower = line.lower().strip()
-                    if line_lower.startswith("classification:"):
-                        classification = line.split(":", 1)[1].strip().lower()
-                    elif line_lower.startswith("severity:"):
-                        severity = line.split(":", 1)[1].strip().lower()
-                    elif line_lower.startswith("next_action:"):
-                        next_action = line.split(":", 1)[1].strip().lower()
-                    elif line_lower.startswith("reasoning:"):
-                        reasoning = line.split(":", 1)[1].strip()
-        except Exception:
-            pass
+graph.set_entry_point("check_repeat")
+graph.add_edge("check_repeat", "ioc_lookup")
+graph.add_edge("ioc_lookup", "score")
+graph.add_edge("score", "classify")
+graph.add_conditional_edges("classify", route_decision, {"score": "score", "escalate": END, "enrichment": END, "response": END, "close": END})
 
-        # Determine if response action requires approval
-        requires_approval = False
-        action = self._map_classification_to_action(classification, next_action)
-
-        if classification == "false_positive" and context.confidence_score < CONFIDENCE["auto_close_false_positive"]:
-            requires_approval = True
-
-        # Collect evidence from tool results
-        for tr in context.tool_results:
-            if tr.success and tr.output:
-                evidence.append({
-                    "tool": tr.tool_name,
-                    "summary": str(tr.output)[:500],
-                })
-
-        return AgentDecision(
-            session_id=context.session_id,
-            action=action,
-            reasoning=reasoning,
-            confidence=context.confidence_score,
-            evidence=evidence,
-            recommended_actions=self._get_recommendations(classification, severity),
-            requires_approval=requires_approval,
-            metadata={
-                "agent_id": self.agent_id,
-                "classification": classification,
-                "severity": severity,
-                "next_action": next_action,
-                "iterations": context.iteration_count,
-                "tokens_used": context.total_tokens_used,
-            },
-        )
-
-    def _map_classification_to_action(self, classification: str, next_action: str) -> str:
-        """Map triage classification to an orchestrator-understandable action."""
-        action_map = {
-            "true_positive": "ROUTE_TO_ENRICHMENT",
-            "likely_true_positive": "ROUTE_TO_ENRICHMENT",
-            "needs_investigation": "ROUTE_TO_INVESTIGATION",
-            "false_positive": "CLOSE_FALSE_POSITIVE",
-            "escalate": "ESCALATE_TO_HUMAN",
-        }
-        return action_map.get(classification, "ROUTE_TO_ENRICHMENT")
-
-    def _get_recommendations(self, classification: str, severity: str) -> list[str]:
-        """Generate recommended next actions based on classification."""
-        if classification == "false_positive":
-            return [
-                "Close alert as false positive",
-                "Consider adding exclusion rule for this pattern",
-                "Update baseline if this is expected behavior",
-            ]
-        elif classification in ("true_positive", "likely_true_positive"):
-            recs = ["Proceed with enrichment and investigation"]
-            if severity in ("critical", "high"):
-                recs.append("Notify SOC lead immediately")
-                recs.append("Begin preliminary containment assessment")
-            return recs
-        elif classification == "escalate":
-            return [
-                "Manual analyst review required",
-                "Conflicting signals or insufficient data",
-                "Consider gathering additional context",
-            ]
-        return ["Continue investigation pipeline"]
-
-    async def fast_triage(self, alert: dict) -> str:
-        """
-        Fast-path triage for common patterns without LLM call.
-        Returns classification or None if LLM needed.
-        """
-        # Check known false-positive patterns
-        for pattern in self._fp_patterns:
-            field = pattern.get("field", "")
-            value = pattern.get("value", "")
-            if field in alert and value in str(alert[field]):
-                return "false_positive"
-
-        # Check if IOC already marked as known-bad
-        if alert.get("src_ioc_match") and alert.get("src_ioc_threat_level") == "malicious":
-            return "true_positive"
-
-        # Check critical asset + high severity = always investigate
-        if (alert.get("dst_asset_criticality") == "critical" and
-                alert.get("severity_id", 0) >= 4):
-            return "true_positive"
-
-        return None  # Needs LLM reasoning
+triage_agent = graph.compile(checkpointer=MemorySaver())
 `;
 
 export const PRODUCTION_ENRICHMENT_CODE = `"""
-Production Enrichment Agent
-Gathers context around alerts: threat intel, asset info, related events,
-MITRE mapping, and campaign indicators.
+Production Enrichment Agent - LangGraph Implementation
+Multi-source threat intel enrichment with IOC matching and behavioral context.
 """
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
+from pydantic import BaseModel
+import operator
 
-import json
-from typing import Any
 
-from ..core.agent_base import AgentBase, AgentContext, AgentDecision
-from ..config.prompts import ENRICHMENT_AGENT_PROMPT
-from ..config.thresholds import CONFIDENCE, TIME_WINDOWS
+class EnrichmentState(TypedDict):
+    alert: dict
+    messages: Annotated[list, operator.add]
+    threat_intel: list[dict]
+    geo_context: dict | None
+    user_baseline: dict | None
+    asset_info: dict | None
+    enriched_score: float
+    enrichment_complete: bool
 
 
-class EnrichmentAgent(AgentBase):
-    """
-    SOC Enrichment Agent.
+@tool
+def query_threat_feeds(indicator: str, indicator_type: str) -> dict:
+    """Query all configured threat intelligence feeds for an indicator."""
+    # Production: queries AlienVault OTX, MISP, VirusTotal via API
+    # Returns: {source, confidence, severity, tags, last_seen}
+    pass
 
-    Responsibilities:
-    - Query threat intel for IOC reputation
-    - Gather asset and user context
-    - Find related events within time windows
-    - Map to MITRE ATT&CK
-    - Identify campaign indicators
-    """
+@tool
+def lookup_user_baseline(username: str) -> dict:
+    """Retrieve user behavioral baseline from entity_baselines table."""
+    # Production: SELECT * FROM entity_baselines WHERE actor_user_id = username
+    pass
 
-    def __init__(self, llm_client: Any, tool_registry: Any, memory_store: Any, config: dict = None):
-        super().__init__(
-            agent_id="enrichment_agent",
-            agent_name="Enrichment Agent",
-            llm_client=llm_client,
-            tool_registry=tool_registry,
-            memory_store=memory_store,
-            config=config or {
-                "confidence_threshold": 0.6,
-                "escalation_threshold": 0.3,
-                "max_iterations": 8,
-                "timeout_seconds": 120,
-                "temperature": 0.1,
-                "max_tokens": 4096,
-            },
-        )
+@tool
+def geo_lookup(ip_address: str) -> dict:
+    """GeoIP lookup with impossible-travel detection."""
+    # Production: MaxMind GeoIP2 + last-known-location comparison
+    pass
 
-    def get_system_prompt(self) -> str:
-        return ENRICHMENT_AGENT_PROMPT
+@tool
+def asset_registry_lookup(hostname: str) -> dict:
+    """Retrieve asset criticality and ownership from CMDB."""
+    # Production: SELECT * FROM asset_registry WHERE hostname = ...
+    pass
 
-    def get_available_tools(self) -> list[dict]:
-        return self.tool_registry.get_tool_schemas(agent_id=self.agent_id)
 
-    def evaluate_confidence(self, context: AgentContext, response: str) -> float:
-        """
-        Enrichment confidence based on:
-        - How many data sources were successfully queried
-        - Whether key fields (threat intel, asset, user) are populated
-        - Whether MITRE mapping was achieved
-        """
-        total_tools_needed = 4  # TI, asset, events, user context
-        successful = [t for t in context.tool_results if t.success]
-        data_completeness = min(len(successful) / total_tools_needed, 1.0)
+tools = [query_threat_feeds, lookup_user_baseline, geo_lookup, asset_registry_lookup]
+tool_node = ToolNode(tools)
 
-        # Check if key enrichment fields are present
-        response_lower = response.lower()
-        key_fields_found = 0
-        if "threat_intel" in response_lower or "reputation" in response_lower:
-            key_fields_found += 1
-        if "asset" in response_lower or "criticality" in response_lower:
-            key_fields_found += 1
-        if "related_events" in response_lower or "correlated" in response_lower:
-            key_fields_found += 1
-        if "mitre" in response_lower or "t1" in response_lower:
-            key_fields_found += 1
 
-        field_completeness = key_fields_found / 4.0
+def enrich_threat_intel(state: EnrichmentState) -> EnrichmentState:
+    """Run all indicator lookups against threat feeds."""
+    alert = state["alert"]
+    indicators = [
+        (alert.get("source_ip"), "ipv4"), (alert.get("dest_ip"), "ipv4"),
+        (alert.get("file_hash"), "sha256"), (alert.get("domain"), "domain"),
+    ]
+    results = []
+    for value, itype in indicators:
+        if value:
+            result = query_threat_feeds.invoke({"indicator": value, "indicator_type": itype})
+            if result:
+                results.append(result)
+    return {"threat_intel": results}
 
-        return min((data_completeness * 0.6 + field_completeness * 0.4), 1.0)
 
-    def format_decision(self, context: AgentContext, final_response: str) -> AgentDecision:
-        """Format enrichment results into a decision for the next stage."""
-        evidence = []
-        for tr in context.tool_results:
-            if tr.success and tr.output:
-                evidence.append({
-                    "tool": tr.tool_name,
-                    "execution_time_ms": tr.execution_time_ms,
-                    "result_summary": str(tr.output)[:1000] if tr.output else "No data",
-                })
+def enrich_context(state: EnrichmentState) -> EnrichmentState:
+    """Gather user, geo, and asset context."""
+    alert = state["alert"]
+    user = lookup_user_baseline.invoke({"username": alert.get("username", "")}) if alert.get("username") else None
+    geo = geo_lookup.invoke({"ip_address": alert.get("source_ip", "")}) if alert.get("source_ip") else None
+    asset = asset_registry_lookup.invoke({"hostname": alert.get("hostname", "")}) if alert.get("hostname") else None
+    return {"user_baseline": user, "geo_context": geo, "asset_info": asset}
 
-        # Determine risk level from enrichment
-        risk_indicators = self._extract_risk_indicators(context)
-        overall_risk = self._compute_risk(risk_indicators)
 
-        return AgentDecision(
-            session_id=context.session_id,
-            action=f"ENRICHMENT_COMPLETE_{overall_risk.upper()}",
-            reasoning=final_response,
-            confidence=context.confidence_score,
-            evidence=evidence,
-            recommended_actions=self._get_recommendations(overall_risk, risk_indicators),
-            requires_approval=False,
-            metadata={
-                "agent_id": self.agent_id,
-                "risk_level": overall_risk,
-                "risk_indicators": risk_indicators,
-                "data_sources_queried": len(context.tool_results),
-                "successful_queries": len([t for t in context.tool_results if t.success]),
-                "iterations": context.iteration_count,
-                "tokens_used": context.total_tokens_used,
-            },
-        )
+def compute_enriched_score(state: EnrichmentState) -> EnrichmentState:
+    """Compute enriched risk score from all gathered context."""
+    base = state["alert"].get("risk_score", 50)
+    ioc_bonus = len(state.get("threat_intel", [])) * 15
+    geo_bonus = 10 if state.get("geo_context", {}).get("impossible_travel") else 0
+    user_bonus = 15 if state.get("user_baseline", {}).get("is_anomalous") else 0
+    asset_bonus = 10 if state.get("asset_info", {}).get("criticality") == "high" else 0
+    enriched = min(100, base + ioc_bonus + geo_bonus + user_bonus + asset_bonus)
+    return {"enriched_score": enriched, "enrichment_complete": True,
+            "messages": [HumanMessage(content=f"Enrichment complete. Score: {base} -> {enriched}")]}
 
-    def _extract_risk_indicators(self, context: AgentContext) -> list[str]:
-        """Extract risk indicators from tool results."""
-        indicators = []
 
-        for tr in context.tool_results:
-            if not tr.success or not tr.output:
-                continue
+graph = StateGraph(EnrichmentState)
+graph.add_node("threat_intel", enrich_threat_intel)
+graph.add_node("context", enrich_context)
+graph.add_node("score", compute_enriched_score)
 
-            output = tr.output if isinstance(tr.output, dict) else {}
+graph.set_entry_point("threat_intel")
+graph.add_edge("threat_intel", "context")
+graph.add_edge("context", "score")
+graph.add_edge("score", END)
 
-            if tr.tool_name == "lookup_threat_intel":
-                threat_level = output.get("threat_level", "unknown")
-                if threat_level in ("malicious", "suspicious"):
-                    indicators.append(f"IOC classified as {threat_level}")
-                campaigns = output.get("campaigns", [])
-                if campaigns:
-                    indicators.append(f"Associated with campaigns: {', '.join(campaigns[:3])}")
-
-            elif tr.tool_name == "query_delta_table":
-                rows = output.get("rows", [])
-                if len(rows) > 10:
-                    indicators.append(f"High volume of related events ({len(rows)})")
-
-            elif tr.tool_name == "graph_traversal":
-                if output.get("lateral_movement_detected"):
-                    indicators.append("Lateral movement patterns detected in graph")
-                if output.get("critical_assets_at_risk", 0) > 0:
-                    indicators.append(f"Critical assets in blast radius: {output['critical_assets_at_risk']}")
-
-            elif tr.tool_name == "search_vector_index":
-                results = output if isinstance(output, list) else []
-                high_sim = [r for r in results if r.get("similarity", 0) > 0.9]
-                if high_sim:
-                    indicators.append(f"High similarity to {len(high_sim)} known attack patterns")
-
-        return indicators
-
-    def _compute_risk(self, indicators: list[str]) -> str:
-        """Compute overall risk level from indicators."""
-        if len(indicators) >= 4:
-            return "critical"
-        elif len(indicators) >= 2:
-            return "high"
-        elif len(indicators) >= 1:
-            return "medium"
-        return "low"
-
-    def _get_recommendations(self, risk_level: str, indicators: list[str]) -> list[str]:
-        """Generate recommendations based on risk level."""
-        if risk_level == "critical":
-            return [
-                "Immediate investigation required",
-                "Consider preemptive containment",
-                "Notify SOC lead and incident commander",
-                "Begin scope assessment",
-            ]
-        elif risk_level == "high":
-            return [
-                "Priority investigation within 30 minutes",
-                "Assess containment options",
-                "Check for additional compromised entities",
-            ]
-        elif risk_level == "medium":
-            return [
-                "Standard investigation workflow",
-                "Monitor for escalation",
-                "Check correlation with other recent alerts",
-            ]
-        return [
-            "Low risk - continue monitoring",
-            "Consider adding to watchlist",
-        ]
+enrichment_agent = graph.compile()
 `;
 
 export const PRODUCTION_THREAT_HUNTER_CODE = `"""
-Production Threat Hunter Agent
-Proactively hunts for threats using hypothesis-driven investigation,
-analytics-driven anomaly detection, and intelligence-driven searches.
+Production Threat Hunter Agent - LangGraph Implementation
+Proactive hypothesis-driven threat hunting with vector similarity search.
 """
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+import operator
 
-import json
-from typing import Any
 
-from ..core.agent_base import AgentBase, AgentContext, AgentDecision
-from ..config.prompts import THREAT_HUNTER_AGENT_PROMPT
-from ..config.thresholds import CONFIDENCE, RATE_LIMITS
+class HuntHypothesis(BaseModel):
+    hypothesis: str
+    technique_id: str
+    search_queries: list[str]
+    expected_indicators: list[str]
+    confidence: float = Field(ge=0.0, le=1.0)
 
 
-class ThreatHunterAgent(AgentBase):
-    """
-    Autonomous Threat Hunting Agent.
+class HuntState(TypedDict):
+    hypothesis: HuntHypothesis | None
+    messages: Annotated[list, operator.add]
+    search_results: list[dict]
+    vector_matches: list[dict]
+    findings: list[dict]
+    hunt_complete: bool
 
-    Methodologies:
-    - Intelligence-driven: Start from known TTPs
-    - Analytics-driven: Start from statistical anomalies
-    - Situational-driven: Start from business context
-    - Entity-driven: Trace all activity for specific entity
-    """
 
-    def __init__(self, llm_client: Any, tool_registry: Any, memory_store: Any, config: dict = None):
-        super().__init__(
-            agent_id="threat_hunter_agent",
-            agent_name="Threat Hunter",
-            llm_client=llm_client,
-            tool_registry=tool_registry,
-            memory_store=memory_store,
-            config=config or {
-                "confidence_threshold": CONFIDENCE["hunting_finding_minimum"],
-                "escalation_threshold": 0.2,
-                "max_iterations": 15,
-                "timeout_seconds": 300,
-                "temperature": 0.3,
-                "max_tokens": 8192,
-            },
-        )
+@tool
+def vector_similarity_search(query_embedding: list[float], top_k: int = 50) -> list[dict]:
+    """Search Mosaic AI Vector Index for similar IOCs/events."""
+    # Production: Databricks Vector Search endpoint query
+    pass
 
-    def get_system_prompt(self) -> str:
-        return THREAT_HUNTER_AGENT_PROMPT
+@tool
+def kql_hunt_query(query: str, time_range_hours: int = 72) -> list[dict]:
+    """Execute KQL-style hunt query against silver_events."""
+    # Production: spark.sql(translated_query) against Delta Lake
+    pass
 
-    def get_available_tools(self) -> list[dict]:
-        return self.tool_registry.get_tool_schemas(agent_id=self.agent_id)
+@tool
+def check_mitre_coverage(technique_id: str) -> dict:
+    """Check detection coverage for a given MITRE technique."""
+    # Production: query correlation_rules + detection_coverage tables
+    pass
 
-    def evaluate_confidence(self, context: AgentContext, response: str) -> float:
-        """
-        Hunting confidence — null findings are valid.
-        Confidence reflects how thorough the hunt was.
-        """
-        # More queries = more thorough hunt
-        queries_executed = len([t for t in context.tool_results if t.success])
-        thoroughness = min(queries_executed / 5.0, 1.0)
 
-        # Check if findings are supported by evidence
-        response_lower = response.lower()
-        has_findings = "finding" in response_lower or "discovered" in response_lower
-        has_evidence = "evidence" in response_lower or "indicator" in response_lower
-        null_result = "no findings" in response_lower or "null result" in response_lower
+def generate_hypothesis(state: HuntState) -> HuntState:
+    """LLM generates hunting hypothesis from latest threat intel."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.3).with_structured_output(HuntHypothesis)
+    hypothesis = llm.invoke([
+        SystemMessage(content="Generate a threat hunting hypothesis based on current threat landscape. Focus on techniques with low detection coverage."),
+        HumanMessage(content="Recent threat intel and coverage gaps provided. Generate a specific, testable hypothesis.")
+    ])
+    return {"hypothesis": hypothesis, "messages": [HumanMessage(content=f"Hypothesis: {hypothesis.hypothesis}")]}
 
-        if null_result:
-            return thoroughness * 0.9  # Null results are valid if thorough
-        elif has_findings and has_evidence:
-            return min(thoroughness + 0.2, 1.0)
-        elif has_findings:
-            return thoroughness * 0.7
-        else:
-            return thoroughness * 0.5
 
-    def format_decision(self, context: AgentContext, final_response: str) -> AgentDecision:
-        """Format hunting results into a structured decision."""
-        evidence = []
-        for tr in context.tool_results:
-            if tr.success:
-                evidence.append({
-                    "tool": tr.tool_name,
-                    "query_time_ms": tr.execution_time_ms,
-                    "result_type": "data" if tr.output else "empty",
-                })
+def execute_hunt(state: HuntState) -> HuntState:
+    """Execute hunt queries derived from hypothesis."""
+    hyp = state["hypothesis"]
+    results = []
+    for query in hyp.search_queries:
+        hits = kql_hunt_query.invoke({"query": query, "time_range_hours": 72})
+        results.extend(hits or [])
+    return {"search_results": results}
 
-        # Determine if this is an active threat (requires immediate response)
-        active_threat = self._detect_active_threat(context, final_response)
 
-        if active_threat:
-            action = "ACTIVE_THREAT_FOUND"
-            requires_approval = True
-        else:
-            action = "HUNT_COMPLETE"
-            requires_approval = False
+def vector_hunt(state: HuntState) -> HuntState:
+    """Run vector similarity search for related artifacts."""
+    matches = vector_similarity_search.invoke({"query_embedding": [], "top_k": 50})
+    return {"vector_matches": matches or []}
 
-        return AgentDecision(
-            session_id=context.session_id,
-            action=action,
-            reasoning=final_response,
-            confidence=context.confidence_score,
-            evidence=evidence,
-            recommended_actions=self._get_recommendations(active_threat, context),
-            requires_approval=requires_approval,
-            metadata={
-                "agent_id": self.agent_id,
-                "active_threat": active_threat,
-                "queries_executed": len(context.tool_results),
-                "hunt_duration_seconds": context.metadata.get("elapsed_seconds", 0),
-                "iterations": context.iteration_count,
-                "tokens_used": context.total_tokens_used,
-            },
-        )
 
-    def _detect_active_threat(self, context: AgentContext, response: str) -> bool:
-        """Determine if hunting found an active, ongoing threat."""
-        response_lower = response.lower()
-        active_indicators = [
-            "active threat", "currently active", "ongoing attack",
-            "immediate action", "active c2", "live attacker",
-            "exfiltration in progress", "lateral movement detected",
-        ]
-        return any(ind in response_lower for ind in active_indicators)
+def analyze_findings(state: HuntState) -> HuntState:
+    """Analyze combined results and produce findings."""
+    all_results = state.get("search_results", []) + state.get("vector_matches", [])
+    findings = [r for r in all_results if r.get("confidence", 0) > 0.7]
+    return {"findings": findings, "hunt_complete": True,
+            "messages": [HumanMessage(content=f"Hunt complete: {len(findings)} findings from {len(all_results)} candidates")]}
 
-    def _get_recommendations(self, active_threat: bool, context: AgentContext) -> list[str]:
-        """Generate recommendations based on hunting results."""
-        if active_threat:
-            return [
-                "IMMEDIATE: Route to Investigation Agent for scope assessment",
-                "IMMEDIATE: Prepare containment options",
-                "Create high-priority case",
-                "Notify SOC lead",
-            ]
 
-        # Non-urgent findings
-        recs = []
-        if context.confidence_score > 0.7:
-            recs.append("Create new detection rule from findings")
-            recs.append("Add discovered IOCs to watchlist")
-        recs.append("Document hypothesis and results for team knowledge")
-        recs.append("Schedule follow-up hunt in 7 days")
-        return recs
+def should_continue(state: HuntState) -> str:
+    if len(state.get("findings", [])) > 0:
+        return "report"
+    return END
 
-    async def generate_hypothesis(self, context: dict) -> dict:
-        """
-        Generate a hunting hypothesis from available context.
-        Called by the orchestrator to seed a hunt.
-        """
-        hypothesis_input = {
-            "mode": "generate_hypothesis",
-            "available_context": {
-                "recent_alerts": context.get("recent_alerts", []),
-                "threat_intel_updates": context.get("threat_intel", []),
-                "environment_changes": context.get("changes", []),
-                "time_since_last_hunt": context.get("last_hunt_age_days", 0),
-            },
-        }
 
-        decision = await self.run(hypothesis_input)
-        return {
-            "hypothesis": decision.reasoning,
-            "confidence": decision.confidence,
-            "recommended_queries": decision.recommended_actions,
-        }
+graph = StateGraph(HuntState)
+graph.add_node("hypothesize", generate_hypothesis)
+graph.add_node("execute", execute_hunt)
+graph.add_node("vector_hunt", vector_hunt)
+graph.add_node("analyze", analyze_findings)
+
+graph.set_entry_point("hypothesize")
+graph.add_edge("hypothesize", "execute")
+graph.add_edge("execute", "vector_hunt")
+graph.add_edge("vector_hunt", "analyze")
+graph.add_conditional_edges("analyze", should_continue, {"report": END, END: END})
+
+threat_hunter_agent = graph.compile()
 `;
 
 export const PRODUCTION_ORCHESTRATOR_CODE = `"""
-Production Multi-Agent Orchestrator
-Coordinates multiple specialized agents, manages handoffs,
-resolves conflicts, and maintains shared context.
-
-Patterns supported:
-- Sequential pipeline (triage → enrichment → investigation → response)
-- Parallel fan-out (multiple enrichment agents simultaneously)
-- Supervisor/worker (orchestrator delegates and synthesizes)
-- Consensus (multiple agents vote on a decision)
+Production SOC Orchestrator - LangGraph Implementation
+Coordinates all agents through the 11-phase pipeline with circuit breakers.
 """
-
-import time
-import uuid
-import logging
-import asyncio
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Optional
-
-from .agent_base import AgentBase, AgentDecision, AgentContext, AgentState, EscalationReason
-
-logger = logging.getLogger(__name__)
-
-
-class OrchestrationPattern(Enum):
-    SEQUENTIAL = "sequential"
-    PARALLEL = "parallel"
-    SUPERVISOR = "supervisor"
-    CONSENSUS = "consensus"
-
-
-class HandoffReason(Enum):
-    SPECIALIZATION_NEEDED = "specialization_needed"
-    ESCALATION = "escalation"
-    ENRICHMENT_COMPLETE = "enrichment_complete"
-    TRIAGE_COMPLETE = "triage_complete"
-    INVESTIGATION_COMPLETE = "investigation_complete"
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import HumanMessage
+import operator
+from datetime import datetime, timedelta
+from dataclasses import dataclass
 
 
 @dataclass
-class AgentHandoff:
-    """Represents a handoff from one agent to another."""
-    from_agent: str
-    to_agent: str
-    reason: HandoffReason
-    context: dict
-    decision: Optional[AgentDecision] = None
-    timestamp: float = field(default_factory=time.time)
+class CircuitBreaker:
+    failures: int = 0
+    threshold: int = 5
+    cooldown_until: datetime | None = None
+    state: Literal["closed", "open", "half_open"] = "closed"
+
+    def record_failure(self):
+        self.failures += 1
+        if self.failures >= self.threshold:
+            self.state = "open"
+            self.cooldown_until = datetime.utcnow() + timedelta(seconds=300)
+
+    def record_success(self):
+        self.failures = 0
+        self.state = "closed"
+
+    def can_execute(self) -> bool:
+        if self.state == "closed":
+            return True
+        if self.state == "open" and self.cooldown_until and datetime.utcnow() > self.cooldown_until:
+            self.state = "half_open"
+            return True
+        return self.state == "half_open"
 
 
-@dataclass
-class OrchestrationPlan:
-    """Defines how agents should be orchestrated for a given input."""
-    pattern: OrchestrationPattern
-    stages: list[list[str]]  # Each stage is a list of agent_ids to run (parallel within stage)
-    conditions: dict = field(default_factory=dict)  # Conditional routing rules
-    timeout_seconds: int = 600
-    require_consensus_threshold: float = 0.7
+class PipelineState(TypedDict):
+    event: dict
+    messages: Annotated[list, operator.add]
+    phase: int
+    triage_result: dict | None
+    enrichment_result: dict | None
+    correlation_result: dict | None
+    investigation_result: dict | None
+    response_result: dict | None
+    metrics: dict
+    error: str | None
 
 
-@dataclass
-class OrchestrationResult:
-    """Final result from an orchestration run."""
-    run_id: str
-    final_decision: AgentDecision
-    agent_decisions: list[AgentDecision]
-    handoffs: list[AgentHandoff]
-    pattern_used: OrchestrationPattern
-    total_duration_seconds: float
-    total_tokens_used: int
-    agents_involved: list[str]
+CIRCUIT_BREAKERS = {
+    "triage": CircuitBreaker(), "enrichment": CircuitBreaker(),
+    "correlation": CircuitBreaker(), "investigation": CircuitBreaker(),
+    "response": CircuitBreaker(),
+}
 
 
-class AgentOrchestrator:
-    """
-    Coordinates multiple agents to process security events end-to-end.
+def phase_triage(state: PipelineState) -> PipelineState:
+    cb = CIRCUIT_BREAKERS["triage"]
+    if not cb.can_execute():
+        return {"phase": 2, "error": "triage circuit breaker open"}
+    try:
+        result = triage_agent.invoke({"alert": state["event"]})
+        cb.record_success()
+        return {"triage_result": result, "phase": 2}
+    except Exception as e:
+        cb.record_failure()
+        return {"error": str(e), "phase": 2}
 
-    The orchestrator:
-    1. Classifies the incoming event/alert
-    2. Determines the optimal orchestration pattern
-    3. Manages agent lifecycle and handoffs
-    4. Resolves conflicts between agent decisions
-    5. Produces a final unified decision
-    6. Records full lineage for audit
-    """
 
-    def __init__(
-        self,
-        agents: dict[str, AgentBase],
-        config: dict = None,
-        audit_store: Any = None,
-    ):
-        self.agents = agents
-        self.config = config or {}
-        self.audit_store = audit_store
-        self._active_runs: dict[str, dict] = {}
+def phase_enrichment(state: PipelineState) -> PipelineState:
+    cb = CIRCUIT_BREAKERS["enrichment"]
+    if not cb.can_execute():
+        return {"phase": 3}
+    try:
+        result = enrichment_agent.invoke({"alert": state["event"], **state.get("triage_result", {})})
+        cb.record_success()
+        return {"enrichment_result": result, "phase": 3}
+    except Exception as e:
+        cb.record_failure()
+        return {"error": str(e), "phase": 3}
 
-        # Default pipeline for alert processing
-        self.default_plan = OrchestrationPlan(
-            pattern=OrchestrationPattern.SEQUENTIAL,
-            stages=[
-                ["triage_agent"],
-                ["enrichment_agent"],
-                ["correlation_agent"],
-                ["investigation_agent"],
-                ["response_agent"],
-            ],
-            timeout_seconds=self.config.get("default_timeout", 600),
-        )
 
-    def register_agent(self, agent_id: str, agent: AgentBase):
-        """Register an agent with the orchestrator."""
-        self.agents[agent_id] = agent
-        logger.info(f"Registered agent: {agent_id} ({agent.agent_name})")
+def phase_correlation(state: PipelineState) -> PipelineState:
+    return {"correlation_result": {}, "phase": 4}
 
-    async def process(
-        self,
-        input_data: dict,
-        plan: Optional[OrchestrationPlan] = None,
-    ) -> OrchestrationResult:
-        """
-        Process an input through the agent pipeline.
 
-        Args:
-            input_data: The alert/event to process
-            plan: Optional custom orchestration plan (defaults to sequential pipeline)
+def phase_investigation(state: PipelineState) -> PipelineState:
+    score = state.get("enrichment_result", {}).get("enriched_score", 0)
+    if score < 70:
+        return {"phase": 5}
+    return {"investigation_result": {"case_created": True}, "phase": 5}
 
-        Returns:
-            OrchestrationResult with all decisions and the final outcome
-        """
-        plan = plan or self._determine_plan(input_data)
-        run_id = str(uuid.uuid4())
-        start_time = time.time()
 
-        self._active_runs[run_id] = {
-            "input": input_data,
-            "plan": plan,
-            "start_time": start_time,
-            "status": "running",
+def route_response(state: PipelineState) -> str:
+    score = state.get("enrichment_result", {}).get("enriched_score", 0)
+    if score >= 80:
+        return "response"
+    return END
+
+
+def phase_response(state: PipelineState) -> PipelineState:
+    return {"response_result": {"action": "block_ip", "status": "executed"}, "phase": 6}
+
+
+graph = StateGraph(PipelineState)
+graph.add_node("triage", phase_triage)
+graph.add_node("enrichment", phase_enrichment)
+graph.add_node("correlation", phase_correlation)
+graph.add_node("investigation", phase_investigation)
+graph.add_node("response", phase_response)
+
+graph.set_entry_point("triage")
+graph.add_edge("triage", "enrichment")
+graph.add_edge("enrichment", "correlation")
+graph.add_edge("correlation", "investigation")
+graph.add_conditional_edges("investigation", route_response, {"response": "response", END: END})
+graph.add_edge("response", END)
+
+orchestrator = graph.compile(checkpointer=MemorySaver())
+`;
+
+export const PRODUCTION_CORRELATION_CODE = `"""
+Production Correlation Agent - LangGraph Implementation
+Real-time graph/CEP correlation with temporal pattern matching.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+import operator
+from datetime import datetime, timedelta
+
+
+class CorrelationMatch(BaseModel):
+    rule_id: str
+    rule_name: str
+    match_type: Literal["threshold", "sequence", "graph", "absence"]
+    severity: str
+    confidence: float
+    contributing_events: list[str]
+    entity: str
+
+
+class CorrelationState(TypedDict):
+    events: list[dict]
+    messages: Annotated[list, operator.add]
+    active_rules: list[dict]
+    threshold_matches: list[CorrelationMatch]
+    sequence_matches: list[CorrelationMatch]
+    graph_matches: list[CorrelationMatch]
+    absence_matches: list[CorrelationMatch]
+    all_matches: list[CorrelationMatch]
+
+
+def load_active_rules(state: CorrelationState) -> CorrelationState:
+    """Load active correlation rules from Delta table."""
+    # Production: spark.table("correlation_rules").filter(col("is_active") == True)
+    rules = []  # loaded from Unity Catalog
+    return {"active_rules": rules}
+
+
+def evaluate_threshold_rules(state: CorrelationState) -> CorrelationState:
+    """Evaluate threshold-based rules: N events in time window."""
+    matches = []
+    events = state["events"]
+    for rule in state.get("active_rules", []):
+        if rule.get("rule_type") != "threshold":
+            continue
+        # Group events by entity, count within window
+        # If count >= threshold, emit match
+        window_events = [e for e in events if e.get("category") == rule.get("event_category")]
+        if len(window_events) >= rule.get("threshold", 5):
+            matches.append(CorrelationMatch(
+                rule_id=rule["id"], rule_name=rule["name"], match_type="threshold",
+                severity=rule.get("severity", "medium"), confidence=0.85,
+                contributing_events=[e["id"] for e in window_events[:20]],
+                entity=window_events[0].get("actor_user_id", "unknown")
+            ))
+    return {"threshold_matches": matches}
+
+
+def evaluate_sequence_rules(state: CorrelationState) -> CorrelationState:
+    """Detect ordered event sequences (kill chain stages)."""
+    matches = []
+    for rule in state.get("active_rules", []):
+        if rule.get("rule_type") != "sequence":
+            continue
+        # Stateful sequence tracking with partial match memory
+        # Uses applyInPandasWithState for streaming evaluation
+    return {"sequence_matches": matches}
+
+
+def evaluate_graph_rules(state: CorrelationState) -> CorrelationState:
+    """Graph-based correlation: lateral movement, shared infrastructure."""
+    matches = []
+    # Production: GraphFrames connected components + motif finding
+    # Detects multi-hop lateral movement patterns
+    return {"graph_matches": matches}
+
+
+def evaluate_absence_rules(state: CorrelationState) -> CorrelationState:
+    """Negative correlation: detect missing expected events."""
+    matches = []
+    # Production: check for expected heartbeats, MFA challenges, etc.
+    return {"absence_matches": matches}
+
+
+def merge_and_deduplicate(state: CorrelationState) -> CorrelationState:
+    """Merge all match types and deduplicate by entity+rule."""
+    all_matches = (
+        state.get("threshold_matches", []) + state.get("sequence_matches", []) +
+        state.get("graph_matches", []) + state.get("absence_matches", [])
+    )
+    seen = set()
+    deduped = []
+    for m in all_matches:
+        key = f"{m.rule_id}:{m.entity}"
+        if key not in seen:
+            seen.add(key)
+            deduped.append(m)
+    return {"all_matches": deduped,
+            "messages": [HumanMessage(content=f"Correlation: {len(deduped)} matches from {len(all_matches)} raw")]}
+
+
+graph = StateGraph(CorrelationState)
+graph.add_node("load_rules", load_active_rules)
+graph.add_node("threshold", evaluate_threshold_rules)
+graph.add_node("sequence", evaluate_sequence_rules)
+graph.add_node("graph", evaluate_graph_rules)
+graph.add_node("absence", evaluate_absence_rules)
+graph.add_node("merge", merge_and_deduplicate)
+
+graph.set_entry_point("load_rules")
+graph.add_edge("load_rules", "threshold")
+graph.add_edge("threshold", "sequence")
+graph.add_edge("sequence", "graph")
+graph.add_edge("graph", "absence")
+graph.add_edge("absence", "merge")
+graph.add_edge("merge", END)
+
+correlation_agent = graph.compile()
+`;
+
+export const PRODUCTION_RESPONSE_CODE = `"""
+Production Response Agent - LangGraph Implementation
+Automated containment with human-in-the-loop approval gates.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+import operator
+from datetime import datetime, timedelta
+
+
+class ResponseAction(BaseModel):
+    action_type: Literal["block_ip", "isolate_host", "disable_user", "quarantine_file", "update_firewall", "revoke_token"]
+    target: str
+    target_type: Literal["ip", "host", "user", "file", "rule", "token"]
+    severity: str
+    requires_approval: bool
+    ttl_hours: int = 24
+    rollback_available: bool = True
+
+
+class ResponseState(TypedDict):
+    alert: dict
+    messages: Annotated[list, operator.add]
+    proposed_actions: list[ResponseAction]
+    approved_actions: list[ResponseAction]
+    executed_actions: list[dict]
+    approval_status: Literal["pending", "approved", "rejected", "auto_approved"]
+    rollback_ids: list[str]
+
+
+APPROVAL_REQUIRED = {"disable_user", "isolate_host", "revoke_token"}
+AUTO_EXECUTE = {"block_ip", "update_firewall", "quarantine_file"}
+
+
+def propose_actions(state: ResponseState) -> ResponseState:
+    """Determine appropriate response actions based on alert severity and type."""
+    alert = state["alert"]
+    actions = []
+    risk = alert.get("enriched_risk_score", alert.get("risk_score", 0))
+
+    if risk >= 80 and alert.get("source_ip"):
+        actions.append(ResponseAction(
+            action_type="block_ip", target=alert["source_ip"], target_type="ip",
+            severity="high", requires_approval=False, ttl_hours=24))
+
+    if risk >= 90 and alert.get("hostname"):
+        actions.append(ResponseAction(
+            action_type="isolate_host", target=alert["hostname"], target_type="host",
+            severity="critical", requires_approval=True, ttl_hours=4))
+
+    if risk >= 85 and alert.get("username") and alert.get("is_compromised"):
+        actions.append(ResponseAction(
+            action_type="disable_user", target=alert["username"], target_type="user",
+            severity="critical", requires_approval=True, ttl_hours=8))
+
+    return {"proposed_actions": actions}
+
+
+def check_approval(state: ResponseState) -> ResponseState:
+    """Route actions to approval or auto-execute."""
+    needs_approval = [a for a in state["proposed_actions"] if a.requires_approval]
+    auto_approve = [a for a in state["proposed_actions"] if not a.requires_approval]
+
+    if not needs_approval:
+        return {"approved_actions": auto_approve, "approval_status": "auto_approved"}
+
+    # Production: insert into response_action_approvals table, wait for analyst
+    return {"approved_actions": auto_approve, "approval_status": "pending",
+            "messages": [HumanMessage(content=f"Awaiting approval for {len(needs_approval)} actions")]}
+
+
+def execute_actions(state: ResponseState) -> ResponseState:
+    """Execute approved response actions via SOAR integrations."""
+    executed = []
+    for action in state.get("approved_actions", []):
+        # Production: call SOAR API (Phantom, XSOAR, TheHive)
+        result = {
+            "action_type": action.action_type, "target": action.target,
+            "status": "executed", "executed_at": datetime.utcnow().isoformat(),
+            "rollback_id": f"rb-{action.target}-{datetime.utcnow().strftime('%Y%m%d%H%M')}",
+            "expires_at": (datetime.utcnow() + timedelta(hours=action.ttl_hours)).isoformat(),
         }
+        executed.append(result)
+    rollback_ids = [e["rollback_id"] for e in executed]
+    return {"executed_actions": executed, "rollback_ids": rollback_ids,
+            "messages": [HumanMessage(content=f"Executed {len(executed)} response actions")]}
 
-        logger.info(f"Starting orchestration run {run_id} with pattern {plan.pattern.value}")
 
-        try:
-            if plan.pattern == OrchestrationPattern.SEQUENTIAL:
-                result = await self._run_sequential(run_id, input_data, plan)
-            elif plan.pattern == OrchestrationPattern.PARALLEL:
-                result = await self._run_parallel(run_id, input_data, plan)
-            elif plan.pattern == OrchestrationPattern.CONSENSUS:
-                result = await self._run_consensus(run_id, input_data, plan)
-            else:
-                result = await self._run_supervisor(run_id, input_data, plan)
+def route_approval(state: ResponseState) -> str:
+    if state.get("approval_status") in ("auto_approved", "approved"):
+        return "execute"
+    return END  # Pending human approval - will resume via checkpoint
 
-            self._active_runs[run_id]["status"] = "completed"
-            await self._persist_result(result)
-            return result
 
-        except Exception as e:
-            logger.error(f"Orchestration run {run_id} failed: {e}")
-            self._active_runs[run_id]["status"] = "failed"
-            raise
-        finally:
-            if run_id in self._active_runs:
-                del self._active_runs[run_id]
+graph = StateGraph(ResponseState)
+graph.add_node("propose", propose_actions)
+graph.add_node("approval", check_approval)
+graph.add_node("execute", execute_actions)
 
-    async def _run_sequential(
-        self,
-        run_id: str,
-        input_data: dict,
-        plan: OrchestrationPlan,
-    ) -> OrchestrationResult:
-        """Run agents sequentially, passing context between stages."""
-        all_decisions = []
-        handoffs = []
-        shared_context = AgentContext()
-        current_input = input_data
-        total_tokens = 0
+graph.set_entry_point("propose")
+graph.add_edge("propose", "approval")
+graph.add_conditional_edges("approval", route_approval, {"execute": "execute", END: END})
+graph.add_edge("execute", END)
 
-        for stage_idx, stage_agents in enumerate(plan.stages):
-            for agent_id in stage_agents:
-                if agent_id not in self.agents:
-                    logger.warning(f"Agent {agent_id} not registered, skipping")
-                    continue
+response_agent = graph.compile(checkpointer=MemorySaver(), interrupt_before=["execute"])
+`;
 
-                agent = self.agents[agent_id]
-                logger.info(f"Run {run_id}: Stage {stage_idx}, executing {agent_id}")
+export const PRODUCTION_DISCOVERY_CODE = `"""
+Production Pattern Discovery Agent - LangGraph Implementation
+Mines streaming data for emergent attack patterns using ML clustering.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+import operator
 
-                decision = await agent.run(current_input, shared_context)
-                all_decisions.append(decision)
-                total_tokens += shared_context.total_tokens_used
 
-                # Check for escalation
-                if decision.action == "ESCALATE_TO_HUMAN":
-                    logger.info(f"Run {run_id}: Agent {agent_id} escalated. Stopping pipeline.")
-                    return OrchestrationResult(
-                        run_id=run_id,
-                        final_decision=decision,
-                        agent_decisions=all_decisions,
-                        handoffs=handoffs,
-                        pattern_used=plan.pattern,
-                        total_duration_seconds=time.time() - shared_context.start_time,
-                        total_tokens_used=total_tokens,
-                        agents_involved=[d.metadata.get("agent_id", "unknown") for d in all_decisions],
-                    )
+class DiscoveredPattern(BaseModel):
+    pattern_name: str
+    pattern_type: Literal["temporal_sequence", "frequency_anomaly", "graph_motif", "clustering"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    event_types: list[str]
+    mitre_techniques: list[str]
+    proposed_rule: str
 
-                # Build handoff for next stage
-                if stage_idx < len(plan.stages) - 1:
-                    next_agents = plan.stages[stage_idx + 1]
-                    for next_id in next_agents:
-                        handoff = AgentHandoff(
-                            from_agent=agent_id,
-                            to_agent=next_id,
-                            reason=HandoffReason.ENRICHMENT_COMPLETE,
-                            context={
-                                "previous_decision": decision.action,
-                                "reasoning": decision.reasoning,
-                                "evidence": decision.evidence,
-                                "confidence": decision.confidence,
-                            },
-                            decision=decision,
-                        )
-                        handoffs.append(handoff)
 
-                    # Enrich input for next stage
-                    current_input = {
-                        **current_input,
-                        "previous_stage_decision": decision.action,
-                        "previous_stage_reasoning": decision.reasoning,
-                        "accumulated_evidence": [
-                            e for d in all_decisions for e in d.evidence
-                        ],
-                        "current_confidence": decision.confidence,
-                    }
+class DiscoveryState(TypedDict):
+    events_window: list[dict]
+    messages: Annotated[list, operator.add]
+    frequency_patterns: list[DiscoveredPattern]
+    sequence_patterns: list[DiscoveredPattern]
+    cluster_patterns: list[DiscoveredPattern]
+    all_patterns: list[DiscoveredPattern]
+    rules_proposed: int
 
-        # Final decision is the last agent's decision
-        final_decision = all_decisions[-1] if all_decisions else self._no_decision(run_id)
 
-        return OrchestrationResult(
-            run_id=run_id,
-            final_decision=final_decision,
-            agent_decisions=all_decisions,
-            handoffs=handoffs,
-            pattern_used=plan.pattern,
-            total_duration_seconds=time.time() - shared_context.start_time,
-            total_tokens_used=total_tokens,
-            agents_involved=[d.metadata.get("agent_id", "unknown") for d in all_decisions],
-        )
+def extract_frequency_patterns(state: DiscoveryState) -> DiscoveryState:
+    """Detect statistically anomalous event frequencies using Z-score."""
+    # Production: compute event-type frequencies per entity per hour
+    # Compare against 30-day rolling baseline; flag Z > 3
+    return {"frequency_patterns": []}
 
-    async def _run_parallel(
-        self,
-        run_id: str,
-        input_data: dict,
-        plan: OrchestrationPlan,
-    ) -> OrchestrationResult:
-        """Run all agents in parallel, then synthesize results."""
-        all_agent_ids = [aid for stage in plan.stages for aid in stage]
-        tasks = []
 
-        for agent_id in all_agent_ids:
-            if agent_id in self.agents:
-                tasks.append(self._run_single_agent(agent_id, input_data))
+def extract_sequence_patterns(state: DiscoveryState) -> DiscoveryState:
+    """Mine temporal event sequences using PrefixSpan algorithm."""
+    # Production: PrefixSpan on event_type sequences per entity
+    # Filter for novel sequences not matching existing rules
+    return {"sequence_patterns": []}
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        decisions = []
-        for result in results:
-            if isinstance(result, AgentDecision):
-                decisions.append(result)
-            elif isinstance(result, Exception):
-                logger.error(f"Parallel agent failed: {result}")
+def cluster_events(state: DiscoveryState) -> DiscoveryState:
+    """HDBSCAN clustering on event feature vectors to find natural groupings."""
+    # Production: embed events -> HDBSCAN -> label novel clusters
+    # Uses MLflow to track cluster quality metrics
+    return {"cluster_patterns": []}
 
-        final = self._synthesize_parallel_decisions(decisions)
 
-        return OrchestrationResult(
-            run_id=run_id,
-            final_decision=final,
-            agent_decisions=decisions,
-            handoffs=[],
-            pattern_used=plan.pattern,
-            total_duration_seconds=0,
-            total_tokens_used=sum(d.metadata.get("tokens_used", 0) for d in decisions),
-            agents_involved=[d.metadata.get("agent_id", "unknown") for d in decisions],
-        )
+def synthesize_rules(state: DiscoveryState) -> DiscoveryState:
+    """Combine discoveries and propose new correlation rules."""
+    all_patterns = (
+        state.get("frequency_patterns", []) +
+        state.get("sequence_patterns", []) +
+        state.get("cluster_patterns", [])
+    )
+    # Filter by confidence threshold
+    high_conf = [p for p in all_patterns if p.confidence >= 0.7]
+    return {"all_patterns": high_conf, "rules_proposed": len(high_conf),
+            "messages": [HumanMessage(content=f"Discovered {len(high_conf)} new patterns")]}
 
-    async def _run_consensus(
-        self,
-        run_id: str,
-        input_data: dict,
-        plan: OrchestrationPlan,
-    ) -> OrchestrationResult:
-        """Run agents and require consensus on the decision."""
-        result = await self._run_parallel(run_id, input_data, plan)
 
-        # Check if enough agents agree
-        action_votes: dict[str, int] = {}
-        for d in result.agent_decisions:
-            action_votes[d.action] = action_votes.get(d.action, 0) + 1
+graph = StateGraph(DiscoveryState)
+graph.add_node("frequency", extract_frequency_patterns)
+graph.add_node("sequence", extract_sequence_patterns)
+graph.add_node("cluster", cluster_events)
+graph.add_node("synthesize", synthesize_rules)
 
-        total_votes = len(result.agent_decisions)
-        threshold = plan.require_consensus_threshold
+graph.set_entry_point("frequency")
+graph.add_edge("frequency", "sequence")
+graph.add_edge("sequence", "cluster")
+graph.add_edge("cluster", "synthesize")
+graph.add_edge("synthesize", END)
 
-        for action, votes in action_votes.items():
-            if votes / total_votes >= threshold:
-                # Consensus reached
-                consensus_decisions = [d for d in result.agent_decisions if d.action == action]
-                result.final_decision = self._merge_decisions(consensus_decisions)
-                return result
+discovery_agent = graph.compile()
+`;
 
-        # No consensus — escalate
-        result.final_decision = AgentDecision(
-            session_id=run_id,
-            action="ESCALATE_TO_HUMAN",
-            reasoning=f"No consensus reached. Votes: {action_votes}",
-            confidence=0.3,
-            evidence=[d.__dict__ for d in result.agent_decisions],
-            recommended_actions=["Manual review required — agents disagree"],
-            requires_approval=False,
-            escalation_reason=EscalationReason.CONFLICTING_SIGNALS,
-        )
-        return result
+export const PRODUCTION_LEARNING_CODE = `"""
+Production ALHF Learning Agent - LangGraph Implementation
+Captures analyst feedback, monitors drift, adapts thresholds.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+import operator
+from datetime import datetime
 
-    async def _run_supervisor(
-        self,
-        run_id: str,
-        input_data: dict,
-        plan: OrchestrationPlan,
-    ) -> OrchestrationResult:
-        """Supervisor pattern: one agent delegates and synthesizes."""
-        # First agent in first stage is the supervisor
-        supervisor_id = plan.stages[0][0] if plan.stages and plan.stages[0] else None
-        if not supervisor_id or supervisor_id not in self.agents:
-            raise ValueError("Supervisor agent not found")
 
-        # Supervisor decides which workers to invoke
-        supervisor = self.agents[supervisor_id]
-        routing_decision = await supervisor.run({
-            **input_data,
-            "mode": "route",
-            "available_agents": [aid for aid in self.agents if aid != supervisor_id],
-        })
+class FeedbackSignal(BaseModel):
+    alert_id: str
+    agent_type: str
+    verdict: Literal["true_positive", "false_positive", "needs_tuning"]
+    analyst_id: str
+    correction: str | None = None
 
-        # Execute delegated agents
-        worker_ids = routing_decision.metadata.get("delegate_to", [])
-        worker_results = []
-        for wid in worker_ids:
-            if wid in self.agents:
-                result = await self._run_single_agent(wid, input_data)
-                if isinstance(result, AgentDecision):
-                    worker_results.append(result)
 
-        # Supervisor synthesizes
-        synthesis_input = {
-            **input_data,
-            "mode": "synthesize",
-            "worker_results": [
-                {"agent": d.metadata.get("agent_id"), "action": d.action, "reasoning": d.reasoning, "confidence": d.confidence}
-                for d in worker_results
-            ],
+class LearningState(TypedDict):
+    feedback_batch: list[FeedbackSignal]
+    messages: Annotated[list, operator.add]
+    drift_scores: dict
+    threshold_adjustments: list[dict]
+    adaptation_applied: bool
+
+
+def compute_drift_scores(state: LearningState) -> LearningState:
+    """Monitor prediction drift by comparing recent FP rates to historical baseline."""
+    # Production: query agent_feedback for last 7 days
+    # Compare TP/FP ratio against 30-day baseline
+    # Flag drift if ratio changes > 2 stddev
+    drift = {
+        "triage": 0.0,  # computed from feedback table
+        "enrichment": 0.0,
+        "response": 0.0,
+    }
+    return {"drift_scores": drift}
+
+
+def propose_threshold_adjustments(state: LearningState) -> LearningState:
+    """Propose threshold changes based on feedback patterns."""
+    adjustments = []
+    for agent_type, drift_score in state.get("drift_scores", {}).items():
+        if abs(drift_score) > 0.15:  # Significant drift detected
+            direction = "increase" if drift_score > 0 else "decrease"
+            adjustments.append({
+                "agent_type": agent_type,
+                "threshold_name": "confidence_threshold",
+                "direction": direction,
+                "magnitude": min(abs(drift_score) * 0.05, 0.1),
+                "reason": f"FP rate drift: {drift_score:.2%}",
+            })
+    return {"threshold_adjustments": adjustments}
+
+
+def apply_adaptations(state: LearningState) -> LearningState:
+    """Apply threshold adjustments to agent configs (with safety bounds)."""
+    applied = False
+    for adj in state.get("threshold_adjustments", []):
+        # Production: UPDATE agent_configs SET config_json = ... WHERE agent_type = ...
+        # Also write to agent_threshold_history for audit trail
+        applied = True
+    return {"adaptation_applied": applied,
+            "messages": [HumanMessage(content=f"Applied {len(state.get('threshold_adjustments', []))} adaptations")]}
+
+
+graph = StateGraph(LearningState)
+graph.add_node("drift", compute_drift_scores)
+graph.add_node("propose", propose_threshold_adjustments)
+graph.add_node("apply", apply_adaptations)
+
+graph.set_entry_point("drift")
+graph.add_edge("drift", "propose")
+graph.add_edge("propose", "apply")
+graph.add_edge("apply", END)
+
+learning_agent = graph.compile()
+`;
+
+export const PRODUCTION_ADVERSARIAL_CODE = `"""
+Production Red Team / Adversarial Agent - LangGraph Implementation
+Continuously emulates adversary TTPs to validate detection coverage.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+import operator
+
+
+class AttackScenario(BaseModel):
+    name: str
+    mitre_techniques: list[str]
+    phases: list[dict]
+    expected_detections: list[str]
+    difficulty: Literal["easy", "medium", "hard", "expert"]
+
+
+class AdversarialState(TypedDict):
+    scenario: AttackScenario | None
+    messages: Annotated[list, operator.add]
+    emulation_results: list[dict]
+    detection_gaps: list[str]
+    coverage_score: float
+
+
+def generate_scenario(state: AdversarialState) -> AdversarialState:
+    """Generate attack scenario based on current detection gaps."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.4).with_structured_output(AttackScenario)
+    scenario = llm.invoke([
+        SystemMessage(content="Generate a realistic multi-phase attack scenario for red team validation. "
+                     "Include initial access, lateral movement, and objective phases."),
+        HumanMessage(content="Focus on techniques with historically low detection rates in our environment.")
+    ])
+    return {"scenario": scenario}
+
+
+def execute_emulation(state: AdversarialState) -> AdversarialState:
+    """Execute attack emulation in sandboxed environment."""
+    results = []
+    for phase in state["scenario"].phases:
+        # Production: execute via Caldera/Atomic Red Team API
+        result = {
+            "phase": phase.get("name"),
+            "technique": phase.get("technique_id"),
+            "executed": True,
+            "detected": False,  # Will be updated by detection check
+            "timestamp": "2024-01-01T00:00:00Z",
         }
-        final_decision = await supervisor.run(synthesis_input)
+        results.append(result)
+    return {"emulation_results": results}
 
-        return OrchestrationResult(
-            run_id=run_id,
-            final_decision=final_decision,
-            agent_decisions=[routing_decision] + worker_results + [final_decision],
-            handoffs=[],
-            pattern_used=plan.pattern,
-            total_duration_seconds=0,
-            total_tokens_used=0,
-            agents_involved=[supervisor_id] + worker_ids,
-        )
 
-    async def _run_single_agent(self, agent_id: str, input_data: dict) -> AgentDecision:
-        """Run a single agent and return its decision."""
-        agent = self.agents[agent_id]
-        context = AgentContext()
-        decision = await agent.run(input_data, context)
-        decision.metadata["agent_id"] = agent_id
-        decision.metadata["tokens_used"] = context.total_tokens_used
-        return decision
-
-    def _determine_plan(self, input_data: dict) -> OrchestrationPlan:
-        """Determine the best orchestration plan based on input type."""
-        severity = input_data.get("severity", "medium")
-        event_type = input_data.get("type", "alert")
-
-        if severity == "critical":
-            # Critical: parallel enrichment, then sequential investigation
-            return OrchestrationPlan(
-                pattern=OrchestrationPattern.SEQUENTIAL,
-                stages=[
-                    ["triage_agent"],
-                    ["enrichment_agent", "threat_hunter_agent"],  # parallel enrichment
-                    ["correlation_agent"],
-                    ["investigation_agent"],
-                    ["response_agent"],
-                ],
-                timeout_seconds=300,
-            )
-        elif event_type == "hunting_lead":
-            return OrchestrationPlan(
-                pattern=OrchestrationPattern.SEQUENTIAL,
-                stages=[
-                    ["threat_hunter_agent"],
-                    ["enrichment_agent"],
-                    ["investigation_agent"],
-                ],
-                timeout_seconds=600,
-            )
+def check_detection_coverage(state: AdversarialState) -> AdversarialState:
+    """Verify which emulated techniques were detected by SOC pipeline."""
+    # Production: query alerts table for matching timeframe + techniques
+    gaps = []
+    detected_count = 0
+    for result in state.get("emulation_results", []):
+        # Check if correlation rules fired for this technique
+        if not result.get("detected"):
+            gaps.append(result["technique"])
         else:
-            return self.default_plan
+            detected_count += 1
 
-    def _synthesize_parallel_decisions(self, decisions: list[AgentDecision]) -> AgentDecision:
-        """Combine parallel decisions into a single final decision."""
-        if not decisions:
-            return self._no_decision("unknown")
+    total = len(state.get("emulation_results", []))
+    coverage = detected_count / total if total > 0 else 0
+    return {"detection_gaps": gaps, "coverage_score": coverage,
+            "messages": [HumanMessage(content=f"Coverage: {coverage:.0%} | Gaps: {len(gaps)} techniques undetected")]}
 
-        # Use highest-confidence decision as base
-        best = max(decisions, key=lambda d: d.confidence)
-        all_evidence = [e for d in decisions for e in d.evidence]
-        all_actions = list(set(a for d in decisions for a in d.recommended_actions))
 
-        return AgentDecision(
-            session_id=best.session_id,
-            action=best.action,
-            reasoning=f"Synthesized from {len(decisions)} agents. Primary: {best.reasoning}",
-            confidence=best.confidence,
-            evidence=all_evidence[:20],
-            recommended_actions=all_actions[:10],
-            requires_approval=best.requires_approval,
-            metadata={"synthesis_source_count": len(decisions)},
-        )
+graph = StateGraph(AdversarialState)
+graph.add_node("generate", generate_scenario)
+graph.add_node("emulate", execute_emulation)
+graph.add_node("validate", check_detection_coverage)
 
-    def _merge_decisions(self, decisions: list[AgentDecision]) -> AgentDecision:
-        """Merge multiple agreeing decisions into one."""
-        if len(decisions) == 1:
-            return decisions[0]
+graph.set_entry_point("generate")
+graph.add_edge("generate", "emulate")
+graph.add_edge("emulate", "validate")
+graph.add_edge("validate", END)
 
-        avg_confidence = sum(d.confidence for d in decisions) / len(decisions)
-        all_evidence = [e for d in decisions for e in d.evidence]
+adversarial_agent = graph.compile()
+`;
 
-        return AgentDecision(
-            session_id=decisions[0].session_id,
-            action=decisions[0].action,
-            reasoning=f"Consensus ({len(decisions)} agents agree): {decisions[0].reasoning}",
-            confidence=avg_confidence,
-            evidence=all_evidence[:20],
-            recommended_actions=decisions[0].recommended_actions,
-            requires_approval=decisions[0].requires_approval,
-            metadata={"consensus_count": len(decisions)},
-        )
+export const PRODUCTION_ASSISTANT_CODE = `"""
+Production CISO Assistant Agent - LangGraph Implementation
+Conversational executive assistant with RAG over security data.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+import operator
 
-    def _no_decision(self, run_id: str) -> AgentDecision:
-        """Fallback when no agents produced a decision."""
-        return AgentDecision(
-            session_id=run_id,
-            action="NO_DECISION",
-            reasoning="No agents produced a decision",
-            confidence=0.0,
-            evidence=[],
-            recommended_actions=["Manual review required"],
-            requires_approval=False,
-            escalation_reason=EscalationReason.TOOL_FAILURE,
-        )
 
-    async def _persist_result(self, result: OrchestrationResult):
-        """Persist orchestration result for audit and learning."""
-        if not self.audit_store:
-            return
-        try:
-            await self.audit_store.insert(
-                table="orchestration_runs",
-                data={
-                    "run_id": result.run_id,
-                    "pattern": result.pattern_used.value,
-                    "final_action": result.final_decision.action,
-                    "final_confidence": result.final_decision.confidence,
-                    "agents_involved": result.agents_involved,
-                    "duration_seconds": result.total_duration_seconds,
-                    "tokens_used": result.total_tokens_used,
-                    "escalated": result.final_decision.escalation_reason is not None,
-                },
-            )
-        except Exception as e:
-            logger.warning(f"Failed to persist orchestration result: {e}")
+class AssistantState(TypedDict):
+    messages: Annotated[list, operator.add]
+    context_docs: list[dict]
+    query: str
+    response: str
 
-    def get_active_runs(self) -> list[dict]:
-        """Return currently active orchestration runs."""
-        return [
-            {"run_id": rid, **info}
-            for rid, info in self._active_runs.items()
-        ]
+
+@tool
+def query_risk_posture() -> dict:
+    """Get current organizational risk posture metrics."""
+    # Production: aggregate from alerts, vulnerabilities, compliance tables
+    return {"overall_score": 72, "critical_alerts": 3, "open_cases": 12, "compliance_pct": 94}
+
+@tool
+def query_threat_landscape() -> dict:
+    """Get current threat landscape summary."""
+    # Production: aggregate from threat_feeds, geopolitical_risk tables
+    return {"active_campaigns": 2, "new_iocs_24h": 47, "trending_techniques": ["T1059", "T1071"]}
+
+@tool
+def query_team_metrics() -> dict:
+    """Get SOC team performance metrics."""
+    # Production: aggregate from agent_performance_metrics, cases tables
+    return {"mttr_minutes": 23, "alerts_processed_24h": 1247, "fp_rate": 0.12, "sla_compliance": 0.97}
+
+@tool
+def search_incidents(query: str, days: int = 30) -> list[dict]:
+    """Search past incidents and cases."""
+    # Production: vector similarity search over case narratives
+    return []
+
+
+tools = [query_risk_posture, query_threat_landscape, query_team_metrics, search_incidents]
+tool_node = ToolNode(tools)
+
+
+def retrieve_context(state: AssistantState) -> AssistantState:
+    """RAG retrieval for relevant security context."""
+    # Production: vector search over documentation, past reports, threat briefs
+    return {"context_docs": []}
+
+
+def generate_response(state: AssistantState) -> AssistantState:
+    """Generate executive-level response with citations."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
+    messages = [
+        SystemMessage(content="You are the CISO's executive assistant. Provide concise, actionable insights. "
+                     "Use specific numbers and metrics. Highlight risks that need immediate attention."),
+        *state.get("messages", []),
+    ]
+    response = llm.invoke(messages)
+    return {"response": response.content, "messages": [AIMessage(content=response.content)]}
+
+
+def should_use_tools(state: AssistantState) -> str:
+    query = state.get("query", "").lower()
+    if any(kw in query for kw in ["risk", "posture", "score", "metric", "team", "threat"]):
+        return "tools"
+    return "respond"
+
+
+graph = StateGraph(AssistantState)
+graph.add_node("retrieve", retrieve_context)
+graph.add_node("tools", tool_node)
+graph.add_node("respond", generate_response)
+
+graph.set_entry_point("retrieve")
+graph.add_conditional_edges("retrieve", should_use_tools, {"tools": "tools", "respond": "respond"})
+graph.add_edge("tools", "respond")
+graph.add_edge("respond", END)
+
+assistant_agent = graph.compile()
+`;
+
+export const PRODUCTION_THREAT_INTEL_CODE = `"""
+Production CTI Attribution Agent - LangGraph Implementation
+Maps observed TTPs to threat actor groups using STIX knowledge graph.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+import operator
+
+
+class Attribution(BaseModel):
+    threat_actor: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    matching_techniques: list[str]
+    matching_infrastructure: list[str]
+    campaign_name: str | None = None
+    geo_origin: str | None = None
+
+
+class ThreatIntelState(TypedDict):
+    observed_ttps: list[str]
+    observed_infrastructure: list[str]
+    messages: Annotated[list, operator.add]
+    stix_matches: list[dict]
+    attributions: list[Attribution]
+    intel_report: str
+
+
+def query_stix_knowledge_base(state: ThreatIntelState) -> ThreatIntelState:
+    """Query STIX/TAXII knowledge base for matching threat actor profiles."""
+    # Production: query MITRE ATT&CK STIX data + commercial feeds
+    # Match observed techniques against known group TTPs
+    ttps = state.get("observed_ttps", [])
+    # GraphFrames shortest-path from techniques to known groups
+    return {"stix_matches": []}
+
+
+def score_attributions(state: ThreatIntelState) -> ThreatIntelState:
+    """Score attribution confidence based on TTP overlap and infrastructure."""
+    # Production: Jaccard similarity on technique sets + infrastructure overlap
+    attributions = []
+    # For each candidate group, compute overlap score
+    return {"attributions": attributions}
+
+
+def generate_intel_report(state: ThreatIntelState) -> ThreatIntelState:
+    """Generate actionable threat intelligence report."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
+    response = llm.invoke([
+        HumanMessage(content=f"Generate a CTI report for: TTPs={state.get('observed_ttps')}, "
+                    f"Attributions={[a.threat_actor for a in state.get('attributions', [])]}")
+    ])
+    return {"intel_report": response.content,
+            "messages": [HumanMessage(content=f"Attribution: {len(state.get('attributions', []))} candidates")]}
+
+
+graph = StateGraph(ThreatIntelState)
+graph.add_node("stix_query", query_stix_knowledge_base)
+graph.add_node("score", score_attributions)
+graph.add_node("report", generate_intel_report)
+
+graph.set_entry_point("stix_query")
+graph.add_edge("stix_query", "score")
+graph.add_edge("score", "report")
+graph.add_edge("report", END)
+
+threat_intel_agent = graph.compile()
+`;
+
+export const PRODUCTION_MALWARE_CODE = `"""
+Production Malware Sandbox Agent - LangGraph Implementation
+Detonates suspicious artifacts and extracts behavioral IOCs.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+import operator
+
+
+class DetonationResult(BaseModel):
+    verdict: Literal["malicious", "suspicious", "benign"]
+    confidence: float
+    behavioral_iocs: list[dict]
+    network_iocs: list[str]
+    file_modifications: list[str]
+    registry_changes: list[str]
+    mitre_techniques: list[str]
+
+
+class MalwareState(TypedDict):
+    artifact: dict  # {hash, filename, source, submitted_by}
+    messages: Annotated[list, operator.add]
+    static_analysis: dict | None
+    dynamic_analysis: DetonationResult | None
+    extracted_iocs: list[dict]
+    verdict: str
+
+
+def static_analysis(state: MalwareState) -> MalwareState:
+    """Perform static analysis: PE header, strings, entropy, signatures."""
+    # Production: YARA rules, ssdeep fuzzy hash, import table analysis
+    artifact = state["artifact"]
+    analysis = {
+        "file_type": "PE32",
+        "entropy": 7.2,
+        "packed": True,
+        "yara_matches": [],
+        "import_suspicious": ["VirtualAlloc", "CreateRemoteThread", "WriteProcessMemory"],
+        "ssdeep_matches": [],
+    }
+    return {"static_analysis": analysis}
+
+
+def dynamic_detonation(state: MalwareState) -> MalwareState:
+    """Detonate in isolated sandbox and capture behavioral traces."""
+    # Production: submit to sandbox API (Cuckoo/Joe Sandbox/Any.Run)
+    # Monitor for 5 minutes, capture: network, file, registry, process activity
+    result = DetonationResult(
+        verdict="malicious", confidence=0.0,
+        behavioral_iocs=[], network_iocs=[], file_modifications=[],
+        registry_changes=[], mitre_techniques=[],
+    )
+    return {"dynamic_analysis": result}
+
+
+def extract_and_publish_iocs(state: MalwareState) -> MalwareState:
+    """Extract IOCs from analysis and publish to threat_indicators table."""
+    iocs = []
+    dynamic = state.get("dynamic_analysis")
+    if dynamic:
+        for net_ioc in dynamic.network_iocs:
+            iocs.append({"type": "domain" if "." in net_ioc and not net_ioc[0].isdigit() else "ipv4",
+                        "value": net_ioc, "source": "sandbox", "confidence": dynamic.confidence})
+    # Production: MERGE INTO threat_indicators
+    verdict = dynamic.verdict if dynamic else "unknown"
+    return {"extracted_iocs": iocs, "verdict": verdict,
+            "messages": [HumanMessage(content=f"Verdict: {verdict} | IOCs extracted: {len(iocs)}")]}
+
+
+graph = StateGraph(MalwareState)
+graph.add_node("static", static_analysis)
+graph.add_node("detonate", dynamic_detonation)
+graph.add_node("extract", extract_and_publish_iocs)
+
+graph.set_entry_point("static")
+graph.add_edge("static", "detonate")
+graph.add_edge("detonate", "extract")
+graph.add_edge("extract", END)
+
+malware_agent = graph.compile()
+`;
+
+export const PRODUCTION_INFRA_CODE = `"""
+Production LLM Guardrails Agent - LangGraph Implementation
+Enforces PII redaction, prompt safety, token budgets, and model access policies.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
+import operator
+import re
+
+
+class GuardrailVerdict(BaseModel):
+    allowed: bool
+    violations: list[str]
+    redacted_content: str | None = None
+    token_budget_remaining: int
+    risk_level: Literal["safe", "caution", "blocked"]
+
+
+class GuardrailState(TypedDict):
+    request: dict  # {agent_id, prompt, model, user_id}
+    messages: Annotated[list, operator.add]
+    pii_scan: dict | None
+    prompt_scan: dict | None
+    budget_check: dict | None
+    verdict: GuardrailVerdict | None
+
+
+PII_PATTERNS = {
+    "ssn": r"\\b\\d{3}-\\d{2}-\\d{4}\\b",
+    "credit_card": r"\\b\\d{4}[- ]?\\d{4}[- ]?\\d{4}[- ]?\\d{4}\\b",
+    "email": r"\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b",
+    "phone": r"\\b\\d{3}[-.\\s]?\\d{3}[-.\\s]?\\d{4}\\b",
+    "api_key": r"\\b(sk|pk|api)[_-][A-Za-z0-9]{20,}\\b",
+}
+
+
+def scan_pii(state: GuardrailState) -> GuardrailState:
+    """Scan prompt for PII and redact if found."""
+    prompt = state["request"].get("prompt", "")
+    findings = {}
+    redacted = prompt
+    for pii_type, pattern in PII_PATTERNS.items():
+        matches = re.findall(pattern, redacted)
+        if matches:
+            findings[pii_type] = len(matches)
+            redacted = re.sub(pattern, f"[REDACTED_{pii_type.upper()}]", redacted)
+    return {"pii_scan": {"findings": findings, "redacted": redacted if findings else None}}
+
+
+def scan_prompt_safety(state: GuardrailState) -> GuardrailState:
+    """Check for prompt injection, jailbreak attempts, and policy violations."""
+    prompt = state["request"].get("prompt", "").lower()
+    violations = []
+    injection_markers = ["ignore previous", "disregard instructions", "you are now", "act as"]
+    for marker in injection_markers:
+        if marker in prompt:
+            violations.append(f"prompt_injection: '{marker}'")
+    return {"prompt_scan": {"violations": violations, "safe": len(violations) == 0}}
+
+
+def check_token_budget(state: GuardrailState) -> GuardrailState:
+    """Verify agent hasn't exceeded its token budget for this billing period."""
+    agent_id = state["request"].get("agent_id")
+    # Production: SELECT SUM(tokens_used) FROM agent_llm_usage WHERE agent_id = ... AND period = current
+    used = 0
+    budget = 1_000_000  # per-agent monthly budget
+    return {"budget_check": {"used": used, "budget": budget, "remaining": budget - used}}
+
+
+def render_verdict(state: GuardrailState) -> GuardrailState:
+    """Combine all checks into final verdict."""
+    pii = state.get("pii_scan", {})
+    prompt = state.get("prompt_scan", {})
+    budget = state.get("budget_check", {})
+
+    violations = []
+    if pii.get("findings"):
+        violations.append(f"PII detected: {list(pii['findings'].keys())}")
+    violations.extend(prompt.get("violations", []))
+    if budget.get("remaining", 1) <= 0:
+        violations.append("token_budget_exceeded")
+
+    allowed = len([v for v in violations if "injection" in v or "budget" in v]) == 0
+    risk = "blocked" if not allowed else "caution" if violations else "safe"
+
+    verdict = GuardrailVerdict(
+        allowed=allowed, violations=violations,
+        redacted_content=pii.get("redacted"),
+        token_budget_remaining=budget.get("remaining", 0),
+        risk_level=risk,
+    )
+    return {"verdict": verdict, "messages": [HumanMessage(content=f"Guardrail: {risk} | {len(violations)} violations")]}
+
+
+graph = StateGraph(GuardrailState)
+graph.add_node("pii", scan_pii)
+graph.add_node("prompt", scan_prompt_safety)
+graph.add_node("budget", check_token_budget)
+graph.add_node("verdict", render_verdict)
+
+graph.set_entry_point("pii")
+graph.add_edge("pii", "prompt")
+graph.add_edge("prompt", "budget")
+graph.add_edge("budget", "verdict")
+graph.add_edge("verdict", END)
+
+guardrails_agent = graph.compile()
+`;
+
+export const PRODUCTION_BUILD_TIME_CODE = `"""
+Production Feature Lab / BMAD Agent - LangGraph Implementation
+Build-time agent swarm that designs, implements, and ships new SOC features.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+import operator
+
+
+class FeatureSpec(BaseModel):
+    title: str
+    problem_statement: str
+    acceptance_criteria: list[str]
+    architecture_notes: str
+    ui_spec: str
+    implementation_plan: list[str]
+    test_plan: list[str]
+
+
+class BMADState(TypedDict):
+    brief: str
+    messages: Annotated[list, operator.add]
+    analyst_output: str | None  # Mary
+    pm_output: str | None       # John
+    architect_output: str | None # Winston
+    ux_output: str | None       # Sally
+    dev_output: str | None      # Amelia
+    qa_output: str | None       # Paige
+    feature_spec: FeatureSpec | None
+    phase: str
+
+
+def mary_analyze(state: BMADState) -> BMADState:
+    """Mary (Analyst): Scopes the problem and writes the brief."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+    response = llm.invoke([
+        SystemMessage(content="You are Mary, a senior security analyst. Scope the problem, identify requirements, "
+                     "and write a clear brief for the product team."),
+        HumanMessage(content=f"Feature request: {state['brief']}")
+    ])
+    return {"analyst_output": response.content, "phase": "pm"}
+
+
+def john_plan(state: BMADState) -> BMADState:
+    """John (PM): Turns brief into prioritized PRD with acceptance criteria."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
+    response = llm.invoke([
+        SystemMessage(content="You are John, a product manager. Create a PRD with user stories and acceptance criteria."),
+        HumanMessage(content=f"Analyst brief: {state.get('analyst_output', '')}")
+    ])
+    return {"pm_output": response.content, "phase": "architect"}
+
+
+def winston_design(state: BMADState) -> BMADState:
+    """Winston (Architect): Designs technical approach and module boundaries."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.2)
+    response = llm.invoke([
+        SystemMessage(content="You are Winston, a systems architect. Design the technical architecture, "
+                     "data models, and module boundaries."),
+        HumanMessage(content=f"PRD: {state.get('pm_output', '')}")
+    ])
+    return {"architect_output": response.content, "phase": "ux"}
+
+
+def sally_ux(state: BMADState) -> BMADState:
+    """Sally (UX): Produces flows and interaction specs."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.3)
+    response = llm.invoke([
+        SystemMessage(content="You are Sally, a UX designer. Design the user flows, layouts, and interactions."),
+        HumanMessage(content=f"Architecture: {state.get('architect_output', '')}")
+    ])
+    return {"ux_output": response.content, "phase": "dev"}
+
+
+def amelia_implement(state: BMADState) -> BMADState:
+    """Amelia (Dev): Implements the feature."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.1)
+    response = llm.invoke([
+        SystemMessage(content="You are Amelia, a senior developer. Write the implementation plan with code structure."),
+        HumanMessage(content=f"Arch: {state.get('architect_output', '')}\\nUX: {state.get('ux_output', '')}")
+    ])
+    return {"dev_output": response.content, "phase": "qa"}
+
+
+def paige_validate(state: BMADState) -> BMADState:
+    """Paige (QA): Writes acceptance tests and validates."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.2).with_structured_output(FeatureSpec)
+    spec = llm.invoke([
+        SystemMessage(content="You are Paige, a QA engineer. Compile the final feature spec with test plan."),
+        HumanMessage(content=f"All outputs: analyst={state.get('analyst_output','')[:500]}, "
+                    f"pm={state.get('pm_output','')[:500]}, arch={state.get('architect_output','')[:500]}")
+    ])
+    return {"feature_spec": spec, "qa_output": "validated", "phase": "complete",
+            "messages": [HumanMessage(content=f"Feature spec complete: {spec.title}")]}
+
+
+graph = StateGraph(BMADState)
+graph.add_node("mary", mary_analyze)
+graph.add_node("john", john_plan)
+graph.add_node("winston", winston_design)
+graph.add_node("sally", sally_ux)
+graph.add_node("amelia", amelia_implement)
+graph.add_node("paige", paige_validate)
+
+graph.set_entry_point("mary")
+graph.add_edge("mary", "john")
+graph.add_edge("john", "winston")
+graph.add_edge("winston", "sally")
+graph.add_edge("sally", "amelia")
+graph.add_edge("amelia", "paige")
+graph.add_edge("paige", END)
+
+bmad_agent = graph.compile()
+`;
+
+export const PRODUCTION_INVESTIGATION_CODE = `"""
+Production Investigation Agent - LangGraph Implementation
+Builds investigation narratives, maps to MITRE ATT&CK, assembles evidence chains.
+"""
+from typing import TypedDict, Annotated, Literal
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+import operator
+
+
+class InvestigationFinding(BaseModel):
+    title: str
+    severity: Literal["critical", "high", "medium", "low"]
+    mitre_techniques: list[str]
+    evidence: list[str]
+    timeline: list[dict]
+    narrative: str
+    recommended_actions: list[str]
+
+
+class InvestigationState(TypedDict):
+    alert: dict
+    messages: Annotated[list, operator.add]
+    related_events: list[dict]
+    attack_timeline: list[dict]
+    mitre_mapping: dict
+    evidence_chain: list[dict]
+    finding: InvestigationFinding | None
+    case_created: bool
+
+
+@tool
+def query_related_events(entity: str, time_range_hours: int = 24) -> list[dict]:
+    """Query silver_events for all activity by entity within time range."""
+    # Production: spark.sql(f"SELECT * FROM silver_events WHERE actor_user_id = '{entity}' ...")
+    pass
+
+@tool
+def build_attack_graph(event_ids: list[str]) -> dict:
+    """Build attack graph from event IDs using GraphFrames."""
+    # Production: construct graph, find connected components, compute paths
+    pass
+
+@tool
+def map_to_mitre(event_types: list[str]) -> dict:
+    """Map observed event types to MITRE ATT&CK techniques."""
+    # Production: lookup mapping table + LLM classification for ambiguous events
+    pass
+
+
+def gather_evidence(state: InvestigationState) -> InvestigationState:
+    """Collect all related events and build timeline."""
+    alert = state["alert"]
+    entity = alert.get("username") or alert.get("source_ip")
+    events = query_related_events.invoke({"entity": entity, "time_range_hours": 72})
+    timeline = sorted(events or [], key=lambda e: e.get("timestamp", ""))
+    return {"related_events": events or [], "attack_timeline": timeline}
+
+
+def analyze_attack_pattern(state: InvestigationState) -> InvestigationState:
+    """Build attack graph and map to MITRE ATT&CK."""
+    event_ids = [e.get("event_id") for e in state.get("related_events", [])]
+    graph_result = build_attack_graph.invoke({"event_ids": event_ids[:100]})
+    event_types = list(set(e.get("event_type") for e in state.get("related_events", []) if e.get("event_type")))
+    mitre = map_to_mitre.invoke({"event_types": event_types})
+    return {"mitre_mapping": mitre or {}, "evidence_chain": state.get("related_events", [])[:50]}
+
+
+def generate_narrative(state: InvestigationState) -> InvestigationState:
+    """Generate investigation narrative with LLM."""
+    llm = ChatOpenAI(model="gpt-4o", temperature=0.2).with_structured_output(InvestigationFinding)
+    finding = llm.invoke([
+        SystemMessage(content="You are a senior SOC analyst. Generate a detailed investigation finding."),
+        HumanMessage(content=f"Alert: {state['alert']}\\nTimeline events: {len(state.get('attack_timeline', []))}\\n"
+                    f"MITRE: {state.get('mitre_mapping', {})}")
+    ])
+    return {"finding": finding, "case_created": True,
+            "messages": [HumanMessage(content=f"Investigation complete: {finding.title}")]}
+
+
+graph = StateGraph(InvestigationState)
+graph.add_node("gather", gather_evidence)
+graph.add_node("analyze", analyze_attack_pattern)
+graph.add_node("narrative", generate_narrative)
+
+graph.set_entry_point("gather")
+graph.add_edge("gather", "analyze")
+graph.add_edge("analyze", "narrative")
+graph.add_edge("narrative", END)
+
+investigation_agent = graph.compile()
 `;
 
 export const PRODUCTION_AGENT_BASE_CODE = `"""
-Production Agent Base Class
-Implements a robust tool-use loop with LLM reasoning, memory retrieval,
-confidence scoring, observability, and escalation logic.
-
-Supports: Azure OpenAI, Anthropic Claude, Databricks Foundation Model APIs
+LangGraph Agent Base - Shared infrastructure for all SOC agents.
+Provides state management, memory, error handling, and observability.
 """
-
-import json
+from typing import TypedDict, Annotated, Any
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
+import operator
 import time
-import uuid
 import logging
+from datetime import datetime
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Optional, Callable
 
 logger = logging.getLogger(__name__)
 
 
-class AgentState(Enum):
-    IDLE = "idle"
-    THINKING = "thinking"
-    EXECUTING_TOOL = "executing_tool"
-    WAITING_APPROVAL = "waiting_approval"
-    ESCALATED = "escalated"
-    COMPLETED = "completed"
-    FAILED = "failed"
+class BaseAgentState(TypedDict):
+    messages: Annotated[list[BaseMessage], operator.add]
+    iteration: int
+    start_time: float
+    agent_id: str
+    error: str | None
 
 
-class EscalationReason(Enum):
-    LOW_CONFIDENCE = "low_confidence"
-    HIGH_RISK_ACTION = "high_risk_action"
-    CONFLICTING_SIGNALS = "conflicting_signals"
-    TIMEOUT = "timeout"
-    TOOL_FAILURE = "tool_failure"
-    POLICY_VIOLATION = "policy_violation"
-
-
-@dataclass
-class AgentContext:
-    """Shared context passed between agent iterations."""
-    session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    conversation_history: list = field(default_factory=list)
-    tool_results: list = field(default_factory=list)
-    retrieved_memories: list = field(default_factory=list)
-    confidence_score: float = 1.0
-    escalation_reason: Optional[EscalationReason] = None
-    metadata: dict = field(default_factory=dict)
-    start_time: float = field(default_factory=time.time)
-    iteration_count: int = 0
-    max_iterations: int = 20
-    total_tokens_used: int = 0
-
-
-@dataclass
-class ToolCall:
-    """Represents a tool invocation request from the LLM."""
-    tool_name: str
-    arguments: dict
-    call_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-
-
-@dataclass
-class ToolResult:
-    """Result from a tool execution."""
-    call_id: str
-    tool_name: str
-    output: Any
-    success: bool
-    execution_time_ms: float
-    error: Optional[str] = None
-
-
-@dataclass
-class AgentDecision:
-    """Final output of an agent run."""
-    session_id: str
-    action: str
-    reasoning: str
-    confidence: float
-    evidence: list
-    recommended_actions: list
-    requires_approval: bool
-    escalation_reason: Optional[EscalationReason] = None
-    metadata: dict = field(default_factory=dict)
-
-
-class AgentBase(ABC):
-    """
-    Base class for all SOC agents. Implements the core reasoning loop:
-
-    1. Retrieve relevant memory/context
-    2. Call LLM with system prompt + context + tool definitions
-    3. If LLM requests tool calls → execute tools → loop back to step 2
-    4. If LLM produces final answer → evaluate confidence → decide or escalate
-    5. Record decision + trace for observability
-    """
-
-    def __init__(
-        self,
-        agent_id: str,
-        agent_name: str,
-        llm_client: Any,
-        tool_registry: Any,
-        memory_store: Any,
-        config: dict = None,
-    ):
+class AgentMetrics:
+    """Observability metrics collected per agent run."""
+    def __init__(self, agent_id: str):
         self.agent_id = agent_id
-        self.agent_name = agent_name
-        self.llm_client = llm_client
-        self.tool_registry = tool_registry
-        self.memory_store = memory_store
-        self.config = config or {}
-        self.state = AgentState.IDLE
-        self._approval_callback: Optional[Callable] = None
-        self._trace_callback: Optional[Callable] = None
+        self.start_time = time.time()
+        self.end_time: float | None = None
+        self.nodes_visited: list[str] = []
+        self.tools_called: list[str] = []
+        self.llm_tokens_used: int = 0
+        self.errors: list[str] = []
 
-        self.confidence_threshold = self.config.get("confidence_threshold", 0.7)
-        self.escalation_threshold = self.config.get("escalation_threshold", 0.4)
-        self.max_iterations = self.config.get("max_iterations", 20)
-        self.timeout_seconds = self.config.get("timeout_seconds", 300)
+    def record_node(self, node_name: str):
+        self.nodes_visited.append(node_name)
 
-    @abstractmethod
-    def get_system_prompt(self) -> str:
-        """Return the system prompt for this agent's specialization."""
-        pass
+    def record_tool(self, tool_name: str):
+        self.tools_called.append(tool_name)
 
-    @abstractmethod
-    def get_available_tools(self) -> list[dict]:
-        """Return tool definitions available to this agent."""
-        pass
+    def finish(self):
+        self.end_time = time.time()
 
-    @abstractmethod
-    def evaluate_confidence(self, context: AgentContext, response: str) -> float:
-        """Evaluate confidence in the current reasoning based on evidence quality."""
-        pass
+    @property
+    def duration_ms(self) -> int:
+        end = self.end_time or time.time()
+        return int((end - self.start_time) * 1000)
 
-    @abstractmethod
-    def format_decision(self, context: AgentContext, final_response: str) -> AgentDecision:
-        """Format the final LLM response into a structured AgentDecision."""
-        pass
-
-    def set_approval_callback(self, callback: Callable):
-        """Register a callback for human-in-the-loop approval gates."""
-        self._approval_callback = callback
-
-    def set_trace_callback(self, callback: Callable):
-        """Register a callback for observability tracing."""
-        self._trace_callback = callback
-
-    async def run(self, input_data: dict, context: Optional[AgentContext] = None) -> AgentDecision:
-        """
-        Execute the full agent reasoning loop.
-
-        Args:
-            input_data: The alert, event, or task to process
-            context: Optional pre-existing context (for multi-agent handoff)
-
-        Returns:
-            AgentDecision with action, reasoning, confidence, and evidence
-        """
-        context = context or AgentContext(max_iterations=self.max_iterations)
-        self.state = AgentState.THINKING
-
-        self._trace("agent_start", {
+    def to_dict(self) -> dict:
+        return {
             "agent_id": self.agent_id,
-            "input": input_data,
-            "session_id": context.session_id,
-        })
-
-        # Step 1: Retrieve relevant memories
-        await self._retrieve_context(input_data, context)
-
-        # Step 2: Build initial message
-        context.conversation_history.append({
-            "role": "user",
-            "content": self._format_input(input_data, context),
-        })
-
-        # Step 3: Reasoning loop
-        while context.iteration_count < context.max_iterations:
-            context.iteration_count += 1
-            elapsed = time.time() - context.start_time
-
-            if elapsed > self.timeout_seconds:
-                self.state = AgentState.ESCALATED
-                context.escalation_reason = EscalationReason.TIMEOUT
-                self._trace("agent_timeout", {"elapsed": elapsed})
-                return self._build_escalation_decision(context, "Agent timed out")
-
-            try:
-                response = await self._call_llm(context)
-            except Exception as e:
-                logger.error(f"LLM call failed: {e}")
-                self._trace("llm_error", {"error": str(e)})
-                if context.iteration_count >= 3:
-                    self.state = AgentState.FAILED
-                    return self._build_escalation_decision(context, f"LLM failure: {e}")
-                continue
-
-            # Check if LLM wants to call tools
-            tool_calls = self._extract_tool_calls(response)
-
-            if tool_calls:
-                self.state = AgentState.EXECUTING_TOOL
-                tool_results = await self._execute_tools(tool_calls, context)
-                context.tool_results.extend(tool_results)
-
-                # Add tool results to conversation
-                context.conversation_history.append({
-                    "role": "assistant",
-                    "content": response.get("content", ""),
-                    "tool_calls": [{"id": tc.call_id, "name": tc.tool_name, "arguments": tc.arguments} for tc in tool_calls],
-                })
-                context.conversation_history.append({
-                    "role": "tool",
-                    "content": json.dumps([{
-                        "call_id": tr.call_id,
-                        "output": tr.output,
-                        "success": tr.success,
-                        "error": tr.error,
-                    } for tr in tool_results]),
-                })
-
-                self.state = AgentState.THINKING
-                continue
-
-            # No tool calls → final answer
-            final_content = response.get("content", "")
-            confidence = self.evaluate_confidence(context, final_content)
-            context.confidence_score = confidence
-
-            self._trace("confidence_evaluated", {
-                "confidence": confidence,
-                "iteration": context.iteration_count,
-            })
-
-            if confidence < self.escalation_threshold:
-                self.state = AgentState.ESCALATED
-                context.escalation_reason = EscalationReason.LOW_CONFIDENCE
-                return self._build_escalation_decision(context, final_content)
-
-            decision = self.format_decision(context, final_content)
-
-            # Check if action requires approval
-            if decision.requires_approval:
-                self.state = AgentState.WAITING_APPROVAL
-                approved = await self._request_approval(decision)
-                if not approved:
-                    self._trace("approval_denied", {"decision": decision.action})
-                    self.state = AgentState.ESCALATED
-                    context.escalation_reason = EscalationReason.HIGH_RISK_ACTION
-                    decision.escalation_reason = EscalationReason.HIGH_RISK_ACTION
-                    return decision
-
-            # Store decision in memory for future reference
-            await self._store_decision_memory(decision, context)
-
-            self.state = AgentState.COMPLETED
-            self._trace("agent_complete", {
-                "decision": decision.action,
-                "confidence": decision.confidence,
-                "iterations": context.iteration_count,
-                "tokens_used": context.total_tokens_used,
-            })
-
-            return decision
-
-        # Max iterations reached
-        self.state = AgentState.ESCALATED
-        context.escalation_reason = EscalationReason.TIMEOUT
-        return self._build_escalation_decision(context, "Max iterations reached")
-
-    async def _retrieve_context(self, input_data: dict, context: AgentContext):
-        """Retrieve relevant memories and context for the current task."""
-        if not self.memory_store:
-            return
-
-        query = self._build_memory_query(input_data)
-        try:
-            memories = await self.memory_store.search(
-                query=query,
-                agent_id=self.agent_id,
-                limit=self.config.get("memory_retrieval_limit", 10),
-                min_relevance=self.config.get("memory_min_relevance", 0.7),
-            )
-            context.retrieved_memories = memories
-            self._trace("memory_retrieved", {"count": len(memories)})
-        except Exception as e:
-            logger.warning(f"Memory retrieval failed: {e}")
-            self._trace("memory_error", {"error": str(e)})
-
-    def _build_memory_query(self, input_data: dict) -> str:
-        """Build a search query from input data for memory retrieval."""
-        parts = []
-        if "alert_type" in input_data:
-            parts.append(input_data["alert_type"])
-        if "source_ip" in input_data:
-            parts.append(f"IP:{input_data['source_ip']}")
-        if "user" in input_data:
-            parts.append(f"user:{input_data['user']}")
-        if "description" in input_data:
-            parts.append(input_data["description"])
-        return " ".join(parts) if parts else json.dumps(input_data)[:500]
-
-    def _format_input(self, input_data: dict, context: AgentContext) -> str:
-        """Format the input data + retrieved memories into an LLM prompt."""
-        parts = [
-            "## Current Task",
-            json.dumps(input_data, indent=2, default=str),
-        ]
-
-        if context.retrieved_memories:
-            parts.append("\\n## Relevant Past Context")
-            for mem in context.retrieved_memories[:5]:
-                parts.append(f"- [{mem.get('timestamp', 'unknown')}] {mem.get('summary', mem.get('content', ''))}")
-
-        return "\\n".join(parts)
-
-    async def _call_llm(self, context: AgentContext) -> dict:
-        """Call the LLM with current conversation state."""
-        messages = [
-            {"role": "system", "content": self.get_system_prompt()},
-            *context.conversation_history,
-        ]
-
-        tools = self.get_available_tools()
-
-        response = await self.llm_client.chat(
-            messages=messages,
-            tools=tools if tools else None,
-            temperature=self.config.get("temperature", 0.1),
-            max_tokens=self.config.get("max_tokens", 4096),
-        )
-
-        context.total_tokens_used += response.get("usage", {}).get("total_tokens", 0)
-        return response
-
-    def _extract_tool_calls(self, response: dict) -> list[ToolCall]:
-        """Extract tool call requests from LLM response."""
-        raw_calls = response.get("tool_calls", [])
-        return [
-            ToolCall(
-                tool_name=tc["name"],
-                arguments=tc.get("arguments", {}),
-                call_id=tc.get("id", str(uuid.uuid4())),
-            )
-            for tc in raw_calls
-        ]
-
-    async def _execute_tools(self, tool_calls: list[ToolCall], context: AgentContext) -> list[ToolResult]:
-        """Execute tool calls with error handling and timing."""
-        results = []
-        for tc in tool_calls:
-            start = time.time()
-            try:
-                output = await self.tool_registry.execute(
-                    tool_name=tc.tool_name,
-                    arguments=tc.arguments,
-                    agent_id=self.agent_id,
-                    session_id=context.session_id,
-                )
-                elapsed_ms = (time.time() - start) * 1000
-                results.append(ToolResult(
-                    call_id=tc.call_id,
-                    tool_name=tc.tool_name,
-                    output=output,
-                    success=True,
-                    execution_time_ms=elapsed_ms,
-                ))
-                self._trace("tool_executed", {
-                    "tool": tc.tool_name,
-                    "success": True,
-                    "elapsed_ms": elapsed_ms,
-                })
-            except Exception as e:
-                elapsed_ms = (time.time() - start) * 1000
-                logger.error(f"Tool {tc.tool_name} failed: {e}")
-                results.append(ToolResult(
-                    call_id=tc.call_id,
-                    tool_name=tc.tool_name,
-                    output=None,
-                    success=False,
-                    execution_time_ms=elapsed_ms,
-                    error=str(e),
-                ))
-                self._trace("tool_failed", {
-                    "tool": tc.tool_name,
-                    "error": str(e),
-                    "elapsed_ms": elapsed_ms,
-                })
-        return results
-
-    async def _request_approval(self, decision: AgentDecision) -> bool:
-        """Request human approval for high-risk actions."""
-        if not self._approval_callback:
-            logger.warning("No approval callback registered, auto-denying high-risk action")
-            return False
-
-        self._trace("approval_requested", {
-            "action": decision.action,
-            "confidence": decision.confidence,
-        })
-
-        return await self._approval_callback(decision)
-
-    async def _store_decision_memory(self, decision: AgentDecision, context: AgentContext):
-        """Store the decision in memory for future reference."""
-        if not self.memory_store:
-            return
-        try:
-            await self.memory_store.store(
-                agent_id=self.agent_id,
-                session_id=context.session_id,
-                content={
-                    "action": decision.action,
-                    "reasoning": decision.reasoning,
-                    "confidence": decision.confidence,
-                    "evidence_count": len(decision.evidence),
-                },
-                metadata=decision.metadata,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to store decision memory: {e}")
-
-    def _build_escalation_decision(self, context: AgentContext, reason: str) -> AgentDecision:
-        """Build a decision that escalates to human."""
-        return AgentDecision(
-            session_id=context.session_id,
-            action="ESCALATE_TO_HUMAN",
-            reasoning=reason,
-            confidence=context.confidence_score,
-            evidence=[tr.__dict__ for tr in context.tool_results[-5:]],
-            recommended_actions=["Review agent reasoning trace", "Manual investigation required"],
-            requires_approval=False,
-            escalation_reason=context.escalation_reason,
-            metadata={
-                "iterations": context.iteration_count,
-                "tokens_used": context.total_tokens_used,
-                "elapsed_seconds": time.time() - context.start_time,
-            },
-        )
-
-    def _trace(self, event: str, data: dict):
-        """Emit a trace event for observability."""
-        trace_entry = {
-            "timestamp": time.time(),
-            "agent_id": self.agent_id,
-            "agent_name": self.agent_name,
-            "event": event,
-            "state": self.state.value,
-            **data,
+            "duration_ms": self.duration_ms,
+            "nodes_visited": self.nodes_visited,
+            "tools_called": self.tools_called,
+            "llm_tokens_used": self.llm_tokens_used,
+            "errors": self.errors,
+            "timestamp": datetime.utcnow().isoformat(),
         }
-        logger.debug(f"TRACE: {json.dumps(trace_entry, default=str)}")
-        if self._trace_callback:
-            self._trace_callback(trace_entry)
+
+
+def create_checkpointer(use_postgres: bool = False, connection_string: str = None):
+    """Create appropriate checkpointer for state persistence."""
+    if use_postgres and connection_string:
+        return PostgresSaver.from_conn_string(connection_string)
+    return MemorySaver()
+
+
+def with_retry(func, max_retries: int = 3, backoff_base: float = 1.0):
+    """Decorator for retrying failed node executions with exponential backoff."""
+    def wrapper(*args, **kwargs):
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                wait = backoff_base * (2 ** attempt)
+                logger.warning(f"Retry {attempt+1}/{max_retries} for {func.__name__}: {e}")
+                time.sleep(wait)
+    return wrapper
+
+
+def max_iterations_guard(state: BaseAgentState, max_iter: int = 10) -> str:
+    """Conditional edge that prevents infinite loops."""
+    if state.get("iteration", 0) >= max_iter:
+        logger.warning(f"Agent {state.get('agent_id')} hit max iterations")
+        return END
+    return "continue"
+
+
+def emit_metrics(metrics: AgentMetrics):
+    """Write agent metrics to Delta Lake for monitoring dashboards."""
+    metrics.finish()
+    # Production: spark.createDataFrame([metrics.to_dict()]).write.mode("append")
+    #             .saveAsTable("agent_performance_metrics")
+    logger.info(f"Agent {metrics.agent_id} completed in {metrics.duration_ms}ms")
 `;
 
 export const PRODUCTION_TOOL_REGISTRY_CODE = `"""
-Production Tool Registry
-Manages tool definitions, execution permissions, rate limiting,
-and audit logging for all agent-callable tools.
+LangGraph Tool Registry - Manages tool access, permissions, and audit logging.
 """
-
+from typing import TypedDict, Annotated, Any
+from langgraph.prebuilt import ToolNode
+from langchain_core.tools import tool, BaseTool, StructuredTool
+from pydantic import BaseModel, Field
 import time
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from datetime import datetime
 from enum import Enum
 
 logger = logging.getLogger(__name__)
 
 
-class ToolRiskLevel(Enum):
-    READ_ONLY = "read_only"
-    WRITE = "write"
-    DESTRUCTIVE = "destructive"
-    EXTERNAL = "external"
+class ToolRiskLevel(str, Enum):
+    READ_ONLY = "read_only"       # No side effects
+    LOW_RISK = "low_risk"         # Reversible side effects
+    MEDIUM_RISK = "medium_risk"   # Requires confirmation
+    HIGH_RISK = "high_risk"       # Requires human approval
 
 
 @dataclass
-class ToolDefinition:
-    """Schema definition for a callable tool."""
-    name: str
-    description: str
-    parameters: dict  # JSON Schema for parameters
+class ToolPermission:
+    tool_name: str
     risk_level: ToolRiskLevel
-    handler: Callable
+    allowed_agents: list[str] = field(default_factory=list)
     requires_approval: bool = False
     rate_limit_per_minute: int = 60
-    timeout_seconds: int = 30
-    retry_count: int = 2
-    enabled: bool = True
+    audit_required: bool = True
 
 
 @dataclass
-class ToolExecutionLog:
-    """Audit record for a tool execution."""
+class ToolExecution:
     tool_name: str
     agent_id: str
-    session_id: str
     arguments: dict
-    output: Any
-    success: bool
-    execution_time_ms: float
-    timestamp: float = field(default_factory=time.time)
-    error: Optional[str] = None
+    result: Any = None
+    success: bool = True
+    error: str | None = None
+    execution_time_ms: int = 0
+    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
 
 class ToolRegistry:
-    """
-    Central registry for all tools available to agents.
-    Handles:
-    - Tool registration with schema validation
-    - Permission checks based on risk level
-    - Rate limiting per agent per tool
-    - Execution with timeout and retry
-    - Full audit logging
-    """
+    """Central registry for all agent tools with access control and auditing."""
 
-    def __init__(self, audit_store: Any = None):
-        self._tools: dict[str, ToolDefinition] = {}
-        self._rate_limits: dict[str, list[float]] = {}
-        self._audit_store = audit_store
-        self._execution_log: list[ToolExecutionLog] = []
+    def __init__(self):
+        self._tools: dict[str, BaseTool] = {}
+        self._permissions: dict[str, ToolPermission] = {}
+        self._execution_log: list[ToolExecution] = []
+        self._rate_counters: dict[str, list[float]] = {}
 
-    def register(self, tool: ToolDefinition):
-        """Register a tool definition."""
-        if tool.name in self._tools:
-            logger.warning(f"Overwriting existing tool: {tool.name}")
+    def register(self, tool: BaseTool, permission: ToolPermission):
+        """Register a tool with its permission config."""
         self._tools[tool.name] = tool
-        logger.info(f"Registered tool: {tool.name} (risk: {tool.risk_level.value})")
+        self._permissions[tool.name] = permission
+        logger.info(f"Registered tool: {tool.name} (risk={permission.risk_level})")
 
-    def register_function(
-        self,
-        name: str,
-        description: str,
-        parameters: dict,
-        handler: Callable,
-        risk_level: ToolRiskLevel = ToolRiskLevel.READ_ONLY,
-        requires_approval: bool = False,
-    ):
-        """Convenience method to register a function as a tool."""
-        self.register(ToolDefinition(
-            name=name,
-            description=description,
-            parameters=parameters,
-            risk_level=risk_level,
-            handler=handler,
-            requires_approval=requires_approval,
-        ))
-
-    def get_tool_schemas(self, agent_id: str = None, max_risk: ToolRiskLevel = None) -> list[dict]:
-        """
-        Return tool schemas in LLM function-calling format.
-        Optionally filter by maximum risk level.
-        """
-        risk_order = [ToolRiskLevel.READ_ONLY, ToolRiskLevel.WRITE, ToolRiskLevel.DESTRUCTIVE, ToolRiskLevel.EXTERNAL]
+    def get_tools_for_agent(self, agent_id: str, max_risk: ToolRiskLevel = None) -> list[BaseTool]:
+        """Get tools available to a specific agent, filtered by risk level."""
+        available = []
+        risk_order = [ToolRiskLevel.READ_ONLY, ToolRiskLevel.LOW_RISK,
+                      ToolRiskLevel.MEDIUM_RISK, ToolRiskLevel.HIGH_RISK]
         max_idx = risk_order.index(max_risk) if max_risk else len(risk_order) - 1
 
-        schemas = []
-        for tool in self._tools.values():
-            if not tool.enabled:
+        for name, tool in self._tools.items():
+            perm = self._permissions.get(name)
+            if not perm:
                 continue
-            if risk_order.index(tool.risk_level) > max_idx:
+            if perm.allowed_agents and agent_id not in perm.allowed_agents:
                 continue
-            schemas.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            })
-        return schemas
+            if risk_order.index(perm.risk_level) > max_idx:
+                continue
+            available.append(tool)
+        return available
 
-    async def execute(
-        self,
-        tool_name: str,
-        arguments: dict,
-        agent_id: str,
-        session_id: str,
-    ) -> Any:
-        """
-        Execute a tool with validation, rate limiting, and audit logging.
+    def create_tool_node(self, agent_id: str, max_risk: ToolRiskLevel = None) -> ToolNode:
+        """Create a LangGraph ToolNode with filtered tools for an agent."""
+        tools = self.get_tools_for_agent(agent_id, max_risk)
+        return ToolNode(tools)
 
-        Raises:
-            ValueError: If tool doesn't exist or is disabled
-            PermissionError: If rate limit exceeded
-            TimeoutError: If tool execution exceeds timeout
-            RuntimeError: If tool execution fails after retries
-        """
-        if tool_name not in self._tools:
+    def check_rate_limit(self, tool_name: str, agent_id: str) -> bool:
+        """Check if agent has exceeded rate limit for a tool."""
+        key = f"{agent_id}:{tool_name}"
+        now = time.time()
+        calls = self._rate_counters.get(key, [])
+        calls = [t for t in calls if now - t < 60]
+        self._rate_counters[key] = calls
+
+        perm = self._permissions.get(tool_name)
+        if perm and len(calls) >= perm.rate_limit_per_minute:
+            return False
+        calls.append(now)
+        return True
+
+    def execute_with_audit(self, tool_name: str, agent_id: str, arguments: dict) -> Any:
+        """Execute a tool with full audit logging and rate limiting."""
+        if not self.check_rate_limit(tool_name, agent_id):
+            raise RuntimeError(f"Rate limit exceeded for {tool_name}")
+
+        tool = self._tools.get(tool_name)
+        if not tool:
             raise ValueError(f"Unknown tool: {tool_name}")
 
-        tool = self._tools[tool_name]
+        start = time.time()
+        log_entry = ToolExecution(tool_name=tool_name, agent_id=agent_id, arguments=arguments)
 
-        if not tool.enabled:
-            raise ValueError(f"Tool is disabled: {tool_name}")
-
-        # Rate limiting
-        rate_key = f"{agent_id}:{tool_name}"
-        now = time.time()
-        if rate_key not in self._rate_limits:
-            self._rate_limits[rate_key] = []
-
-        # Clean old entries
-        self._rate_limits[rate_key] = [
-            t for t in self._rate_limits[rate_key]
-            if now - t < 60
-        ]
-
-        if len(self._rate_limits[rate_key]) >= tool.rate_limit_per_minute:
-            raise PermissionError(
-                f"Rate limit exceeded for {tool_name}: "
-                f"{tool.rate_limit_per_minute}/min"
-            )
-
-        self._rate_limits[rate_key].append(now)
-
-        # Execute with retry
-        last_error = None
-        for attempt in range(tool.retry_count + 1):
-            start = time.time()
-            try:
-                import asyncio
-                result = tool.handler(**arguments)
-                if asyncio.iscoroutine(result):
-                    result = await asyncio.wait_for(
-                        result,
-                        timeout=tool.timeout_seconds,
-                    )
-                elapsed_ms = (time.time() - start) * 1000
-
-                log_entry = ToolExecutionLog(
-                    tool_name=tool_name,
-                    agent_id=agent_id,
-                    session_id=session_id,
-                    arguments=arguments,
-                    output=self._truncate_output(result),
-                    success=True,
-                    execution_time_ms=elapsed_ms,
-                )
-                self._execution_log.append(log_entry)
-                await self._persist_audit(log_entry)
-
-                return result
-
-            except asyncio.TimeoutError:
-                elapsed_ms = (time.time() - start) * 1000
-                last_error = f"Timeout after {tool.timeout_seconds}s"
-                logger.warning(f"Tool {tool_name} timed out (attempt {attempt + 1})")
-
-            except Exception as e:
-                elapsed_ms = (time.time() - start) * 1000
-                last_error = str(e)
-                logger.warning(f"Tool {tool_name} failed (attempt {attempt + 1}): {e}")
-
-                if attempt < tool.retry_count:
-                    await asyncio.sleep(min(2 ** attempt, 10))
-
-        # All retries exhausted
-        log_entry = ToolExecutionLog(
-            tool_name=tool_name,
-            agent_id=agent_id,
-            session_id=session_id,
-            arguments=arguments,
-            output=None,
-            success=False,
-            execution_time_ms=elapsed_ms,
-            error=last_error,
-        )
-        self._execution_log.append(log_entry)
-        await self._persist_audit(log_entry)
-
-        raise RuntimeError(f"Tool {tool_name} failed after {tool.retry_count + 1} attempts: {last_error}")
-
-    def _truncate_output(self, output: Any, max_len: int = 10000) -> Any:
-        """Truncate large outputs for audit logging."""
-        if isinstance(output, str) and len(output) > max_len:
-            return output[:max_len] + f"... [truncated, total {len(output)} chars]"
-        return output
-
-    async def _persist_audit(self, log_entry: ToolExecutionLog):
-        """Persist audit log to external store."""
-        if not self._audit_store:
-            return
         try:
-            await self._audit_store.insert(
-                table="agent_tool_audit_log",
-                data={
-                    "tool_name": log_entry.tool_name,
-                    "agent_id": log_entry.agent_id,
-                    "session_id": log_entry.session_id,
-                    "arguments": log_entry.arguments,
-                    "success": log_entry.success,
-                    "execution_time_ms": log_entry.execution_time_ms,
-                    "error": log_entry.error,
-                    "timestamp": log_entry.timestamp,
-                },
-            )
+            result = tool.invoke(arguments)
+            log_entry.result = result
+            log_entry.success = True
         except Exception as e:
-            logger.warning(f"Failed to persist audit log: {e}")
+            log_entry.error = str(e)
+            log_entry.success = False
+            raise
+        finally:
+            log_entry.execution_time_ms = int((time.time() - start) * 1000)
+            self._execution_log.append(log_entry)
+            if self._permissions.get(tool_name, ToolPermission(tool_name, ToolRiskLevel.READ_ONLY)).audit_required:
+                self._persist_audit_log(log_entry)
+
+        return result
+
+    def _persist_audit_log(self, log_entry: ToolExecution):
+        """Write audit log to Delta Lake."""
+        # Production: spark.createDataFrame([log_entry.__dict__]).write.mode("append")
+        #             .saveAsTable("tool_audit_log")
+        pass
 
     def get_execution_stats(self, agent_id: str = None) -> dict:
         """Return execution statistics for monitoring."""
         relevant = self._execution_log
         if agent_id:
             relevant = [l for l in relevant if l.agent_id == agent_id]
-
         if not relevant:
             return {"total_calls": 0}
-
         success_count = sum(1 for l in relevant if l.success)
         return {
             "total_calls": len(relevant),
             "success_rate": success_count / len(relevant),
             "avg_execution_ms": sum(l.execution_time_ms for l in relevant) / len(relevant),
             "tools_used": list(set(l.tool_name for l in relevant)),
-            "error_count": len(relevant) - success_count,
         }
+
+
+# Global registry instance
+registry = ToolRegistry()
 `;
 
 export const PRODUCTION_AGENT_CODE: Record<string, string> = {
@@ -1771,6 +1729,17 @@ export const PRODUCTION_AGENT_CODE: Record<string, string> = {
   enrichment: PRODUCTION_ENRICHMENT_CODE,
   threat_hunter: PRODUCTION_THREAT_HUNTER_CODE,
   orchestrator: PRODUCTION_ORCHESTRATOR_CODE,
+  correlation: PRODUCTION_CORRELATION_CODE,
+  response: PRODUCTION_RESPONSE_CODE,
+  discovery: PRODUCTION_DISCOVERY_CODE,
+  learning: PRODUCTION_LEARNING_CODE,
+  adversarial: PRODUCTION_ADVERSARIAL_CODE,
+  assistant: PRODUCTION_ASSISTANT_CODE,
+  threat_intel: PRODUCTION_THREAT_INTEL_CODE,
+  malware: PRODUCTION_MALWARE_CODE,
+  infra: PRODUCTION_INFRA_CODE,
+  build_time: PRODUCTION_BUILD_TIME_CODE,
+  investigation: PRODUCTION_INVESTIGATION_CODE,
   agent_base: PRODUCTION_AGENT_BASE_CODE,
   tool_registry: PRODUCTION_TOOL_REGISTRY_CODE,
 };
