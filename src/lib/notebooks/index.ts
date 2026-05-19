@@ -4,7 +4,7 @@ import { mlNotebooks } from './mlNotebooks';
 import { streamingNotebooks } from './streamingNotebooks';
 import { behavioralNotebooks } from './behavioralNotebooks';
 import { threatIntelNotebooks } from './threatIntelNotebooks';
-import { mockDataNotebooks } from './mockDataNotebooks';
+import { allProductionNotebooks } from './productionNotebooks';
 import { graphCorrelationSchemasNotebook } from './graphCorrelationSchemas';
 import { graphCorrelationRuntimeNotebook } from './graphCorrelationRuntime';
 import { graphCorrelationDetectionsNotebook } from './graphCorrelationDetections';
@@ -21,12 +21,12 @@ import { detectionConfluenceNotebook } from './detectionConfluenceNotebook';
 import { negativeCorrelationNotebook } from './negativeCorrelationNotebook';
 
 export const allNotebooks: DatabricksNotebook[] = [
+  ...allProductionNotebooks,
   ...correlationNotebooks,
   ...mlNotebooks,
   ...streamingNotebooks,
   ...behavioralNotebooks,
   ...threatIntelNotebooks,
-  ...mockDataNotebooks,
   graphCorrelationSchemasNotebook,
   graphCorrelationRuntimeNotebook,
   graphCorrelationDetectionsNotebook,
@@ -49,7 +49,7 @@ export {
   streamingNotebooks,
   behavioralNotebooks,
   threatIntelNotebooks,
-  mockDataNotebooks,
+  allProductionNotebooks,
   graphCorrelationSchemasNotebook,
   graphCorrelationRuntimeNotebook,
   graphCorrelationDetectionsNotebook,
