@@ -1,7 +1,7 @@
 """
 0xDSI Agentic SOC - Databricks Native Backend
 FastAPI server that queries Unity Catalog via SQL Warehouse.
-Replaces Supabase as the data layer.
+100% Databricks-native. No external database dependencies.
 """
 
 import os
@@ -69,7 +69,7 @@ def fqn(table: str) -> str:
 
 
 # ──────────────────────────────────────────────
-# Generic table endpoint - replaces supabase.from('table').select()
+# Generic table query endpoint
 # ──────────────────────────────────────────────
 
 ALLOWED_TABLES = [
@@ -252,12 +252,41 @@ async def health():
 
 
 # ──────────────────────────────────────────────
-# Edge Function Equivalents (replaces Supabase Edge Functions)
+# Authentication (Databricks SSO)
+# ──────────────────────────────────────────────
+
+@app.get("/api/auth/session")
+async def auth_session(request: Request):
+    """Returns current user session from Databricks workspace SSO."""
+    try:
+        w = WorkspaceClient()
+        current_user = w.current_user.me()
+        return {
+            "user": {
+                "id": str(current_user.id),
+                "username": current_user.user_name,
+                "display_name": current_user.display_name or current_user.user_name,
+                "email": current_user.user_name,
+                "full_name": current_user.display_name or current_user.user_name,
+            }
+        }
+    except Exception:
+        return {"user": {
+            "id": "workspace-user",
+            "username": "analyst",
+            "display_name": "SOC Analyst",
+            "email": "analyst@databricks",
+            "full_name": "SOC Analyst",
+        }}
+
+
+# ──────────────────────────────────────────────
+# API Endpoints (Databricks-native)
 # ──────────────────────────────────────────────
 
 @app.post("/api/ai-assistant")
 async def ai_assistant(request: Request):
-    """Replaces: supabase/functions/ai-assistant"""
+    """AI assistant endpoint using Databricks Foundation Models."""
     body = await request.json()
     prompt = body.get("prompt", "")
     w = WorkspaceClient()
@@ -278,7 +307,7 @@ async def ai_assistant(request: Request):
 
 @app.post("/api/agent-chat")
 async def agent_chat(request: Request):
-    """Replaces: supabase/functions/agent-chat"""
+    """Agent chat endpoint using Databricks Foundation Models."""
     body = await request.json()
     message = body.get("message", "")
     agent_id = body.get("agent_id", "triage_agent")
@@ -300,7 +329,7 @@ async def agent_chat(request: Request):
 
 @app.post("/api/correlation-engine")
 async def correlation_engine(request: Request):
-    """Replaces: supabase/functions/correlation-engine - triggers correlation run."""
+    """Triggers a correlation engine run via Databricks Workflows."""
     try:
         w = WorkspaceClient()
         run = w.jobs.run_now(job_id=0)  # Will need real job ID
@@ -311,7 +340,7 @@ async def correlation_engine(request: Request):
 
 @app.post("/api/generate-correlation-rule")
 async def generate_correlation_rule(request: Request):
-    """Replaces: supabase/functions/generate-correlation-rule"""
+    """Generates a correlation rule using Databricks Foundation Models."""
     body = await request.json()
     description = body.get("description", "")
     w = WorkspaceClient()
@@ -332,7 +361,7 @@ async def generate_correlation_rule(request: Request):
 
 @app.post("/api/simulate-threat")
 async def simulate_threat(request: Request):
-    """Replaces: supabase/functions/simulate-threat"""
+    """Simulates a threat scenario against Unity Catalog data."""
     body = await request.json()
     scenario = body.get("scenario", "brute_force")
     try:
@@ -348,7 +377,7 @@ async def simulate_threat(request: Request):
 
 @app.post("/api/analyze-document")
 async def analyze_document(request: Request):
-    """Replaces: supabase/functions/analyze-document"""
+    """Document analysis using Databricks Foundation Models."""
     body = await request.json()
     content = body.get("content", "")
     w = WorkspaceClient()
@@ -369,7 +398,7 @@ async def analyze_document(request: Request):
 
 @app.post("/api/enrichment-engine")
 async def enrichment_engine(request: Request):
-    """Replaces: supabase/functions/enrichment-engine"""
+    """IOC and asset enrichment from Unity Catalog."""
     body = await request.json()
     indicator = body.get("indicator", "")
     indicator_type = body.get("type", "ip")
@@ -389,7 +418,7 @@ async def enrichment_engine(request: Request):
 
 @app.get("/api/etl-ingest/status")
 async def etl_status():
-    """Replaces: supabase/functions/etl-ingest"""
+    """ETL ingestion status from Unity Catalog."""
     try:
         runs = query(f"SELECT * FROM {fqn('etl_ingestion_runs')} ORDER BY started_at DESC LIMIT 10")
         configs = query(f"SELECT * FROM {fqn('etl_ingestion_configs')} WHERE enabled = true")
@@ -400,7 +429,7 @@ async def etl_status():
 
 @app.post("/api/threat-radar/analyze")
 async def threat_radar_analyze(request: Request):
-    """Replaces: supabase/functions/threat-radar-analyze"""
+    """Threat radar analysis using Databricks Foundation Models."""
     body = await request.json()
     w = WorkspaceClient()
     try:
@@ -421,7 +450,7 @@ async def threat_radar_analyze(request: Request):
 
 @app.get("/api/threat-radar/fetch")
 async def threat_radar_fetch():
-    """Replaces: supabase/functions/threat-radar-fetch"""
+    """Fetches threat radar items from Unity Catalog."""
     try:
         items = query(f"SELECT * FROM {fqn('threat_radar_items')} ORDER BY last_updated DESC LIMIT 50")
         sources = query(f"SELECT * FROM {fqn('threat_radar_sources')} WHERE enabled = true")
@@ -432,7 +461,7 @@ async def threat_radar_fetch():
 
 @app.get("/api/geopolitical-risk")
 async def geopolitical_risk():
-    """Replaces: supabase/functions/geopolitical-risk-fetch"""
+    """Geopolitical risk data from Unity Catalog."""
     try:
         events = query(f"SELECT * FROM {fqn('geopolitical_events')} ORDER BY event_date DESC LIMIT 20")
         scores = query(f"SELECT * FROM {fqn('geopolitical_risk_scores')} ORDER BY assessed_at DESC LIMIT 30")
@@ -443,7 +472,7 @@ async def geopolitical_risk():
 
 @app.post("/api/feature-lab/run")
 async def feature_lab_run(request: Request):
-    """Replaces: supabase/functions/feature-lab"""
+    """Feature Lab execution via Unity Catalog."""
     body = await request.json()
     feature_id = body.get("feature_id", "")
     try:
@@ -455,7 +484,7 @@ async def feature_lab_run(request: Request):
 
 @app.post("/api/migrate-dashboard")
 async def migrate_dashboard(request: Request):
-    """Replaces: supabase/functions/migrate-dashboard"""
+    """Dashboard migration tool."""
     body = await request.json()
     source_type = body.get("source_type", "grafana")
     config = body.get("config", {})
@@ -468,7 +497,7 @@ async def migrate_dashboard(request: Request):
 
 @app.post("/api/agent-orchestrator")
 async def agent_orchestrator_endpoint(request: Request):
-    """Replaces: supabase/functions/agent-orchestrator"""
+    """Agent orchestration status and control."""
     body = await request.json()
     action = body.get("action", "status")
     try:

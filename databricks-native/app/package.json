@@ -9,7 +9,6 @@
     "start:dev": "concurrently \"python backend/server.py\" \"vite\""
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
     "@types/three": "^0.180.0",
     "concurrently": "^8.2.2",
     "lucide-react": "^0.344.0",

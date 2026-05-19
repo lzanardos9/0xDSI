@@ -1,9 +1,6 @@
 /**
  * Databricks Native Data Client
- * Replaces @supabase/supabase-js with direct API calls to the FastAPI backend.
- * The FastAPI backend queries Unity Catalog via SQL Warehouse.
- *
- * Drop-in replacement: import { db } from './databricksClient' instead of supabase.
+ * Direct API calls to the FastAPI backend which queries Unity Catalog.
  */
 
 const API_BASE = '/api';
