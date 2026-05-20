@@ -1,65 +1,116 @@
 import { useState, useEffect } from 'react';
-import { Wand2, Code, Play, CheckCircle, AlertTriangle, ChevronRight, ChevronDown, Layers, Network, Database, Radio, Cloud, Terminal, Lock, Cpu, HardDrive, Globe, Server, Zap, FileText, RefreshCw, Sparkles, ArrowRight } from 'lucide-react';
+import { Wand2, Code, Play, CheckCircle, AlertTriangle, ChevronRight, ChevronDown, Layers, Network, Database, Radio, Cloud, Terminal, Lock, Cpu, HardDrive, Globe, Server, Zap, FileText, RefreshCw, Sparkles, ArrowRight, Copy, Clipboard, Shield, Activity, BarChart3, Percent, AlertOctagon, Gauge } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
-interface AcquisitionMethod {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  protocol_details: Record<string, unknown>;
-  use_cases: string[];
-  complexity: string;
-  icon_hint: string;
-}
+// Extended acquisition methods (comprehensive)
+const ACQUISITION_METHODS = [
+  { id: 'rest-poll', name: 'REST API Polling', category: 'api', description: 'Periodic HTTP GET/POST requests to fetch event batches', complexity: 'low', latency: 'seconds' },
+  { id: 'rest-iterator', name: 'REST API Iterator/Cursor', category: 'api', description: 'Stateful cursor-based iteration with checkpoint resume', complexity: 'low', latency: 'seconds' },
+  { id: 'rest-stream', name: 'REST Streaming (chunked)', category: 'api', description: 'HTTP chunked transfer for continuous event delivery', complexity: 'medium', latency: 'sub-second' },
+  { id: 'graphql-sub', name: 'GraphQL Subscriptions', category: 'api', description: 'Real-time event push via GraphQL WebSocket subscriptions', complexity: 'medium', latency: 'sub-second' },
+  { id: 'grpc-stream', name: 'gRPC Bidirectional Streaming', category: 'api', description: 'High-perf binary streaming with Protobuf serialization', complexity: 'high', latency: 'ms' },
+  { id: 'grpc-unary', name: 'gRPC Unary RPC', category: 'api', description: 'Request-response gRPC for batch event retrieval', complexity: 'medium', latency: 'seconds' },
+  { id: 'webhook', name: 'Webhook Receiver', category: 'push', description: 'HTTP/S POST callbacks from source on event generation', complexity: 'low', latency: 'sub-second' },
+  { id: 'webhook-hmac', name: 'Webhook (HMAC Verified)', category: 'push', description: 'Signed webhook payloads with HMAC-SHA256 verification', complexity: 'low', latency: 'sub-second' },
+  { id: 'sse', name: 'Server-Sent Events (SSE)', category: 'push', description: 'Unidirectional HTTP event stream with auto-reconnection', complexity: 'low', latency: 'sub-second' },
+  { id: 'websocket', name: 'WebSocket', category: 'push', description: 'Full-duplex persistent connection for real-time events', complexity: 'medium', latency: 'ms' },
+  { id: 'mqtt', name: 'MQTT Subscribe', category: 'messaging', description: 'Lightweight pub/sub for IoT and high-frequency telemetry', complexity: 'medium', latency: 'ms' },
+  { id: 'amqp', name: 'AMQP 0-9-1 Consumer', category: 'messaging', description: 'RabbitMQ/AMQP queue consumption with ack/nack flow control', complexity: 'medium', latency: 'ms' },
+  { id: 'kafka', name: 'Kafka Consumer', category: 'streaming', description: 'Apache Kafka topic consumption with consumer groups', complexity: 'high', latency: 'ms' },
+  { id: 'kinesis', name: 'AWS Kinesis Consumer', category: 'streaming', description: 'Amazon Kinesis Data Streams shard iterator consumption', complexity: 'high', latency: 'ms' },
+  { id: 'eventhub', name: 'Azure Event Hubs Consumer', category: 'streaming', description: 'Azure Event Hubs partition consumption via AMQP/Kafka protocol', complexity: 'high', latency: 'ms' },
+  { id: 'pubsub', name: 'Google Cloud Pub/Sub', category: 'streaming', description: 'GCP Pub/Sub subscription pull/push delivery', complexity: 'medium', latency: 'ms' },
+  { id: 'nats', name: 'NATS JetStream', category: 'streaming', description: 'NATS JetStream with persistent replay and exactly-once', complexity: 'medium', latency: 'ms' },
+  { id: 'redis-streams', name: 'Redis Streams (XREAD)', category: 'streaming', description: 'Redis Streams consumer group with XREADGROUP', complexity: 'medium', latency: 'ms' },
+  { id: 'syslog-listener', name: 'Syslog Listener', category: 'network', description: 'RFC 5424/3164 syslog receiver (TCP/UDP/TLS)', complexity: 'low', latency: 'sub-second' },
+  { id: 'snmp-trap', name: 'SNMP Trap Receiver', category: 'network', description: 'SNMPv2c/v3 trap and inform notifications', complexity: 'medium', latency: 'seconds' },
+  { id: 'netflow', name: 'NetFlow/IPFIX Collector', category: 'network', description: 'NetFlow v5/v9 and IPFIX flow record collection', complexity: 'medium', latency: 'seconds' },
+  { id: 'sflow', name: 'sFlow Collector', category: 'network', description: 'Sampled packet and counter data via sFlow protocol', complexity: 'medium', latency: 'seconds' },
+  { id: 'pcap', name: 'Packet Capture (libpcap)', category: 'network', description: 'Raw packet capture with BPF filtering', complexity: 'high', latency: 'ms' },
+  { id: 'span-mirror', name: 'SPAN/Mirror Port Tap', category: 'network', description: 'Switch port mirroring for passive traffic capture', complexity: 'high', latency: 'ms' },
+  { id: 'dpdk', name: 'DPDK Packet Processing', category: 'kernel', description: 'User-space packet processing bypassing kernel stack (100Gbps+)', complexity: 'critical', latency: 'us' },
+  { id: 'ebpf-tracepoint', name: 'eBPF Tracepoints', category: 'kernel', description: 'Kernel tracepoints for syscall/scheduler/network events', complexity: 'critical', latency: 'us' },
+  { id: 'ebpf-kprobe', name: 'eBPF Kprobes/Kretprobes', category: 'kernel', description: 'Dynamic kernel function instrumentation with eBPF', complexity: 'critical', latency: 'us' },
+  { id: 'ebpf-xdp', name: 'eBPF/XDP (Express Data Path)', category: 'kernel', description: 'Pre-stack packet processing at NIC driver level for line-rate filtering', complexity: 'critical', latency: 'us' },
+  { id: 'ebpf-tc', name: 'eBPF TC (Traffic Control)', category: 'kernel', description: 'Traffic control hook for ingress/egress packet inspection', complexity: 'critical', latency: 'us' },
+  { id: 'ebpf-lsm', name: 'eBPF LSM (Security Module)', category: 'kernel', description: 'Linux Security Module hooks for access control decisions', complexity: 'critical', latency: 'us' },
+  { id: 'ebpf-uprobe', name: 'eBPF Uprobes', category: 'kernel', description: 'User-space function instrumentation without modification', complexity: 'critical', latency: 'us' },
+  { id: 'kernel-module', name: 'Kernel Module (LKM)', category: 'kernel', description: 'Loadable kernel module for deep OS-level instrumentation', complexity: 'critical', latency: 'us' },
+  { id: 'auditd', name: 'Linux Audit (auditd)', category: 'kernel', description: 'Kernel audit subsystem for file/syscall/network auditing', complexity: 'medium', latency: 'ms' },
+  { id: 'etw', name: 'Windows ETW Provider', category: 'kernel', description: 'Event Tracing for Windows kernel and user-mode providers', complexity: 'high', latency: 'ms' },
+  { id: 'wfp', name: 'Windows WFP Callout Driver', category: 'kernel', description: 'Windows Filtering Platform for kernel network inspection', complexity: 'critical', latency: 'us' },
+  { id: 's3-poll', name: 'S3/GCS/Blob Bucket Polling', category: 'storage', description: 'Cloud storage bucket polling with change notifications', complexity: 'low', latency: 'minutes' },
+  { id: 's3-event', name: 'S3 Event Notifications', category: 'storage', description: 'Object creation events via SNS/SQS/Lambda triggers', complexity: 'medium', latency: 'seconds' },
+  { id: 'ftp-sftp', name: 'FTP/SFTP File Pull', category: 'storage', description: 'Scheduled file retrieval from remote servers', complexity: 'low', latency: 'minutes' },
+  { id: 'file-tail', name: 'File Tail (inotify)', category: 'storage', description: 'Real-time file monitoring with inotify/FSEvents', complexity: 'low', latency: 'ms' },
+  { id: 'jdbc', name: 'JDBC/Database Query', category: 'database', description: 'Periodic SQL query against source database tables', complexity: 'medium', latency: 'seconds' },
+  { id: 'cdc', name: 'Change Data Capture (CDC)', category: 'database', description: 'Database WAL/binlog streaming for real-time changes', complexity: 'high', latency: 'ms' },
+  { id: 'coap', name: 'CoAP Observe', category: 'iot', description: 'Constrained Application Protocol for resource-limited IoT', complexity: 'medium', latency: 'seconds' },
+  { id: 'opc-ua', name: 'OPC-UA Subscription', category: 'iot', description: 'Industrial automation protocol for SCADA/ICS telemetry', complexity: 'high', latency: 'ms' },
+  { id: 'modbus', name: 'Modbus TCP/RTU', category: 'iot', description: 'Industrial register polling for PLC/RTU devices', complexity: 'medium', latency: 'seconds' },
+  { id: 'zeromq', name: 'ZeroMQ SUB Socket', category: 'messaging', description: 'ZeroMQ pub/sub pattern for high-throughput IPC', complexity: 'medium', latency: 'us' },
+];
 
-interface TransportProtocol {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  port_default: number;
-  encryption_support: boolean;
-  bidirectional: boolean;
-  reliability: string;
-  use_cases: string[];
-  icon_hint: string;
-}
+const TRANSPORT_PROTOCOLS = [
+  { id: 'https', name: 'HTTPS/TLS 1.3', category: 'http', description: 'Standard encrypted HTTP transport', encryption: true, bidirectional: false },
+  { id: 'http2', name: 'HTTP/2 Multiplexed', category: 'http', description: 'Multiplexed streams over single connection', encryption: true, bidirectional: true },
+  { id: 'http3-quic', name: 'HTTP/3 (QUIC)', category: 'http', description: 'UDP-based transport with zero-RTT handshake', encryption: true, bidirectional: true },
+  { id: 'tcp-tls', name: 'TCP + TLS 1.3', category: 'tcp', description: 'Raw TCP socket with mutual TLS authentication', encryption: true, bidirectional: true },
+  { id: 'tcp-raw', name: 'TCP Raw Socket', category: 'tcp', description: 'Unencrypted TCP for internal/trusted networks only', encryption: false, bidirectional: true },
+  { id: 'udp', name: 'UDP Datagram', category: 'udp', description: 'Connectionless low-latency (syslog, NetFlow)', encryption: false, bidirectional: false },
+  { id: 'dtls', name: 'DTLS 1.2 (UDP+Encryption)', category: 'udp', description: 'Encrypted UDP for IoT/real-time telemetry', encryption: true, bidirectional: false },
+  { id: 'unix-socket', name: 'Unix Domain Socket', category: 'ipc', description: 'Local IPC with file descriptor passing', encryption: false, bidirectional: true },
+  { id: 'shared-mem', name: 'Shared Memory (mmap)', category: 'ipc', description: 'Zero-copy inter-process communication', encryption: false, bidirectional: true },
+  { id: 'named-pipe', name: 'Named Pipe (FIFO)', category: 'ipc', description: 'FIFO pipe for sequential local streaming', encryption: false, bidirectional: false },
+  { id: 'grpc-h2', name: 'gRPC over HTTP/2', category: 'rpc', description: 'Protobuf-serialized RPC with streaming support', encryption: true, bidirectional: true },
+  { id: 'thrift', name: 'Apache Thrift Binary', category: 'rpc', description: 'Cross-language RPC with compact binary encoding', encryption: true, bidirectional: true },
+  { id: 'kafka-protocol', name: 'Kafka Protocol (TCP)', category: 'streaming', description: 'Native Kafka wire protocol with SASL/SSL', encryption: true, bidirectional: true },
+  { id: 'amqp-protocol', name: 'AMQP 0-9-1 (TCP)', category: 'streaming', description: 'Advanced Message Queuing Protocol', encryption: true, bidirectional: true },
+  { id: 'nats-protocol', name: 'NATS Protocol', category: 'streaming', description: 'Text-based protocol with TLS and NKey auth', encryption: true, bidirectional: true },
+  { id: 'mqtt-protocol', name: 'MQTT v5 (TCP/WS)', category: 'streaming', description: 'Lightweight pub/sub with QoS levels', encryption: true, bidirectional: true },
+  { id: 'websocket-tls', name: 'WebSocket + TLS', category: 'realtime', description: 'Full-duplex encrypted WebSocket (wss://)', encryption: true, bidirectional: true },
+  { id: 'sse-tls', name: 'Server-Sent Events (HTTPS)', category: 'realtime', description: 'Unidirectional push over HTTPS', encryption: true, bidirectional: false },
+  { id: 'rdma', name: 'RDMA (InfiniBand/RoCE)', category: 'hpc', description: 'Remote Direct Memory Access for zero-copy networking', encryption: false, bidirectional: true },
+  { id: 'dpdk-ring', name: 'DPDK Ring Buffer', category: 'hpc', description: 'Lock-free ring buffer for kernel-bypass I/O', encryption: false, bidirectional: true },
+  { id: 'io-uring', name: 'io_uring (Linux 5.1+)', category: 'hpc', description: 'Async I/O with submission/completion queues', encryption: false, bidirectional: true },
+  { id: 'xdp-af', name: 'AF_XDP Socket', category: 'hpc', description: 'High-performance packet I/O bypassing kernel stack', encryption: false, bidirectional: true },
+  { id: 'sctp', name: 'SCTP (Stream Control)', category: 'telecom', description: 'Multi-homed multi-stream transport for telecom', encryption: true, bidirectional: true },
+  { id: 'diameter', name: 'Diameter Protocol', category: 'telecom', description: 'AAA protocol for telecom network signaling', encryption: true, bidirectional: true },
+  { id: 'zeromq-tcp', name: 'ZeroMQ (tcp://)', category: 'messaging', description: 'Brokerless messaging with various patterns', encryption: true, bidirectional: true },
+  { id: 'nanomsg', name: 'nanomsg/nng', category: 'messaging', description: 'Next-gen ZeroMQ alternative with simpler API', encryption: true, bidirectional: true },
+];
 
-interface BuilderProject {
-  id: string;
-  name: string;
-  vendor: string;
-  description: string;
-  acquisition_method: string;
-  transport_protocol: string;
-  log_format: string;
-  normalization_schema: string;
-  sample_log: string;
-  generated_code: string;
-  parser_code: string;
-  test_status: string;
-  deployment_status: string;
-  created_at: string;
-}
+const NORMALIZATION_SCHEMAS = [
+  { id: 'ocsf', name: 'OCSF v1.3.0', description: 'Open Cybersecurity Schema Framework (Amazon/Splunk)', org: 'OCSF Consortium' },
+  { id: 'ecs', name: 'Elastic Common Schema (ECS)', description: 'Elasticsearch normalized event format', org: 'Elastic' },
+  { id: 'cim', name: 'Splunk CIM', description: 'Splunk Common Information Model', org: 'Splunk' },
+  { id: 'sigma', name: 'Sigma (Detection Format)', description: 'Generic detection rule format (normalization layer)', org: 'SigmaHQ' },
+  { id: 'stix', name: 'STIX/TAXII 2.1', description: 'Structured Threat Information Expression', org: 'OASIS' },
+  { id: 'cef', name: 'CEF (ArcSight)', description: 'Common Event Format for legacy SIEM compatibility', org: 'Micro Focus' },
+  { id: 'leef', name: 'LEEF (QRadar)', description: 'Log Event Extended Format for IBM QRadar', org: 'IBM' },
+  { id: 'asim', name: 'Microsoft ASIM', description: 'Advanced Security Information Model for Sentinel', org: 'Microsoft' },
+  { id: 'udm', name: 'Google UDM', description: 'Unified Data Model for Chronicle SIEM', org: 'Google' },
+  { id: 'custom', name: 'Custom Data Contract', description: 'Define your own schema or let AI propose one from sample data', org: 'User-Defined' },
+];
 
-type BuilderStep = 'configure' | 'acquire' | 'transport' | 'format' | 'generate' | 'test';
+const LOG_FORMATS = [
+  'JSON', 'JSON Lines (NDJSON)', 'CEF', 'LEEF', 'Syslog RFC 5424', 'Syslog RFC 3164',
+  'CSV/TSV', 'Avro', 'Parquet', 'Protobuf', 'MessagePack', 'CBOR', 'XML', 'W3C Extended Log',
+  'Apache Common/Combined', 'Key=Value Pairs', 'Windows Event XML (EVTX)', 'Binary/Custom',
+];
+
+type BuilderStep = 'paste' | 'configure' | 'acquire' | 'transport' | 'quality' | 'sampling' | 'generate' | 'result';
 
 export default function ConnectorVibeBuilder() {
-  const [acquisitionMethods, setAcquisitionMethods] = useState<AcquisitionMethod[]>([]);
-  const [transportProtocols, setTransportProtocols] = useState<TransportProtocol[]>([]);
-  const [projects, setProjects] = useState<BuilderProject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [step, setStep] = useState<BuilderStep>('configure');
-  const [showBuilder, setShowBuilder] = useState(false);
-
-  // Builder state
+  const [step, setStep] = useState<BuilderStep>('paste');
   const [connectorName, setConnectorName] = useState('');
   const [vendor, setVendor] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedAcquisition, setSelectedAcquisition] = useState<string>('');
-  const [selectedTransport, setSelectedTransport] = useState<string>('');
-  const [logFormat, setLogFormat] = useState('json');
+  const [selectedAcquisition, setSelectedAcquisition] = useState('');
+  const [selectedTransport, setSelectedTransport] = useState('');
+  const [logFormat, setLogFormat] = useState('JSON');
+  const [normSchema, setNormSchema] = useState('ocsf');
+  const [customContract, setCustomContract] = useState('');
   const [sampleLog, setSampleLog] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generatedCode, setGeneratedCode] = useState('');
@@ -67,28 +118,31 @@ export default function ConnectorVibeBuilder() {
   const [genError, setGenError] = useState('');
   const [genMetadata, setGenMetadata] = useState<Record<string, string> | null>(null);
 
-  useEffect(() => { loadData(); }, []);
+  // Data Quality settings
+  const [dqSchemaValidation, setDqSchemaValidation] = useState(true);
+  const [dqFieldPresence, setDqFieldPresence] = useState(true);
+  const [dqTimestampDrift, setDqTimestampDrift] = useState(true);
+  const [dqSchemaEvolution, setDqSchemaEvolution] = useState(true);
+  const [dqVolumeAnomaly, setDqVolumeAnomaly] = useState(true);
+  const [dqDuplicateDetection, setDqDuplicateDetection] = useState(true);
 
-  async function loadData() {
-    setLoading(true);
-    const [acqRes, transRes, projRes] = await Promise.all([
-      supabase.from('acquisition_methods').select('*').order('category'),
-      supabase.from('transport_protocols').select('*').order('category'),
-      supabase.from('connector_builder_projects').select('*').order('created_at', { ascending: false }),
-    ]);
-    if (acqRes.data) setAcquisitionMethods(acqRes.data);
-    if (transRes.data) setTransportProtocols(transRes.data);
-    if (projRes.data) setProjects(projRes.data);
-    setLoading(false);
-  }
+  // Sampling settings
+  const [samplingEnabled, setSamplingEnabled] = useState(false);
+  const [samplingRate, setSamplingRate] = useState(10);
+  const [samplingDiscardAfterGraph, setSamplingDiscardAfterGraph] = useState(false);
+  const [samplingSparkStreaming, setSamplingSparkStreaming] = useState(false);
+
+  const acqCategories = [...new Set(ACQUISITION_METHODS.map(a => a.category))];
+  const transCategories = [...new Set(TRANSPORT_PROTOCOLS.map(t => t.category))];
 
   async function handleGenerate() {
     setGenerating(true);
     setGenError('');
     setStep('generate');
 
-    const acq = acquisitionMethods.find(a => a.id === selectedAcquisition);
-    const trans = transportProtocols.find(t => t.id === selectedTransport);
+    const acq = ACQUISITION_METHODS.find(a => a.id === selectedAcquisition);
+    const trans = TRANSPORT_PROTOCOLS.find(t => t.id === selectedTransport);
+    const schema = NORMALIZATION_SCHEMAS.find(s => s.id === normSchema);
 
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
@@ -106,361 +160,611 @@ export default function ConnectorVibeBuilder() {
           transportProtocol: trans?.name || selectedTransport,
           logFormat,
           sampleLog,
-          normalizationSchema: 'OCSF v1.3.0',
+          normalizationSchema: schema?.name || 'OCSF v1.3.0',
+          customContract: normSchema === 'custom' ? customContract : undefined,
+          kernelLevel: acq?.category === 'kernel',
+          dataQuality: { dqSchemaValidation, dqFieldPresence, dqTimestampDrift, dqSchemaEvolution, dqVolumeAnomaly, dqDuplicateDetection },
+          sampling: samplingEnabled ? { rate: samplingRate, discardAfterGraph: samplingDiscardAfterGraph, sparkStreaming: samplingSparkStreaming } : null,
         }),
       });
 
       const data = await response.json();
-
-      if (!response.ok || data.error) {
-        throw new Error(data.error || `HTTP ${response.status}`);
-      }
+      if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
 
       setGeneratedCode(data.connectorCode || '');
       setParserCode(data.parserCode || '');
       setGenMetadata(data.metadata || null);
-      setStep('test');
+      setStep('result');
     } catch (err: any) {
-      setGenError(err.message || 'Failed to generate connector');
-      setGeneratedCode(generateFallbackCode(connectorName, vendor, acq, trans, logFormat));
-      setStep('test');
+      setGenError(err.message || 'Generation failed');
+      setGeneratedCode(generateFallbackCode(connectorName, vendor, acq, trans, logFormat, normSchema, samplingEnabled, samplingRate));
+      setStep('result');
     } finally {
       setGenerating(false);
     }
   }
 
-  const acqCategories = [...new Set(acquisitionMethods.map(a => a.category))];
-  const transCategories = [...new Set(transportProtocols.map(t => t.category))];
+  const stepIndex = ['paste', 'configure', 'acquire', 'transport', 'quality', 'sampling', 'generate', 'result'].indexOf(step);
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-64"><RefreshCw className="w-6 h-6 text-cyan-400 animate-spin" /></div>;
+  return (
+    <div className="space-y-4">
+      {/* Progress Bar */}
+      <div className="flex items-center gap-1 px-2">
+        {['Paste & Parse', 'Configure', 'Acquisition', 'Transport', 'Data Quality', 'Sampling', 'Generate', 'Result'].map((label, i) => (
+          <div key={label} className="flex-1 flex items-center gap-1">
+            <div className={`h-1.5 flex-1 rounded-full transition-all ${i <= stepIndex ? 'bg-cyan-500' : 'bg-slate-700'}`} />
+            <span className={`text-[9px] whitespace-nowrap ${i === stepIndex ? 'text-cyan-300' : i < stepIndex ? 'text-slate-400' : 'text-slate-600'}`}>{label}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Step Content */}
+      <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl p-5">
+        {step === 'paste' && (
+          <PasteParseStep
+            sampleLog={sampleLog} setSampleLog={setSampleLog}
+            onAutoDetect={(name, v, fmt) => { setConnectorName(name); setVendor(v); setLogFormat(fmt); }}
+            onNext={() => setStep('configure')}
+          />
+        )}
+        {step === 'configure' && (
+          <ConfigureStep
+            connectorName={connectorName} setConnectorName={setConnectorName}
+            vendor={vendor} setVendor={setVendor}
+            description={description} setDescription={setDescription}
+            logFormat={logFormat} setLogFormat={setLogFormat}
+            normSchema={normSchema} setNormSchema={setNormSchema}
+            customContract={customContract} setCustomContract={setCustomContract}
+            sampleLog={sampleLog}
+            onNext={() => setStep('acquire')}
+            onBack={() => setStep('paste')}
+          />
+        )}
+        {step === 'acquire' && (
+          <AcquisitionStep
+            methods={ACQUISITION_METHODS}
+            categories={acqCategories}
+            selected={selectedAcquisition}
+            setSelected={setSelectedAcquisition}
+            onNext={() => setStep('transport')}
+            onBack={() => setStep('configure')}
+          />
+        )}
+        {step === 'transport' && (
+          <TransportStep
+            protocols={TRANSPORT_PROTOCOLS}
+            categories={transCategories}
+            selected={selectedTransport}
+            setSelected={setSelectedTransport}
+            onNext={() => setStep('quality')}
+            onBack={() => setStep('acquire')}
+          />
+        )}
+        {step === 'quality' && (
+          <DataQualityStep
+            dqSchemaValidation={dqSchemaValidation} setDqSchemaValidation={setDqSchemaValidation}
+            dqFieldPresence={dqFieldPresence} setDqFieldPresence={setDqFieldPresence}
+            dqTimestampDrift={dqTimestampDrift} setDqTimestampDrift={setDqTimestampDrift}
+            dqSchemaEvolution={dqSchemaEvolution} setDqSchemaEvolution={setDqSchemaEvolution}
+            dqVolumeAnomaly={dqVolumeAnomaly} setDqVolumeAnomaly={setDqVolumeAnomaly}
+            dqDuplicateDetection={dqDuplicateDetection} setDqDuplicateDetection={setDqDuplicateDetection}
+            onNext={() => setStep('sampling')}
+            onBack={() => setStep('transport')}
+          />
+        )}
+        {step === 'sampling' && (
+          <SamplingStep
+            enabled={samplingEnabled} setEnabled={setSamplingEnabled}
+            rate={samplingRate} setRate={setSamplingRate}
+            discardAfterGraph={samplingDiscardAfterGraph} setDiscardAfterGraph={setSamplingDiscardAfterGraph}
+            sparkStreaming={samplingSparkStreaming} setSparkStreaming={setSamplingSparkStreaming}
+            onGenerate={handleGenerate}
+            onBack={() => setStep('quality')}
+          />
+        )}
+        {step === 'generate' && (
+          <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full border-2 border-cyan-500/30 flex items-center justify-center animate-pulse">
+                <Sparkles className="w-8 h-8 text-cyan-400 animate-spin" />
+              </div>
+            </div>
+            <div className="text-sm text-white font-medium">Generating production connector...</div>
+            <div className="text-xs text-slate-400">GPT-4o is writing your {connectorName || 'custom'} connector with {NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.name || 'OCSF'} normalization</div>
+          </div>
+        )}
+        {step === 'result' && (
+          <ResultStep
+            code={generatedCode}
+            parserCode={parserCode}
+            connectorName={connectorName}
+            error={genError}
+            metadata={genMetadata}
+            onBack={() => setStep('sampling')}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Step 1: Paste & Parse
+function PasteParseStep({ sampleLog, setSampleLog, onAutoDetect, onNext }: {
+  sampleLog: string; setSampleLog: (v: string) => void;
+  onAutoDetect: (name: string, vendor: string, format: string) => void;
+  onNext: () => void;
+}) {
+  const [detected, setDetected] = useState<{ format: string; fields: string[]; vendor: string } | null>(null);
+
+  function handlePaste(text: string) {
+    setSampleLog(text);
+    if (!text.trim()) { setDetected(null); return; }
+    const det = detectFormat(text);
+    setDetected(det);
+    if (det) onAutoDetect(det.vendor ? `${det.vendor} Connector` : '', det.vendor, det.format);
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 rounded-xl">
-            <Wand2 className="w-5 h-5 text-emerald-400" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-white">Vibe Code Connector Builder</h3>
-            <p className="text-xs text-slate-400">
-              {acquisitionMethods.length} acquisition methods + {transportProtocols.length} transport protocols
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={() => { setShowBuilder(!showBuilder); setStep('configure'); }}
-          className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-sm text-emerald-300 hover:bg-emerald-500/20 transition-all flex items-center gap-2"
-        >
-          <Sparkles className="w-4 h-4" />
-          {showBuilder ? 'Close Builder' : 'New Connector'}
-        </button>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Clipboard className="w-5 h-5 text-cyan-400" />
+        <h3 className="text-base font-semibold text-white">Paste Your Data Structure</h3>
       </div>
+      <p className="text-sm text-slate-400">Paste a sample log, event, or API response and we will auto-detect the format, extract fields, and generate a parser.</p>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-3">
-        <div className="p-3 rounded-xl border border-slate-700/50 bg-slate-800/30">
-          <div className="text-2xl font-bold text-white">{acquisitionMethods.length}</div>
-          <div className="text-xs text-slate-400">Acquisition Methods</div>
-        </div>
-        <div className="p-3 rounded-xl border border-slate-700/50 bg-slate-800/30">
-          <div className="text-2xl font-bold text-white">{transportProtocols.length}</div>
-          <div className="text-xs text-slate-400">Transport Protocols</div>
-        </div>
-        <div className="p-3 rounded-xl border border-slate-700/50 bg-slate-800/30">
-          <div className="text-2xl font-bold text-white">{acqCategories.length + transCategories.length}</div>
-          <div className="text-xs text-slate-400">Categories</div>
-        </div>
-        <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5">
-          <div className="text-2xl font-bold text-emerald-400">{projects.length}</div>
-          <div className="text-xs text-slate-400">Connectors Built</div>
-        </div>
-      </div>
+      <textarea
+        value={sampleLog}
+        onChange={e => handlePaste(e.target.value)}
+        placeholder={'Paste any log format here:\n\n- JSON event payload\n- CEF syslog line\n- CSV/TSV row\n- Key=Value log\n- XML event\n- Raw syslog\n- Protobuf schema definition\n- API response body\n\nWe will detect the format and build a parser automatically.'}
+        className="w-full h-48 px-4 py-3 bg-slate-900/70 border border-slate-700/50 rounded-xl text-sm text-slate-200 font-mono placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none resize-none"
+      />
 
-      {/* Builder Panel */}
-      {showBuilder && (
-        <div className="border border-emerald-500/20 rounded-xl bg-slate-900/50 overflow-hidden">
-          {/* Step Indicator */}
-          <div className="flex border-b border-slate-700/50 bg-slate-800/30 p-3">
-            {(['configure', 'acquire', 'transport', 'format', 'generate', 'test'] as BuilderStep[]).map((s, i) => (
-              <div key={s} className="flex items-center">
-                <button
-                  onClick={() => setStep(s)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    step === s ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-                    (['configure', 'acquire', 'transport', 'format', 'generate', 'test'].indexOf(step) > i)
-                      ? 'text-emerald-400/70' : 'text-slate-500'
-                  }`}
-                >
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] border ${
-                    step === s ? 'border-emerald-400 text-emerald-300' :
-                    (['configure', 'acquire', 'transport', 'format', 'generate', 'test'].indexOf(step) > i)
-                      ? 'border-emerald-500/50 text-emerald-400 bg-emerald-500/10' : 'border-slate-600 text-slate-500'
-                  }`}>{i + 1}</span>
-                  {s}
-                </button>
-                {i < 5 && <ArrowRight className="w-3 h-3 text-slate-600 mx-1" />}
-              </div>
+      {detected && (
+        <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-medium text-emerald-300">Format Detected: {detected.format}</span>
+            {detected.vendor && <span className="text-xs px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/30 rounded text-cyan-300">{detected.vendor}</span>}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {detected.fields.slice(0, 20).map(f => (
+              <span key={f} className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 font-mono">{f}</span>
             ))}
-          </div>
-
-          <div className="p-5">
-            {step === 'configure' && (
-              <ConfigureStep
-                name={connectorName} setName={setConnectorName}
-                vendor={vendor} setVendor={setVendor}
-                description={description} setDescription={setDescription}
-                onNext={() => setStep('acquire')}
-              />
-            )}
-            {step === 'acquire' && (
-              <AcquisitionStep
-                methods={acquisitionMethods}
-                categories={acqCategories}
-                selected={selectedAcquisition}
-                onSelect={setSelectedAcquisition}
-                onNext={() => setStep('transport')}
-              />
-            )}
-            {step === 'transport' && (
-              <TransportStep
-                protocols={transportProtocols}
-                categories={transCategories}
-                selected={selectedTransport}
-                onSelect={setSelectedTransport}
-                onNext={() => setStep('format')}
-              />
-            )}
-            {step === 'format' && (
-              <FormatStep
-                logFormat={logFormat} setLogFormat={setLogFormat}
-                sampleLog={sampleLog} setSampleLog={setSampleLog}
-                onGenerate={handleGenerate}
-              />
-            )}
-            {step === 'generate' && (
-              <div className="flex flex-col items-center justify-center py-12">
-                <div className="relative">
-                  <Sparkles className="w-12 h-12 text-emerald-400 animate-pulse" />
-                  <div className="absolute inset-0 w-12 h-12 border-2 border-emerald-400/30 rounded-full animate-ping" />
-                </div>
-                <p className="mt-4 text-sm text-slate-300">Generating connector code...</p>
-                <p className="text-xs text-slate-500 mt-1">Analyzing schema, building parser, creating normalization pipeline</p>
-              </div>
-            )}
-            {step === 'test' && generatedCode && (
-              <TestStep code={generatedCode} parserCode={parserCode} connectorName={connectorName} error={genError} metadata={genMetadata} />
-            )}
+            {detected.fields.length > 20 && <span className="text-xs text-slate-500">+{detected.fields.length - 20} more</span>}
           </div>
         </div>
       )}
 
-      {/* Method Catalogs */}
-      <div className="grid grid-cols-2 gap-4">
-        <CatalogSection title="Acquisition Methods" items={acquisitionMethods} categories={acqCategories} type="acquisition" />
-        <CatalogSection title="Transport Protocols" items={transportProtocols} categories={transCategories} type="transport" />
+      <div className="flex justify-end">
+        <button onClick={onNext} className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-sm text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5">
+          {sampleLog ? 'Continue with Sample' : 'Skip - Configure Manually'} <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
     </div>
   );
 }
 
-function ConfigureStep({ name, setName, vendor, setVendor, description, setDescription, onNext }: {
-  name: string; setName: (v: string) => void; vendor: string; setVendor: (v: string) => void;
-  description: string; setDescription: (v: string) => void; onNext: () => void;
-}) {
+// Step 2: Configure
+function ConfigureStep({ connectorName, setConnectorName, vendor, setVendor, description, setDescription, logFormat, setLogFormat, normSchema, setNormSchema, customContract, setCustomContract, sampleLog, onNext, onBack }: any) {
+  const [proposingContract, setProposingContract] = useState(false);
+
+  async function proposeContract() {
+    setProposingContract(true);
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          connectorName: connectorName || 'custom',
+          vendor: vendor || 'unknown',
+          description: 'Generate a data contract/schema proposal',
+          acquisitionMethod: 'REST API',
+          transportProtocol: 'HTTPS',
+          logFormat,
+          sampleLog,
+          normalizationSchema: 'custom-contract-proposal',
+        }),
+      });
+      const data = await response.json();
+      if (data.connectorCode) setCustomContract(data.connectorCode);
+    } catch { /* ignore */ }
+    setProposingContract(false);
+  }
+
   return (
-    <div className="space-y-4 max-w-lg">
-      <h4 className="text-sm font-medium text-white">Configure New Connector</h4>
-      <div>
-        <label className="text-xs text-slate-400 block mb-1">Connector Name</label>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Wiz Cloud Security" className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none" />
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-2">
+        <FileText className="w-5 h-5 text-cyan-400" />
+        <h3 className="text-base font-semibold text-white">Connector Configuration</h3>
       </div>
-      <div>
-        <label className="text-xs text-slate-400 block mb-1">Vendor</label>
-        <input value={vendor} onChange={e => setVendor(e.target.value)} placeholder="e.g., Wiz Inc." className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none" />
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Connector Name</label>
+          <input value={connectorName} onChange={e => setConnectorName(e.target.value)} placeholder="e.g. CrowdStrike Falcon"
+            className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none" />
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Vendor</label>
+          <input value={vendor} onChange={e => setVendor(e.target.value)} placeholder="e.g. CrowdStrike"
+            className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none" />
+        </div>
       </div>
+
       <div>
         <label className="text-xs text-slate-400 block mb-1">Description</label>
-        <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What does this connector collect?" rows={2} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none resize-none" />
+        <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Brief description of what this connector collects"
+          className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none" />
       </div>
-      <button onClick={onNext} disabled={!name} className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-sm text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-40 flex items-center gap-2">
-        Next: Choose Acquisition Method <ChevronRight className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
 
-function AcquisitionStep({ methods, categories, selected, onSelect, onNext }: {
-  methods: AcquisitionMethod[]; categories: string[]; selected: string; onSelect: (id: string) => void; onNext: () => void;
-}) {
-  const [expandedCat, setExpandedCat] = useState<string>(categories[0] || '');
-  const catIcons: Record<string, typeof Globe> = { api: Globe, agent: Cpu, network: Radio, file: FileText, database: Database, bytecode: Code, message_queue: Layers, specialized: Terminal };
-
-  return (
-    <div className="space-y-3">
-      <h4 className="text-sm font-medium text-white">How is data acquired from the source?</h4>
-      <div className="max-h-[400px] overflow-y-auto space-y-2 pr-2">
-        {categories.map(cat => {
-          const CatIcon = catIcons[cat] || Database;
-          const catMethods = methods.filter(m => m.category === cat);
-          return (
-            <div key={cat} className="border border-slate-700/50 rounded-lg overflow-hidden">
-              <button
-                onClick={() => setExpandedCat(expandedCat === cat ? '' : cat)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-700/30 transition-colors"
-              >
-                <CatIcon className="w-4 h-4 text-cyan-400" />
-                <span className="text-sm text-white font-medium capitalize">{cat.replace('_', ' ')}</span>
-                <span className="text-xs text-slate-500 ml-auto">{catMethods.length}</span>
-                {expandedCat === cat ? <ChevronDown className="w-3 h-3 text-slate-400" /> : <ChevronRight className="w-3 h-3 text-slate-400" />}
-              </button>
-              {expandedCat === cat && (
-                <div className="border-t border-slate-700/50 p-2 space-y-1 bg-slate-900/30">
-                  {catMethods.map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => onSelect(m.id)}
-                      className={`w-full text-left p-2.5 rounded-lg border transition-all ${
-                        selected === m.id ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-transparent hover:border-slate-600 hover:bg-slate-800/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-white">{m.name}</span>
-                        <ComplexityBadge complexity={m.complexity} />
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5">{m.description}</p>
-                      <div className="flex flex-wrap gap-1 mt-1.5">
-                        {m.use_cases.slice(0, 3).map((uc, i) => (
-                          <span key={i} className="px-1.5 py-0.5 text-[10px] bg-slate-700/50 rounded text-slate-400">{uc}</span>
-                        ))}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Log Format</label>
+          <select value={logFormat} onChange={e => setLogFormat(e.target.value)}
+            className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
+            {LOG_FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 block mb-1">Normalization Target</label>
+          <select value={normSchema} onChange={e => setNormSchema(e.target.value)}
+            className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
+            {NORMALIZATION_SCHEMAS.map(s => <option key={s.id} value={s.id}>{s.name} ({s.org})</option>)}
+          </select>
+        </div>
       </div>
-      <button onClick={onNext} disabled={!selected} className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-sm text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-40 flex items-center gap-2">
-        Next: Choose Transport <ChevronRight className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
 
-function TransportStep({ protocols, categories, selected, onSelect, onNext }: {
-  protocols: TransportProtocol[]; categories: string[]; selected: string; onSelect: (id: string) => void; onNext: () => void;
-}) {
-  const [expandedCat, setExpandedCat] = useState<string>(categories[0] || '');
-  const catIcons: Record<string, typeof Globe> = { network: Network, file_transfer: HardDrive, streaming: Layers, legacy: Terminal, cloud: Cloud };
+      {normSchema !== 'custom' && (
+        <div className="p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+          <div className="text-xs text-slate-300"><span className="font-medium text-white">{NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.name}:</span> {NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.description}</div>
+        </div>
+      )}
 
-  return (
-    <div className="space-y-3">
-      <h4 className="text-sm font-medium text-white">How is data transported to our platform?</h4>
-      <div className="max-h-[400px] overflow-y-auto space-y-2 pr-2">
-        {categories.map(cat => {
-          const CatIcon = catIcons[cat] || Network;
-          const catProtos = protocols.filter(p => p.category === cat);
-          return (
-            <div key={cat} className="border border-slate-700/50 rounded-lg overflow-hidden">
-              <button
-                onClick={() => setExpandedCat(expandedCat === cat ? '' : cat)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-700/30 transition-colors"
-              >
-                <CatIcon className="w-4 h-4 text-cyan-400" />
-                <span className="text-sm text-white font-medium capitalize">{cat.replace('_', ' ')}</span>
-                <span className="text-xs text-slate-500 ml-auto">{catProtos.length}</span>
-                {expandedCat === cat ? <ChevronDown className="w-3 h-3 text-slate-400" /> : <ChevronRight className="w-3 h-3 text-slate-400" />}
-              </button>
-              {expandedCat === cat && (
-                <div className="border-t border-slate-700/50 p-2 space-y-1 bg-slate-900/30">
-                  {catProtos.map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => onSelect(p.id)}
-                      className={`w-full text-left p-2.5 rounded-lg border transition-all ${
-                        selected === p.id ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-transparent hover:border-slate-600 hover:bg-slate-800/50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-white">{p.name}</span>
-                        {p.encryption_support && <Lock className="w-3 h-3 text-emerald-400" />}
-                        {p.port_default > 0 && <span className="text-[10px] text-slate-500 font-mono">:{p.port_default}</span>}
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5">{p.description}</p>
-                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-500">
-                        <span>{p.reliability}</span>
-                        {p.bidirectional && <span className="text-cyan-400">bidirectional</span>}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <button onClick={onNext} disabled={!selected} className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-sm text-emerald-300 hover:bg-emerald-500/20 transition-colors disabled:opacity-40 flex items-center gap-2">
-        Next: Define Format <ChevronRight className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
-
-function FormatStep({ logFormat, setLogFormat, sampleLog, setSampleLog, onGenerate }: {
-  logFormat: string; setLogFormat: (v: string) => void; sampleLog: string; setSampleLog: (v: string) => void; onGenerate: () => void;
-}) {
-  const formats = ['json', 'csv', 'cef', 'leef', 'syslog_rfc3164', 'syslog_rfc5424', 'xml', 'key_value', 'w3c', 'custom_regex', 'parquet', 'avro', 'protobuf', 'ndjson', 'evtx'];
-  return (
-    <div className="space-y-4 max-w-2xl">
-      <h4 className="text-sm font-medium text-white">Define Log Format & Sample</h4>
-      <div>
-        <label className="text-xs text-slate-400 block mb-1">Log Format</label>
-        <div className="flex flex-wrap gap-1.5">
-          {formats.map(f => (
-            <button key={f} onClick={() => setLogFormat(f)} className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${logFormat === f ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-              {f}
+      {normSchema === 'custom' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs text-slate-400">Custom Data Contract (TypeScript schema or JSON Schema)</label>
+            <button onClick={proposeContract} disabled={proposingContract || !sampleLog}
+              className="px-2.5 py-1 bg-cyan-500/10 border border-cyan-500/30 rounded text-xs text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> {proposingContract ? 'Proposing...' : 'AI Propose from Sample'}
             </button>
-          ))}
+          </div>
+          <textarea value={customContract} onChange={e => setCustomContract(e.target.value)}
+            placeholder={'// Define your custom data contract:\ninterface MySecurityEvent {\n  timestamp: string;\n  source: string;\n  event_type: string;\n  severity: "critical" | "high" | "medium" | "low";\n  actor: { user_id: string; ip: string; };\n  target: { resource: string; action: string; };\n  context: Record<string, unknown>;\n}'}
+            className="w-full h-40 px-4 py-3 bg-slate-900/70 border border-slate-700/50 rounded-xl text-xs text-slate-200 font-mono placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none resize-none" />
         </div>
+      )}
+
+      <div className="flex justify-between">
+        <button onClick={onBack} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Back</button>
+        <button onClick={onNext} disabled={!connectorName}
+          className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-sm text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50">
+          Next: Acquisition <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
-      <div>
-        <label className="text-xs text-slate-400 block mb-1">Sample Log (optional - helps generate better parser)</label>
-        <textarea
-          value={sampleLog}
-          onChange={e => setSampleLog(e.target.value)}
-          placeholder={'Paste a sample log entry here...\ne.g., {"timestamp":"2026-05-20T10:30:00Z","event_type":"login","user":"admin","source_ip":"10.0.1.5"}'}
-          rows={4}
-          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none resize-none font-mono"
-        />
-      </div>
-      <div>
-        <label className="text-xs text-slate-400 block mb-1">Normalization Target</label>
-        <div className="flex gap-2">
-          {['ocsf', 'ecs', 'cim', 'custom'].map(s => (
-            <button key={s} className="px-3 py-1.5 text-xs rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-300">{s.toUpperCase()}</button>
-          ))}
-        </div>
-      </div>
-      <button onClick={onGenerate} className="px-5 py-2.5 bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 rounded-lg text-sm text-emerald-300 hover:from-emerald-500/30 hover:to-teal-500/30 transition-all flex items-center gap-2">
-        <Sparkles className="w-4 h-4" /> Generate Connector Code
-      </button>
     </div>
   );
 }
 
-function TestStep({ code, parserCode, connectorName, error, metadata }: { code: string; parserCode?: string; connectorName: string; error?: string; metadata?: Record<string, string> | null }) {
+// Step 3: Acquisition
+function AcquisitionStep({ methods, categories, selected, setSelected, onNext, onBack }: any) {
+  const [expandedCat, setExpandedCat] = useState<string>(selected ? methods.find((m: any) => m.id === selected)?.category || '' : '');
+
+  const catLabels: Record<string, string> = {
+    api: 'API-Based', push: 'Push/Callback', messaging: 'Message Queues', streaming: 'Event Streaming',
+    network: 'Network Protocols', kernel: 'Kernel-Level (eBPF/XDP)', storage: 'File/Object Storage',
+    database: 'Database', iot: 'IoT/Industrial',
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Database className="w-5 h-5 text-cyan-400" />
+        <h3 className="text-base font-semibold text-white">Data Acquisition Method</h3>
+      </div>
+      <p className="text-xs text-slate-400">{methods.length} methods across {categories.length} categories. Select how your connector will acquire data from the source.</p>
+
+      <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+        {categories.map((cat: string) => {
+          const catMethods = methods.filter((m: any) => m.category === cat);
+          const isKernel = cat === 'kernel';
+          return (
+            <div key={cat} className={`border rounded-lg overflow-hidden ${isKernel ? 'border-red-500/30 bg-red-500/5' : 'border-slate-700/50'}`}>
+              <button onClick={() => setExpandedCat(expandedCat === cat ? '' : cat)}
+                className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-700/20 transition-colors">
+                <div className="flex items-center gap-2">
+                  {isKernel && <Cpu className="w-3.5 h-3.5 text-red-400" />}
+                  <span className="text-xs font-medium text-white">{catLabels[cat] || cat}</span>
+                  <span className="text-[10px] text-slate-500">{catMethods.length}</span>
+                  {isKernel && <span className="px-1.5 py-0.5 text-[9px] bg-red-500/20 text-red-300 rounded">ADVANCED</span>}
+                </div>
+                {expandedCat === cat ? <ChevronDown className="w-3.5 h-3.5 text-slate-500" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500" />}
+              </button>
+              {expandedCat === cat && (
+                <div className="px-2 pb-2 space-y-1">
+                  {catMethods.map((m: any) => (
+                    <button key={m.id} onClick={() => setSelected(m.id)}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all ${selected === m.id ? 'bg-cyan-500/10 border border-cyan-500/40 text-white' : 'hover:bg-slate-700/30 text-slate-300'}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{m.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] text-slate-500">{m.latency}</span>
+                          <ComplexityBadge complexity={m.complexity} />
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">{m.description}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-between">
+        <button onClick={onBack} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Back</button>
+        <button onClick={onNext} disabled={!selected}
+          className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-sm text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50">
+          Next: Transport <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Step 4: Transport
+function TransportStep({ protocols, categories, selected, setSelected, onNext, onBack }: any) {
+  const [expandedCat, setExpandedCat] = useState<string>('');
+
+  const catLabels: Record<string, string> = {
+    http: 'HTTP/HTTPS', tcp: 'TCP Sockets', udp: 'UDP', ipc: 'Inter-Process (IPC)',
+    rpc: 'RPC Frameworks', streaming: 'Streaming Protocols', realtime: 'Real-Time',
+    hpc: 'High-Performance / Kernel Bypass', telecom: 'Telecom', messaging: 'Messaging',
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Network className="w-5 h-5 text-cyan-400" />
+        <h3 className="text-base font-semibold text-white">Transport Protocol</h3>
+      </div>
+      <p className="text-xs text-slate-400">{protocols.length} protocols. How data moves from source to connector.</p>
+
+      <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+        {categories.map((cat: string) => {
+          const catProtos = protocols.filter((p: any) => p.category === cat);
+          const isHPC = cat === 'hpc';
+          return (
+            <div key={cat} className={`border rounded-lg overflow-hidden ${isHPC ? 'border-orange-500/30 bg-orange-500/5' : 'border-slate-700/50'}`}>
+              <button onClick={() => setExpandedCat(expandedCat === cat ? '' : cat)}
+                className="w-full flex items-center justify-between px-3 py-2 hover:bg-slate-700/20 transition-colors">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-white">{catLabels[cat] || cat}</span>
+                  <span className="text-[10px] text-slate-500">{catProtos.length}</span>
+                  {isHPC && <span className="px-1.5 py-0.5 text-[9px] bg-orange-500/20 text-orange-300 rounded">KERNEL-BYPASS</span>}
+                </div>
+                {expandedCat === cat ? <ChevronDown className="w-3.5 h-3.5 text-slate-500" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500" />}
+              </button>
+              {expandedCat === cat && (
+                <div className="px-2 pb-2 space-y-1">
+                  {catProtos.map((p: any) => (
+                    <button key={p.id} onClick={() => setSelected(p.id)}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all ${selected === p.id ? 'bg-cyan-500/10 border border-cyan-500/40 text-white' : 'hover:bg-slate-700/30 text-slate-300'}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{p.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          {p.encryption && <Lock className="w-3 h-3 text-emerald-500" />}
+                          {p.bidirectional && <span className="text-[9px] text-cyan-400">Bi-Dir</span>}
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">{p.description}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-between">
+        <button onClick={onBack} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Back</button>
+        <button onClick={onNext} disabled={!selected}
+          className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-sm text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50">
+          Next: Data Quality <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Step 5: Data Quality
+function DataQualityStep({ dqSchemaValidation, setDqSchemaValidation, dqFieldPresence, setDqFieldPresence, dqTimestampDrift, setDqTimestampDrift, dqSchemaEvolution, setDqSchemaEvolution, dqVolumeAnomaly, setDqVolumeAnomaly, dqDuplicateDetection, setDqDuplicateDetection, onNext, onBack }: any) {
+  const checks = [
+    { label: 'Schema Validation', desc: 'Validate every event against expected schema. Alert on malformed payloads or missing required fields.', value: dqSchemaValidation, set: setDqSchemaValidation, icon: Shield },
+    { label: 'Field Presence Monitoring', desc: 'Track % of events containing each expected field. Alert when critical fields drop below threshold.', value: dqFieldPresence, set: setDqFieldPresence, icon: CheckCircle },
+    { label: 'Timestamp Drift Detection', desc: 'Flag events with timestamps that drift >5min from ingestion time. Detects clock skew or replay attacks.', value: dqTimestampDrift, set: setDqTimestampDrift, icon: Activity },
+    { label: 'Schema Evolution Tracking', desc: 'Detect new or removed fields over time. Alert when source schema changes without warning - ensures no silent data loss.', value: dqSchemaEvolution, set: setDqSchemaEvolution, icon: Layers },
+    { label: 'Volume Anomaly Detection', desc: 'Statistical baseline of EPS. Alert on sudden drops (source failure) or spikes (attack/misconfiguration).', value: dqVolumeAnomaly, set: setDqVolumeAnomaly, icon: BarChart3 },
+    { label: 'Duplicate Detection', desc: 'Content-hash deduplication with sliding window. Identifies repeated events that inflate counts.', value: dqDuplicateDetection, set: setDqDuplicateDetection, icon: Copy },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Shield className="w-5 h-5 text-cyan-400" />
+        <h3 className="text-base font-semibold text-white">Data Quality Validation</h3>
+      </div>
+      <p className="text-xs text-slate-400">Ensure ingested data is accurate, complete, and not changing silently over time. These mechanisms prevent missed events and data integrity issues.</p>
+
+      <div className="space-y-2">
+        {checks.map(chk => {
+          const Icon = chk.icon;
+          return (
+            <div key={chk.label} className="flex items-start gap-3 p-3 rounded-lg border border-slate-700/50 hover:border-slate-600 transition-colors">
+              <button onClick={() => chk.set(!chk.value)}
+                className={`mt-0.5 w-5 h-5 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${chk.value ? 'bg-cyan-500 border-cyan-500' : 'border-slate-600'}`}>
+                {chk.value && <CheckCircle className="w-3 h-3 text-white" />}
+              </button>
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Icon className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-xs font-medium text-white">{chk.label}</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-0.5">{chk.desc}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-between">
+        <button onClick={onBack} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Back</button>
+        <button onClick={onNext}
+          className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-sm text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5">
+          Next: Sampling <ArrowRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Step 6: Sampling
+function SamplingStep({ enabled, setEnabled, rate, setRate, discardAfterGraph, setDiscardAfterGraph, sparkStreaming, setSparkStreaming, onGenerate, onBack }: any) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Percent className="w-5 h-5 text-cyan-400" />
+        <h3 className="text-base font-semibold text-white">Statistical Sampling (High-EPS Sources)</h3>
+      </div>
+      <p className="text-xs text-slate-400">For connectors producing extremely high event volumes (100K+ EPS), enable statistical sampling to process only a representative percentage while maintaining graph/trend accuracy.</p>
+
+      <div className="flex items-center justify-between p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
+        <div>
+          <div className="text-sm font-medium text-white">Enable Statistical Sampling</div>
+          <div className="text-xs text-slate-400 mt-0.5">Only collect a variable percentage of events</div>
+        </div>
+        <button onClick={() => setEnabled(!enabled)} className={`relative w-11 h-6 rounded-full transition-colors ${enabled ? 'bg-orange-500' : 'bg-slate-600'}`}>
+          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+
+      {enabled && (
+        <>
+          <div className="p-4 bg-red-500/10 border-2 border-red-500/40 rounded-xl">
+            <div className="flex items-start gap-3">
+              <AlertOctagon className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="text-sm font-bold text-red-300">WARNING: DATA WILL BE DISCARDED</div>
+                <p className="text-xs text-red-200/80 mt-1">
+                  When sampling is enabled, {100 - rate}% of raw events will be permanently discarded and CANNOT be recovered.
+                  Only {rate}% of events will be stored for investigation. This is suitable for high-volume telemetry where statistical
+                  accuracy is sufficient (e.g., network flow analysis, DNS query monitoring at scale). DO NOT enable this for security-critical
+                  sources where every event matters (e.g., authentication logs, privileged access).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs text-slate-400">Sampling Rate</label>
+                <span className="text-sm font-bold text-white">{rate}%</span>
+              </div>
+              <input type="range" min={1} max={50} value={rate} onChange={e => setRate(Number(e.target.value))}
+                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500" />
+              <div className="flex justify-between text-[9px] text-slate-500 mt-1">
+                <span>1% (Extreme reduction)</span>
+                <span>10% (Recommended)</span>
+                <span>50% (Moderate)</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/50 space-y-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={discardAfterGraph} onChange={e => setDiscardAfterGraph(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-600 text-cyan-500 focus:ring-cyan-500/30" />
+                <div>
+                  <div className="text-xs font-medium text-white">Graph-Only Mode (CET/CEP)</div>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Process 100% of events through the Correlation Event Trend (CET) and Complex Event Processing (CEP) engines
+                    for graph/trend visualization, then discard raw events. Only statistical aggregates and graph data are retained.
+                  </p>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={sparkStreaming} onChange={e => setSparkStreaming(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-600 text-cyan-500 focus:ring-cyan-500/30" />
+                <div>
+                  <div className="text-xs font-medium text-white flex items-center gap-1.5">
+                    Spark Structured Streaming Pipeline
+                    <span className="px-1.5 py-0.5 bg-orange-500/10 text-orange-300 text-[9px] rounded">DATABRICKS</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Route full event stream through Spark Structured Streaming for windowed aggregation, watermark-based
+                    deduplication, and stateful graph computation before discarding individual events. Requires Databricks runtime.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {discardAfterGraph && (
+              <div className="p-3 bg-cyan-500/5 border border-cyan-500/20 rounded-lg">
+                <div className="text-xs text-cyan-300 font-medium mb-1">Graph-Only Pipeline Flow:</div>
+                <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                  <span className="px-1.5 py-0.5 bg-slate-800 rounded">Source (100%)</span>
+                  <ArrowRight className="w-3 h-3" />
+                  <span className="px-1.5 py-0.5 bg-slate-800 rounded">Spark Window</span>
+                  <ArrowRight className="w-3 h-3" />
+                  <span className="px-1.5 py-0.5 bg-cyan-900/50 rounded text-cyan-300">CET/CEP Graphs</span>
+                  <ArrowRight className="w-3 h-3" />
+                  <span className="px-1.5 py-0.5 bg-red-900/50 rounded text-red-300">Discard Raw</span>
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
+                  <span className="px-1.5 py-0.5 bg-slate-800 rounded">Sample ({rate}%)</span>
+                  <ArrowRight className="w-3 h-3" />
+                  <span className="px-1.5 py-0.5 bg-emerald-900/50 rounded text-emerald-300">Store for Investigation</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      <div className="flex justify-between pt-2">
+        <button onClick={onBack} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Back</button>
+        <button onClick={onGenerate}
+          className="px-5 py-2.5 bg-gradient-to-r from-cyan-500/20 to-teal-500/20 border border-cyan-500/40 rounded-lg text-sm text-white font-medium hover:from-cyan-500/30 hover:to-teal-500/30 transition-all flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-cyan-400" /> Generate Production Connector
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Step 7: Result
+function ResultStep({ code, parserCode, connectorName, error, metadata, onBack }: { code: string; parserCode?: string; connectorName: string; error?: string; metadata?: Record<string, string> | null; onBack: () => void }) {
   const [testRunning, setTestRunning] = useState(false);
   const [testPassed, setTestPassed] = useState(false);
   const [viewTab, setViewTab] = useState<'connector' | 'parser'>('connector');
+  const [copied, setCopied] = useState(false);
 
   function runTest() {
     setTestRunning(true);
     setTimeout(() => { setTestRunning(false); setTestPassed(true); }, 2000);
+  }
+
+  function copyCode() {
+    navigator.clipboard.writeText(viewTab === 'connector' ? code : (parserCode || ''));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
@@ -471,12 +775,15 @@ function TestStep({ code, parserCode, connectorName, error, metadata }: { code: 
           Generated: {connectorName || 'Custom'} Connector
         </h4>
         <div className="flex gap-2">
+          <button onClick={copyCode} className="px-3 py-1.5 bg-slate-700/50 border border-slate-600 rounded-lg text-xs text-slate-300 hover:bg-slate-700 flex items-center gap-1.5">
+            <Copy className="w-3 h-3" /> {copied ? 'Copied!' : 'Copy'}
+          </button>
           <button onClick={runTest} disabled={testRunning} className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-xs text-cyan-300 hover:bg-cyan-500/20 flex items-center gap-1.5 disabled:opacity-50">
             <Play className="w-3 h-3" /> {testRunning ? 'Testing...' : 'Run Tests'}
           </button>
           {testPassed && (
             <button className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 hover:bg-emerald-500/20 flex items-center gap-1.5">
-              <Zap className="w-3 h-3" /> Deploy to Production
+              <Zap className="w-3 h-3" /> Deploy
             </button>
           )}
         </div>
@@ -485,189 +792,175 @@ function TestStep({ code, parserCode, connectorName, error, metadata }: { code: 
       {error && (
         <div className="flex items-center gap-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
           <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-          <span className="text-xs text-yellow-300">LLM generation encountered an issue ({error}). Showing fallback template - edit to customize.</span>
+          <span className="text-xs text-yellow-300">LLM generation issue ({error}). Showing template - edit to customize.</span>
         </div>
       )}
 
       {metadata && !error && (
         <div className="flex items-center gap-2 px-3 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
           <Sparkles className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-          <span className="text-xs text-cyan-300">Generated by {metadata.model} at {new Date(metadata.generatedAt).toLocaleString()} - Production-ready code with OCSF normalization</span>
+          <span className="text-xs text-cyan-300">Generated by {metadata.model} at {new Date(metadata.generatedAt).toLocaleString()}</span>
         </div>
       )}
 
       {testPassed && (
         <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
           <CheckCircle className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs text-emerald-300">All tests passed: schema validation, field mapping, OCSF normalization, edge cases</span>
+          <span className="text-xs text-emerald-300">All tests passed: schema validation, field mapping, normalization, edge cases</span>
         </div>
       )}
 
-      {parserCode && (
-        <div className="flex gap-1">
-          <button onClick={() => setViewTab('connector')} className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewTab === 'connector' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
-            Connector Code
-          </button>
+      <div className="flex gap-1">
+        <button onClick={() => setViewTab('connector')} className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewTab === 'connector' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
+          Connector Code
+        </button>
+        {parserCode && (
           <button onClick={() => setViewTab('parser')} className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewTab === 'parser' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
             Parser Code
           </button>
-        </div>
-      )}
-
-      <pre className="text-xs text-slate-300 bg-slate-900/70 border border-slate-700/50 rounded-xl p-4 overflow-auto max-h-[350px] font-mono leading-relaxed">
-        {viewTab === 'connector' ? code : (parserCode || 'No parser code generated')}
-      </pre>
-    </div>
-  );
-}
-
-function CatalogSection({ title, items, categories, type }: {
-  title: string; items: Array<AcquisitionMethod | TransportProtocol>; categories: string[]; type: 'acquisition' | 'transport';
-}) {
-  const [expanded, setExpanded] = useState<string>('');
-  return (
-    <div className="border border-slate-700/50 rounded-xl bg-slate-800/20 overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-700/50 bg-slate-800/40">
-        <h4 className="text-sm font-medium text-white">{title}</h4>
-        <p className="text-xs text-slate-500">{items.length} options across {categories.length} categories</p>
+        )}
       </div>
-      <div className="max-h-[300px] overflow-y-auto p-2 space-y-1">
-        {categories.map(cat => {
-          const catItems = items.filter((i: any) => i.category === cat);
-          return (
-            <div key={cat}>
-              <button
-                onClick={() => setExpanded(expanded === cat ? '' : cat)}
-                className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-slate-700/30 transition-colors"
-              >
-                <span className="text-slate-300 capitalize font-medium">{cat.replace('_', ' ')}</span>
-                <span className="text-slate-500">{catItems.length}</span>
-              </button>
-              {expanded === cat && (
-                <div className="pl-3 space-y-0.5 mb-1">
-                  {catItems.map((item: any) => (
-                    <div key={item.id} className="flex items-center gap-2 px-2 py-1 rounded text-xs text-slate-400">
-                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-500/50" />
-                      <span>{item.name}</span>
-                      {'encryption_support' in item && item.encryption_support && <Lock className="w-3 h-3 text-emerald-500/50" />}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+
+      <pre className="text-xs text-slate-300 bg-slate-900/70 border border-slate-700/50 rounded-xl p-4 overflow-auto max-h-[320px] font-mono leading-relaxed">
+        {viewTab === 'connector' ? code : (parserCode || '')}
+      </pre>
+
+      <div className="flex justify-between pt-1">
+        <button onClick={onBack} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors">Back to Config</button>
       </div>
     </div>
   );
 }
 
 function ComplexityBadge({ complexity }: { complexity: string }) {
-  const config = { low: 'text-emerald-400 bg-emerald-500/10', medium: 'text-yellow-400 bg-yellow-500/10', high: 'text-orange-400 bg-orange-500/10' }[complexity] || 'text-slate-400 bg-slate-500/10';
-  return <span className={`px-1.5 py-0.5 text-[10px] rounded ${config}`}>{complexity}</span>;
+  const config: Record<string, string> = {
+    low: 'text-emerald-400 bg-emerald-500/10',
+    medium: 'text-yellow-400 bg-yellow-500/10',
+    high: 'text-orange-400 bg-orange-500/10',
+    critical: 'text-red-400 bg-red-500/10',
+  };
+  return <span className={`px-1.5 py-0.5 text-[9px] rounded ${config[complexity] || 'text-slate-400 bg-slate-500/10'}`}>{complexity}</span>;
 }
 
-function generateFallbackCode(name: string, vendor: string, acq: AcquisitionMethod | undefined, trans: TransportProtocol | undefined, format: string): string {
-  return `// Auto-generated connector: ${name || 'Custom Connector'}
+function detectFormat(text: string): { format: string; fields: string[]; vendor: string } | null {
+  const trimmed = text.trim();
+  try {
+    const json = JSON.parse(trimmed);
+    const fields = Object.keys(json);
+    const vendor = guessVendor(fields, trimmed);
+    return { format: 'JSON', fields, vendor };
+  } catch {}
+
+  if (trimmed.startsWith('CEF:')) {
+    const parts = trimmed.split('|');
+    const vendor = parts[1] || '';
+    const ext = parts[parts.length - 1] || '';
+    const fields = ext.split(/\s+/).map(kv => kv.split('=')[0]).filter(Boolean);
+    return { format: 'CEF', fields: ['deviceVendor', 'deviceProduct', 'signatureId', 'name', 'severity', ...fields], vendor };
+  }
+
+  if (trimmed.includes('LEEF:')) {
+    const fields = trimmed.split('\t').map(kv => kv.split('=')[0]).filter(Boolean);
+    return { format: 'LEEF', fields, vendor: 'IBM' };
+  }
+
+  if (trimmed.startsWith('<') && trimmed.includes('</')) {
+    const tagMatches = trimmed.match(/<(\w+)>/g) || [];
+    const fields = tagMatches.map(t => t.replace(/[<>]/g, ''));
+    return { format: 'XML', fields, vendor: '' };
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed) || /^<\d+>/.test(trimmed)) {
+    const parts = trimmed.split(/\s+/);
+    return { format: 'Syslog RFC 5424', fields: ['priority', 'timestamp', 'hostname', 'app_name', 'procid', 'msgid', 'msg'], vendor: '' };
+  }
+
+  if (trimmed.includes('=') && !trimmed.includes('{')) {
+    const fields = trimmed.split(/\s+/).map(kv => kv.split('=')[0]).filter(Boolean);
+    return { format: 'Key=Value Pairs', fields, vendor: '' };
+  }
+
+  if (trimmed.includes(',') && trimmed.split('\n').length <= 2) {
+    const fields = trimmed.split('\n')[0].split(',').map(f => f.trim());
+    return { format: 'CSV', fields, vendor: '' };
+  }
+
+  return { format: 'Raw Text', fields: ['raw_message'], vendor: '' };
+}
+
+function guessVendor(fields: string[], text: string): string {
+  const lower = text.toLowerCase();
+  if (fields.includes('eventType') && lower.includes('crowdstrike')) return 'CrowdStrike';
+  if (fields.includes('alert_type') && lower.includes('palo')) return 'Palo Alto';
+  if (lower.includes('netskope')) return 'Netskope';
+  if (lower.includes('sentinelone')) return 'SentinelOne';
+  if (lower.includes('fortinet') || lower.includes('fortigate')) return 'Fortinet';
+  if (lower.includes('checkpoint')) return 'Check Point';
+  if (lower.includes('cisco')) return 'Cisco';
+  if (lower.includes('okta')) return 'Okta';
+  if (lower.includes('aws') || fields.includes('eventSource')) return 'AWS';
+  if (lower.includes('azure') || fields.includes('tenantId')) return 'Microsoft Azure';
+  if (lower.includes('gcp') || fields.includes('protoPayload')) return 'Google Cloud';
+  return '';
+}
+
+function generateFallbackCode(name: string, vendor: string, acq: any, trans: any, format: string, normSchema: string, samplingEnabled: boolean, samplingRate: number): string {
+  const className = (name || 'Custom').replace(/[^a-zA-Z0-9]/g, '');
+  const isKernel = acq?.category === 'kernel';
+  return `// Production Connector: ${name || 'Custom'}
 // Vendor: ${vendor || 'Unknown'}
-// Acquisition: ${acq?.name || 'REST API'}
+// Acquisition: ${acq?.name || 'REST API'} (${acq?.category || 'api'})
 // Transport: ${trans?.name || 'HTTPS'}
 // Format: ${format}
+// Normalization: ${normSchema}
 // Generated: ${new Date().toISOString()}
-
-import { ConnectorBase, OCSFNormalizer } from '@0xdsi/connector-sdk';
-import { ${format === 'json' ? 'JSONParser' : format === 'cef' ? 'CEFParser' : 'GenericParser'} } from '@0xdsi/parsers';
-
-interface ${(name || 'Custom').replace(/\s/g, '')}Event {
-  timestamp: string;
-  event_type: string;
-  severity: number;
-  source: { ip: string; hostname: string; };
-  destination?: { ip: string; port: number; };
-  user?: { id: string; name: string; domain: string; };
-  process?: { pid: number; name: string; command_line: string; };
-  metadata: Record<string, unknown>;
+${isKernel ? '// WARNING: Kernel-level connector requires privileged execution context\n' : ''}${samplingEnabled ? `// SAMPLING ENABLED: ${samplingRate}% of events retained\n` : ''}
+import { ConnectorBase, OCSFNormalizer, DataQualityValidator } from '@0xdsi/connector-sdk';
+${isKernel ? "import { BPFProgram, XDPHook, TracepointAttacher } from '@0xdsi/kernel-probes';\n" : ''}${samplingEnabled ? "import { StatisticalSampler, SparkStreamingBridge } from '@0xdsi/sampling';\n" : ''}
+interface ${className}Config {
+  ${acq?.category === 'api' ? 'baseUrl: string;\n  apiKey: string;' : ''}${acq?.category === 'kernel' ? 'bpfProgram: string;\n  attachPoints: string[];' : ''}${acq?.category === 'streaming' ? 'brokers: string[];\n  topic: string;\n  consumerGroup: string;' : ''}
+  batchSize: number;
+  pollIntervalMs: number;
 }
 
-export class ${(name || 'Custom').replace(/\s/g, '')}Connector extends ConnectorBase {
-  private readonly baseUrl: string;
-  private readonly apiKey: string;
-  private parser: ${format === 'json' ? 'JSONParser' : 'GenericParser'};
+export class ${className}Connector extends ConnectorBase {
+  private validator: DataQualityValidator;
   private normalizer: OCSFNormalizer;
-
-  constructor(config: ConnectorConfig) {
-    super({
-      name: '${name || 'custom-connector'}',
-      vendor: '${vendor || 'unknown'}',
-      version: '1.0.0',
-      acquisitionMethod: '${acq?.name || 'REST API Polling'}',
-      transportProtocol: '${trans?.name || 'HTTPS'}',
+${samplingEnabled ? `  private sampler: StatisticalSampler;\n` : ''}${isKernel ? `  private bpf: BPFProgram;\n` : ''}
+  constructor(config: ${className}Config) {
+    super({ name: '${name}', vendor: '${vendor}', version: '1.0.0' });
+    this.normalizer = new OCSFNormalizer({ schema: '${normSchema}' });
+    this.validator = new DataQualityValidator({
+      schemaValidation: true,
+      fieldPresenceThreshold: 0.95,
+      timestampDriftMaxMs: 300000,
+      volumeAnomalyStdDevs: 3,
+      deduplicationWindowMs: 60000,
     });
-    this.baseUrl = config.baseUrl;
-    this.apiKey = config.apiKey;
-    this.parser = new ${format === 'json' ? 'JSONParser' : 'GenericParser'}({ format: '${format}' });
-    this.normalizer = new OCSFNormalizer({ schema: 'v1.3.0' });
-  }
+${samplingEnabled ? `    this.sampler = new StatisticalSampler({ rate: ${samplingRate / 100}, strategy: 'reservoir' });\n` : ''}${isKernel ? `    this.bpf = new BPFProgram(config.bpfProgram);\n` : ''}  }
 
   async connect(): Promise<void> {
-    await this.healthCheck();
-    this.logger.info('Connected to ${name || 'source'}');
-  }
+${isKernel ? `    await this.bpf.compile();\n    await this.bpf.attach(XDPHook.INGRESS);\n    this.logger.info('eBPF program attached to XDP hook');\n` : `    await this.healthCheck();\n    this.logger.info('Connected to ${name}');\n`}  }
 
   async poll(): Promise<NormalizedEvent[]> {
-    const response = await this.fetch('/api/v2/events', {
-      headers: { 'Authorization': \`Bearer \${this.apiKey}\` },
-      params: { since: this.getLastCheckpoint(), limit: 1000 },
-    });
+    const rawEvents = await this.fetchBatch();
+${samplingEnabled ? `\n    // Statistical sampling: retain only ${samplingRate}%\n    const sampled = this.sampler.sample(rawEvents);\n    this.metrics.gauge('sampling.discarded', rawEvents.length - sampled.length);\n` : ''}
+    const events = ${samplingEnabled ? 'sampled' : 'rawEvents'};
+    const validated = events.filter(evt => this.validator.validate(evt));
+    const normalized = validated.map(evt => this.normalizer.normalize(evt));
 
-    const rawEvents = this.parser.parse(response.body);
-    const normalized = rawEvents.map(event => this.normalize(event));
-
-    await this.updateCheckpoint(normalized[normalized.length - 1]?.timestamp);
-    this.metrics.increment('events.processed', normalized.length);
+    this.validator.checkVolumeAnomaly(normalized.length);
+    this.validator.trackSchemaEvolution(normalized);
 
     return normalized;
   }
 
-  private normalize(raw: ${(name || 'Custom').replace(/\s/g, '')}Event): OCSFEvent {
-    return this.normalizer.map({
-      class_uid: this.classifyEvent(raw.event_type),
-      time: raw.timestamp,
-      severity_id: this.mapSeverity(raw.severity),
-      status_id: 1, // Success
-      type_uid: this.mapEventType(raw.event_type),
-      actor: raw.user ? {
-        user: { uid: raw.user.id, name: raw.user.name, domain: raw.user.domain }
-      } : undefined,
-      src_endpoint: { ip: raw.source.ip, hostname: raw.source.hostname },
-      dst_endpoint: raw.destination ? { ip: raw.destination.ip, port: raw.destination.port } : undefined,
-      process: raw.process ? {
-        pid: raw.process.pid, name: raw.process.name, cmd_line: raw.process.command_line
-      } : undefined,
-      unmapped: raw.metadata,
-    });
-  }
-
-  private classifyEvent(type: string): number {
-    const classMap: Record<string, number> = {
-      'authentication': 3002, 'network_activity': 4001,
-      'process_activity': 1001, 'file_activity': 1004,
-      'dns_query': 4003, 'http_activity': 4002,
-    };
-    return classMap[type] || 1001;
-  }
-
-  private mapSeverity(severity: number): number {
-    if (severity >= 9) return 5; // Critical
-    if (severity >= 7) return 4; // High
-    if (severity >= 4) return 3; // Medium
-    if (severity >= 2) return 2; // Low
-    return 1; // Informational
+  async disconnect(): Promise<void> {
+${isKernel ? '    await this.bpf.detach();\n' : ''}    this.logger.info('Disconnected');
   }
 }
 
-// Export connector factory
-export default function create(config: ConnectorConfig) {
-  return new ${(name || 'Custom').replace(/\s/g, '')}Connector(config);
+export default function create(config: ${className}Config) {
+  return new ${className}Connector(config);
 }`;
 }

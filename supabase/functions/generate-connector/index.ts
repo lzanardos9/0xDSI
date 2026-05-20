@@ -31,6 +31,10 @@ Deno.serve(async (req: Request) => {
       logFormat,
       sampleLog,
       normalizationSchema,
+      customContract,
+      kernelLevel,
+      dataQuality,
+      sampling,
     } = body;
 
     if (!connectorName || !acquisitionMethod || !transportProtocol) {
@@ -40,6 +44,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const isCustomContract = normalizationSchema === 'custom-contract-proposal' || !!customContract;
+    const isKernel = kernelLevel === true;
+
     const systemPrompt = `You are a world-class security data engineering expert specializing in SIEM connector development.
 You produce production-grade TypeScript connector code that:
 - Follows the 0xDSI connector SDK patterns
@@ -47,6 +54,10 @@ You produce production-grade TypeScript connector code that:
 - Normalizes output to ${normalizationSchema || 'OCSF'} schema
 - Includes comprehensive type definitions
 - Handles authentication, pagination, and checkpointing
+${isKernel ? '- Implements kernel-level eBPF/XDP hooks with BPF CO-RE for portability\n- Uses ring buffers for kernel-to-userspace event delivery\n- Handles BTF type info and verifier constraints' : ''}
+${sampling ? `- Implements statistical reservoir sampling at ${sampling.rate}% retention rate\n- ${sampling.discardAfterGraph ? 'Processes 100% through CET/CEP graph engine before discarding' : ''}\n- ${sampling.sparkStreaming ? 'Integrates with Spark Structured Streaming for windowed aggregation' : ''}` : ''}
+${dataQuality ? '- Includes DataQualityValidator with schema validation, field presence monitoring, timestamp drift detection, schema evolution tracking, volume anomaly detection, and duplicate detection' : ''}
+${isCustomContract ? '- Outputs a proposed data contract/schema based on sample data analysis' : ''}
 - Is ready for deployment without modification
 
 Output ONLY the code - no markdown fences, no explanations.`;
@@ -61,6 +72,10 @@ Output ONLY the code - no markdown fences, no explanations.`;
 **Log Format**: ${logFormat || 'JSON'}
 **Normalization Target**: ${normalizationSchema || 'OCSF v1.3.0'}
 ${sampleLog ? `\n**Sample Log**:\n${sampleLog}` : ''}
+${customContract ? `\n**Custom Data Contract**:\n${customContract}` : ''}
+${isKernel ? '\n**KERNEL-LEVEL CONNECTOR**: Implement eBPF/XDP with BPF CO-RE, ring buffers, BTF support, and proper verifier-safe code.' : ''}
+${sampling ? `\n**STATISTICAL SAMPLING**: Implement reservoir sampling at ${sampling.rate}% rate. ${sampling.discardAfterGraph ? 'Route 100% through CET/CEP graph engine, discard raw after graph computation.' : ''} ${sampling.sparkStreaming ? 'Integrate with Spark Structured Streaming (foreachBatch sink) for windowed aggregation before discard.' : ''}` : ''}
+${dataQuality ? '\n**DATA QUALITY**: Include DataQualityValidator class with: schema validation per-event, field presence % monitoring with alerting threshold, timestamp drift detection (>5min), schema evolution tracking (new/removed fields), volume anomaly detection (stddev-based), content-hash deduplication with sliding window.' : ''}
 
 Requirements:
 1. TypeScript with full type definitions
@@ -68,13 +83,15 @@ Requirements:
 3. Proper ${acquisitionMethod} implementation with authentication
 4. ${transportProtocol} transport handling with TLS/encryption
 5. Parser that handles ${logFormat} format with field extraction
-6. OCSF normalization with class_uid mapping for detected event types
+6. ${isCustomContract ? 'Use the provided custom data contract for normalization' : 'OCSF normalization with class_uid mapping for detected event types'}
 7. Checkpoint/cursor management for resumable ingestion
 8. Rate limiting and exponential backoff retry logic
 9. Health check endpoint
 10. Metrics collection (events processed, errors, latency)
 11. Graceful shutdown handling
-12. Configuration validation on startup`;
+12. Configuration validation on startup
+${isKernel ? '13. eBPF program with CO-RE relocations\n14. XDP hook attachment with fallback to TC\n15. Perf/ring buffer for kernel-to-userspace delivery\n16. BTF type information handling' : ''}
+${sampling ? '13. StatisticalSampler class with configurable rate\n14. ReservoirSampling algorithm implementation\n15. Metrics for discarded vs retained events' : ''}`;
 
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
