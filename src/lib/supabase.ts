@@ -3,16 +3,21 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
+const IS_DATABRICKS = import.meta.env.VITE_DATABRICKS_MODE === 'true';
+
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase configuration:', {
-    hasUrl: !!supabaseUrl,
-    hasKey: !!supabaseAnonKey,
-    env: import.meta.env
-  });
-  throw new Error('Supabase URL and Anon Key are required. Please check your .env file.');
+  if (!IS_DATABRICKS) {
+    console.error('Missing Supabase configuration:', {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseAnonKey,
+    });
+  }
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key'
+);
 
 export type SecurityEvent = {
   id: string;

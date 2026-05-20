@@ -1,12 +1,11 @@
 command:
-  - npm
-  - run
-  - start
+  - python
+  - backend/server.py
 
 env:
   - name: DATABRICKS_WAREHOUSE_ID
-    value: ${var.warehouse_id}
+    valueFrom: DATABRICKS_WAREHOUSE_ID
   - name: UNITY_CATALOG
-    value: ${var.catalog}
+    value: soc_platform
   - name: UNITY_SCHEMA
-    value: ${var.schema}
+    value: agentic_soc

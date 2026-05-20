@@ -1,17 +1,20 @@
 """
 0xDSI Agentic SOC - Databricks Native Backend
 FastAPI server that queries Unity Catalog via SQL Warehouse.
+Serves both the API and the static frontend (SPA).
 100% Databricks-native. No external database dependencies.
 """
 
 import os
 import json
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
@@ -700,6 +703,24 @@ async def genie_executive_briefing(request: Request):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Static Frontend (SPA) - must be LAST
+# ──────────────────────────────────────────────
+
+DIST_DIR = Path(__file__).parent.parent / "dist"
+
+if DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="static-assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve the SPA frontend. All non-API routes go to index.html."""
+        file_path = DIST_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(DIST_DIR / "index.html"))
 
 
 # ──────────────────────────────────────────────

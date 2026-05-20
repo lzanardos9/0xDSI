@@ -17,11 +17,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const IS_DATABRICKS = import.meta.env.VITE_DATABRICKS_MODE === 'true' ||
+  (!import.meta.env.VITE_SUPABASE_URL && typeof window !== 'undefined' && window.location.pathname !== '/');
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (IS_DATABRICKS) {
+      checkDatabricksSession();
+      return;
+    }
     void ensureSession();
     checkUser();
 
@@ -36,6 +43,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const checkDatabricksSession = async () => {
+    try {
+      const response = await fetch('/api/auth/session');
+      if (response.ok) {
+        const data = await response.json();
+        const u = data.user || {
+          id: 'databricks-sso-user',
+          username: 'analyst',
+          full_name: 'SOC Analyst',
+          email: 'analyst@workspace.databricks.com',
+        };
+        setUser(u);
+        setActivityUser({ id: u.id, username: u.username });
+      } else {
+        setUser({
+          id: 'databricks-sso-user',
+          username: 'analyst',
+          full_name: 'SOC Analyst',
+          email: 'analyst@workspace.databricks.com',
+        });
+      }
+    } catch {
+      setUser({
+        id: 'databricks-sso-user',
+        username: 'analyst',
+        full_name: 'SOC Analyst',
+        email: 'analyst@workspace.databricks.com',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const checkUser = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -75,6 +115,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
+    if (IS_DATABRICKS) {
+      setUser(null);
+      window.location.href = '/';
+      return;
+    }
     trackLogout();
     await supabase.auth.signOut();
     setUser(null);
