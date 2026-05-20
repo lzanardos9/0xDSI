@@ -48,6 +48,27 @@ const ACQUISITION_METHODS = [
   { id: 'coap', name: 'CoAP Observe', category: 'iot', description: 'Constrained Application Protocol for resource-limited IoT', complexity: 'medium', latency: 'seconds' },
   { id: 'opc-ua', name: 'OPC-UA Subscription', category: 'iot', description: 'Industrial automation protocol for SCADA/ICS telemetry', complexity: 'high', latency: 'ms' },
   { id: 'modbus', name: 'Modbus TCP/RTU', category: 'iot', description: 'Industrial register polling for PLC/RTU devices', complexity: 'medium', latency: 'seconds' },
+  // SCADA / ICS
+  { id: 'dnp3', name: 'DNP3 (Distributed Network Protocol)', category: 'scada', description: 'SCADA protocol for electric/water utilities, outstation polling with CRC integrity', complexity: 'high', latency: 'seconds' },
+  { id: 'iec-61850', name: 'IEC 61850 (GOOSE/MMS)', category: 'scada', description: 'Substation automation: GOOSE multicast events + MMS reporting for power grid', complexity: 'critical', latency: 'ms' },
+  { id: 'iec-104', name: 'IEC 60870-5-104 (Telecontrol)', category: 'scada', description: 'TCP-based telecontrol for power system monitoring/control (APCI/ASDU frames)', complexity: 'high', latency: 'seconds' },
+  { id: 'iec-101', name: 'IEC 60870-5-101 (Serial SCADA)', category: 'scada', description: 'Serial telecontrol for legacy substations and RTUs over RS-232/485', complexity: 'high', latency: 'seconds' },
+  { id: 'bacnet', name: 'BACnet (Building Automation)', category: 'scada', description: 'ASHRAE standard for HVAC, lighting, fire, access control systems', complexity: 'medium', latency: 'seconds' },
+  { id: 'ethernetip-cip', name: 'EtherNet/IP (CIP)', category: 'scada', description: 'Rockwell/Allen-Bradley industrial protocol over standard Ethernet', complexity: 'high', latency: 'ms' },
+  { id: 'profibus', name: 'PROFIBUS DP/PA', category: 'scada', description: 'Siemens fieldbus for distributed I/O and process instrumentation', complexity: 'high', latency: 'ms' },
+  { id: 'hart', name: 'HART Protocol (Highway Addressable Remote Transducer)', category: 'scada', description: 'Hybrid analog+digital for smart field instruments (4-20mA + FSK)', complexity: 'medium', latency: 'seconds' },
+  { id: 'foundation-fieldbus', name: 'Foundation Fieldbus (FF)', category: 'scada', description: 'Process automation digital bus for control-in-the-field architectures', complexity: 'high', latency: 'ms' },
+  { id: 'cc-link', name: 'CC-Link IE (Mitsubishi)', category: 'scada', description: 'Mitsubishi industrial Ethernet for factory automation (1Gbps cyclic)', complexity: 'high', latency: 'ms' },
+  { id: 's7comm', name: 'S7comm/S7comm-Plus (Siemens)', category: 'scada', description: 'Proprietary Siemens PLC protocol for S7-300/400/1200/1500 controllers', complexity: 'critical', latency: 'ms' },
+  { id: 'fins-omron', name: 'FINS (Omron)', category: 'scada', description: 'Omron Factory Interface Network Service for PLC communication', complexity: 'high', latency: 'ms' },
+  { id: 'melsec', name: 'MELSEC (Mitsubishi MC Protocol)', category: 'scada', description: 'Mitsubishi MELSEC PLC binary/ASCII communication protocol', complexity: 'high', latency: 'ms' },
+  { id: 'mqtt-sparkplug', name: 'MQTT Sparkplug B (IIoT)', category: 'scada', description: 'MQTT-based IIoT interoperability with defined topic namespace and Protobuf payloads', complexity: 'medium', latency: 'ms' },
+  { id: 'opc-da', name: 'OPC DA/HDA (Classic COM/DCOM)', category: 'scada', description: 'Legacy OPC Data Access/Historical Data via DCOM (Windows-only)', complexity: 'high', latency: 'seconds' },
+  { id: 'iccp-tase2', name: 'ICCP/TASE.2 (Inter-Utility)', category: 'scada', description: 'Inter-Control Center Communications for power grid data exchange between utilities', complexity: 'critical', latency: 'seconds' },
+  { id: 'pi-af', name: 'OSIsoft PI AF SDK', category: 'scada', description: 'OSIsoft PI System historian access for time-series process data', complexity: 'medium', latency: 'seconds' },
+  { id: 'lonworks', name: 'LonWorks (ANSI/CEA-709)', category: 'scada', description: 'Building/industrial automation networking for distributed control', complexity: 'medium', latency: 'seconds' },
+  { id: 'knx', name: 'KNX (ISO 22510)', category: 'scada', description: 'European building automation standard for lighting/HVAC/security', complexity: 'medium', latency: 'seconds' },
+  { id: 'dali', name: 'DALI (Digital Addressable Lighting)', category: 'scada', description: 'Lighting control protocol for commercial/industrial facilities', complexity: 'low', latency: 'seconds' },
   { id: 'zeromq', name: 'ZeroMQ SUB Socket', category: 'messaging', description: 'ZeroMQ pub/sub pattern for high-throughput IPC', complexity: 'medium', latency: 'us' },
   // Mainframe
   { id: 'mf-smf', name: 'z/OS SMF Records (System Management Facility)', category: 'mainframe', description: 'IBM mainframe system/security audit records (SMF 30/80/83/119)', complexity: 'high', latency: 'seconds' },
@@ -163,21 +184,90 @@ const NORMALIZATION_SCHEMAS = [
 type DataStructureType = 'structured' | 'semi-structured' | 'unstructured';
 
 const STRUCTURED_FORMATS = [
+  // General
   'JSON', 'JSON Lines (NDJSON)', 'CSV/TSV', 'Avro', 'Parquet', 'ORC',
   'Protobuf', 'FlatBuffers', 'Cap\'n Proto', 'Thrift Binary', 'MessagePack', 'CBOR', 'BSON',
   'Apache Arrow (IPC)', 'Ion (Amazon)', 'YAML', 'TOML',
   'Fixed-Width Columns', 'COBOL Copybook Layout', 'ASN.1 (BER/DER)',
   'EBCDIC Fixed-Length Records', 'EBCDIC Variable-Length (RDW)', 'EBCDIC COMP-3 Packed Decimal',
   'SMF Binary Records (z/OS)',
+  // Financial / Banking
+  'ISO 8583 (Card Transactions)', 'ISO 20022 (Financial Messaging XML)', 'FIX Protocol (Financial Information eXchange)',
+  'SWIFT MT (Society for Worldwide Interbank)', 'SWIFT MX (ISO 20022 XML)', 'FpML (Financial Products Markup)',
+  'ITCH (NASDAQ Market Data)', 'OUCH (NASDAQ Order Entry)', 'FAST Protocol (FIX Adapted for Streaming)',
+  'SBE (Simple Binary Encoding)', 'BATS PITCH (Exchange Feed)', 'OPRA (Options Price Reporting)',
+  'ACH/NACHA (Automated Clearing House)', 'DTCC (Depository Trust)', 'Fedwire (Federal Reserve Wire)',
+  'PIX (Brazilian Instant Payment - SPI/DICT)', 'Boleto (Brazilian Payment Slip)', 'SPB (Brazilian Payment System)',
+  'SEPA (Single Euro Payments Area)', 'EBICS (Electronic Banking)', 'HBCI/FinTS (German Banking)',
+  'Open Banking (PSD2 API)', 'Plaid API Format', 'Stripe Event Object',
+  // Telecom / Carrier
+  'CDR (Call Detail Record)', 'IPDR (IP Detail Record)', 'TAP3 (Transferred Account Procedure)',
+  'ASN.1 UPER (Telecom Signaling)', 'RAP (Returned Account Procedure)', 'NRTRDE (Near Real-Time Roaming Data Exchange)',
+  'XDR (Extended Data Record - 5G)', 'EDR (Event Detail Record)', 'UDR (Usage Data Record - 3GPP)',
+  'DIAMETER AVPs (Attribute-Value Pairs)', 'GTPv2 IE (Information Elements)',
+  'CAMEL CSI (Service Information)', 'RADIUS Accounting Records', 'CGNAT Logging (RFC 7422)',
+  // Healthcare / Life Sciences
+  'HL7 v2 (Pipe-Delimited Messages)', 'FHIR R4 (Fast Healthcare Interoperability - JSON/XML)',
+  'CDA (Clinical Document Architecture)', 'DICOM Structured Report', 'IHE ITI (Cross-Enterprise Document)',
+  'NCPDP (Pharmacy Claims)', 'X12 (EDI Healthcare 837/835/834)', 'SNOMED CT (Clinical Terms)',
+  'LOINC (Lab Observations)', 'GS1 EPCIS (Supply Chain Events)',
+  // Energy / Utilities
+  'CIM (Common Information Model - IEC 61970)', 'DLMS/COSEM (Smart Metering)',
+  'IEC 61968 (Distribution Management)', 'Green Button (Energy Usage - ESPI/NAESB)',
+  'OASIS oBIX (Open Building Information)', 'EnergyPlus IDF (Building Simulation)',
+  'IEEE C37.118 (Synchrophasor/PMU)', 'IEC 62056 (DLMS/COSEM Metering)',
+  // Automotive / Transportation
+  'DBC (CAN Database)', 'A2L (ASAM MCD-2 MC)', 'MDF4 (Measurement Data Format)',
+  'NMEA 0183/2000 (Maritime GPS)', 'AIS (Automatic Identification System)', 'ASTERIX (Air Traffic Surveillance)',
+  'ADSB (Aircraft Surveillance)', 'J1939 (Heavy Vehicle Diagnostics)', 'OBD-II (On-Board Diagnostics)',
+  'UDS (Unified Diagnostic Services)', 'SOME/IP (Automotive Ethernet)',
+  // Manufacturing / Supply Chain
+  'OPC UA Binary/XML (Industrial)', 'MTConnect (CNC Machine Data)', 'ISA-95 (B2MML XML)',
+  'QIF (Quality Information Framework)', 'STEP AP242 (Product Data)', 'IPC-2581 (PCB Manufacturing)',
+  'GS1 EPCIS 2.0 (Supply Chain)', 'EDI X12 (856/850/810/820)', 'EDIFACT (UN/ECE Trade)',
+  // Government / Defense
+  'NIEM (National Information Exchange Model)', 'MIL-STD-6016 (Link 16 Messages)',
+  'STANAG 4559 (ISR Data)', 'STANAG 4609 (Motion Imagery)', 'CoT (Cursor on Target)',
+  'VMF (Variable Message Format)', 'USMTF (US Message Text Format)',
+  // Agriculture / Environment
+  'ISOBUS (ISO 11783 Agricultural)', 'AgGateway ADAPT', 'SensorML (OGC Sensor Data)',
+  'WaterML (Hydrological Data)', 'NetCDF (Climate/Weather)', 'GRIB2 (Weather Forecast)',
+  // Custom
+  'Custom (define below)',
 ];
 
 const SEMI_STRUCTURED_FORMATS = [
+  // Log Formats
   'CEF (Common Event Format)', 'LEEF (Log Event Extended Format)', 'Syslog RFC 5424', 'Syslog RFC 3164',
   'XML', 'HTML', 'W3C Extended Log', 'Apache Common/Combined', 'Key=Value Pairs',
   'Windows Event XML (EVTX)', 'Windows ETL (Event Trace Log)', 'ELF (Extended Log Format)',
   'GELF (Graylog Extended)', 'CLF (Common Log Format)', 'JSON-LD', 'RDF/Turtle',
   'Multiline Stack Traces', 'Email (RFC 5322 / MIME)', 'HTTP Access Log',
   'AWS CloudTrail JSON', 'Azure Activity Log', 'GCP Audit Log',
+  // Financial Semi-Structured
+  'SWIFT FIN (Tag-Value Messages)', 'FIX Session Log (Tag=Value)', 'OFX (Open Financial Exchange)',
+  'QFX (Quicken Financial Exchange)', 'BAI2 (Bank Administration Institute)',
+  'CAMT.053 (Bank Statement XML)', 'PAIN.001 (Payment Initiation XML)',
+  'MT940/MT942 (Account Statement)', 'XBRL (Financial Reporting)',
+  // Telecom Semi-Structured
+  'TAP3 ASN.1 (Roaming Records)', 'SS7 MSU (Message Signaling Unit)', 'SIP Headers + SDP Body',
+  'DIAMETER Message (Header + AVPs)', 'RAN KPIs (Radio Access Network)',
+  'MML (Man-Machine Language - Nokia/Ericsson)', 'CORBA IIOP (Legacy OSS)',
+  // Healthcare Semi-Structured
+  'HL7 v2 (Pipe-Delimited with Segments)', 'CCD/C-CDA (Continuity of Care Document)',
+  'HL7 v3 (RIM-based XML)', 'ADT Messages (Admit/Discharge/Transfer)',
+  // SCADA / Industrial
+  'DNP3 Application Layer (Objects)', 'IEC 104 ASDU (Application Service Data Unit)',
+  'Modbus Register Dumps', 'BACnet Property Lists', 'GOOSE/GSSE (IEC 61850)',
+  'PI Tag Snapshots (OSIsoft)', 'Historian CSV Export (Wonderware/iFIX)',
+  // Government / Legal
+  'NIEM IEP (Information Exchange Package)', 'LEA Warrant Data (Court Orders)',
+  'NIBRS (National Incident-Based Reporting)', 'CAD Dispatch Records',
+  'Customs Declaration (WCO DM)', 'Immigration Travel Records (API/PNR)',
+  // Insurance
+  'ACORD (Association for Cooperative Operations)', 'XBRL-Insurance (Solvency II)',
+  'Claims Bordereaux (London Market)', 'Policy Admin Extracts',
+  // Custom
   'Custom (define below)',
 ];
 
@@ -1037,7 +1127,7 @@ function AcquisitionStep({ methods, categories, selected, setSelected, onNext, o
   const catLabels: Record<string, string> = {
     api: 'API-Based', push: 'Push/Callback', messaging: 'Message Queues', streaming: 'Event Streaming',
     network: 'Network Protocols', kernel: 'Kernel-Level (eBPF/XDP)', storage: 'File/Object Storage',
-    database: 'Database', iot: 'IoT/Industrial', mainframe: 'Mainframe / EBCDIC',
+    database: 'Database', iot: 'IoT/Industrial', scada: 'SCADA / ICS / OT', mainframe: 'Mainframe / EBCDIC',
   };
 
   return (
