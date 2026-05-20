@@ -17,11 +17,11 @@ resources:
             max_workers: 4
       libraries:
         - notebook:
-            path: ../notebooks/pipelines/bronze_ingestion
+            path: ../notebooks/pipelines/bronze_ingestion.py
         - notebook:
-            path: ../notebooks/pipelines/silver_normalization
+            path: ../notebooks/pipelines/silver_normalization.py
         - notebook:
-            path: ../notebooks/pipelines/gold_analytics
+            path: ../notebooks/pipelines/gold_analytics.py
       configuration:
         catalog: ${var.catalog}
         schema: ${var.schema}

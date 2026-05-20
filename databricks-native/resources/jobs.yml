@@ -23,7 +23,7 @@ resources:
         - task_key: ingest_events
           job_cluster_key: streaming_cluster
           notebook_task:
-            notebook_path: ../notebooks/ingestion/01_raw_event_ingestion
+            notebook_path: ../notebooks/ingestion/01_raw_event_ingestion.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -44,7 +44,7 @@ resources:
         - task_key: enrich_events
           job_cluster_key: streaming_cluster
           notebook_task:
-            notebook_path: ../notebooks/ingestion/02_enrichment_pipeline
+            notebook_path: ../notebooks/ingestion/02_enrichment_pipeline.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -69,7 +69,7 @@ resources:
         - task_key: correlate_events
           job_cluster_key: correlation_cluster
           notebook_task:
-            notebook_path: ../notebooks/correlation/01_streaming_correlation_engine
+            notebook_path: ../notebooks/correlation/01_streaming_correlation_engine.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -86,7 +86,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/correlation/02_negative_correlation
+            notebook_path: ../notebooks/correlation/02_negative_correlation.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -106,7 +106,7 @@ resources:
             node_type_id: "i3.xlarge"
             num_workers: 2
           notebook_task:
-            notebook_path: ../notebooks/detection/01_behavioral_anomaly_detection
+            notebook_path: ../notebooks/detection/01_behavioral_anomaly_detection.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -127,7 +127,7 @@ resources:
         - task_key: match_iocs
           job_cluster_key: streaming_cluster
           notebook_task:
-            notebook_path: ../notebooks/detection/02_threat_intel_matching
+            notebook_path: ../notebooks/detection/02_threat_intel_matching.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -147,7 +147,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/response/01_automated_response
+            notebook_path: ../notebooks/response/01_automated_response.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -165,7 +165,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/response/02_case_management
+            notebook_path: ../notebooks/response/02_case_management.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -185,7 +185,7 @@ resources:
             node_type_id: "i3.2xlarge"
             num_workers: 4
           notebook_task:
-            notebook_path: ../notebooks/ml_training/01_threat_scoring_model
+            notebook_path: ../notebooks/ml_training/01_threat_scoring_model.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -206,7 +206,7 @@ resources:
             node_type_id: "i3.xlarge"
             num_workers: 2
           notebook_task:
-            notebook_path: ../notebooks/correlation/03_graph_correlation
+            notebook_path: ../notebooks/correlation/03_graph_correlation.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -227,7 +227,7 @@ resources:
         - task_key: temporal_correlate
           job_cluster_key: streaming_cluster
           notebook_task:
-            notebook_path: ../notebooks/correlation/04_temporal_window_correlator
+            notebook_path: ../notebooks/correlation/04_temporal_window_correlator.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -247,7 +247,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/ingestion/03_schema_enforcement
+            notebook_path: ../notebooks/ingestion/03_schema_enforcement.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -264,7 +264,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/ingestion/04_quarantine_handler
+            notebook_path: ../notebooks/ingestion/04_quarantine_handler.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -284,7 +284,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/01_triage_agent
+            notebook_path: ../notebooks/agents/01_triage_agent.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -303,7 +303,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/02_enrichment_agent
+            notebook_path: ../notebooks/agents/02_enrichment_agent.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -321,7 +321,7 @@ resources:
             node_type_id: "i3.xlarge"
             num_workers: 2
           notebook_task:
-            notebook_path: ../notebooks/agents/03_threat_hunter_agent
+            notebook_path: ../notebooks/agents/03_threat_hunter_agent.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -340,7 +340,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/04_orchestrator
+            notebook_path: ../notebooks/agents/04_orchestrator.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -362,7 +362,7 @@ resources:
             node_type_id: "i3.xlarge"
             num_workers: 2
           notebook_task:
-            notebook_path: ../notebooks/ml_training/02_feature_engineering
+            notebook_path: ../notebooks/ml_training/02_feature_engineering.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -380,7 +380,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/setup/01_create_catalog_schema
+            notebook_path: ../notebooks/setup/01_create_catalog_schema.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -392,7 +392,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/setup/02_seed_demo_data
+            notebook_path: ../notebooks/setup/02_seed_demo_data.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -412,7 +412,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/05_sage_enrichment
+            notebook_path: ../notebooks/agents/05_sage_enrichment.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -429,7 +429,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/06_nova_investigation
+            notebook_path: ../notebooks/agents/06_nova_investigation.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -446,7 +446,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/07_vanguard_response
+            notebook_path: ../notebooks/agents/07_vanguard_response.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -466,7 +466,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/08_cti_attribution
+            notebook_path: ../notebooks/agents/08_cti_attribution.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -483,7 +483,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 2
           notebook_task:
-            notebook_path: ../notebooks/agents/09_pattern_discovery
+            notebook_path: ../notebooks/agents/09_pattern_discovery.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -500,7 +500,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/10_vector_memory
+            notebook_path: ../notebooks/agents/10_vector_memory.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -520,7 +520,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/11_red_team
+            notebook_path: ../notebooks/agents/11_red_team.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -537,7 +537,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/12_blue_team
+            notebook_path: ../notebooks/agents/12_blue_team.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -554,7 +554,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/13_forensics
+            notebook_path: ../notebooks/agents/13_forensics.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -571,7 +571,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/14_honeypot
+            notebook_path: ../notebooks/agents/14_honeypot.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -591,7 +591,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/15_ciso_assistant
+            notebook_path: ../notebooks/agents/15_ciso_assistant.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -608,7 +608,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/16_playbook_generator
+            notebook_path: ../notebooks/agents/16_playbook_generator.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -625,7 +625,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/17_incident_summarizer
+            notebook_path: ../notebooks/agents/17_incident_summarizer.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -642,7 +642,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/18_document_analyzer
+            notebook_path: ../notebooks/agents/18_document_analyzer.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -659,7 +659,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/19_malware_sandbox
+            notebook_path: ../notebooks/agents/19_malware_sandbox.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -679,7 +679,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/20_llm_guardrails
+            notebook_path: ../notebooks/agents/20_llm_guardrails.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -696,7 +696,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/21_model_poisoning_guard
+            notebook_path: ../notebooks/agents/21_model_poisoning_guard.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -713,7 +713,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/22_threat_simulator
+            notebook_path: ../notebooks/agents/22_threat_simulator.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -730,7 +730,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/23_connector_adapter
+            notebook_path: ../notebooks/agents/23_connector_adapter.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -747,7 +747,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/24_threat_radar
+            notebook_path: ../notebooks/agents/24_threat_radar.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -764,7 +764,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/25_alhf_learning
+            notebook_path: ../notebooks/agents/25_alhf_learning.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -781,7 +781,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 2
           notebook_task:
-            notebook_path: ../notebooks/agents/26_realtime_graph_cep
+            notebook_path: ../notebooks/agents/26_realtime_graph_cep.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -798,7 +798,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/27_vector_scoring
+            notebook_path: ../notebooks/agents/27_vector_scoring.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -815,7 +815,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/agents/28_ai_correlation
+            notebook_path: ../notebooks/agents/28_ai_correlation.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -835,7 +835,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/correlation/05_supply_chain_risk
+            notebook_path: ../notebooks/correlation/05_supply_chain_risk.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -852,7 +852,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 1
           notebook_task:
-            notebook_path: ../notebooks/correlation/06_cloud_posture
+            notebook_path: ../notebooks/correlation/06_cloud_posture.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -869,7 +869,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 2
           notebook_task:
-            notebook_path: ../notebooks/ml_training/03_ueba_behavioral_baseline
+            notebook_path: ../notebooks/ml_training/03_ueba_behavioral_baseline.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
@@ -886,7 +886,7 @@ resources:
             node_type_id: "m5.large"
             num_workers: 2
           notebook_task:
-            notebook_path: ../notebooks/ml_training/04_graphrag_zero_day
+            notebook_path: ../notebooks/ml_training/04_graphrag_zero_day.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
