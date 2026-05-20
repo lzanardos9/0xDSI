@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Wand2, Code, Play, CheckCircle, AlertTriangle, ChevronRight, ChevronDown, Layers, Network, Database, Radio, Cloud, Terminal, Lock, Cpu, HardDrive, Globe, Server, Zap, FileText, RefreshCw, Sparkles, ArrowRight, Copy, Clipboard, Shield, Activity, BarChart3, Percent, AlertOctagon, Gauge, Bug, Package, Download, Wrench } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Wand2, Code, Play, CheckCircle, AlertTriangle, ChevronRight, ChevronDown, Layers, Network, Database, Radio, Cloud, Terminal, Lock, Cpu, HardDrive, Globe, Server, Zap, FileText, RefreshCw, Sparkles, ArrowRight, Copy, Clipboard, Shield, Activity, BarChart3, Percent, AlertOctagon, Gauge, Bug, Package, Download, Wrench, Search, Upload, X, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 // Extended acquisition methods (comprehensive)
@@ -181,94 +181,192 @@ const NORMALIZATION_SCHEMAS = [
   { id: 'custom', name: 'Custom Data Contract', description: 'Define your own schema or let AI propose one from sample data', org: 'User-Defined' },
 ];
 
-type DataStructureType = 'structured' | 'semi-structured' | 'unstructured';
+type DataStructureType = 'structured' | 'unstructured';
 
-const STRUCTURED_FORMATS = [
-  // General
-  'JSON', 'JSON Lines (NDJSON)', 'CSV/TSV', 'Avro', 'Parquet', 'ORC',
-  'Protobuf', 'FlatBuffers', 'Cap\'n Proto', 'Thrift Binary', 'MessagePack', 'CBOR', 'BSON',
-  'Apache Arrow (IPC)', 'Ion (Amazon)', 'YAML', 'TOML',
-  'Fixed-Width Columns', 'COBOL Copybook Layout', 'ASN.1 (BER/DER)',
-  'EBCDIC Fixed-Length Records', 'EBCDIC Variable-Length (RDW)', 'EBCDIC COMP-3 Packed Decimal',
-  'SMF Binary Records (z/OS)',
-  // Financial / Banking
-  'ISO 8583 (Card Transactions)', 'ISO 20022 (Financial Messaging XML)', 'FIX Protocol (Financial Information eXchange)',
-  'SWIFT MT (Society for Worldwide Interbank)', 'SWIFT MX (ISO 20022 XML)', 'FpML (Financial Products Markup)',
-  'ITCH (NASDAQ Market Data)', 'OUCH (NASDAQ Order Entry)', 'FAST Protocol (FIX Adapted for Streaming)',
-  'SBE (Simple Binary Encoding)', 'BATS PITCH (Exchange Feed)', 'OPRA (Options Price Reporting)',
-  'ACH/NACHA (Automated Clearing House)', 'DTCC (Depository Trust)', 'Fedwire (Federal Reserve Wire)',
-  'PIX (Brazilian Instant Payment - SPI/DICT)', 'Boleto (Brazilian Payment Slip)', 'SPB (Brazilian Payment System)',
-  'SEPA (Single Euro Payments Area)', 'EBICS (Electronic Banking)', 'HBCI/FinTS (German Banking)',
-  'Open Banking (PSD2 API)', 'Plaid API Format', 'Stripe Event Object',
-  // Telecom / Carrier
-  'CDR (Call Detail Record)', 'IPDR (IP Detail Record)', 'TAP3 (Transferred Account Procedure)',
-  'ASN.1 UPER (Telecom Signaling)', 'RAP (Returned Account Procedure)', 'NRTRDE (Near Real-Time Roaming Data Exchange)',
-  'XDR (Extended Data Record - 5G)', 'EDR (Event Detail Record)', 'UDR (Usage Data Record - 3GPP)',
-  'DIAMETER AVPs (Attribute-Value Pairs)', 'GTPv2 IE (Information Elements)',
-  'CAMEL CSI (Service Information)', 'RADIUS Accounting Records', 'CGNAT Logging (RFC 7422)',
-  // Healthcare / Life Sciences
-  'HL7 v2 (Pipe-Delimited Messages)', 'FHIR R4 (Fast Healthcare Interoperability - JSON/XML)',
-  'CDA (Clinical Document Architecture)', 'DICOM Structured Report', 'IHE ITI (Cross-Enterprise Document)',
-  'NCPDP (Pharmacy Claims)', 'X12 (EDI Healthcare 837/835/834)', 'SNOMED CT (Clinical Terms)',
-  'LOINC (Lab Observations)', 'GS1 EPCIS (Supply Chain Events)',
-  // Energy / Utilities
-  'CIM (Common Information Model - IEC 61970)', 'DLMS/COSEM (Smart Metering)',
-  'IEC 61968 (Distribution Management)', 'Green Button (Energy Usage - ESPI/NAESB)',
-  'OASIS oBIX (Open Building Information)', 'EnergyPlus IDF (Building Simulation)',
-  'IEEE C37.118 (Synchrophasor/PMU)', 'IEC 62056 (DLMS/COSEM Metering)',
-  // Automotive / Transportation
-  'DBC (CAN Database)', 'A2L (ASAM MCD-2 MC)', 'MDF4 (Measurement Data Format)',
-  'NMEA 0183/2000 (Maritime GPS)', 'AIS (Automatic Identification System)', 'ASTERIX (Air Traffic Surveillance)',
-  'ADSB (Aircraft Surveillance)', 'J1939 (Heavy Vehicle Diagnostics)', 'OBD-II (On-Board Diagnostics)',
-  'UDS (Unified Diagnostic Services)', 'SOME/IP (Automotive Ethernet)',
-  // Manufacturing / Supply Chain
-  'OPC UA Binary/XML (Industrial)', 'MTConnect (CNC Machine Data)', 'ISA-95 (B2MML XML)',
-  'QIF (Quality Information Framework)', 'STEP AP242 (Product Data)', 'IPC-2581 (PCB Manufacturing)',
-  'GS1 EPCIS 2.0 (Supply Chain)', 'EDI X12 (856/850/810/820)', 'EDIFACT (UN/ECE Trade)',
-  // Government / Defense
-  'NIEM (National Information Exchange Model)', 'MIL-STD-6016 (Link 16 Messages)',
-  'STANAG 4559 (ISR Data)', 'STANAG 4609 (Motion Imagery)', 'CoT (Cursor on Target)',
-  'VMF (Variable Message Format)', 'USMTF (US Message Text Format)',
-  // Agriculture / Environment
-  'ISOBUS (ISO 11783 Agricultural)', 'AgGateway ADAPT', 'SensorML (OGC Sensor Data)',
-  'WaterML (Hydrological Data)', 'NetCDF (Climate/Weather)', 'GRIB2 (Weather Forecast)',
-  // Custom
-  'Custom (define below)',
-];
-
-const SEMI_STRUCTURED_FORMATS = [
+const DATA_FORMATS: { name: string; category: string }[] = [
+  // General / Structured
+  { name: 'JSON', category: 'General' },
+  { name: 'JSON Lines (NDJSON)', category: 'General' },
+  { name: 'CSV/TSV', category: 'General' },
+  { name: 'Avro', category: 'General' },
+  { name: 'Parquet', category: 'General' },
+  { name: 'ORC', category: 'General' },
+  { name: 'Protobuf', category: 'General' },
+  { name: 'FlatBuffers', category: 'General' },
+  { name: "Cap'n Proto", category: 'General' },
+  { name: 'Thrift Binary', category: 'General' },
+  { name: 'MessagePack', category: 'General' },
+  { name: 'CBOR', category: 'General' },
+  { name: 'BSON', category: 'General' },
+  { name: 'Apache Arrow (IPC)', category: 'General' },
+  { name: 'Ion (Amazon)', category: 'General' },
+  { name: 'YAML', category: 'General' },
+  { name: 'TOML', category: 'General' },
+  { name: 'Fixed-Width Columns', category: 'General' },
+  { name: 'COBOL Copybook Layout', category: 'General' },
+  { name: 'ASN.1 (BER/DER)', category: 'General' },
+  { name: 'EBCDIC Fixed-Length Records', category: 'General' },
+  { name: 'EBCDIC Variable-Length (RDW)', category: 'General' },
+  { name: 'EBCDIC COMP-3 Packed Decimal', category: 'General' },
+  { name: 'SMF Binary Records (z/OS)', category: 'General' },
   // Log Formats
-  'CEF (Common Event Format)', 'LEEF (Log Event Extended Format)', 'Syslog RFC 5424', 'Syslog RFC 3164',
-  'XML', 'HTML', 'W3C Extended Log', 'Apache Common/Combined', 'Key=Value Pairs',
-  'Windows Event XML (EVTX)', 'Windows ETL (Event Trace Log)', 'ELF (Extended Log Format)',
-  'GELF (Graylog Extended)', 'CLF (Common Log Format)', 'JSON-LD', 'RDF/Turtle',
-  'Multiline Stack Traces', 'Email (RFC 5322 / MIME)', 'HTTP Access Log',
-  'AWS CloudTrail JSON', 'Azure Activity Log', 'GCP Audit Log',
-  // Financial Semi-Structured
-  'SWIFT FIN (Tag-Value Messages)', 'FIX Session Log (Tag=Value)', 'OFX (Open Financial Exchange)',
-  'QFX (Quicken Financial Exchange)', 'BAI2 (Bank Administration Institute)',
-  'CAMT.053 (Bank Statement XML)', 'PAIN.001 (Payment Initiation XML)',
-  'MT940/MT942 (Account Statement)', 'XBRL (Financial Reporting)',
-  // Telecom Semi-Structured
-  'TAP3 ASN.1 (Roaming Records)', 'SS7 MSU (Message Signaling Unit)', 'SIP Headers + SDP Body',
-  'DIAMETER Message (Header + AVPs)', 'RAN KPIs (Radio Access Network)',
-  'MML (Man-Machine Language - Nokia/Ericsson)', 'CORBA IIOP (Legacy OSS)',
-  // Healthcare Semi-Structured
-  'HL7 v2 (Pipe-Delimited with Segments)', 'CCD/C-CDA (Continuity of Care Document)',
-  'HL7 v3 (RIM-based XML)', 'ADT Messages (Admit/Discharge/Transfer)',
+  { name: 'CEF (Common Event Format)', category: 'Log Formats' },
+  { name: 'LEEF (Log Event Extended Format)', category: 'Log Formats' },
+  { name: 'Syslog RFC 5424', category: 'Log Formats' },
+  { name: 'Syslog RFC 3164', category: 'Log Formats' },
+  { name: 'XML', category: 'Log Formats' },
+  { name: 'HTML', category: 'Log Formats' },
+  { name: 'W3C Extended Log', category: 'Log Formats' },
+  { name: 'Apache Common/Combined', category: 'Log Formats' },
+  { name: 'Key=Value Pairs', category: 'Log Formats' },
+  { name: 'Windows Event XML (EVTX)', category: 'Log Formats' },
+  { name: 'Windows ETL (Event Trace Log)', category: 'Log Formats' },
+  { name: 'ELF (Extended Log Format)', category: 'Log Formats' },
+  { name: 'GELF (Graylog Extended)', category: 'Log Formats' },
+  { name: 'CLF (Common Log Format)', category: 'Log Formats' },
+  { name: 'JSON-LD', category: 'Log Formats' },
+  { name: 'RDF/Turtle', category: 'Log Formats' },
+  { name: 'Multiline Stack Traces', category: 'Log Formats' },
+  { name: 'Email (RFC 5322 / MIME)', category: 'Log Formats' },
+  { name: 'HTTP Access Log', category: 'Log Formats' },
+  { name: 'AWS CloudTrail JSON', category: 'Log Formats' },
+  { name: 'Azure Activity Log', category: 'Log Formats' },
+  { name: 'GCP Audit Log', category: 'Log Formats' },
+  // Financial / Banking
+  { name: 'ISO 8583 (Card Transactions)', category: 'Financial' },
+  { name: 'ISO 20022 (Financial Messaging XML)', category: 'Financial' },
+  { name: 'FIX Protocol (Financial Information eXchange)', category: 'Financial' },
+  { name: 'SWIFT MT (Society for Worldwide Interbank)', category: 'Financial' },
+  { name: 'SWIFT MX (ISO 20022 XML)', category: 'Financial' },
+  { name: 'SWIFT FIN (Tag-Value Messages)', category: 'Financial' },
+  { name: 'FpML (Financial Products Markup)', category: 'Financial' },
+  { name: 'ITCH (NASDAQ Market Data)', category: 'Financial' },
+  { name: 'OUCH (NASDAQ Order Entry)', category: 'Financial' },
+  { name: 'FAST Protocol (FIX Adapted for Streaming)', category: 'Financial' },
+  { name: 'SBE (Simple Binary Encoding)', category: 'Financial' },
+  { name: 'BATS PITCH (Exchange Feed)', category: 'Financial' },
+  { name: 'OPRA (Options Price Reporting)', category: 'Financial' },
+  { name: 'ACH/NACHA (Automated Clearing House)', category: 'Financial' },
+  { name: 'DTCC (Depository Trust)', category: 'Financial' },
+  { name: 'Fedwire (Federal Reserve Wire)', category: 'Financial' },
+  { name: 'PIX (Brazilian Instant Payment - SPI/DICT)', category: 'Financial' },
+  { name: 'Boleto (Brazilian Payment Slip)', category: 'Financial' },
+  { name: 'SPB (Brazilian Payment System)', category: 'Financial' },
+  { name: 'SEPA (Single Euro Payments Area)', category: 'Financial' },
+  { name: 'EBICS (Electronic Banking)', category: 'Financial' },
+  { name: 'HBCI/FinTS (German Banking)', category: 'Financial' },
+  { name: 'Open Banking (PSD2 API)', category: 'Financial' },
+  { name: 'Plaid API Format', category: 'Financial' },
+  { name: 'Stripe Event Object', category: 'Financial' },
+  { name: 'FIX Session Log (Tag=Value)', category: 'Financial' },
+  { name: 'OFX (Open Financial Exchange)', category: 'Financial' },
+  { name: 'QFX (Quicken Financial Exchange)', category: 'Financial' },
+  { name: 'BAI2 (Bank Administration Institute)', category: 'Financial' },
+  { name: 'CAMT.053 (Bank Statement XML)', category: 'Financial' },
+  { name: 'PAIN.001 (Payment Initiation XML)', category: 'Financial' },
+  { name: 'MT940/MT942 (Account Statement)', category: 'Financial' },
+  { name: 'XBRL (Financial Reporting)', category: 'Financial' },
+  // Telecom / Carrier
+  { name: 'CDR (Call Detail Record)', category: 'Telecom' },
+  { name: 'IPDR (IP Detail Record)', category: 'Telecom' },
+  { name: 'TAP3 (Transferred Account Procedure)', category: 'Telecom' },
+  { name: 'ASN.1 UPER (Telecom Signaling)', category: 'Telecom' },
+  { name: 'RAP (Returned Account Procedure)', category: 'Telecom' },
+  { name: 'NRTRDE (Near Real-Time Roaming Data Exchange)', category: 'Telecom' },
+  { name: 'XDR (Extended Data Record - 5G)', category: 'Telecom' },
+  { name: 'EDR (Event Detail Record)', category: 'Telecom' },
+  { name: 'UDR (Usage Data Record - 3GPP)', category: 'Telecom' },
+  { name: 'DIAMETER AVPs (Attribute-Value Pairs)', category: 'Telecom' },
+  { name: 'GTPv2 IE (Information Elements)', category: 'Telecom' },
+  { name: 'CAMEL CSI (Service Information)', category: 'Telecom' },
+  { name: 'RADIUS Accounting Records', category: 'Telecom' },
+  { name: 'CGNAT Logging (RFC 7422)', category: 'Telecom' },
+  { name: 'TAP3 ASN.1 (Roaming Records)', category: 'Telecom' },
+  { name: 'SS7 MSU (Message Signaling Unit)', category: 'Telecom' },
+  { name: 'SIP Headers + SDP Body', category: 'Telecom' },
+  { name: 'DIAMETER Message (Header + AVPs)', category: 'Telecom' },
+  { name: 'RAN KPIs (Radio Access Network)', category: 'Telecom' },
+  { name: 'MML (Man-Machine Language - Nokia/Ericsson)', category: 'Telecom' },
+  { name: 'CORBA IIOP (Legacy OSS)', category: 'Telecom' },
+  // Healthcare / Life Sciences
+  { name: 'HL7 v2 (Pipe-Delimited Messages)', category: 'Healthcare' },
+  { name: 'FHIR R4 (Fast Healthcare Interoperability - JSON/XML)', category: 'Healthcare' },
+  { name: 'CDA (Clinical Document Architecture)', category: 'Healthcare' },
+  { name: 'DICOM Structured Report', category: 'Healthcare' },
+  { name: 'IHE ITI (Cross-Enterprise Document)', category: 'Healthcare' },
+  { name: 'NCPDP (Pharmacy Claims)', category: 'Healthcare' },
+  { name: 'X12 (EDI Healthcare 837/835/834)', category: 'Healthcare' },
+  { name: 'SNOMED CT (Clinical Terms)', category: 'Healthcare' },
+  { name: 'LOINC (Lab Observations)', category: 'Healthcare' },
+  { name: 'GS1 EPCIS (Supply Chain Events)', category: 'Healthcare' },
+  { name: 'CCD/C-CDA (Continuity of Care Document)', category: 'Healthcare' },
+  { name: 'HL7 v3 (RIM-based XML)', category: 'Healthcare' },
+  { name: 'ADT Messages (Admit/Discharge/Transfer)', category: 'Healthcare' },
+  // Energy / Utilities
+  { name: 'CIM (Common Information Model - IEC 61970)', category: 'Energy' },
+  { name: 'DLMS/COSEM (Smart Metering)', category: 'Energy' },
+  { name: 'IEC 61968 (Distribution Management)', category: 'Energy' },
+  { name: 'Green Button (Energy Usage - ESPI/NAESB)', category: 'Energy' },
+  { name: 'OASIS oBIX (Open Building Information)', category: 'Energy' },
+  { name: 'EnergyPlus IDF (Building Simulation)', category: 'Energy' },
+  { name: 'IEEE C37.118 (Synchrophasor/PMU)', category: 'Energy' },
+  { name: 'IEC 62056 (DLMS/COSEM Metering)', category: 'Energy' },
+  // Automotive / Transportation
+  { name: 'DBC (CAN Database)', category: 'Automotive' },
+  { name: 'A2L (ASAM MCD-2 MC)', category: 'Automotive' },
+  { name: 'MDF4 (Measurement Data Format)', category: 'Automotive' },
+  { name: 'NMEA 0183/2000 (Maritime GPS)', category: 'Automotive' },
+  { name: 'AIS (Automatic Identification System)', category: 'Automotive' },
+  { name: 'ASTERIX (Air Traffic Surveillance)', category: 'Automotive' },
+  { name: 'ADSB (Aircraft Surveillance)', category: 'Automotive' },
+  { name: 'J1939 (Heavy Vehicle Diagnostics)', category: 'Automotive' },
+  { name: 'OBD-II (On-Board Diagnostics)', category: 'Automotive' },
+  { name: 'UDS (Unified Diagnostic Services)', category: 'Automotive' },
+  { name: 'SOME/IP (Automotive Ethernet)', category: 'Automotive' },
+  // Manufacturing / Supply Chain
+  { name: 'OPC UA Binary/XML (Industrial)', category: 'Manufacturing' },
+  { name: 'MTConnect (CNC Machine Data)', category: 'Manufacturing' },
+  { name: 'ISA-95 (B2MML XML)', category: 'Manufacturing' },
+  { name: 'QIF (Quality Information Framework)', category: 'Manufacturing' },
+  { name: 'STEP AP242 (Product Data)', category: 'Manufacturing' },
+  { name: 'IPC-2581 (PCB Manufacturing)', category: 'Manufacturing' },
+  { name: 'GS1 EPCIS 2.0 (Supply Chain)', category: 'Manufacturing' },
+  { name: 'EDI X12 (856/850/810/820)', category: 'Manufacturing' },
+  { name: 'EDIFACT (UN/ECE Trade)', category: 'Manufacturing' },
   // SCADA / Industrial
-  'DNP3 Application Layer (Objects)', 'IEC 104 ASDU (Application Service Data Unit)',
-  'Modbus Register Dumps', 'BACnet Property Lists', 'GOOSE/GSSE (IEC 61850)',
-  'PI Tag Snapshots (OSIsoft)', 'Historian CSV Export (Wonderware/iFIX)',
-  // Government / Legal
-  'NIEM IEP (Information Exchange Package)', 'LEA Warrant Data (Court Orders)',
-  'NIBRS (National Incident-Based Reporting)', 'CAD Dispatch Records',
-  'Customs Declaration (WCO DM)', 'Immigration Travel Records (API/PNR)',
+  { name: 'DNP3 Application Layer (Objects)', category: 'SCADA' },
+  { name: 'IEC 104 ASDU (Application Service Data Unit)', category: 'SCADA' },
+  { name: 'Modbus Register Dumps', category: 'SCADA' },
+  { name: 'BACnet Property Lists', category: 'SCADA' },
+  { name: 'GOOSE/GSSE (IEC 61850)', category: 'SCADA' },
+  { name: 'PI Tag Snapshots (OSIsoft)', category: 'SCADA' },
+  { name: 'Historian CSV Export (Wonderware/iFIX)', category: 'SCADA' },
+  // Government / Defense
+  { name: 'NIEM (National Information Exchange Model)', category: 'Government' },
+  { name: 'MIL-STD-6016 (Link 16 Messages)', category: 'Government' },
+  { name: 'STANAG 4559 (ISR Data)', category: 'Government' },
+  { name: 'STANAG 4609 (Motion Imagery)', category: 'Government' },
+  { name: 'CoT (Cursor on Target)', category: 'Government' },
+  { name: 'VMF (Variable Message Format)', category: 'Government' },
+  { name: 'USMTF (US Message Text Format)', category: 'Government' },
+  { name: 'NIEM IEP (Information Exchange Package)', category: 'Government' },
+  { name: 'LEA Warrant Data (Court Orders)', category: 'Government' },
+  { name: 'NIBRS (National Incident-Based Reporting)', category: 'Government' },
+  { name: 'CAD Dispatch Records', category: 'Government' },
+  { name: 'Customs Declaration (WCO DM)', category: 'Government' },
+  { name: 'Immigration Travel Records (API/PNR)', category: 'Government' },
   // Insurance
-  'ACORD (Association for Cooperative Operations)', 'XBRL-Insurance (Solvency II)',
-  'Claims Bordereaux (London Market)', 'Policy Admin Extracts',
-  // Custom
-  'Custom (define below)',
+  { name: 'ACORD (Association for Cooperative Operations)', category: 'Insurance' },
+  { name: 'XBRL-Insurance (Solvency II)', category: 'Insurance' },
+  { name: 'Claims Bordereaux (London Market)', category: 'Insurance' },
+  { name: 'Policy Admin Extracts', category: 'Insurance' },
+  // Agriculture / Environment
+  { name: 'ISOBUS (ISO 11783 Agricultural)', category: 'Agriculture' },
+  { name: 'AgGateway ADAPT', category: 'Agriculture' },
+  { name: 'SensorML (OGC Sensor Data)', category: 'Agriculture' },
+  { name: 'WaterML (Hydrological Data)', category: 'Agriculture' },
+  { name: 'NetCDF (Climate/Weather)', category: 'Agriculture' },
+  { name: 'GRIB2 (Weather Forecast)', category: 'Agriculture' },
 ];
 
 const UNSTRUCTURED_DATA_TYPES = [
@@ -304,6 +402,7 @@ const UNSTRUCTURED_DATA_TYPES = [
   { id: 'network-flow', name: 'Network Flow (Binary NetFlow)', category: 'network', description: 'Raw binary flow records for traffic pattern analysis' },
   { id: 'dns-zone', name: 'DNS Zone Files (BIND)', category: 'network', description: 'DNS zone transfers and record files' },
   { id: 'x509-crl', name: 'CRL / OCSP Responses', category: 'network', description: 'Certificate revocation lists and status responses' },
+  { id: 'custom-unstructured', name: 'Custom Unstructured Type', category: 'custom', description: 'Define your own unstructured data type - describe it and the AI will generate a UDF' },
 ];
 
 const SAMPLING_PRIORITIES = [
@@ -641,6 +740,10 @@ function PasteParseStep({ sampleLog, setSampleLog, onAutoDetect, onNext }: {
   onNext: () => void;
 }) {
   const [detected, setDetected] = useState<{ format: string; fields: string[]; vendor: string } | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: number; content: string; type: string }[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [fileAnalysis, setFileAnalysis] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handlePaste(text: string) {
     setSampleLog(text);
@@ -650,20 +753,139 @@ function PasteParseStep({ sampleLog, setSampleLog, onAutoDetect, onNext }: {
     if (det) onAutoDetect(det.vendor ? `${det.vendor} Connector` : '', det.vendor, det.format);
   }
 
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files) return;
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      if (file.size > 5 * 1024 * 1024) return;
+      if (file.type.startsWith('text/') || file.name.match(/\.(json|xml|csv|log|txt|yaml|yml|toml|conf|ini|env|cef|leef|evtx|proto|avsc|fbs)$/i)) {
+        reader.onload = () => {
+          const content = reader.result as string;
+          setUploadedFiles(prev => [...prev, { name: file.name, size: file.size, content, type: file.type || 'text/plain' }]);
+          if (!sampleLog) handlePaste(content.slice(0, 5000));
+        };
+        reader.readAsText(file);
+      } else {
+        reader.onload = () => {
+          const arrayBuffer = reader.result as ArrayBuffer;
+          const bytes = new Uint8Array(arrayBuffer).slice(0, 512);
+          const hexDump = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+          const preview = `[Binary File: ${file.name}]\nMIME: ${file.type || 'application/octet-stream'}\nSize: ${file.size} bytes\nFirst 512 bytes (hex):\n${hexDump}`;
+          setUploadedFiles(prev => [...prev, { name: file.name, size: file.size, content: preview, type: file.type || 'application/octet-stream' }]);
+        };
+        reader.readAsArrayBuffer(file);
+      }
+    });
+    e.target.value = '';
+  }
+
+  function removeFile(index: number) {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+  }
+
+  async function analyzeFiles() {
+    setAnalyzing(true);
+    setFileAnalysis('');
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
+      const fileDescriptions = uploadedFiles.map(f => `--- FILE: ${f.name} (${f.type}, ${f.size} bytes) ---\n${f.content.slice(0, 3000)}`).join('\n\n');
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          connectorName: 'File Analysis',
+          vendor: 'auto-detect',
+          description: `Analyze these uploaded files and determine: 1) What type of data this is, 2) The vendor/product that generates it, 3) Recommended acquisition method, 4) Whether it needs a UDF for unstructured processing. Files:\n\n${fileDescriptions}`,
+          acquisitionMethod: 'File Upload',
+          transportProtocol: 'HTTPS',
+          logFormat: 'auto-detect',
+          sampleLog: uploadedFiles[0]?.content.slice(0, 5000) || '',
+          normalizationSchema: 'file-analysis',
+        }),
+      });
+      const data = await response.json();
+      if (data.connectorCode) {
+        setFileAnalysis(data.connectorCode);
+        if (data.metadata?.vendor) onAutoDetect(data.metadata.connectorName || '', data.metadata.vendor, data.metadata.format || 'auto-detected');
+      } else {
+        setFileAnalysis(`Detected files:\n${uploadedFiles.map(f => `- ${f.name} (${f.type})`).join('\n')}\n\nThe AI will propose a connector configuration based on these files in the next step.`);
+      }
+    } catch {
+      setFileAnalysis(`Files uploaded for analysis:\n${uploadedFiles.map(f => `- ${f.name} (${f.type}, ${(f.size / 1024).toFixed(1)} KB)`).join('\n')}\n\nContinue to the next step where the LLM will use this context to propose the ideal connector configuration.`);
+    }
+    setAnalyzing(false);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2">
         <Clipboard className="w-5 h-5 text-cyan-400" />
         <h3 className="text-base font-semibold text-white">Paste Your Data Structure</h3>
       </div>
-      <p className="text-sm text-slate-400">Paste a sample log, event, or API response and we will auto-detect the format, extract fields, and generate a parser.</p>
+      <p className="text-sm text-slate-400">Paste a sample log/event/API response <span className="text-white font-medium">or upload files</span> and we will auto-detect the format, extract fields, and propose a connector.</p>
 
       <textarea
         value={sampleLog}
         onChange={e => handlePaste(e.target.value)}
         placeholder={'Paste any log format here:\n\n- JSON event payload\n- CEF syslog line\n- CSV/TSV row\n- Key=Value log\n- XML event\n- Raw syslog\n- Protobuf schema definition\n- API response body\n\nWe will detect the format and build a parser automatically.'}
-        className="w-full h-48 px-4 py-3 bg-slate-900/70 border border-slate-700/50 rounded-xl text-sm text-slate-200 font-mono placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none resize-none"
+        className="w-full h-40 px-4 py-3 bg-slate-900/70 border border-slate-700/50 rounded-xl text-sm text-slate-200 font-mono placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none resize-none"
       />
+
+      {/* File Upload Zone */}
+      <div className="space-y-2">
+        <input ref={fileInputRef} type="file" multiple onChange={handleFileUpload} className="hidden" accept="*/*" />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full p-4 border-2 border-dashed border-slate-700/70 rounded-xl hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all group"
+        >
+          <div className="flex flex-col items-center gap-2">
+            <Upload className="w-5 h-5 text-slate-500 group-hover:text-cyan-400 transition-colors" />
+            <div className="text-xs text-slate-400 group-hover:text-slate-300">
+              <span className="font-medium text-slate-300 group-hover:text-white">Upload files</span> - logs, binaries, configs, pcaps, documents
+            </div>
+            <span className="text-[9px] text-slate-600">The LLM will analyze the file to understand its structure and propose a connector + UDF if needed (max 5MB per file)</span>
+          </div>
+        </button>
+
+        {uploadedFiles.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {uploadedFiles.map((f, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/70 border border-slate-700/50 rounded-lg">
+                  <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="text-xs text-slate-300">{f.name}</span>
+                  <span className="text-[9px] text-slate-500">({(f.size / 1024).toFixed(1)} KB)</span>
+                  <button onClick={() => removeFile(i)} className="text-slate-500 hover:text-red-400 transition-colors">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={analyzeFiles}
+              disabled={analyzing}
+              className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3 h-3" />
+              {analyzing ? 'Analyzing files with AI...' : `Analyze ${uploadedFiles.length} file${uploadedFiles.length > 1 ? 's' : ''} with AI`}
+            </button>
+          </div>
+        )}
+
+        {fileAnalysis && (
+          <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-xs font-medium text-amber-300">AI File Analysis</span>
+            </div>
+            <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{fileAnalysis}</pre>
+          </div>
+        )}
+      </div>
 
       {detected && (
         <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-3">
@@ -683,9 +905,247 @@ function PasteParseStep({ sampleLog, setSampleLog, onAutoDetect, onNext }: {
 
       <div className="flex justify-end">
         <button onClick={onNext} className="px-4 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-sm text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5">
-          {sampleLog ? 'Continue with Sample' : 'Skip - Configure Manually'} <ArrowRight className="w-3.5 h-3.5" />
+          {sampleLog || uploadedFiles.length ? 'Continue with Sample' : 'Skip - Configure Manually'} <ArrowRight className="w-3.5 h-3.5" />
         </button>
       </div>
+    </div>
+  );
+}
+
+// Searchable Data Format Selector (merged structured + semi-structured)
+function DataFormatSearchSelector({ logFormat, setLogFormat, normSchema, setNormSchema }: {
+  logFormat: string; setLogFormat: (v: string) => void;
+  normSchema: string; setNormSchema: (v: string) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [showCustom, setShowCustom] = useState(false);
+  const [customFormat, setCustomFormat] = useState('');
+
+  const categories = [...new Set(DATA_FORMATS.map(f => f.category))];
+  const filtered = search.trim()
+    ? DATA_FORMATS.filter(f => f.name.toLowerCase().includes(search.toLowerCase()) || f.category.toLowerCase().includes(search.toLowerCase()))
+    : DATA_FORMATS;
+
+  const groupedFiltered: Record<string, typeof DATA_FORMATS> = {};
+  filtered.forEach(f => {
+    if (!groupedFiltered[f.category]) groupedFiltered[f.category] = [];
+    groupedFiltered[f.category].push(f);
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-xs text-slate-400 block">Data Format <span className="text-slate-600">({DATA_FORMATS.length} formats across {categories.length} industries)</span></label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search formats... (ISO 8583, CDR, HL7, Syslog...)"
+              className="w-full pl-9 pr-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none"
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto border border-slate-700/50 rounded-lg bg-slate-900/50">
+            {Object.entries(groupedFiltered).map(([cat, formats]) => (
+              <div key={cat}>
+                <div className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold px-3 py-1.5 bg-slate-800/80 sticky top-0 border-b border-slate-700/30">{cat}</div>
+                {formats.map(f => (
+                  <button
+                    key={f.name}
+                    onClick={() => { setLogFormat(f.name); setShowCustom(false); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                      logFormat === f.name ? 'bg-cyan-500/10 text-cyan-300' : 'text-slate-400 hover:bg-slate-700/30 hover:text-white'
+                    }`}
+                  >
+                    {f.name}
+                  </button>
+                ))}
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-3 py-4 text-center text-xs text-slate-500">No formats match your search</div>
+            )}
+          </div>
+          <button
+            onClick={() => setShowCustom(!showCustom)}
+            className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-amber-400 hover:text-amber-300 transition-colors"
+          >
+            <Plus className="w-3 h-3" /> Custom Format
+          </button>
+          {showCustom && (
+            <div className="flex gap-2">
+              <input
+                value={customFormat}
+                onChange={e => setCustomFormat(e.target.value)}
+                placeholder="Enter custom format name..."
+                className="flex-1 px-3 py-1.5 bg-slate-900/70 border border-amber-500/30 rounded-lg text-xs text-white placeholder-slate-600 focus:border-amber-500/50 focus:outline-none"
+              />
+              <button
+                onClick={() => { if (customFormat.trim()) { setLogFormat(customFormat.trim()); setShowCustom(false); setCustomFormat(''); } }}
+                disabled={!customFormat.trim()}
+                className="px-2 py-1 bg-amber-500/10 border border-amber-500/30 rounded text-[10px] text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+              >
+                Use
+              </button>
+            </div>
+          )}
+          {logFormat && !DATA_FORMATS.find(f => f.name === logFormat) && (
+            <div className="text-[10px] text-amber-400 px-1">Using custom format: {logFormat}</div>
+          )}
+        </div>
+        <div>
+          <label className="text-xs text-slate-400 block mb-2">Normalization Target</label>
+          <select value={normSchema} onChange={e => setNormSchema(e.target.value)}
+            className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
+            {NORMALIZATION_SCHEMAS.map(s => <option key={s.id} value={s.id}>{s.name} ({s.org})</option>)}
+          </select>
+          {normSchema !== 'custom' && (
+            <div className="mt-3 p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+              <div className="text-xs text-slate-300"><span className="font-medium text-white">{NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.name}:</span> {NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.description}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Searchable Unstructured Type Selector
+function UnstructuredTypeSelector({ unstructuredType, setUnstructuredType, unstructuredSample, setUnstructuredSample, analyzingUnstructured, analyzeUnstructuredSample, unstructuredAnalysis }: {
+  unstructuredType: string; setUnstructuredType: (v: string) => void;
+  unstructuredSample: string; setUnstructuredSample: (v: string) => void;
+  analyzingUnstructured: boolean; analyzeUnstructuredSample: () => void;
+  unstructuredAnalysis: string;
+}) {
+  const [search, setSearch] = useState('');
+  const [showCustom, setShowCustom] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customDesc, setCustomDesc] = useState('');
+
+  const unstructuredCatLabels: Record<string, string> = {
+    video: 'Video', audio: 'Audio', image: 'Images', binary: 'Binaries & Executables',
+    document: 'Documents & Office', code: 'Code & Config', crypto: 'Crypto & Certs', network: 'Network Captures', custom: 'Custom',
+  };
+
+  const filtered = search.trim()
+    ? UNSTRUCTURED_DATA_TYPES.filter(t => t.name.toLowerCase().includes(search.toLowerCase()) || t.description.toLowerCase().includes(search.toLowerCase()) || t.category.toLowerCase().includes(search.toLowerCase()))
+    : UNSTRUCTURED_DATA_TYPES;
+
+  const filteredCategories = [...new Set(filtered.map(t => t.category))];
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs text-slate-400 block mb-2">Unstructured Data Type</label>
+        <div className="relative mb-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search unstructured types... (video, firmware, PDF, ELF...)"
+            className="w-full pl-9 pr-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none"
+          />
+        </div>
+        <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
+          {filteredCategories.map(cat => (
+            <div key={cat}>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1.5 sticky top-0 bg-slate-800/90 py-1">{unstructuredCatLabels[cat] || cat}</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {filtered.filter(t => t.category === cat).map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => { setUnstructuredType(t.id); setShowCustom(false); }}
+                    className={`text-left p-2 rounded-lg border transition-all ${
+                      unstructuredType === t.id
+                        ? 'border-cyan-500/50 bg-cyan-500/10'
+                        : 'border-slate-700/40 bg-slate-900/30 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className={`text-[11px] font-medium ${unstructuredType === t.id ? 'text-white' : 'text-slate-400'}`}>{t.name}</div>
+                    <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">{t.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div className="text-center py-4 text-xs text-slate-500">No types match your search</div>
+          )}
+        </div>
+
+        {/* Custom unstructured type */}
+        <button
+          onClick={() => setShowCustom(!showCustom)}
+          className="flex items-center gap-1.5 px-2 py-1.5 mt-2 text-[10px] text-amber-400 hover:text-amber-300 transition-colors"
+        >
+          <Plus className="w-3 h-3" /> Define Custom Unstructured Type
+        </button>
+        {showCustom && (
+          <div className="mt-2 p-3 bg-slate-800/50 border border-amber-500/20 rounded-lg space-y-2">
+            <input
+              value={customName}
+              onChange={e => setCustomName(e.target.value)}
+              placeholder="Type name (e.g. FPGA Bitstream, SAP IDOC Binary...)"
+              className="w-full px-3 py-1.5 bg-slate-900/70 border border-slate-700/50 rounded-lg text-xs text-white placeholder-slate-600 focus:border-amber-500/50 focus:outline-none"
+            />
+            <input
+              value={customDesc}
+              onChange={e => setCustomDesc(e.target.value)}
+              placeholder="Brief description of the data type..."
+              className="w-full px-3 py-1.5 bg-slate-900/70 border border-slate-700/50 rounded-lg text-xs text-white placeholder-slate-600 focus:border-amber-500/50 focus:outline-none"
+            />
+            <button
+              onClick={() => { if (customName.trim()) { setUnstructuredType('custom-unstructured'); setShowCustom(false); } }}
+              disabled={!customName.trim()}
+              className="px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded text-[10px] text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+            >
+              Use Custom Type
+            </button>
+          </div>
+        )}
+      </div>
+
+      {unstructuredType && (
+        <div className="p-4 bg-slate-800/50 border border-slate-700/50 rounded-xl space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-semibold text-white">AI Data Understanding (UDF Generator)</span>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            Paste a sample (base64 for binary, first bytes hex dump, or text description) and the AI will analyze it
+            to generate a custom UDF that extracts both <span className="text-white font-medium">content</span> and <span className="text-white font-medium">metadata</span>.
+          </p>
+          <textarea
+            value={unstructuredSample}
+            onChange={e => setUnstructuredSample(e.target.value)}
+            placeholder={`Paste sample data here:\n\n- Base64-encoded binary fragment\n- Hex dump of first 256 bytes\n- Text description of the data format\n- File header bytes (e.g. "4D 5A 90 00..." for PE)\n- MIME type or magic bytes\n\nThe AI will identify the format and generate a UDF.`}
+            className="w-full h-28 px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-xs text-slate-200 font-mono placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none resize-none"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={analyzeUnstructuredSample}
+              disabled={analyzingUnstructured || !unstructuredSample.trim()}
+              className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3 h-3" /> {analyzingUnstructured ? 'Analyzing & Generating UDF...' : 'Analyze Sample & Generate UDF'}
+            </button>
+            <span className="text-[9px] text-slate-500">Uses AI to understand the data and create extraction logic</span>
+          </div>
+
+          {unstructuredAnalysis && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-xs font-medium text-emerald-300">UDF Generated</span>
+              </div>
+              <pre className="text-[10px] text-slate-300 bg-slate-900/70 border border-slate-700/50 rounded-lg p-3 overflow-auto max-h-48 font-mono leading-relaxed">
+                {unstructuredAnalysis}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -931,12 +1391,6 @@ def extract_pcap_content(binary_data):
     setAnalyzingUnstructured(false);
   }
 
-  const unstructuredCategories = [...new Set(UNSTRUCTURED_DATA_TYPES.map(t => t.category))];
-  const unstructuredCatLabels: Record<string, string> = {
-    video: 'Video', audio: 'Audio', image: 'Images', binary: 'Binaries & Executables',
-    document: 'Documents & Office', code: 'Code & Config', crypto: 'Crypto & Certs', network: 'Network Captures',
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2">
@@ -966,11 +1420,10 @@ def extract_pcap_content(binary_data):
       {/* Data Structure Type Selector */}
       <div>
         <label className="text-xs text-slate-400 block mb-2">Data Structure Type</label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {([
-            { id: 'structured' as const, label: 'Structured', desc: 'Fixed schema, typed fields (JSON, Avro, Parquet, EBCDIC...)', icon: Database },
-            { id: 'semi-structured' as const, label: 'Semi-Structured', desc: 'Logs, events, key-value, mixed formats (CEF, Syslog, XML...)', icon: Layers },
-            { id: 'unstructured' as const, label: 'Unstructured', desc: 'Binary, media, documents, code, executables', icon: HardDrive },
+            { id: 'structured' as const, label: 'Structured / Semi-Structured', desc: 'JSON, Avro, Parquet, CEF, Syslog, XML, industry-specific formats (ISO 8583, CDR, HL7...)', icon: Database },
+            { id: 'unstructured' as const, label: 'Unstructured', desc: 'Binary, media, documents, code, executables, firmware', icon: HardDrive },
           ]).map(opt => {
             const Icon = opt.icon;
             return (
@@ -994,106 +1447,25 @@ def extract_pcap_content(binary_data):
         </div>
       </div>
 
-      {/* Structured / Semi-Structured: Data Format Selector */}
+      {/* Structured / Semi-Structured: Searchable Data Format */}
       {dataStructureType !== 'unstructured' && (
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs text-slate-400 block mb-1">Data Format</label>
-            <select value={logFormat} onChange={e => setLogFormat(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
-              {(dataStructureType === 'structured' ? STRUCTURED_FORMATS : SEMI_STRUCTURED_FORMATS).map(f => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-slate-400 block mb-1">Normalization Target</label>
-            <select value={normSchema} onChange={e => setNormSchema(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
-              {NORMALIZATION_SCHEMAS.map(s => <option key={s.id} value={s.id}>{s.name} ({s.org})</option>)}
-            </select>
-          </div>
-        </div>
+        <DataFormatSearchSelector logFormat={logFormat} setLogFormat={setLogFormat} normSchema={normSchema} setNormSchema={setNormSchema} />
       )}
 
       {/* Unstructured: Data Type & Analysis */}
       {dataStructureType === 'unstructured' && (
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs text-slate-400 block mb-2">Unstructured Data Type</label>
-            <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
-              {unstructuredCategories.map(cat => (
-                <div key={cat}>
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1.5 sticky top-0 bg-slate-800/90 py-1">{unstructuredCatLabels[cat] || cat}</div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {UNSTRUCTURED_DATA_TYPES.filter(t => t.category === cat).map(t => (
-                      <button
-                        key={t.id}
-                        onClick={() => setUnstructuredType(t.id)}
-                        className={`text-left p-2 rounded-lg border transition-all ${
-                          unstructuredType === t.id
-                            ? 'border-cyan-500/50 bg-cyan-500/10'
-                            : 'border-slate-700/40 bg-slate-900/30 hover:border-slate-600'
-                        }`}
-                      >
-                        <div className={`text-[11px] font-medium ${unstructuredType === t.id ? 'text-white' : 'text-slate-400'}`}>{t.name}</div>
-                        <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">{t.description}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {unstructuredType && (
-            <div className="p-4 bg-slate-800/50 border border-slate-700/50 rounded-xl space-y-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-semibold text-white">AI Data Understanding (UDF Generator)</span>
-              </div>
-              <p className="text-[10px] text-slate-400">
-                Paste a sample (base64 for binary, first bytes hex dump, or text description) and the AI will analyze it
-                to generate a custom UDF that extracts both <span className="text-white font-medium">content</span> and <span className="text-white font-medium">metadata</span> - not just file headers.
-              </p>
-              <textarea
-                value={unstructuredSample}
-                onChange={e => setUnstructuredSample(e.target.value)}
-                placeholder={`Paste sample data here:\n\n- Base64-encoded binary fragment\n- Hex dump of first 256 bytes\n- Text description of the data format\n- File header bytes (e.g. "4D 5A 90 00..." for PE)\n- MIME type or magic bytes\n- Schema description if known\n\nThe AI will identify the format, extract structure, and generate a UDF.`}
-                className="w-full h-28 px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-xs text-slate-200 font-mono placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none resize-none"
-              />
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={analyzeUnstructuredSample}
-                  disabled={analyzingUnstructured || !unstructuredSample.trim()}
-                  className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <Sparkles className="w-3 h-3" /> {analyzingUnstructured ? 'Analyzing & Generating UDF...' : 'Analyze Sample & Generate UDF'}
-                </button>
-                <span className="text-[9px] text-slate-500">Uses GPT-4o to understand the data and create extraction logic</span>
-              </div>
-
-              {unstructuredAnalysis && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-xs font-medium text-emerald-300">UDF Generated</span>
-                  </div>
-                  <pre className="text-[10px] text-slate-300 bg-slate-900/70 border border-slate-700/50 rounded-lg p-3 overflow-auto max-h-48 font-mono leading-relaxed">
-                    {unstructuredAnalysis}
-                  </pre>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <UnstructuredTypeSelector
+          unstructuredType={unstructuredType}
+          setUnstructuredType={setUnstructuredType}
+          unstructuredSample={unstructuredSample}
+          setUnstructuredSample={setUnstructuredSample}
+          analyzingUnstructured={analyzingUnstructured}
+          analyzeUnstructuredSample={analyzeUnstructuredSample}
+          unstructuredAnalysis={unstructuredAnalysis}
+        />
       )}
 
       {/* Custom schema/normalization (for structured/semi-structured) */}
-      {dataStructureType !== 'unstructured' && normSchema !== 'custom' && (
-        <div className="p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
-          <div className="text-xs text-slate-300"><span className="font-medium text-white">{NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.name}:</span> {NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.description}</div>
-        </div>
-      )}
-
       {dataStructureType !== 'unstructured' && normSchema === 'custom' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
