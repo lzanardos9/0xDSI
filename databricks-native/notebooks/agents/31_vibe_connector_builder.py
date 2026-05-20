@@ -175,6 +175,20 @@ ACQUISITION_METHODS = {
         {"id": "opc-ua", "name": "OPC-UA Subscription", "latency": "ms", "complexity": "high"},
         {"id": "modbus", "name": "Modbus TCP/RTU", "latency": "seconds", "complexity": "medium"},
     ],
+    "mainframe": [
+        {"id": "mf-smf", "name": "z/OS SMF Records (System Management Facility)", "latency": "seconds", "complexity": "high"},
+        {"id": "mf-racf", "name": "RACF Security Audit (z/OS)", "latency": "seconds", "complexity": "high"},
+        {"id": "mf-db2-log", "name": "DB2 for z/OS Log Capture", "latency": "seconds", "complexity": "high"},
+        {"id": "mf-cics-journal", "name": "CICS Transaction Journal", "latency": "seconds", "complexity": "high"},
+        {"id": "mf-ims-log", "name": "IMS Transaction Log", "latency": "seconds", "complexity": "high"},
+        {"id": "mf-syslog-smc", "name": "z/OS Syslog (SMC-R)", "latency": "seconds", "complexity": "medium"},
+        {"id": "mf-mq-bridge", "name": "IBM MQ Bridge (z/OS to Kafka)", "latency": "ms", "complexity": "high"},
+        {"id": "mf-vsam-cdc", "name": "VSAM/QSAM Change Capture", "latency": "seconds", "complexity": "critical"},
+        {"id": "mf-jes-spool", "name": "JES2/JES3 Spool Capture", "latency": "minutes", "complexity": "high"},
+        {"id": "mf-top-secret", "name": "CA Top Secret Audit", "latency": "seconds", "complexity": "high"},
+        {"id": "mf-acf2", "name": "CA ACF2 Security Audit", "latency": "seconds", "complexity": "high"},
+        {"id": "mf-zowe-api", "name": "Zowe REST API (z/OSMF)", "latency": "seconds", "complexity": "medium"},
+    ],
 }
 
 total_methods = sum(len(v) for v in ACQUISITION_METHODS.values())
@@ -281,6 +295,19 @@ TRANSPORT_PROTOCOLS = {
         {"id": "ethercat", "name": "EtherCAT (Industrial Ethernet)", "layer": "L2"},
         {"id": "bacnet", "name": "BACnet (Building Automation)", "layer": "L7"},
         {"id": "dnp3", "name": "DNP3 (SCADA/Utilities)", "layer": "L7"},
+    ],
+    "mainframe": [
+        {"id": "ebcdic-stream", "name": "EBCDIC Record Stream (Codepage 037/1047)", "layer": "L7"},
+        {"id": "ebcdic-packed", "name": "EBCDIC Packed Decimal (COMP-3)", "layer": "L7"},
+        {"id": "tn3270", "name": "TN3270/TN3270E (3270 Terminal Protocol)", "layer": "L7"},
+        {"id": "lu62-appc", "name": "LU 6.2 / APPC (SNA)", "layer": "L5-L7"},
+        {"id": "sna-sdlc", "name": "SNA/SDLC (Systems Network Architecture)", "layer": "L2-L7"},
+        {"id": "ftp-jes", "name": "FTP/JES (MVS File Transfer)", "layer": "L7"},
+        {"id": "mq-ebcdic", "name": "IBM MQ (EBCDIC Headers)", "layer": "L7"},
+        {"id": "cics-tcp", "name": "CICS TCP/IP Socket Interface", "layer": "L4-L7"},
+        {"id": "connect-direct", "name": "Connect:Direct (NDM)", "layer": "L7"},
+        {"id": "ims-connect", "name": "IMS Connect (OTMA)", "layer": "L7"},
+        {"id": "vtam-ncp", "name": "VTAM/NCP (SNA Gateway)", "layer": "L4-L7"},
     ],
 }
 
@@ -1355,12 +1382,13 @@ def run_data_quality_check(connector_id: str):
 # MAGIC
 # MAGIC | Feature | Implementation |
 # MAGIC |---------|---------------|
-# MAGIC | Acquisition Methods | 44+ methods across 9 categories (API, Push, Streaming, Network, Kernel, Storage, DB, IoT) |
-# MAGIC | Transport Protocols | 60+ protocols across 12 categories (HTTP, TCP, UDP, IPC, RPC, Streaming, HPC, Physical, Telecom, Messaging, Exotic) |
+# MAGIC | Acquisition Methods | 56+ methods across 10 categories (API, Push, Streaming, Network, Kernel, Storage, DB, IoT, Mainframe) |
+# MAGIC | Transport Protocols | 70+ protocols across 13 categories (HTTP, TCP, UDP, IPC, RPC, Streaming, HPC, Physical, Telecom, Messaging, Exotic, Mainframe) |
 # MAGIC | Physical Protocols | RS-232, RS-485, CAN Bus 2.0/FD, I2C, SPI, MIL-STD-1553B, ARINC 429/664, SpaceWire |
 # MAGIC | Telecom Protocols | SS7/MTP, SIGTRAN, ISUP, MAP/CAMEL, GTP-C/U, PFCP, Diameter, SIP/SDP, 5G NGAP/XnAP |
 # MAGIC | Exotic Protocols | IPX/SPX, DECnet, X.25, Frame Relay, ATM AAL5, Token Ring, FDDI, Fibre Channel |
 # MAGIC | IoT/Industrial | Zigbee, LoRa/LoRaWAN, PROFINET IRT, EtherCAT, BACnet, DNP3 |
+# MAGIC | Mainframe/EBCDIC | SMF Records, RACF/Top Secret/ACF2 Audit, CICS, IMS, DB2, VSAM CDC, TN3270, SNA/SDLC, MQ EBCDIC |
 # MAGIC | Kernel Connectors | eBPF/XDP with CO-RE, ring buffers, per-CPU maps |
 # MAGIC | Parallel CEP/CET | Events fork BEFORE normalization; CEP + CET process in PARALLEL in real-time |
 # MAGIC | Statistical Sampling | Reservoir sampling with configurable rate, Spark Structured Streaming |

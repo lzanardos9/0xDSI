@@ -49,6 +49,19 @@ const ACQUISITION_METHODS = [
   { id: 'opc-ua', name: 'OPC-UA Subscription', category: 'iot', description: 'Industrial automation protocol for SCADA/ICS telemetry', complexity: 'high', latency: 'ms' },
   { id: 'modbus', name: 'Modbus TCP/RTU', category: 'iot', description: 'Industrial register polling for PLC/RTU devices', complexity: 'medium', latency: 'seconds' },
   { id: 'zeromq', name: 'ZeroMQ SUB Socket', category: 'messaging', description: 'ZeroMQ pub/sub pattern for high-throughput IPC', complexity: 'medium', latency: 'us' },
+  // Mainframe
+  { id: 'mf-smf', name: 'z/OS SMF Records (System Management Facility)', category: 'mainframe', description: 'IBM mainframe system/security audit records (SMF 30/80/83/119)', complexity: 'high', latency: 'seconds' },
+  { id: 'mf-racf', name: 'RACF Security Audit (z/OS)', category: 'mainframe', description: 'IBM RACF access control events: logins, violations, resource access', complexity: 'high', latency: 'seconds' },
+  { id: 'mf-db2-log', name: 'DB2 for z/OS Log Capture', category: 'mainframe', description: 'DB2 mainframe transaction logs and audit trail extraction', complexity: 'high', latency: 'seconds' },
+  { id: 'mf-cics-journal', name: 'CICS Transaction Journal', category: 'mainframe', description: 'CICS transaction server journal records for application audit', complexity: 'high', latency: 'seconds' },
+  { id: 'mf-ims-log', name: 'IMS Transaction Log', category: 'mainframe', description: 'IMS hierarchical DB transaction monitoring and audit', complexity: 'high', latency: 'seconds' },
+  { id: 'mf-syslog-smc', name: 'z/OS Syslog (SMC-R)', category: 'mainframe', description: 'z/OS system messages and WTO records via TCP/IP stack', complexity: 'medium', latency: 'seconds' },
+  { id: 'mf-mq-bridge', name: 'IBM MQ Bridge (z/OS to Kafka)', category: 'mainframe', description: 'MQ Series queue-to-stream bridge for mainframe event offloading', complexity: 'high', latency: 'ms' },
+  { id: 'mf-vsam-cdc', name: 'VSAM/QSAM Change Capture', category: 'mainframe', description: 'VSAM dataset change detection via IDCAMS REPRO or IBM CDC', complexity: 'critical', latency: 'seconds' },
+  { id: 'mf-jes-spool', name: 'JES2/JES3 Spool Capture', category: 'mainframe', description: 'Job Entry Subsystem output spool monitoring for batch audit', complexity: 'high', latency: 'minutes' },
+  { id: 'mf-top-secret', name: 'CA Top Secret Audit (z/OS)', category: 'mainframe', description: 'CA Top Secret security events: access violations, admin actions', complexity: 'high', latency: 'seconds' },
+  { id: 'mf-acf2', name: 'CA ACF2 Security Audit', category: 'mainframe', description: 'CA ACF2 access control facility security event logs', complexity: 'high', latency: 'seconds' },
+  { id: 'mf-zowe-api', name: 'Zowe REST API (z/OSMF)', category: 'mainframe', description: 'Modern REST API access to z/OS resources via Zowe framework', complexity: 'medium', latency: 'seconds' },
 ];
 
 const TRANSPORT_PROTOCOLS = [
@@ -120,6 +133,18 @@ const TRANSPORT_PROTOCOLS = [
   { id: 'powerlink', name: 'POWERLINK (Industrial)', category: 'exotic', description: 'Open-source real-time industrial Ethernet protocol', encryption: false, bidirectional: true },
   { id: 'zeromq-tcp', name: 'ZeroMQ (tcp://)', category: 'messaging', description: 'Brokerless messaging with various patterns', encryption: true, bidirectional: true },
   { id: 'nanomsg', name: 'nanomsg/nng', category: 'messaging', description: 'Next-gen ZeroMQ alternative with simpler API', encryption: true, bidirectional: true },
+  // Mainframe
+  { id: 'ebcdic-stream', name: 'EBCDIC Record Stream', category: 'mainframe', description: 'IBM EBCDIC-encoded fixed/variable-length record transmission (codepage 037/1047)', encryption: false, bidirectional: true },
+  { id: 'ebcdic-packed', name: 'EBCDIC Packed Decimal (COMP-3)', category: 'mainframe', description: 'COBOL packed decimal binary data with EBCDIC field headers', encryption: false, bidirectional: false },
+  { id: 'tn3270', name: 'TN3270/TN3270E (3270 Terminal)', category: 'mainframe', description: 'IBM 3270 terminal emulation protocol for VTAM/TSO session capture', encryption: true, bidirectional: true },
+  { id: 'lu62-appc', name: 'LU 6.2 / APPC (SNA)', category: 'mainframe', description: 'IBM SNA Advanced Program-to-Program Communication protocol', encryption: false, bidirectional: true },
+  { id: 'sna-sdlc', name: 'SNA/SDLC (Systems Network Architecture)', category: 'mainframe', description: 'IBM legacy SNA with SDLC link-layer for mainframe interconnect', encryption: false, bidirectional: true },
+  { id: 'ftp-jes', name: 'FTP/JES (MVS File Transfer)', category: 'mainframe', description: 'z/OS FTP with JES extensions for spool file and dataset retrieval', encryption: true, bidirectional: true },
+  { id: 'mq-ebcdic', name: 'IBM MQ (EBCDIC Headers)', category: 'mainframe', description: 'MQ Series with MQMD/MQRFH2 headers in EBCDIC encoding', encryption: true, bidirectional: true },
+  { id: 'cics-tcp', name: 'CICS TCP/IP Socket', category: 'mainframe', description: 'CICS transaction gateway socket interface for real-time events', encryption: true, bidirectional: true },
+  { id: 'connect-direct', name: 'Connect:Direct (NDM)', category: 'mainframe', description: 'Sterling Connect:Direct point-to-point file transfer (formerly NDM)', encryption: true, bidirectional: true },
+  { id: 'ims-connect', name: 'IMS Connect (OTMA)', category: 'mainframe', description: 'IMS Open Transaction Manager Access for TCP/IP connectivity', encryption: true, bidirectional: true },
+  { id: 'vtam-ncp', name: 'VTAM/NCP (SNA Gateway)', category: 'mainframe', description: 'Virtual Telecommunications Access Method via Network Control Program', encryption: false, bidirectional: true },
 ];
 
 const NORMALIZATION_SCHEMAS = [
@@ -139,6 +164,8 @@ const LOG_FORMATS = [
   'JSON', 'JSON Lines (NDJSON)', 'CEF', 'LEEF', 'Syslog RFC 5424', 'Syslog RFC 3164',
   'CSV/TSV', 'Avro', 'Parquet', 'Protobuf', 'MessagePack', 'CBOR', 'XML', 'W3C Extended Log',
   'Apache Common/Combined', 'Key=Value Pairs', 'Windows Event XML (EVTX)', 'Binary/Custom',
+  'EBCDIC Fixed-Length Records', 'EBCDIC Variable-Length (RDW)', 'EBCDIC COMP-3 Packed Decimal',
+  'SMF Binary Records (z/OS)', 'COBOL Copybook Layout',
 ];
 
 const SAMPLING_PRIORITIES = [
