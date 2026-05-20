@@ -130,23 +130,23 @@ export default function DataConnectors() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      active: 'bg-green-100 text-green-700',
-      paused: 'bg-yellow-100 text-yellow-700',
-      stopped: 'bg-slate-100 text-slate-700',
-      error: 'bg-red-100 text-red-700',
-      completed: 'bg-blue-100 text-blue-700',
-      processing: 'bg-purple-100 text-purple-700',
-      pending: 'bg-orange-100 text-orange-700'
+      active: 'bg-emerald-500/10 text-emerald-400',
+      paused: 'bg-yellow-500/10 text-yellow-400',
+      stopped: 'bg-slate-500/10 text-slate-400',
+      error: 'bg-red-500/10 text-red-400',
+      completed: 'bg-cyan-500/10 text-cyan-400',
+      processing: 'bg-blue-500/10 text-blue-400',
+      pending: 'bg-orange-500/10 text-orange-400'
     };
     return colors[status] || colors.active;
   };
 
   const getHealthColor = (health: string) => {
     const colors: Record<string, string> = {
-      healthy: 'text-green-600',
-      degraded: 'text-yellow-600',
-      unhealthy: 'text-orange-600',
-      offline: 'text-red-600'
+      healthy: 'text-emerald-400',
+      degraded: 'text-yellow-400',
+      unhealthy: 'text-orange-400',
+      offline: 'text-red-400'
     };
     return colors[health] || colors.healthy;
   };
@@ -186,53 +186,53 @@ export default function DataConnectors() {
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-5 gap-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+          <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
             <div className="flex items-center justify-between mb-2">
-              <Database className="w-6 h-6 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-700">{connectors.length}</span>
+              <Database className="w-6 h-6 text-cyan-400" />
+              <span className="text-2xl font-bold text-cyan-400">{connectors.length}</span>
             </div>
-            <div className="text-sm font-medium text-blue-600">Total Connectors</div>
+            <div className="text-sm font-medium text-cyan-400">Total Connectors</div>
           </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
+          <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
             <div className="flex items-center justify-between mb-2">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-              <span className="text-2xl font-bold text-green-700">
+              <CheckCircle className="w-6 h-6 text-emerald-400" />
+              <span className="text-2xl font-bold text-emerald-400">
                 {connectors.filter(c => c.status === 'active').length}
               </span>
             </div>
-            <div className="text-sm font-medium text-green-600">Active</div>
+            <div className="text-sm font-medium text-emerald-400">Active</div>
           </div>
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
+          <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
             <div className="flex items-center justify-between mb-2">
-              <TrendingUp className="w-6 h-6 text-purple-600" />
-              <span className="text-2xl font-bold text-purple-700">
+              <TrendingUp className="w-6 h-6 text-teal-400" />
+              <span className="text-2xl font-bold text-teal-300">
                 {totalEPS.toFixed(0)}
               </span>
             </div>
-            <div className="text-sm font-medium text-purple-600">Events/Sec</div>
+            <div className="text-sm font-medium text-teal-400">Events/Sec</div>
           </div>
           <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 border border-orange-200">
             <div className="flex items-center justify-between mb-2">
-              <Network className="w-6 h-6 text-orange-600" />
+              <Network className="w-6 h-6 text-orange-400" />
               <span className="text-2xl font-bold text-orange-700">
                 {totalMBPS.toFixed(1)}
               </span>
             </div>
-            <div className="text-sm font-medium text-orange-600">MB/s</div>
+            <div className="text-sm font-medium text-orange-400">MB/s</div>
           </div>
           <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 border border-red-200">
             <div className="flex items-center justify-between mb-2">
-              <AlertTriangle className="w-6 h-6 text-red-600" />
+              <AlertTriangle className="w-6 h-6 text-red-400" />
               <span className="text-2xl font-bold text-red-700">{alerts.length}</span>
             </div>
-            <div className="text-sm font-medium text-red-600">Degraded</div>
+            <div className="text-sm font-medium text-red-400">Degraded</div>
           </div>
         </div>
 
         {Object.entries(byCategory).map(([category, conns]: [string, any]) => (
-          <div key={category} className="bg-white rounded-xl shadow-lg border border-slate-200">
-            <div className="p-4 border-b border-slate-200 bg-slate-50">
-              <h3 className="font-bold text-slate-900 capitalize">{category} Connectors ({conns.length})</h3>
+          <div key={category} className="bg-slate-800/40 rounded-xl border border-slate-700/50">
+            <div className="p-4 border-b border-slate-700/50 bg-slate-800/30">
+              <h3 className="font-bold text-white capitalize">{category} Connectors ({conns.length})</h3>
             </div>
             <div className="p-4">
               <div className="grid grid-cols-2 gap-4">
@@ -244,16 +244,16 @@ export default function DataConnectors() {
                       onClick={() => setSelectedConnector(conn)}
                       className={`text-left p-4 rounded-lg border-2 transition-all ${
                         selectedConnector?.id === conn.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-slate-200 bg-white hover:border-blue-300'
+                          ? 'border-cyan-500/50 bg-cyan-500/10'
+                          : 'border-slate-700/50 bg-slate-800/30 hover:border-cyan-500/40'
                       }`}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center space-x-2">
-                          <Icon className={`w-5 h-5 ${selectedConnector?.id === conn.id ? 'text-blue-600' : 'text-slate-400'}`} />
+                          <Icon className={`w-5 h-5 ${selectedConnector?.id === conn.id ? 'text-cyan-400' : 'text-slate-400'}`} />
                           <div>
-                            <div className="text-sm font-medium text-slate-900">{conn.connector_name}</div>
-                            <div className="text-xs text-slate-600">{conn.connector_type}</div>
+                            <div className="text-sm font-medium text-white">{conn.connector_name}</div>
+                            <div className="text-xs text-slate-400">{conn.connector_type}</div>
                           </div>
                         </div>
                         <div className="flex flex-col items-end space-y-1">
@@ -267,16 +267,16 @@ export default function DataConnectors() {
                       </div>
                       <div className="grid grid-cols-3 gap-2 text-xs mt-3">
                         <div>
-                          <div className="text-slate-500">Events/s</div>
-                          <div className="font-bold text-slate-900">{parseFloat(conn.events_per_second || 0).toFixed(1)}</div>
+                          <div className="text-slate-400">Events/s</div>
+                          <div className="font-bold text-white">{parseFloat(conn.events_per_second || 0).toFixed(1)}</div>
                         </div>
                         <div>
-                          <div className="text-slate-500">MB/s</div>
-                          <div className="font-bold text-slate-900">{parseFloat(conn.data_rate_mbps || 0).toFixed(2)}</div>
+                          <div className="text-slate-400">MB/s</div>
+                          <div className="font-bold text-white">{parseFloat(conn.data_rate_mbps || 0).toFixed(2)}</div>
                         </div>
                         <div>
-                          <div className="text-slate-500">Uptime</div>
-                          <div className="font-bold text-green-600">{parseFloat(conn.uptime_percent || 0).toFixed(1)}%</div>
+                          <div className="text-slate-400">Uptime</div>
+                          <div className="font-bold text-emerald-400">{parseFloat(conn.uptime_percent || 0).toFixed(1)}%</div>
                         </div>
                       </div>
                     </button>
@@ -303,11 +303,11 @@ export default function DataConnectors() {
                 <Code className="w-8 h-8" />
                 <span>Bytecode Weaving Instrumentation</span>
               </h3>
-              <p className="text-purple-200 mt-2">Runtime code injection and function interception</p>
+              <p className="text-slate-300 mt-2">Runtime code injection and function interception</p>
             </div>
             <div className="text-right">
               <div className="text-3xl font-bold">{bytecodeInstrumentation.length}</div>
-              <div className="text-purple-200 text-sm">Active Instrumentations</div>
+              <div className="text-slate-300 text-sm">Active Instrumentations</div>
             </div>
           </div>
         </div>
@@ -324,30 +324,30 @@ export default function DataConnectors() {
                 onClick={() => setSelectedConnector(conn)}
                 className={`text-left p-4 rounded-lg border-2 transition-all ${
                   selectedConnector?.id === conn.id
-                    ? 'border-purple-500 bg-purple-50 shadow-lg'
-                    : 'border-slate-200 bg-white hover:border-purple-300'
+                    ? 'border-cyan-500/50 bg-cyan-500/10'
+                    : 'border-slate-700/50 bg-slate-800/30 hover:border-cyan-500/40'
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <Code className={`w-5 h-5 ${selectedConnector?.id === conn.id ? 'text-purple-600' : 'text-slate-400'}`} />
+                  <Code className={`w-5 h-5 ${selectedConnector?.id === conn.id ? 'text-teal-400' : 'text-slate-400'}`} />
                   <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(conn.status)}`}>
                     {conn.status}
                   </span>
                 </div>
-                <div className="text-sm font-medium text-slate-900 mb-1">{conn.connector_name}</div>
+                <div className="text-sm font-medium text-white mb-1">{conn.connector_name}</div>
                 {instrumentation && (
-                  <div className="text-xs text-slate-600 mb-2">
+                  <div className="text-xs text-slate-400 mb-2">
                     {instrumentation.runtime_type} • {instrumentation.weaving_technique}
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <div className="text-slate-500">Functions</div>
-                    <div className="font-bold text-purple-600">{funcCount}</div>
+                    <div className="text-slate-400">Functions</div>
+                    <div className="font-bold text-teal-400">{funcCount}</div>
                   </div>
                   <div>
-                    <div className="text-slate-500">Strings</div>
-                    <div className="font-bold text-blue-600">{stringCount}</div>
+                    <div className="text-slate-400">Strings</div>
+                    <div className="font-bold text-cyan-400">{stringCount}</div>
                   </div>
                 </div>
               </button>
@@ -357,16 +357,16 @@ export default function DataConnectors() {
 
         {selectedConnector && instrumentedConnectorIds.includes(selectedConnector.id) && (
           <>
-            <div className="bg-white rounded-xl shadow-lg border border-slate-200">
-              <div className="p-4 border-b border-slate-200 bg-slate-50">
-                <h4 className="font-bold text-slate-900 flex items-center space-x-2">
-                  <GitBranch className="w-5 h-5 text-purple-600" />
+            <div className="bg-slate-800/40 rounded-xl border border-slate-700/50">
+              <div className="p-4 border-b border-slate-700/50 bg-slate-800/30">
+                <h4 className="font-bold text-white flex items-center space-x-2">
+                  <GitBranch className="w-5 h-5 text-teal-400" />
                   <span>Intercepted Function Calls</span>
                 </h4>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
+                  <thead className="bg-slate-800/30 border-b border-slate-700/50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Time</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Thread</th>
@@ -381,17 +381,17 @@ export default function DataConnectors() {
                       const inst = bytecodeInstrumentation.find(b => b.connector_id === selectedConnector.id);
                       return inst && f.instrumentation_id === inst.id;
                     }).map((func) => (
-                      <tr key={func.id} className="hover:bg-slate-50">
+                      <tr key={func.id} className="hover:bg-slate-700/30">
                         <td className="px-4 py-3 text-xs font-mono text-slate-600">
                           {new Date(func.timestamp).toLocaleTimeString()}
                         </td>
                         <td className="px-4 py-3 text-xs font-mono text-slate-600">{func.thread_id}</td>
-                        <td className="px-4 py-3 text-xs font-mono text-blue-600">{func.class_name}</td>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-900">{func.method_name}</td>
-                        <td className="px-4 py-3 text-xs text-slate-600">
+                        <td className="px-4 py-3 text-xs font-mono text-cyan-400">{func.class_name}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-white">{func.method_name}</td>
+                        <td className="px-4 py-3 text-xs text-slate-400">
                           {((func.execution_time_ns || 0) / 1000000).toFixed(2)}ms
                         </td>
-                        <td className="px-4 py-3 text-xs font-bold text-purple-600">{func.invocation_depth}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-teal-400">{func.invocation_depth}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -399,16 +399,16 @@ export default function DataConnectors() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg border border-slate-200">
-              <div className="p-4 border-b border-slate-200 bg-slate-50">
-                <h4 className="font-bold text-slate-900 flex items-center space-x-2">
-                  <FileCode className="w-5 h-5 text-blue-600" />
+            <div className="bg-slate-800/40 rounded-xl border border-slate-700/50">
+              <div className="p-4 border-b border-slate-700/50 bg-slate-800/30">
+                <h4 className="font-bold text-white flex items-center space-x-2">
+                  <FileCode className="w-5 h-5 text-cyan-400" />
                   <span>Intercepted String Data</span>
                 </h4>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-slate-50 border-b border-slate-200">
+                  <thead className="bg-slate-800/30 border-b border-slate-700/50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Time</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Source</th>
@@ -423,22 +423,22 @@ export default function DataConnectors() {
                       const inst = bytecodeInstrumentation.find(b => b.connector_id === selectedConnector.id);
                       return inst && s.instrumentation_id === inst.id;
                     }).map((str) => (
-                      <tr key={str.id} className="hover:bg-slate-50">
+                      <tr key={str.id} className="hover:bg-slate-700/30">
                         <td className="px-4 py-3 text-xs font-mono text-slate-600">
                           {new Date(str.timestamp).toLocaleTimeString()}
                         </td>
-                        <td className="px-4 py-3 text-xs font-mono text-blue-600">
+                        <td className="px-4 py-3 text-xs font-mono text-cyan-400">
                           {str.source_class}.{str.source_method}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-cyan-400">
                             {str.string_type}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-900 max-w-md truncate">
+                        <td className="px-4 py-3 text-xs font-mono text-white max-w-md truncate">
                           {str.string_value}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-600">{str.string_length}</td>
+                        <td className="px-4 py-3 text-xs text-slate-400">{str.string_length}</td>
                         <td className="px-4 py-3">
                           <div className="flex space-x-1">
                             {str.is_sensitive && (
@@ -511,9 +511,9 @@ export default function DataConnectors() {
                   {doc.status}
                 </span>
               </div>
-              <div className="text-sm font-medium text-slate-900 mb-1 truncate">{doc.document_name}</div>
-              <div className="text-xs text-slate-600 mb-2">{doc.document_type} • {doc.file_format}</div>
-              <div className="text-xs text-slate-500">
+              <div className="text-sm font-medium text-white mb-1 truncate">{doc.document_name}</div>
+              <div className="text-xs text-slate-400 mb-2">{doc.document_type} • {doc.file_format}</div>
+              <div className="text-xs text-slate-400">
                 Confidence: <span className="font-bold text-indigo-600">{doc.confidence_score}%</span>
               </div>
             </button>
@@ -523,33 +523,33 @@ export default function DataConnectors() {
         {selectedDocument && (
           <>
             <div className="grid grid-cols-4 gap-4">
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
                 <div className="flex items-center justify-between mb-2">
-                  <Server className="w-6 h-6 text-blue-600" />
-                  <span className="text-2xl font-bold text-blue-700">{selectedDocAssets.length}</span>
+                  <Server className="w-6 h-6 text-cyan-400" />
+                  <span className="text-2xl font-bold text-cyan-400">{selectedDocAssets.length}</span>
                 </div>
-                <div className="text-sm font-medium text-blue-600">Extracted Assets</div>
+                <div className="text-sm font-medium text-cyan-400">Extracted Assets</div>
               </div>
               <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 border border-red-200">
                 <div className="flex items-center justify-between mb-2">
-                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                  <AlertTriangle className="w-6 h-6 text-red-400" />
                   <span className="text-2xl font-bold text-red-700">{selectedDocRisks.length}</span>
                 </div>
-                <div className="text-sm font-medium text-red-600">Risk Assessments</div>
+                <div className="text-sm font-medium text-red-400">Risk Assessments</div>
               </div>
-              <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
                 <div className="flex items-center justify-between mb-2">
-                  <BarChart3 className="w-6 h-6 text-purple-600" />
-                  <span className="text-2xl font-bold text-purple-700">{selectedDocBIA.length}</span>
+                  <BarChart3 className="w-6 h-6 text-teal-400" />
+                  <span className="text-2xl font-bold text-teal-300">{selectedDocBIA.length}</span>
                 </div>
-                <div className="text-sm font-medium text-purple-600">BIA Records</div>
+                <div className="text-sm font-medium text-teal-400">BIA Records</div>
               </div>
-              <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
                 <div className="flex items-center justify-between mb-2">
-                  <Brain className="w-6 h-6 text-green-600" />
-                  <span className="text-2xl font-bold text-green-700">{selectedDocInsights.length}</span>
+                  <Brain className="w-6 h-6 text-emerald-400" />
+                  <span className="text-2xl font-bold text-emerald-400">{selectedDocInsights.length}</span>
                 </div>
-                <div className="text-sm font-medium text-green-600">AI Insights</div>
+                <div className="text-sm font-medium text-emerald-400">AI Insights</div>
               </div>
             </div>
 
@@ -588,9 +588,9 @@ export default function DataConnectors() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-lg border border-slate-200">
-        <div className="border-b border-slate-200">
-          <div className="flex space-x-1 p-2">
+      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50">
+        <div className="border-b border-slate-700/50">
+          <div className="flex space-x-1 p-2 overflow-x-auto">
             {[
               { id: 'overview', label: 'Overview', icon: Database },
               { id: 'catalog', label: 'Connector Catalog (108+)', icon: BookOpen },
@@ -608,10 +608,10 @@ export default function DataConnectors() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
                     activeTab === tab.id
-                      ? 'bg-blue-100 text-blue-700 shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-50'
+                      ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/30'
+                      : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
