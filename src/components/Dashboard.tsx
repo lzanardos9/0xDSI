@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom } from 'lucide-react';
+import { Shield, ShieldAlert, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { trackView, setCurrentView } from '../lib/activityTracker';
 import ThreatGlobe from './ThreatGlobe';
@@ -39,6 +39,7 @@ import ProductionSettings from './ProductionSettings';
 import Reports from './Reports';
 import DatabricksNotebooksPanel from './DatabricksNotebooksPanel';
 import ModelPoisoningGuard from './ModelPoisoningGuard';
+import StatefulBackdoorDefense from './StatefulBackdoorDefense';
 import DocumentAnalysis from './DocumentAnalysis';
 import HoneypotControl from './HoneypotControl';
 import CorrelationRulesPanel from './CorrelationRulesPanel';
@@ -83,7 +84,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -317,6 +318,7 @@ const Dashboard = () => {
         { id: 'stixtaxii', label: 'STIX/TAXII Intel', icon: Globe },
         { id: 'honeypot', label: 'HoneyPot & Tokens', icon: Eye },
         { id: 'malwaresandbox', label: 'AI Malware Sandbox', icon: Bug },
+        { id: 'backdoordefense', label: 'Agent Backdoor Defense', icon: ShieldAlert },
         { id: 'poisonguard', label: 'Model Poisoning Guard', icon: Shield },
         { id: 'guardrails', label: 'LLM Guardrails', icon: ShieldCheck },
         { id: 'attackvectors', label: 'Attack Vectors', icon: Target },
@@ -985,6 +987,7 @@ const Dashboard = () => {
           {selectedView === 'iocs' && <IOCPanel />}
           {selectedView === 'malwaresandbox' && <AIMalwareSandbox />}
           {selectedView === 'poisonguard' && <ModelPoisoningGuard />}
+          {selectedView === 'backdoordefense' && <StatefulBackdoorDefense />}
           {selectedView === 'guardrails' && <LLMGuardrailsControl />}
           {selectedView === 'honeypot' && (
             <div className="h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
