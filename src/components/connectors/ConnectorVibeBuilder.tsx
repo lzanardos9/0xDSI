@@ -160,12 +160,60 @@ const NORMALIZATION_SCHEMAS = [
   { id: 'custom', name: 'Custom Data Contract', description: 'Define your own schema or let AI propose one from sample data', org: 'User-Defined' },
 ];
 
-const LOG_FORMATS = [
-  'JSON', 'JSON Lines (NDJSON)', 'CEF', 'LEEF', 'Syslog RFC 5424', 'Syslog RFC 3164',
-  'CSV/TSV', 'Avro', 'Parquet', 'Protobuf', 'MessagePack', 'CBOR', 'XML', 'W3C Extended Log',
-  'Apache Common/Combined', 'Key=Value Pairs', 'Windows Event XML (EVTX)', 'Binary/Custom',
+type DataStructureType = 'structured' | 'semi-structured' | 'unstructured';
+
+const STRUCTURED_FORMATS = [
+  'JSON', 'JSON Lines (NDJSON)', 'CSV/TSV', 'Avro', 'Parquet', 'ORC',
+  'Protobuf', 'FlatBuffers', 'Cap\'n Proto', 'Thrift Binary', 'MessagePack', 'CBOR', 'BSON',
+  'Apache Arrow (IPC)', 'Ion (Amazon)', 'YAML', 'TOML',
+  'Fixed-Width Columns', 'COBOL Copybook Layout', 'ASN.1 (BER/DER)',
   'EBCDIC Fixed-Length Records', 'EBCDIC Variable-Length (RDW)', 'EBCDIC COMP-3 Packed Decimal',
-  'SMF Binary Records (z/OS)', 'COBOL Copybook Layout',
+  'SMF Binary Records (z/OS)',
+];
+
+const SEMI_STRUCTURED_FORMATS = [
+  'CEF (Common Event Format)', 'LEEF (Log Event Extended Format)', 'Syslog RFC 5424', 'Syslog RFC 3164',
+  'XML', 'HTML', 'W3C Extended Log', 'Apache Common/Combined', 'Key=Value Pairs',
+  'Windows Event XML (EVTX)', 'Windows ETL (Event Trace Log)', 'ELF (Extended Log Format)',
+  'GELF (Graylog Extended)', 'CLF (Common Log Format)', 'JSON-LD', 'RDF/Turtle',
+  'Multiline Stack Traces', 'Email (RFC 5322 / MIME)', 'HTTP Access Log',
+  'AWS CloudTrail JSON', 'Azure Activity Log', 'GCP Audit Log',
+  'Custom (define below)',
+];
+
+const UNSTRUCTURED_DATA_TYPES = [
+  { id: 'video-stream', name: 'Video Stream (RTSP/HLS/DASH)', category: 'video', description: 'Real-time video feeds from CCTV, cameras, screen recordings' },
+  { id: 'video-file', name: 'Video File (MP4/AVI/MKV/WebM)', category: 'video', description: 'Recorded video files for forensic analysis' },
+  { id: 'audio-stream', name: 'Audio Stream (RTP/WebRTC)', category: 'audio', description: 'Live audio from VoIP calls, ambient monitoring, radio intercepts' },
+  { id: 'audio-file', name: 'Audio File (WAV/MP3/FLAC/OGG)', category: 'audio', description: 'Recorded calls, voicemails, dictation for analysis' },
+  { id: 'image-raster', name: 'Image (PNG/JPEG/TIFF/BMP/WebP)', category: 'image', description: 'Screenshots, badge photos, camera stills, scanned documents' },
+  { id: 'image-dicom', name: 'DICOM (Medical Imaging)', category: 'image', description: 'Medical imaging data with embedded patient metadata' },
+  { id: 'image-satellite', name: 'Satellite/GeoTIFF Imagery', category: 'image', description: 'Geospatial raster imagery for facility monitoring' },
+  { id: 'pe-exe', name: 'PE/EXE (Windows Executable)', category: 'binary', description: 'Windows portable executables for malware analysis' },
+  { id: 'elf-binary', name: 'ELF Binary (Linux Executable)', category: 'binary', description: 'Linux ELF binaries, shared objects, kernel modules' },
+  { id: 'macho-binary', name: 'Mach-O Binary (macOS)', category: 'binary', description: 'macOS executables, dylibs, frameworks' },
+  { id: 'dll-lib', name: 'DLL / Shared Library', category: 'binary', description: 'Dynamic link libraries for dependency analysis' },
+  { id: 'firmware', name: 'Firmware Image (BIN/HEX/UF2)', category: 'binary', description: 'IoT/embedded device firmware for vulnerability scanning' },
+  { id: 'memory-dump', name: 'Memory Dump (RAW/DMP/VMEM)', category: 'binary', description: 'Process/full memory dumps for forensic investigation' },
+  { id: 'disk-image', name: 'Disk Image (E01/DD/VMDK)', category: 'binary', description: 'Forensic disk images for evidence preservation' },
+  { id: 'pcap-file', name: 'PCAP/PCAPNG (Packet Capture)', category: 'binary', description: 'Network packet captures for traffic analysis' },
+  { id: 'pdf', name: 'PDF Document', category: 'document', description: 'Policies, contracts, reports, invoices, certificates' },
+  { id: 'docx', name: 'Word Document (DOCX/DOC)', category: 'document', description: 'Business documents, incident reports, playbooks' },
+  { id: 'xlsx', name: 'Excel Spreadsheet (XLSX/XLS)', category: 'document', description: 'Asset inventories, risk registers, compliance matrices' },
+  { id: 'pptx', name: 'PowerPoint (PPTX/PPT)', category: 'document', description: 'Presentations, architecture diagrams, briefings' },
+  { id: 'email-eml', name: 'Email (EML/MSG/PST)', category: 'document', description: 'Email messages with attachments for phishing analysis' },
+  { id: 'archive', name: 'Archive (ZIP/RAR/7z/TAR.GZ)', category: 'document', description: 'Compressed packages potentially containing malicious payloads' },
+  { id: 'iso-img', name: 'ISO/IMG (Disk Image)', category: 'document', description: 'Mounted disk images used in malware delivery' },
+  { id: 'source-code', name: 'Source Code (any language)', category: 'code', description: 'Code files for SAST, secrets scanning, vulnerability detection' },
+  { id: 'script-macro', name: 'Scripts/Macros (VBA/PS1/BAT/SH)', category: 'code', description: 'Executable scripts and macros for behavioral analysis' },
+  { id: 'config-files', name: 'Configuration Files (INI/CONF/ENV)', category: 'code', description: 'System configs for misconfiguration detection' },
+  { id: 'registry-hive', name: 'Windows Registry Hive', category: 'code', description: 'Registry exports for persistence mechanism detection' },
+  { id: 'certificate', name: 'Certificates (PEM/DER/PFX/P12)', category: 'crypto', description: 'X.509 certificates, CA chains, key material' },
+  { id: 'crypto-key', name: 'Cryptographic Keys (PGP/SSH/JWK)', category: 'crypto', description: 'Key material for exposure detection and rotation tracking' },
+  { id: 'blockchain-tx', name: 'Blockchain Transactions (Raw)', category: 'crypto', description: 'Cryptocurrency transaction data for fraud/ransomware tracing' },
+  { id: 'network-flow', name: 'Network Flow (Binary NetFlow)', category: 'network', description: 'Raw binary flow records for traffic pattern analysis' },
+  { id: 'dns-zone', name: 'DNS Zone Files (BIND)', category: 'network', description: 'DNS zone transfers and record files' },
+  { id: 'x509-crl', name: 'CRL / OCSP Responses', category: 'network', description: 'Certificate revocation lists and status responses' },
 ];
 
 const SAMPLING_PRIORITIES = [
@@ -312,7 +360,9 @@ export default function ConnectorVibeBuilder() {
   const [description, setDescription] = useState('');
   const [selectedAcquisition, setSelectedAcquisition] = useState('');
   const [selectedTransport, setSelectedTransport] = useState('');
+  const [dataStructureType, setDataStructureType] = useState<DataStructureType>('structured');
   const [logFormat, setLogFormat] = useState('JSON');
+  const [unstructuredType, setUnstructuredType] = useState('');
   const [normSchema, setNormSchema] = useState('ocsf');
   const [customContract, setCustomContract] = useState('');
   const [sampleLog, setSampleLog] = useState('');
@@ -416,7 +466,9 @@ export default function ConnectorVibeBuilder() {
             connectorName={connectorName} setConnectorName={setConnectorName}
             vendor={vendor} setVendor={setVendor}
             description={description} setDescription={setDescription}
+            dataStructureType={dataStructureType} setDataStructureType={setDataStructureType}
             logFormat={logFormat} setLogFormat={setLogFormat}
+            unstructuredType={unstructuredType} setUnstructuredType={setUnstructuredType}
             normSchema={normSchema} setNormSchema={setNormSchema}
             customContract={customContract} setCustomContract={setCustomContract}
             sampleLog={sampleLog}
@@ -549,8 +601,11 @@ function PasteParseStep({ sampleLog, setSampleLog, onAutoDetect, onNext }: {
 }
 
 // Step 2: Configure
-function ConfigureStep({ connectorName, setConnectorName, vendor, setVendor, description, setDescription, logFormat, setLogFormat, normSchema, setNormSchema, customContract, setCustomContract, sampleLog, onNext, onBack }: any) {
+function ConfigureStep({ connectorName, setConnectorName, vendor, setVendor, description, setDescription, dataStructureType, setDataStructureType, logFormat, setLogFormat, unstructuredType, setUnstructuredType, normSchema, setNormSchema, customContract, setCustomContract, sampleLog, onNext, onBack }: any) {
   const [proposingContract, setProposingContract] = useState(false);
+  const [analyzingUnstructured, setAnalyzingUnstructured] = useState(false);
+  const [unstructuredAnalysis, setUnstructuredAnalysis] = useState<string>('');
+  const [unstructuredSample, setUnstructuredSample] = useState('');
 
   async function proposeContract() {
     setProposingContract(true);
@@ -579,6 +634,219 @@ function ConfigureStep({ connectorName, setConnectorName, vendor, setVendor, des
     setProposingContract(false);
   }
 
+  function generateFallbackUDF(typeName: string, typeId: string): string {
+    const templates: Record<string, string> = {
+      video: `from pyspark.sql.functions import udf
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType, IntegerType, FloatType
+
+@udf(returnType=StructType([
+    StructField("codec", StringType()),
+    StructField("resolution", StringType()),
+    StructField("duration_sec", FloatType()),
+    StructField("fps", FloatType()),
+    StructField("audio_tracks", IntegerType()),
+    StructField("embedded_text", ArrayType(StringType())),
+    StructField("detected_objects", ArrayType(StringType())),
+    StructField("suspicious_frames", ArrayType(StringType())),
+    StructField("steganography_score", FloatType()),
+    StructField("metadata_anomalies", ArrayType(StringType())),
+]))
+def extract_${typeId}_content(binary_data):
+    """Extract metadata + content from ${typeName} files.
+    Uses ffprobe for metadata, frame sampling for object detection,
+    and entropy analysis for steganography detection."""
+    import subprocess, json, tempfile, os
+    with tempfile.NamedTemporaryFile(suffix='.${typeId}', delete=False) as f:
+        f.write(binary_data)
+        path = f.name
+    try:
+        probe = json.loads(subprocess.check_output(
+            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', path]))
+        stream = probe.get('streams', [{}])[0]
+        return (stream.get('codec_name'), f"{stream.get('width')}x{stream.get('height')}",
+                float(stream.get('duration', 0)), float(eval(stream.get('r_frame_rate', '0/1'))),
+                len([s for s in probe.get('streams', []) if s.get('codec_type') == 'audio']),
+                [], [], [], 0.0, [])
+    finally:
+        os.unlink(path)`,
+      audio: `from pyspark.sql.functions import udf
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType, FloatType
+
+@udf(returnType=StructType([
+    StructField("codec", StringType()),
+    StructField("sample_rate", StringType()),
+    StructField("duration_sec", FloatType()),
+    StructField("channels", StringType()),
+    StructField("speech_to_text", StringType()),
+    StructField("language_detected", StringType()),
+    StructField("anomalous_frequencies", ArrayType(StringType())),
+    StructField("hidden_data_score", FloatType()),
+]))
+def extract_audio_content(binary_data):
+    """Extract metadata + content from audio files.
+    Performs speech-to-text, frequency analysis, and hidden channel detection."""
+    pass  # Implementation uses whisper/vosk for STT, librosa for analysis`,
+      image: `from pyspark.sql.functions import udf
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType, FloatType, IntegerType
+
+@udf(returnType=StructType([
+    StructField("format", StringType()),
+    StructField("dimensions", StringType()),
+    StructField("color_depth", IntegerType()),
+    StructField("exif_data", StringType()),
+    StructField("detected_objects", ArrayType(StringType())),
+    StructField("ocr_text", StringType()),
+    StructField("faces_detected", IntegerType()),
+    StructField("steganography_score", FloatType()),
+    StructField("embedded_urls", ArrayType(StringType())),
+    StructField("malicious_indicators", ArrayType(StringType())),
+]))
+def extract_image_content(binary_data):
+    """Extract metadata + visual content from images.
+    Performs OCR, object detection, EXIF analysis, and stego detection."""
+    pass  # Uses PIL/Pillow, pytesseract, YOLO, steganalysis libs`,
+      binary: `from pyspark.sql.functions import udf
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType, FloatType, IntegerType
+
+@udf(returnType=StructType([
+    StructField("file_type", StringType()),
+    StructField("architecture", StringType()),
+    StructField("entropy", FloatType()),
+    StructField("sections", ArrayType(StringType())),
+    StructField("imports", ArrayType(StringType())),
+    StructField("strings_of_interest", ArrayType(StringType())),
+    StructField("packer_detected", StringType()),
+    StructField("iocs_extracted", ArrayType(StringType())),
+    StructField("yara_matches", ArrayType(StringType())),
+    StructField("syscalls_referenced", ArrayType(StringType())),
+    StructField("malware_family_guess", StringType()),
+]))
+def extract_binary_content(binary_data):
+    """Disassemble and analyze PE/ELF/Mach-O binaries.
+    Extracts IOCs, suspicious strings, packer signatures, YARA matches."""
+    pass  # Uses pefile, lief, yara-python, capstone for disassembly`,
+      document: `from pyspark.sql.functions import udf
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType, FloatType, IntegerType
+
+@udf(returnType=StructType([
+    StructField("doc_type", StringType()),
+    StructField("author", StringType()),
+    StructField("created_at", StringType()),
+    StructField("modified_at", StringType()),
+    StructField("page_count", IntegerType()),
+    StructField("extracted_text", StringType()),
+    StructField("embedded_macros", ArrayType(StringType())),
+    StructField("external_links", ArrayType(StringType())),
+    StructField("embedded_objects", ArrayType(StringType())),
+    StructField("suspicious_vba", ArrayType(StringType())),
+    StructField("classification_label", StringType()),
+]))
+def extract_document_content(binary_data):
+    """Parse documents (PDF, DOCX, XLSX, etc) extracting text, macros, and threats.
+    Detects malicious macros, external references, and data exfil patterns."""
+    pass  # Uses python-docx, openpyxl, PyPDF2, oletools`,
+      code: `from pyspark.sql.functions import udf
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType, FloatType
+
+@udf(returnType=StructType([
+    StructField("language", StringType()),
+    StructField("loc", StringType()),
+    StructField("functions_defined", ArrayType(StringType())),
+    StructField("imports_used", ArrayType(StringType())),
+    StructField("hardcoded_secrets", ArrayType(StringType())),
+    StructField("suspicious_patterns", ArrayType(StringType())),
+    StructField("obfuscation_score", FloatType()),
+    StructField("network_indicators", ArrayType(StringType())),
+]))
+def extract_code_content(source_code):
+    """Static analysis of source code / scripts for security indicators.
+    Detects hardcoded secrets, obfuscation, C2 patterns, and backdoors."""
+    pass  # Uses tree-sitter for AST, regex for secrets, entropy for obfuscation`,
+      crypto: `from pyspark.sql.functions import udf
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType
+
+@udf(returnType=StructType([
+    StructField("cert_type", StringType()),
+    StructField("issuer", StringType()),
+    StructField("subject", StringType()),
+    StructField("valid_from", StringType()),
+    StructField("valid_to", StringType()),
+    StructField("algorithm", StringType()),
+    StructField("key_size", StringType()),
+    StructField("san_entries", ArrayType(StringType())),
+    StructField("chain_valid", StringType()),
+    StructField("revocation_status", StringType()),
+]))
+def extract_crypto_content(binary_data):
+    """Parse X.509 certs, PGP keys, JWTs, and encrypted payloads.
+    Validates chains, checks revocation, extracts SANs and key metadata."""
+    pass  # Uses cryptography lib, pyOpenSSL, jwt decode`,
+      network: `from pyspark.sql.functions import udf
+from pyspark.sql.types import StructType, StructField, StringType, ArrayType, IntegerType
+
+@udf(returnType=StructType([
+    StructField("capture_format", StringType()),
+    StructField("packet_count", IntegerType()),
+    StructField("protocols_seen", ArrayType(StringType())),
+    StructField("src_ips", ArrayType(StringType())),
+    StructField("dst_ips", ArrayType(StringType())),
+    StructField("dns_queries", ArrayType(StringType())),
+    StructField("http_hosts", ArrayType(StringType())),
+    StructField("tls_snis", ArrayType(StringType())),
+    StructField("suspicious_flows", ArrayType(StringType())),
+    StructField("c2_indicators", ArrayType(StringType())),
+]))
+def extract_pcap_content(binary_data):
+    """Deep packet inspection of PCAP/PCAPNG network captures.
+    Extracts flows, DNS, TLS metadata, and identifies C2 beaconing."""
+    pass  # Uses scapy, dpkt for packet parsing`,
+    };
+    const category = UNSTRUCTURED_DATA_TYPES.find(t => t.id === typeId)?.category || 'binary';
+    return templates[category] || templates['binary'];
+  }
+
+  async function analyzeUnstructuredSample() {
+    if (!unstructuredSample.trim()) return;
+    setAnalyzingUnstructured(true);
+    try {
+      const selectedType = UNSTRUCTURED_DATA_TYPES.find(t => t.id === unstructuredType);
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          connectorName: connectorName || 'Unstructured Data Processor',
+          vendor: vendor || 'custom',
+          description: `Generate a UDF (User-Defined Function) to parse, extract metadata AND content from unstructured data type: ${selectedType?.name || unstructuredType}. The UDF must extract: 1) All metadata (timestamps, authors, dimensions, encoding, etc), 2) Content understanding (text extraction, object detection in images, speech-to-text for audio, disassembly for binaries), 3) Security-relevant indicators (embedded macros, suspicious strings, IOCs, anomalies). Return a complete Spark UDF or Python function.`,
+          acquisitionMethod: 'File Upload / Stream',
+          transportProtocol: 'Binary Stream',
+          logFormat: `Unstructured: ${selectedType?.name || 'Binary'}`,
+          sampleLog: unstructuredSample,
+          normalizationSchema: 'unstructured-udf-generation',
+        }),
+      });
+      const data = await response.json();
+      if (data.connectorCode) {
+        setUnstructuredAnalysis(data.connectorCode);
+      } else {
+        setUnstructuredAnalysis(generateFallbackUDF(selectedType?.name || 'binary', unstructuredType));
+      }
+    } catch {
+      const selectedType = UNSTRUCTURED_DATA_TYPES.find(t => t.id === unstructuredType);
+      setUnstructuredAnalysis(generateFallbackUDF(selectedType?.name || 'binary', unstructuredType));
+    }
+    setAnalyzingUnstructured(false);
+  }
+
+  const unstructuredCategories = [...new Set(UNSTRUCTURED_DATA_TYPES.map(t => t.category))];
+  const unstructuredCatLabels: Record<string, string> = {
+    video: 'Video', audio: 'Audio', image: 'Images', binary: 'Binaries & Executables',
+    document: 'Documents & Office', code: 'Code & Config', crypto: 'Crypto & Certs', network: 'Network Captures',
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2">
@@ -605,30 +873,138 @@ function ConfigureStep({ connectorName, setConnectorName, vendor, setVendor, des
           className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none" />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs text-slate-400 block mb-1">Log Format</label>
-          <select value={logFormat} onChange={e => setLogFormat(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
-            {LOG_FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-slate-400 block mb-1">Normalization Target</label>
-          <select value={normSchema} onChange={e => setNormSchema(e.target.value)}
-            className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
-            {NORMALIZATION_SCHEMAS.map(s => <option key={s.id} value={s.id}>{s.name} ({s.org})</option>)}
-          </select>
+      {/* Data Structure Type Selector */}
+      <div>
+        <label className="text-xs text-slate-400 block mb-2">Data Structure Type</label>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { id: 'structured' as const, label: 'Structured', desc: 'Fixed schema, typed fields (JSON, Avro, Parquet, EBCDIC...)', icon: Database },
+            { id: 'semi-structured' as const, label: 'Semi-Structured', desc: 'Logs, events, key-value, mixed formats (CEF, Syslog, XML...)', icon: Layers },
+            { id: 'unstructured' as const, label: 'Unstructured', desc: 'Binary, media, documents, code, executables', icon: HardDrive },
+          ]).map(opt => {
+            const Icon = opt.icon;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setDataStructureType(opt.id)}
+                className={`p-3 rounded-lg border text-left transition-all ${
+                  dataStructureType === opt.id
+                    ? 'border-cyan-500/50 bg-cyan-500/10'
+                    : 'border-slate-700/50 bg-slate-900/30 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Icon className={`w-4 h-4 ${dataStructureType === opt.id ? 'text-cyan-400' : 'text-slate-500'}`} />
+                  <span className={`text-xs font-medium ${dataStructureType === opt.id ? 'text-white' : 'text-slate-400'}`}>{opt.label}</span>
+                </div>
+                <p className="text-[9px] text-slate-500 leading-relaxed">{opt.desc}</p>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {normSchema !== 'custom' && (
+      {/* Structured / Semi-Structured: Data Format Selector */}
+      {dataStructureType !== 'unstructured' && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Data Format</label>
+            <select value={logFormat} onChange={e => setLogFormat(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
+              {(dataStructureType === 'structured' ? STRUCTURED_FORMATS : SEMI_STRUCTURED_FORMATS).map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Normalization Target</label>
+            <select value={normSchema} onChange={e => setNormSchema(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-sm text-white focus:border-cyan-500/50 focus:outline-none">
+              {NORMALIZATION_SCHEMAS.map(s => <option key={s.id} value={s.id}>{s.name} ({s.org})</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Unstructured: Data Type & Analysis */}
+      {dataStructureType === 'unstructured' && (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-slate-400 block mb-2">Unstructured Data Type</label>
+            <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
+              {unstructuredCategories.map(cat => (
+                <div key={cat}>
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1.5 sticky top-0 bg-slate-800/90 py-1">{unstructuredCatLabels[cat] || cat}</div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {UNSTRUCTURED_DATA_TYPES.filter(t => t.category === cat).map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setUnstructuredType(t.id)}
+                        className={`text-left p-2 rounded-lg border transition-all ${
+                          unstructuredType === t.id
+                            ? 'border-cyan-500/50 bg-cyan-500/10'
+                            : 'border-slate-700/40 bg-slate-900/30 hover:border-slate-600'
+                        }`}
+                      >
+                        <div className={`text-[11px] font-medium ${unstructuredType === t.id ? 'text-white' : 'text-slate-400'}`}>{t.name}</div>
+                        <p className="text-[9px] text-slate-500 mt-0.5 leading-relaxed">{t.description}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {unstructuredType && (
+            <div className="p-4 bg-slate-800/50 border border-slate-700/50 rounded-xl space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-semibold text-white">AI Data Understanding (UDF Generator)</span>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Paste a sample (base64 for binary, first bytes hex dump, or text description) and the AI will analyze it
+                to generate a custom UDF that extracts both <span className="text-white font-medium">content</span> and <span className="text-white font-medium">metadata</span> - not just file headers.
+              </p>
+              <textarea
+                value={unstructuredSample}
+                onChange={e => setUnstructuredSample(e.target.value)}
+                placeholder={`Paste sample data here:\n\n- Base64-encoded binary fragment\n- Hex dump of first 256 bytes\n- Text description of the data format\n- File header bytes (e.g. "4D 5A 90 00..." for PE)\n- MIME type or magic bytes\n- Schema description if known\n\nThe AI will identify the format, extract structure, and generate a UDF.`}
+                className="w-full h-28 px-3 py-2 bg-slate-900/70 border border-slate-700/50 rounded-lg text-xs text-slate-200 font-mono placeholder-slate-600 focus:border-cyan-500/50 focus:outline-none resize-none"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={analyzeUnstructuredSample}
+                  disabled={analyzingUnstructured || !unstructuredSample.trim()}
+                  className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-3 h-3" /> {analyzingUnstructured ? 'Analyzing & Generating UDF...' : 'Analyze Sample & Generate UDF'}
+                </button>
+                <span className="text-[9px] text-slate-500">Uses GPT-4o to understand the data and create extraction logic</span>
+              </div>
+
+              {unstructuredAnalysis && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-xs font-medium text-emerald-300">UDF Generated</span>
+                  </div>
+                  <pre className="text-[10px] text-slate-300 bg-slate-900/70 border border-slate-700/50 rounded-lg p-3 overflow-auto max-h-48 font-mono leading-relaxed">
+                    {unstructuredAnalysis}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Custom schema/normalization (for structured/semi-structured) */}
+      {dataStructureType !== 'unstructured' && normSchema !== 'custom' && (
         <div className="p-3 bg-slate-800/50 border border-slate-700/50 rounded-lg">
           <div className="text-xs text-slate-300"><span className="font-medium text-white">{NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.name}:</span> {NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.description}</div>
         </div>
       )}
 
-      {normSchema === 'custom' && (
+      {dataStructureType !== 'unstructured' && normSchema === 'custom' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-xs text-slate-400">Custom Data Contract (TypeScript schema or JSON Schema)</label>
@@ -661,7 +1037,7 @@ function AcquisitionStep({ methods, categories, selected, setSelected, onNext, o
   const catLabels: Record<string, string> = {
     api: 'API-Based', push: 'Push/Callback', messaging: 'Message Queues', streaming: 'Event Streaming',
     network: 'Network Protocols', kernel: 'Kernel-Level (eBPF/XDP)', storage: 'File/Object Storage',
-    database: 'Database', iot: 'IoT/Industrial',
+    database: 'Database', iot: 'IoT/Industrial', mainframe: 'Mainframe / EBCDIC',
   };
 
   return (
@@ -729,7 +1105,7 @@ function TransportStep({ protocols, categories, selected, setSelected, onNext, o
     http: 'HTTP/HTTPS', tcp: 'TCP Sockets', udp: 'UDP', ipc: 'Inter-Process (IPC)',
     rpc: 'RPC Frameworks', streaming: 'Streaming Protocols', realtime: 'Real-Time',
     hpc: 'High-Performance / Kernel Bypass', telecom: 'Telecom / SS7 / 5G', messaging: 'Messaging',
-    physical: 'Physical / Serial / Bus', exotic: 'Non-TCP/IP / Exotic / Industrial',
+    physical: 'Physical / Serial / Bus', exotic: 'Non-TCP/IP / Exotic / Industrial', mainframe: 'Mainframe / EBCDIC',
   };
 
   return (
