@@ -25,8 +25,10 @@ import {
   BarChart3,
   ChevronDown,
   ChevronUp,
+  Settings,
 } from 'lucide-react';
 import { CATALOG_CONNECTORS, CONNECTOR_CATEGORIES, type CatalogConnector } from '../../lib/connectorsCatalog';
+import ConnectorConfigModal from './ConnectorConfigModal';
 
 const CATEGORY_ICONS: Record<string, any> = {
   siem: Database,
@@ -99,6 +101,7 @@ export default function ConnectorCatalog() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [configConnector, setConfigConnector] = useState<CatalogConnector | null>(null);
 
   const filtered = useMemo(() => {
     let results = CATALOG_CONNECTORS;
@@ -306,8 +309,14 @@ export default function ConnectorCatalog() {
                     return (
                       <div
                         key={conn.id}
-                        className={`p-4 rounded-lg border ${colors.border} ${colors.bg} bg-opacity-30 hover:shadow-md transition-all`}
+                        onClick={() => setConfigConnector(conn)}
+                        className={`p-4 rounded-lg border ${colors.border} ${colors.bg} bg-opacity-30 hover:shadow-md transition-all cursor-pointer group relative`}
                       >
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="p-1 bg-slate-800/80 rounded-md">
+                            <Settings className="w-3.5 h-3.5 text-cyan-400" />
+                          </div>
+                        </div>
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-semibold text-slate-900">{conn.name}</div>
@@ -338,6 +347,10 @@ export default function ConnectorCatalog() {
           <div className="text-lg font-medium text-slate-500">No connectors found</div>
           <div className="text-sm text-slate-400 mt-1">Try adjusting your search or filters</div>
         </div>
+      )}
+
+      {configConnector && (
+        <ConnectorConfigModal connector={configConnector} onClose={() => setConfigConnector(null)} />
       )}
     </div>
   );

@@ -63,6 +63,9 @@ export default function ConnectorVibeBuilder() {
   const [sampleLog, setSampleLog] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generatedCode, setGeneratedCode] = useState('');
+  const [parserCode, setParserCode] = useState('');
+  const [genError, setGenError] = useState('');
+  const [genMetadata, setGenMetadata] = useState<Record<string, string> | null>(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -79,16 +82,51 @@ export default function ConnectorVibeBuilder() {
     setLoading(false);
   }
 
-  function simulateGenerate() {
+  async function handleGenerate() {
     setGenerating(true);
+    setGenError('');
     setStep('generate');
-    setTimeout(() => {
-      const acq = acquisitionMethods.find(a => a.id === selectedAcquisition);
-      const trans = transportProtocols.find(t => t.id === selectedTransport);
-      setGeneratedCode(generateMockCode(connectorName, vendor, acq, trans, logFormat));
-      setGenerating(false);
+
+    const acq = acquisitionMethods.find(a => a.id === selectedAcquisition);
+    const trans = transportProtocols.find(t => t.id === selectedTransport);
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          connectorName,
+          vendor,
+          description,
+          acquisitionMethod: acq?.name || selectedAcquisition,
+          transportProtocol: trans?.name || selectedTransport,
+          logFormat,
+          sampleLog,
+          normalizationSchema: 'OCSF v1.3.0',
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+
+      setGeneratedCode(data.connectorCode || '');
+      setParserCode(data.parserCode || '');
+      setGenMetadata(data.metadata || null);
       setStep('test');
-    }, 2500);
+    } catch (err: any) {
+      setGenError(err.message || 'Failed to generate connector');
+      setGeneratedCode(generateFallbackCode(connectorName, vendor, acq, trans, logFormat));
+      setStep('test');
+    } finally {
+      setGenerating(false);
+    }
   }
 
   const acqCategories = [...new Set(acquisitionMethods.map(a => a.category))];
@@ -200,7 +238,7 @@ export default function ConnectorVibeBuilder() {
               <FormatStep
                 logFormat={logFormat} setLogFormat={setLogFormat}
                 sampleLog={sampleLog} setSampleLog={setSampleLog}
-                onGenerate={simulateGenerate}
+                onGenerate={handleGenerate}
               />
             )}
             {step === 'generate' && (
@@ -214,7 +252,7 @@ export default function ConnectorVibeBuilder() {
               </div>
             )}
             {step === 'test' && generatedCode && (
-              <TestStep code={generatedCode} connectorName={connectorName} />
+              <TestStep code={generatedCode} parserCode={parserCode} connectorName={connectorName} error={genError} metadata={genMetadata} />
             )}
           </div>
         </div>
@@ -415,9 +453,10 @@ function FormatStep({ logFormat, setLogFormat, sampleLog, setSampleLog, onGenera
   );
 }
 
-function TestStep({ code, connectorName }: { code: string; connectorName: string }) {
+function TestStep({ code, parserCode, connectorName, error, metadata }: { code: string; parserCode?: string; connectorName: string; error?: string; metadata?: Record<string, string> | null }) {
   const [testRunning, setTestRunning] = useState(false);
   const [testPassed, setTestPassed] = useState(false);
+  const [viewTab, setViewTab] = useState<'connector' | 'parser'>('connector');
 
   function runTest() {
     setTestRunning(true);
@@ -429,7 +468,7 @@ function TestStep({ code, connectorName }: { code: string; connectorName: string
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-medium text-white flex items-center gap-2">
           <CheckCircle className="w-4 h-4 text-emerald-400" />
-          Generated: {connectorName} Connector
+          Generated: {connectorName || 'Custom'} Connector
         </h4>
         <div className="flex gap-2">
           <button onClick={runTest} disabled={testRunning} className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-xs text-cyan-300 hover:bg-cyan-500/20 flex items-center gap-1.5 disabled:opacity-50">
@@ -442,14 +481,41 @@ function TestStep({ code, connectorName }: { code: string; connectorName: string
           )}
         </div>
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+          <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+          <span className="text-xs text-yellow-300">LLM generation encountered an issue ({error}). Showing fallback template - edit to customize.</span>
+        </div>
+      )}
+
+      {metadata && !error && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
+          <Sparkles className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+          <span className="text-xs text-cyan-300">Generated by {metadata.model} at {new Date(metadata.generatedAt).toLocaleString()} - Production-ready code with OCSF normalization</span>
+        </div>
+      )}
+
       {testPassed && (
         <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
           <CheckCircle className="w-4 h-4 text-emerald-400" />
           <span className="text-xs text-emerald-300">All tests passed: schema validation, field mapping, OCSF normalization, edge cases</span>
         </div>
       )}
+
+      {parserCode && (
+        <div className="flex gap-1">
+          <button onClick={() => setViewTab('connector')} className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewTab === 'connector' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
+            Connector Code
+          </button>
+          <button onClick={() => setViewTab('parser')} className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewTab === 'parser' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
+            Parser Code
+          </button>
+        </div>
+      )}
+
       <pre className="text-xs text-slate-300 bg-slate-900/70 border border-slate-700/50 rounded-xl p-4 overflow-auto max-h-[350px] font-mono leading-relaxed">
-        {code}
+        {viewTab === 'connector' ? code : (parserCode || 'No parser code generated')}
       </pre>
     </div>
   );
@@ -501,7 +567,7 @@ function ComplexityBadge({ complexity }: { complexity: string }) {
   return <span className={`px-1.5 py-0.5 text-[10px] rounded ${config}`}>{complexity}</span>;
 }
 
-function generateMockCode(name: string, vendor: string, acq: AcquisitionMethod | undefined, trans: TransportProtocol | undefined, format: string): string {
+function generateFallbackCode(name: string, vendor: string, acq: AcquisitionMethod | undefined, trans: TransportProtocol | undefined, format: string): string {
   return `// Auto-generated connector: ${name || 'Custom Connector'}
 // Vendor: ${vendor || 'Unknown'}
 // Acquisition: ${acq?.name || 'REST API'}
