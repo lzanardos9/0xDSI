@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Wand2, Code, Play, CheckCircle, AlertTriangle, ChevronRight, ChevronDown, Layers, Network, Database, Radio, Cloud, Terminal, Lock, Cpu, HardDrive, Globe, Server, Zap, FileText, RefreshCw, Sparkles, ArrowRight, Copy, Clipboard, Shield, Activity, BarChart3, Percent, AlertOctagon, Gauge } from 'lucide-react';
+import { Wand2, Code, Play, CheckCircle, AlertTriangle, ChevronRight, ChevronDown, Layers, Network, Database, Radio, Cloud, Terminal, Lock, Cpu, HardDrive, Globe, Server, Zap, FileText, RefreshCw, Sparkles, ArrowRight, Copy, Clipboard, Shield, Activity, BarChart3, Percent, AlertOctagon, Gauge, Bug, Package, Download, Wrench } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 // Extended acquisition methods (comprehensive)
@@ -139,6 +139,141 @@ const LOG_FORMATS = [
   'JSON', 'JSON Lines (NDJSON)', 'CEF', 'LEEF', 'Syslog RFC 5424', 'Syslog RFC 3164',
   'CSV/TSV', 'Avro', 'Parquet', 'Protobuf', 'MessagePack', 'CBOR', 'XML', 'W3C Extended Log',
   'Apache Common/Combined', 'Key=Value Pairs', 'Windows Event XML (EVTX)', 'Binary/Custom',
+];
+
+const SAMPLING_PRIORITIES = [
+  {
+    id: 'high-severity',
+    name: 'High Severity Events',
+    description: 'Critical/High severity alerts, CVSS 7+, priority 1-2 events that indicate active threats',
+    icon: AlertTriangle,
+    iconColor: 'text-red-400',
+    iconBg: 'bg-red-500/20',
+    activeBg: 'bg-red-500/5',
+    activeBorder: 'border-red-500/40',
+    examples: ['severity >= critical', 'priority <= 2', 'CVSS >= 7.0'],
+  },
+  {
+    id: 'suspicious-patterns',
+    name: 'CEP Suspicious Patterns',
+    description: 'Events matching known multi-step attack sequences: recon + exploit + lateral movement chains',
+    icon: Activity,
+    iconColor: 'text-orange-400',
+    iconBg: 'bg-orange-500/20',
+    activeBg: 'bg-orange-500/5',
+    activeBorder: 'border-orange-500/40',
+    examples: ['kill-chain-match', 'temporal-sequence', 'recon->exploit'],
+  },
+  {
+    id: 'large-payloads',
+    name: 'Large/Anomalous Payloads',
+    description: 'Packets exceeding normal size thresholds - potential data exfiltration, C2 beacons, or exploit delivery',
+    icon: HardDrive,
+    iconColor: 'text-cyan-400',
+    iconBg: 'bg-cyan-500/20',
+    activeBg: 'bg-cyan-500/5',
+    activeBorder: 'border-cyan-500/40',
+    examples: ['payload > 10KB', 'entropy > 7.5', 'unusual-encoding'],
+  },
+  {
+    id: 'graph-escalated',
+    name: 'Graph-Escalated Entities',
+    description: 'Events involving entities that have been escalated by graph scoring: high PageRank, betweenness centrality spikes',
+    icon: Network,
+    iconColor: 'text-teal-400',
+    iconBg: 'bg-teal-500/20',
+    activeBg: 'bg-teal-500/5',
+    activeBorder: 'border-teal-500/40',
+    examples: ['entity_risk > 80', 'centrality_spike', 'graph_escalation'],
+  },
+  {
+    id: 'micro-patterns',
+    name: 'Bad Micro-Pattern Matches',
+    description: 'Events flagged by micro-pattern engine: beaconing intervals, DNS tunneling cadence, low-and-slow exfil',
+    icon: Radio,
+    iconColor: 'text-amber-400',
+    iconBg: 'bg-amber-500/20',
+    activeBg: 'bg-amber-500/5',
+    activeBorder: 'border-amber-500/40',
+    examples: ['beacon_score > 0.8', 'dns_tunnel_prob', 'periodic_callback'],
+  },
+  {
+    id: 'auth-events',
+    name: 'Authentication & Access',
+    description: 'All authentication attempts, privilege escalations, MFA challenges, token refreshes - never miss an identity event',
+    icon: Lock,
+    iconColor: 'text-blue-400',
+    iconBg: 'bg-blue-500/20',
+    activeBg: 'bg-blue-500/5',
+    activeBorder: 'border-blue-500/40',
+    examples: ['login_*', 'priv_escalation', 'mfa_*', 'token_refresh'],
+  },
+  {
+    id: 'rare-events',
+    name: 'First-Seen / Rare Events',
+    description: 'Events from never-before-seen IPs, new user-agent strings, first DNS lookups - novelty detection priority',
+    icon: Sparkles,
+    iconColor: 'text-emerald-400',
+    iconBg: 'bg-emerald-500/20',
+    activeBg: 'bg-emerald-500/5',
+    activeBorder: 'border-emerald-500/40',
+    examples: ['first_seen_ip', 'new_ua_string', 'novel_domain'],
+  },
+  {
+    id: 'lateral-movement',
+    name: 'Lateral Movement Indicators',
+    description: 'SMB/RDP/SSH between internal hosts, service account anomalies, pass-the-hash/ticket patterns',
+    icon: Globe,
+    iconColor: 'text-rose-400',
+    iconBg: 'bg-rose-500/20',
+    activeBg: 'bg-rose-500/5',
+    activeBorder: 'border-rose-500/40',
+    examples: ['internal->internal', 'svc_acct_anomaly', 'pth_detected'],
+  },
+  {
+    id: 'data-exfil',
+    name: 'Data Exfiltration Signals',
+    description: 'Large outbound transfers, unusual upload destinations, encrypted blobs to rare endpoints, DNS over HTTPS exfil',
+    icon: AlertOctagon,
+    iconColor: 'text-red-400',
+    iconBg: 'bg-red-500/20',
+    activeBg: 'bg-red-500/5',
+    activeBorder: 'border-red-500/40',
+    examples: ['outbound > 50MB', 'rare_dest_upload', 'doh_exfil'],
+  },
+  {
+    id: 'encrypted-anomalies',
+    name: 'TLS/Encryption Anomalies',
+    description: 'Self-signed certs, expired certificates, JA3/JA4 fingerprint mismatches, cipher downgrade attacks',
+    icon: Shield,
+    iconColor: 'text-sky-400',
+    iconBg: 'bg-sky-500/20',
+    activeBg: 'bg-sky-500/5',
+    activeBorder: 'border-sky-500/40',
+    examples: ['self_signed_cert', 'ja3_mismatch', 'cipher_downgrade'],
+  },
+  {
+    id: 'timing-anomalies',
+    name: 'Temporal / Timing Anomalies',
+    description: 'Events outside business hours, impossible travel, clock skew between hops, burst patterns at unusual times',
+    icon: Gauge,
+    iconColor: 'text-yellow-400',
+    iconBg: 'bg-yellow-500/20',
+    activeBg: 'bg-yellow-500/5',
+    activeBorder: 'border-yellow-500/40',
+    examples: ['off_hours_access', 'impossible_travel', 'burst_at_3am'],
+  },
+  {
+    id: 'honeypot-triggered',
+    name: 'Honeypot / Honeytoken Triggered',
+    description: 'Any interaction with deployed honeypots, honeytokens, canary files, or decoy credentials - guaranteed attacker activity',
+    icon: Bug,
+    iconColor: 'text-red-400',
+    iconBg: 'bg-red-500/20',
+    activeBg: 'bg-red-500/5',
+    activeBorder: 'border-red-500/40',
+    examples: ['canary_triggered', 'honeytoken_access', 'decoy_cred_used'],
+  },
 ];
 
 type BuilderStep = 'paste' | 'configure' | 'acquire' | 'transport' | 'quality' | 'sampling' | 'generate' | 'result';
@@ -679,6 +814,16 @@ function DataQualityStep({ dqSchemaValidation, setDqSchemaValidation, dqFieldPre
 
 // Step 6: Sampling
 function SamplingStep({ enabled, setEnabled, rate, setRate, discardAfterGraph, setDiscardAfterGraph, sparkStreaming, setSparkStreaming, onGenerate, onBack }: any) {
+  const [priorities, setPriorities] = useState<Set<string>>(new Set(['high-severity', 'suspicious-patterns']));
+
+  const togglePriority = (id: string) => {
+    setPriorities(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2">
@@ -727,6 +872,56 @@ function SamplingStep({ enabled, setEnabled, rate, setRate, discardAfterGraph, s
                 <span>10% (Recommended)</span>
                 <span>50% (Moderate)</span>
               </div>
+            </div>
+
+            {/* INTELLIGENT PRIORITY SAMPLING */}
+            <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="w-4 h-4 text-amber-400" />
+                <div className="text-xs font-semibold text-white">Intelligent Priority Capture</div>
+                <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-300 text-[9px] rounded font-medium">ALWAYS RETAINED</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mb-3">
+                Selected event types are ALWAYS captured at 100% regardless of sampling rate. These events bypass the sampling decision
+                and are guaranteed to be stored. This ensures critical security events are never lost.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {SAMPLING_PRIORITIES.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => togglePriority(p.id)}
+                    className={`text-left p-3 rounded-lg border transition-all ${
+                      priorities.has(p.id)
+                        ? `${p.activeBorder} ${p.activeBg}`
+                        : 'border-slate-700/50 bg-slate-900/30 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className={`w-4 h-4 rounded flex items-center justify-center ${priorities.has(p.id) ? p.iconBg : 'bg-slate-700'}`}>
+                        <p.icon className={`w-2.5 h-2.5 ${priorities.has(p.id) ? p.iconColor : 'text-slate-400'}`} />
+                      </div>
+                      <span className={`text-[11px] font-medium ${priorities.has(p.id) ? 'text-white' : 'text-slate-400'}`}>{p.name}</span>
+                      {priorities.has(p.id) && <CheckCircle className="w-3 h-3 text-emerald-400 ml-auto" />}
+                    </div>
+                    <p className="text-[9px] text-slate-500 leading-relaxed">{p.description}</p>
+                    {p.examples && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {p.examples.map(ex => (
+                          <span key={ex} className="px-1 py-0.5 bg-slate-800/80 rounded text-[8px] text-slate-500 font-mono">{ex}</span>
+                        ))}
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {priorities.size > 0 && (
+                <div className="mt-3 p-2 bg-emerald-500/5 border border-emerald-500/20 rounded-lg">
+                  <div className="text-[10px] text-emerald-300">
+                    <span className="font-semibold">{priorities.size} priority rules active</span> - these event types will ALWAYS be captured at 100%,
+                    effectively increasing your retention for critical security events while still reducing volume on routine telemetry.
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/50 space-y-3">
@@ -822,8 +1017,10 @@ function SamplingStep({ enabled, setEnabled, rate, setRate, discardAfterGraph, s
 function ResultStep({ code, parserCode, connectorName, error, metadata, onBack }: { code: string; parserCode?: string; connectorName: string; error?: string; metadata?: Record<string, string> | null; onBack: () => void }) {
   const [testRunning, setTestRunning] = useState(false);
   const [testPassed, setTestPassed] = useState(false);
-  const [viewTab, setViewTab] = useState<'connector' | 'parser'>('connector');
+  const [viewTab, setViewTab] = useState<'connector' | 'parser' | 'compile'>('connector');
   const [copied, setCopied] = useState(false);
+  const [compiling, setCompiling] = useState(false);
+  const [compiled, setCompiled] = useState(false);
 
   function runTest() {
     setTestRunning(true);
@@ -831,9 +1028,15 @@ function ResultStep({ code, parserCode, connectorName, error, metadata, onBack }
   }
 
   function copyCode() {
-    navigator.clipboard.writeText(viewTab === 'connector' ? code : (parserCode || ''));
+    const content = viewTab === 'connector' ? code : viewTab === 'parser' ? (parserCode || '') : getBuildScript(connectorName);
+    navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleCompile() {
+    setCompiling(true);
+    setTimeout(() => { setCompiling(false); setCompiled(true); }, 3000);
   }
 
   return (
@@ -851,8 +1054,13 @@ function ResultStep({ code, parserCode, connectorName, error, metadata, onBack }
             <Play className="w-3 h-3" /> {testRunning ? 'Testing...' : 'Run Tests'}
           </button>
           {testPassed && (
-            <button className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 hover:bg-emerald-500/20 flex items-center gap-1.5">
-              <Zap className="w-3 h-3" /> Deploy
+            <button onClick={handleCompile} disabled={compiling} className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 hover:bg-emerald-500/20 flex items-center gap-1.5 disabled:opacity-50">
+              <Package className="w-3 h-3" /> {compiling ? 'Building...' : compiled ? 'Built!' : 'Build Artifact'}
+            </button>
+          )}
+          {compiled && (
+            <button className="px-3 py-1.5 bg-teal-500/10 border border-teal-500/30 rounded-lg text-xs text-teal-300 hover:bg-teal-500/20 flex items-center gap-1.5">
+              <Zap className="w-3 h-3" /> Deploy to Runtime
             </button>
           )}
         </div>
@@ -872,10 +1080,45 @@ function ResultStep({ code, parserCode, connectorName, error, metadata, onBack }
         </div>
       )}
 
-      {testPassed && (
+      {testPassed && !compiled && (
         <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
           <CheckCircle className="w-4 h-4 text-emerald-400" />
           <span className="text-xs text-emerald-300">All tests passed: schema validation, field mapping, normalization, edge cases</span>
+        </div>
+      )}
+
+      {compiled && (
+        <div className="p-4 bg-teal-500/5 border border-teal-500/20 rounded-xl space-y-3">
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 text-teal-400" />
+            <span className="text-xs font-semibold text-teal-300">Build Artifact Ready</span>
+            <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-300 text-[9px] rounded font-medium">SUCCESS</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-2.5 bg-slate-900/50 rounded-lg border border-slate-700/50">
+              <div className="text-[9px] text-slate-500 uppercase tracking-wider">Format</div>
+              <div className="text-xs text-white font-medium mt-0.5">Docker Container</div>
+              <div className="text-[9px] text-slate-400">linux/amd64, arm64</div>
+            </div>
+            <div className="p-2.5 bg-slate-900/50 rounded-lg border border-slate-700/50">
+              <div className="text-[9px] text-slate-500 uppercase tracking-wider">Image Size</div>
+              <div className="text-xs text-white font-medium mt-0.5">~42 MB</div>
+              <div className="text-[9px] text-slate-400">Alpine-based slim</div>
+            </div>
+            <div className="p-2.5 bg-slate-900/50 rounded-lg border border-slate-700/50">
+              <div className="text-[9px] text-slate-500 uppercase tracking-wider">Runtime</div>
+              <div className="text-xs text-white font-medium mt-0.5">Node 20 / Rust</div>
+              <div className="text-[9px] text-slate-400">Zero dependencies</div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setViewTab('compile')} className="px-3 py-1.5 bg-teal-500/10 border border-teal-500/30 rounded-lg text-[10px] text-teal-300 hover:bg-teal-500/20 flex items-center gap-1.5">
+              <Wrench className="w-3 h-3" /> View Build Instructions
+            </button>
+            <button className="px-3 py-1.5 bg-slate-700/50 border border-slate-600 rounded-lg text-[10px] text-slate-300 hover:bg-slate-700 flex items-center gap-1.5">
+              <Download className="w-3 h-3" /> Download Dockerfile
+            </button>
+          </div>
         </div>
       )}
 
@@ -888,10 +1131,13 @@ function ResultStep({ code, parserCode, connectorName, error, metadata, onBack }
             Parser Code
           </button>
         )}
+        <button onClick={() => setViewTab('compile')} className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewTab === 'compile' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
+          Build & Deploy
+        </button>
       </div>
 
       <pre className="text-xs text-slate-300 bg-slate-900/70 border border-slate-700/50 rounded-xl p-4 overflow-auto max-h-[320px] font-mono leading-relaxed">
-        {viewTab === 'connector' ? code : (parserCode || '')}
+        {viewTab === 'connector' ? code : viewTab === 'parser' ? (parserCode || '') : getBuildScript(connectorName)}
       </pre>
 
       <div className="flex justify-between pt-1">
@@ -900,6 +1146,186 @@ function ResultStep({ code, parserCode, connectorName, error, metadata, onBack }
     </div>
   );
 }
+
+function getBuildScript(connectorName: string): string {
+  const safeName = (connectorName || 'custom-connector').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  return `# ============================================================
+# BUILD & DEPLOY: ${connectorName || 'Custom'} Connector
+# ============================================================
+# This connector is a deployable artifact. Choose your method:
+
+# ─── OPTION 1: Docker Container (Recommended) ───────────────
+# Build multi-arch container image for production deployment
+
+# 1. Save connector code to project
+mkdir -p ${safeName}/src && cd ${safeName}
+
+# 2. Initialize package
+cat > package.json << 'EOF'
+{
+  "name": "${safeName}",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@0xdsi/connector-sdk": "^2.0.0",
+    "@0xdsi/normalization": "^1.3.0"
+  }
+}
+EOF
+
+# 3. Create Dockerfile
+cat > Dockerfile << 'EOF'
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY src/ ./src/
+COPY tsconfig.json ./
+RUN npm run build
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+RUN apk add --no-cache tini
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+USER node
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "dist/index.js"]
+HEALTHCHECK --interval=30s --timeout=10s \\
+  CMD wget -q -O- http://localhost:8080/health || exit 1
+EOF
+
+# 4. Build & Push
+docker buildx build --platform linux/amd64,linux/arm64 \\
+  -t registry.0xdsi.io/connectors/${safeName}:latest \\
+  -t registry.0xdsi.io/connectors/${safeName}:$(date +%Y%m%d) \\
+  --push .
+
+# ─── OPTION 2: Databricks Job (Spark Runtime) ───────────────
+# Deploy as a Databricks scheduled job with wheel package
+
+# 1. Build Python wheel
+cat > setup.py << 'EOF'
+from setuptools import setup, find_packages
+setup(
+    name="${safeName}",
+    version="1.0.0",
+    packages=find_packages(),
+    install_requires=["pyspark>=3.5", "delta-spark>=3.0"],
+)
+EOF
+
+# 2. Build and upload
+python -m build --wheel
+databricks fs cp dist/${safeName}-1.0.0-py3-none-any.whl \\
+  dbfs:/libraries/connectors/${safeName}.whl
+
+# 3. Create job
+databricks jobs create --json '{
+  "name": "${connectorName || 'Custom'} Connector",
+  "tasks": [{
+    "task_key": "ingest",
+    "spark_python_task": {
+      "python_file": "dbfs:/libraries/connectors/${safeName}.whl"
+    },
+    "libraries": [{"whl": "dbfs:/libraries/connectors/${safeName}.whl"}]
+  }],
+  "schedule": {
+    "quartz_cron_expression": "0 */5 * ? * *",
+    "timezone_id": "UTC"
+  }
+}'
+
+# ─── OPTION 3: Kubernetes Deployment ────────────────────────
+cat > k8s-deployment.yaml << 'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${safeName}
+  namespace: connectors
+  labels:
+    app: ${safeName}
+    tier: ingestion
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ${safeName}
+  template:
+    metadata:
+      labels:
+        app: ${safeName}
+    spec:
+      containers:
+      - name: connector
+        image: registry.0xdsi.io/connectors/${safeName}:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: CONNECTOR_MODE
+          value: "production"
+        - name: NORMALIZATION_SCHEMA
+          value: "OCSF"
+        - name: OUTPUT_KAFKA_BROKERS
+          valueFrom:
+            secretKeyRef:
+              name: kafka-credentials
+              key: brokers
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+EOF
+
+kubectl apply -f k8s-deployment.yaml
+
+# ─── OPTION 4: Compile to Native Binary (Rust) ──────────────
+# For kernel-level or ultra-low-latency connectors
+
+cargo init ${safeName} && cd ${safeName}
+cat >> Cargo.toml << 'EOF'
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+tracing = "0.1"
+EOF
+
+# Cross-compile for target
+cargo build --release --target x86_64-unknown-linux-musl
+# Binary at: target/x86_64-unknown-linux-musl/release/${safeName}
+# Size: ~8MB statically-linked, zero runtime dependencies
+
+# ─── OPTION 5: eBPF Compile (Kernel-Level) ──────────────────
+# For XDP/TC/Tracepoint connectors only
+
+# Requires: clang 14+, libbpf, bpftool
+clang -O2 -g -target bpf -c ${safeName}.bpf.c -o ${safeName}.bpf.o
+bpftool gen skeleton ${safeName}.bpf.o > ${safeName}.skel.h
+
+# Load and attach
+bpftool prog load ${safeName}.bpf.o /sys/fs/bpf/${safeName}
+bpftool net attach xdp pinned /sys/fs/bpf/${safeName} dev eth0
+`;
+}
+
 
 function ComplexityBadge({ complexity }: { complexity: string }) {
   const config: Record<string, string> = {

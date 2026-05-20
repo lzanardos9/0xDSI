@@ -1013,6 +1013,293 @@ Spark Configuration:
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Intelligent Priority Sampling
+# MAGIC
+# MAGIC Events matching priority rules are ALWAYS captured at 100%, regardless of overall sampling rate.
+# MAGIC This ensures critical security events are never lost.
+
+# COMMAND ----------
+
+SAMPLING_PRIORITY_RULES = {
+    "high-severity": {
+        "name": "High Severity Events",
+        "description": "Critical/High severity, CVSS 7+, priority 1-2",
+        "filter": "severity IN ('critical', 'high') OR cvss_score >= 7.0 OR priority <= 2",
+        "always_retain": True,
+    },
+    "suspicious-patterns": {
+        "name": "CEP Suspicious Patterns",
+        "description": "Multi-step attack sequences: recon + exploit + lateral movement",
+        "filter": "cep_match_score > 0.7 OR kill_chain_stage IN ('exploitation', 'installation', 'c2')",
+        "always_retain": True,
+    },
+    "large-payloads": {
+        "name": "Large/Anomalous Payloads",
+        "description": "Potential exfil, C2 beacons, exploit delivery (>10KB or entropy >7.5)",
+        "filter": "payload_size > 10240 OR shannon_entropy > 7.5 OR encoding_anomaly = true",
+        "always_retain": True,
+    },
+    "graph-escalated": {
+        "name": "Graph-Escalated Entities",
+        "description": "Entities with high graph scoring: PageRank, centrality spikes",
+        "filter": "entity_risk_score > 80 OR centrality_delta > 2.0 OR graph_escalation = true",
+        "always_retain": True,
+    },
+    "micro-patterns": {
+        "name": "Bad Micro-Pattern Matches",
+        "description": "Beaconing, DNS tunneling cadence, low-and-slow exfiltration",
+        "filter": "beacon_score > 0.8 OR dns_tunnel_probability > 0.7 OR periodic_callback_detected = true",
+        "always_retain": True,
+    },
+    "auth-events": {
+        "name": "Authentication & Access",
+        "description": "All auth events: logins, privilege escalation, MFA, token operations",
+        "filter": "event_category = 'authentication' OR event_type LIKE 'login%' OR event_type LIKE 'mfa%' OR event_type LIKE 'priv_esc%'",
+        "always_retain": True,
+    },
+    "rare-events": {
+        "name": "First-Seen / Rare Events",
+        "description": "Never-before-seen IPs, novel user agents, first DNS lookups",
+        "filter": "first_seen = true OR novelty_score > 0.9 OR historical_frequency < 0.001",
+        "always_retain": True,
+    },
+    "lateral-movement": {
+        "name": "Lateral Movement Indicators",
+        "description": "Internal-to-internal SMB/RDP/SSH, service account anomalies, PtH/PtT",
+        "filter": "(src_zone = 'internal' AND dst_zone = 'internal' AND dst_port IN (445, 3389, 22)) OR pth_detected = true",
+        "always_retain": True,
+    },
+    "data-exfil": {
+        "name": "Data Exfiltration Signals",
+        "description": "Large outbound transfers, unusual destinations, DNS exfiltration",
+        "filter": "outbound_bytes > 52428800 OR rare_destination = true OR dns_exfil_probability > 0.6",
+        "always_retain": True,
+    },
+    "encrypted-anomalies": {
+        "name": "TLS/Encryption Anomalies",
+        "description": "Self-signed certs, JA3/JA4 mismatches, cipher downgrades",
+        "filter": "self_signed_cert = true OR ja3_mismatch = true OR cipher_suite_downgrade = true OR cert_expired = true",
+        "always_retain": True,
+    },
+    "timing-anomalies": {
+        "name": "Temporal / Timing Anomalies",
+        "description": "Off-hours access, impossible travel, burst patterns at unusual times",
+        "filter": "off_hours_access = true OR impossible_travel = true OR time_anomaly_score > 0.8",
+        "always_retain": True,
+    },
+    "honeypot-triggered": {
+        "name": "Honeypot / Honeytoken Triggered",
+        "description": "Any interaction with deployed honeypots, canary files, decoy credentials",
+        "filter": "honeypot_triggered = true OR canary_accessed = true OR honeytoken_used = true",
+        "always_retain": True,
+    },
+}
+
+
+def build_priority_filter_sql(active_priorities: list) -> str:
+    """Build a SQL CASE expression that routes priority events to 100% retention."""
+    conditions = []
+    for priority_id in active_priorities:
+        rule = SAMPLING_PRIORITY_RULES.get(priority_id)
+        if rule and rule["always_retain"]:
+            conditions.append(f"({rule['filter']})")
+
+    if not conditions:
+        return "false"
+    return " OR ".join(conditions)
+
+
+def create_priority_aware_sampling_stream(
+    connector_id: str,
+    source_topic: str,
+    sampling_rate: float,
+    active_priorities: list,
+):
+    """
+    Spark Structured Streaming pipeline with intelligent priority sampling:
+    - Events matching ANY priority rule -> 100% retained
+    - All other events -> sampled at configured rate
+    - CEP/CET still processes 100% of events in parallel
+    """
+
+    priority_sql = build_priority_filter_sql(active_priorities)
+
+    raw_stream = (
+        spark.readStream
+        .format("kafka")
+        .option("kafka.bootstrap.servers", dbutils.secrets.get("security", "kafka_brokers"))
+        .option("subscribe", source_topic)
+        .option("startingOffsets", "latest")
+        .option("maxOffsetsPerTrigger", 200000)
+        .load()
+    )
+
+    parsed_stream = raw_stream.select(
+        F.col("key").cast("string").alias("event_key"),
+        F.from_json(F.col("value").cast("string"),
+            "event_type STRING, severity STRING, src_ip STRING, dst_ip STRING, "
+            "payload_size INT, beacon_score DOUBLE, entity_risk_score INT, "
+            "event_category STRING, first_seen BOOLEAN, honeypot_triggered BOOLEAN, "
+            "timestamp TIMESTAMP"
+        ).alias("e"),
+        F.col("timestamp").alias("kafka_ts"),
+    ).select("event_key", "e.*", "kafka_ts")
+
+    # Tag priority events
+    tagged = parsed_stream.withColumn(
+        "is_priority",
+        F.expr(priority_sql)
+    ).withColumn(
+        "retain",
+        F.when(F.col("is_priority"), F.lit(True))
+         .otherwise(F.rand() < sampling_rate)
+    )
+
+    # Write retained events (priority + sampled)
+    retained_query = (
+        tagged.filter(F.col("retain"))
+        .drop("is_priority", "retain")
+        .writeStream
+        .format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", f"/tmp/checkpoints/{connector_id}/priority_sampled")
+        .queryName(f"{connector_id}_priority_sampled")
+        .toTable(f"{catalog}.{schema}.{connector_id}_events")
+    )
+
+    print(f"[{connector_id}] Priority-aware sampling pipeline started:")
+    print(f"  Base sampling rate: {sampling_rate*100:.0f}%")
+    print(f"  Active priorities: {len(active_priorities)} rules (always 100% retained)")
+    for pid in active_priorities:
+        rule = SAMPLING_PRIORITY_RULES.get(pid, {})
+        print(f"    - {rule.get('name', pid)}")
+
+    return retained_query
+
+
+print(f"Intelligent Priority Sampling: {len(SAMPLING_PRIORITY_RULES)} rules available")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Connector Build & Deployment (Artifact Compilation)
+# MAGIC
+# MAGIC Connectors are executable artifacts. This section handles:
+# MAGIC - Docker container build (multi-arch)
+# MAGIC - Python wheel packaging for Databricks jobs
+# MAGIC - Kubernetes deployment manifests
+# MAGIC - Native binary compilation (Rust) for kernel-level connectors
+# MAGIC - eBPF object compilation for XDP/TC hooks
+
+# COMMAND ----------
+
+def compile_connector_artifact(connector_id: str, build_target: str = "docker"):
+    """
+    Compile a generated connector into a deployable artifact.
+
+    Targets:
+      - docker: Multi-arch container image
+      - wheel: Python wheel for Databricks
+      - k8s: Kubernetes deployment manifest
+      - binary: Rust native binary (kernel connectors)
+      - ebpf: eBPF object file (XDP/TC connectors)
+    """
+
+    # Fetch connector definition
+    conn_df = spark.sql(f"""
+        SELECT * FROM connector_definitions
+        WHERE connector_id = '{connector_id}'
+        LIMIT 1
+    """)
+
+    if conn_df.isEmpty():
+        raise ValueError(f"Connector {connector_id} not found")
+
+    conn = conn_df.first().asDict()
+    safe_name = conn["name"].lower().replace(" ", "-").replace("_", "-")
+
+    build_instructions = {}
+
+    if build_target == "docker":
+        build_instructions = {
+            "type": "docker",
+            "dockerfile": f"""FROM python:3.11-slim AS builder
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY src/ ./src/
+COPY connector_config.json .
+
+FROM python:3.11-slim
+WORKDIR /app
+COPY --from=builder /app /app
+USER nobody
+ENTRYPOINT ["python", "-m", "src.main"]
+HEALTHCHECK --interval=30s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+""",
+            "build_cmd": f"docker buildx build --platform linux/amd64,linux/arm64 -t registry.0xdsi.io/connectors/{safe_name}:latest --push .",
+            "image_name": f"registry.0xdsi.io/connectors/{safe_name}:latest",
+        }
+
+    elif build_target == "wheel":
+        build_instructions = {
+            "type": "wheel",
+            "setup_cfg": f"""[metadata]
+name = {safe_name}
+version = 1.0.0
+[options]
+packages = find:
+install_requires =
+    pyspark>=3.5
+    delta-spark>=3.0
+""",
+            "build_cmd": "python -m build --wheel",
+            "deploy_cmd": f"databricks fs cp dist/{safe_name}-1.0.0-py3-none-any.whl dbfs:/libraries/connectors/{safe_name}.whl",
+        }
+
+    elif build_target == "ebpf" and conn.get("kernel_level"):
+        build_instructions = {
+            "type": "ebpf",
+            "compile_cmd": f"clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -c {safe_name}.bpf.c -o {safe_name}.bpf.o",
+            "skeleton_cmd": f"bpftool gen skeleton {safe_name}.bpf.o > {safe_name}.skel.h",
+            "load_cmd": f"bpftool prog load {safe_name}.bpf.o /sys/fs/bpf/{safe_name}",
+            "attach_cmd": f"bpftool net attach xdp pinned /sys/fs/bpf/{safe_name} dev eth0",
+        }
+
+    elif build_target == "binary":
+        build_instructions = {
+            "type": "rust_binary",
+            "cargo_toml_deps": """tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+tracing = "0.1"
+""",
+            "build_cmd": f"cargo build --release --target x86_64-unknown-linux-musl",
+            "binary_path": f"target/x86_64-unknown-linux-musl/release/{safe_name}",
+        }
+
+    # Update connector deployment status
+    spark.sql(f"""
+        UPDATE connector_definitions
+        SET deployment_status = 'building',
+            updated_at = current_timestamp()
+        WHERE connector_id = '{connector_id}'
+    """)
+
+    print(f"Build instructions generated for {conn['name']} ({build_target}):")
+    for key, value in build_instructions.items():
+        if key != "type":
+            print(f"  {key}: {value[:80]}{'...' if len(str(value)) > 80 else ''}")
+
+    return build_instructions
+
+
+print("Connector artifact compilation system ready")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Data Quality Monitoring Job
 
 # COMMAND ----------
