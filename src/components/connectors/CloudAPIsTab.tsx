@@ -38,17 +38,17 @@ const RECENT_CLOUD_EVENTS = [
 ];
 
 const PROVIDER_CONFIG: Record<string, { color: string; bg: string; border: string; gradient: string }> = {
-  'AWS': { color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', gradient: 'from-amber-500 to-orange-500' },
-  'Azure': { color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200', gradient: 'from-blue-500 to-cyan-500' },
-  'GCP': { color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', gradient: 'from-red-500 to-rose-500' },
+  'AWS': { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', gradient: 'from-amber-500 to-orange-500' },
+  'Azure': { color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30', gradient: 'from-blue-500 to-cyan-500' },
+  'GCP': { color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30', gradient: 'from-red-500 to-rose-500' },
 };
 
 const sevColor: Record<string, string> = {
-  high: 'bg-red-100 text-red-700',
-  medium: 'bg-amber-100 text-amber-700',
-  warning: 'bg-yellow-100 text-yellow-700',
-  low: 'bg-blue-100 text-blue-700',
-  info: 'bg-slate-100 text-slate-600',
+  high: 'bg-red-500/10 text-red-400 border border-red-500/30',
+  medium: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',
+  warning: 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/30',
+  low: 'bg-blue-500/10 text-blue-400 border border-blue-500/30',
+  info: 'bg-slate-700/50 text-slate-400 border border-slate-600/50',
 };
 
 function formatNumber(n: number): string {
@@ -70,14 +70,14 @@ export default function CloudAPIsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-gradient-to-r from-slate-800 to-blue-900 rounded-xl p-6 text-white">
+      <div className="bg-gradient-to-r from-slate-800 to-blue-900/50 rounded-xl p-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-xl font-bold flex items-center gap-2">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
               <Cloud className="w-7 h-7 text-blue-400" />
               Cloud API Integrations
             </h3>
-            <p className="text-slate-300 mt-1 text-sm">Multi-cloud security event ingestion via native APIs</p>
+            <p className="text-slate-400 mt-1 text-sm">Multi-cloud security event ingestion via native APIs</p>
           </div>
           <div className="flex gap-8">
             <div className="text-center">
@@ -100,7 +100,7 @@ export default function CloudAPIsTab() {
         <button
           onClick={() => setSelectedProvider(null)}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            !selectedProvider ? 'bg-blue-100 text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 border border-slate-200'
+            !selectedProvider ? 'bg-blue-500/10 text-blue-300 border border-blue-500/30' : 'text-slate-400 hover:bg-slate-800/50 border border-slate-700/50'
           }`}
         >
           All Providers
@@ -113,12 +113,12 @@ export default function CloudAPIsTab() {
               key={p}
               onClick={() => setSelectedProvider(selectedProvider === p ? null : p)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                selectedProvider === p ? `${cfg.bg} ${cfg.color} shadow-sm` : 'text-slate-600 hover:bg-slate-50 border border-slate-200'
+                selectedProvider === p ? `${cfg.bg} ${cfg.color} border ${cfg.border}` : 'text-slate-400 hover:bg-slate-800/50 border border-slate-700/50'
               }`}
             >
               <Globe className="w-4 h-4" />
               {p}
-              <span className="text-xs bg-white/50 px-1.5 py-0.5 rounded">{count}</span>
+              <span className="text-xs opacity-60 px-1.5 py-0.5 rounded bg-slate-700/50">{count}</span>
             </button>
           );
         })}
@@ -128,24 +128,24 @@ export default function CloudAPIsTab() {
         {filtered.map((conn) => {
           const cfg = PROVIDER_CONFIG[conn.provider];
           return (
-            <div key={conn.id} className={`bg-white rounded-xl border ${cfg.border} p-5 transition-all hover:shadow-lg`}>
+            <div key={conn.id} className={`bg-slate-800/40 rounded-xl border ${cfg.border} p-5 transition-all hover:bg-slate-800/60`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${cfg.gradient} flex items-center justify-center`}>
                     <Cloud className="w-4 h-4 text-white" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-slate-900">{conn.provider} {conn.service}</div>
-                    <div className="text-xs text-slate-500">{conn.region}</div>
+                    <div className="text-sm font-bold text-white">{conn.provider} {conn.service}</div>
+                    <div className="text-xs text-slate-400">{conn.region}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {conn.status === 'connected' ? (
-                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
                   ) : (
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
                   )}
-                  <span className={`text-xs font-medium ${conn.status === 'connected' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  <span className={`text-xs font-medium ${conn.status === 'connected' ? 'text-emerald-400' : 'text-amber-400'}`}>
                     {conn.status}
                   </span>
                 </div>
@@ -158,77 +158,77 @@ export default function CloudAPIsTab() {
                   { label: 'API Calls', value: formatNumber(conn.api_calls_24h), icon: ArrowUpDown },
                   { label: 'Error Rate', value: `${conn.error_rate}%`, icon: AlertTriangle },
                 ].map(({ label, value, icon: Icon }) => (
-                  <div key={label} className="bg-slate-50 rounded-lg p-2 text-center">
-                    <Icon className="w-3 h-3 text-slate-400 mx-auto mb-1" />
-                    <div className="text-xs font-bold text-slate-900">{value}</div>
+                  <div key={label} className="bg-slate-900/50 rounded-lg p-2 text-center border border-slate-700/50">
+                    <Icon className="w-3 h-3 text-slate-500 mx-auto mb-1" />
+                    <div className="text-xs font-bold text-white">{value}</div>
                     <div className="text-[10px] text-slate-500">{label}</div>
                   </div>
                 ))}
               </div>
 
               <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-3 h-3 text-slate-400" />
+                <Shield className="w-3 h-3 text-slate-500" />
                 <span className="text-xs text-slate-500">Auth:</span>
-                <span className="text-xs font-medium text-slate-700">{conn.auth_method}</span>
+                <span className="text-xs font-medium text-slate-300">{conn.auth_method}</span>
               </div>
 
               <div className="flex flex-wrap gap-1">
                 {conn.log_types.map((lt) => (
-                  <span key={lt} className={`text-[10px] px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.color} font-medium`}>{lt}</span>
+                  <span key={lt} className={`text-[10px] px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.color} border ${cfg.border} font-medium`}>{lt}</span>
                 ))}
               </div>
 
-              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+              <div className="mt-3 pt-3 border-t border-slate-700/50 flex items-center justify-between">
                 <div className="text-xs text-slate-500 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   Last event: {conn.last_event}
                 </div>
-                <span className="text-xs text-slate-400 font-mono">{conn.account_id}</span>
+                <span className="text-xs text-slate-500 font-mono">{conn.account_id}</span>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="bg-white rounded-xl shadow-lg border border-slate-200">
-        <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-          <h4 className="font-bold text-slate-900 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-blue-600" />
+      <div className="bg-slate-800/40 rounded-xl border border-slate-700/50 overflow-hidden">
+        <div className="p-4 border-b border-slate-700/50 flex items-center justify-between">
+          <h4 className="font-bold text-white flex items-center gap-2">
+            <Zap className="w-5 h-5 text-blue-400" />
             Recent Cloud Security Events
           </h4>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs text-emerald-600 font-medium">Streaming</span>
+            <span className="text-xs text-emerald-400 font-medium">Streaming</span>
           </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-50 border-b border-slate-200">
+            <thead className="border-b border-slate-700/50 bg-slate-900/30">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Time</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Provider</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Service</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Event Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Severity</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Source</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Resource</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Time</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Provider</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Service</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Event Type</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Severity</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Source</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Resource</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-700/30">
               {RECENT_CLOUD_EVENTS.map((evt, i) => {
                 const cfg = PROVIDER_CONFIG[evt.provider];
                 return (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="px-4 py-2.5 text-xs font-mono text-slate-600">{evt.time}</td>
+                  <tr key={i} className="hover:bg-slate-700/20">
+                    <td className="px-4 py-2.5 text-xs font-mono text-slate-400">{evt.time}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.bg} ${cfg.color}`}>{evt.provider}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.bg} ${cfg.color} border ${cfg.border}`}>{evt.provider}</span>
                     </td>
-                    <td className="px-4 py-2.5 text-xs font-medium text-slate-700">{evt.service}</td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-slate-900">{evt.event_type}</td>
+                    <td className="px-4 py-2.5 text-xs font-medium text-slate-300">{evt.service}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-slate-200">{evt.event_type}</td>
                     <td className="px-4 py-2.5">
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sevColor[evt.severity] || sevColor.info}`}>{evt.severity}</span>
                     </td>
-                    <td className="px-4 py-2.5 text-xs font-mono text-blue-600">{evt.source_ip}</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-cyan-400">{evt.source_ip}</td>
                     <td className="px-4 py-2.5 text-xs text-slate-500 max-w-xs truncate">{evt.resource}</td>
                   </tr>
                 );

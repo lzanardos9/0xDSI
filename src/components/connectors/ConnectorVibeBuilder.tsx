@@ -76,6 +76,48 @@ const TRANSPORT_PROTOCOLS = [
   { id: 'xdp-af', name: 'AF_XDP Socket', category: 'hpc', description: 'High-performance packet I/O bypassing kernel stack', encryption: false, bidirectional: true },
   { id: 'sctp', name: 'SCTP (Stream Control)', category: 'telecom', description: 'Multi-homed multi-stream transport for telecom', encryption: true, bidirectional: true },
   { id: 'diameter', name: 'Diameter Protocol', category: 'telecom', description: 'AAA protocol for telecom network signaling', encryption: true, bidirectional: true },
+  { id: 'ss7-mtp', name: 'SS7 / MTP (Message Transfer Part)', category: 'telecom', description: 'Legacy telecom signaling for call control and SMS routing', encryption: false, bidirectional: true },
+  { id: 'sigtran', name: 'SIGTRAN (SS7 over IP)', category: 'telecom', description: 'M2UA/M3UA/SUA transport of SS7 signaling over SCTP/IP', encryption: true, bidirectional: true },
+  { id: 'isup', name: 'ISUP (ISDN User Part)', category: 'telecom', description: 'Call setup/teardown signaling in PSTN networks', encryption: false, bidirectional: true },
+  { id: 'map-camel', name: 'MAP/CAMEL (GSM Core)', category: 'telecom', description: 'Mobile Application Part for subscriber management and roaming', encryption: false, bidirectional: true },
+  { id: 'gtp', name: 'GTP (GPRS Tunneling)', category: 'telecom', description: 'User and control plane tunneling for 4G/5G mobile data', encryption: true, bidirectional: true },
+  { id: 'pfcp', name: 'PFCP (5G User Plane)', category: 'telecom', description: 'Packet Forwarding Control Protocol for 5G UPF sessions', encryption: true, bidirectional: true },
+  { id: 'sip-sdp', name: 'SIP/SDP (VoIP Signaling)', category: 'telecom', description: 'Session Initiation Protocol for VoIP call signaling', encryption: true, bidirectional: true },
+  { id: 'megaco-h248', name: 'MEGACO/H.248', category: 'telecom', description: 'Media gateway control for voice/video decomposition', encryption: true, bidirectional: true },
+  // Physical / Serial
+  { id: 'rs232', name: 'RS-232 (Serial)', category: 'physical', description: 'Point-to-point serial communication up to 20Kbps, 15m range', encryption: false, bidirectional: true },
+  { id: 'rs485', name: 'RS-485 (Multi-drop Serial)', category: 'physical', description: 'Multi-drop half/full-duplex up to 10Mbps, 1200m range, 32 devices', encryption: false, bidirectional: true },
+  { id: 'rs422', name: 'RS-422 (Differential Serial)', category: 'physical', description: 'Differential signaling point-to-point up to 10Mbps, 1200m', encryption: false, bidirectional: false },
+  { id: 'usb-serial', name: 'USB-to-Serial (FTDI/CP210x)', category: 'physical', description: 'Virtual COM port over USB for legacy device connectivity', encryption: false, bidirectional: true },
+  { id: 'can-bus', name: 'CAN Bus (Controller Area Network)', category: 'physical', description: 'Automotive/industrial multi-master bus at 1Mbps, real-time', encryption: false, bidirectional: true },
+  { id: 'can-fd', name: 'CAN FD (Flexible Data-Rate)', category: 'physical', description: 'Extended CAN with 64-byte payloads at 8Mbps for modern vehicles', encryption: false, bidirectional: true },
+  { id: 'lin-bus', name: 'LIN Bus', category: 'physical', description: 'Low-cost single-wire automotive sub-network at 20Kbps', encryption: false, bidirectional: true },
+  { id: 'i2c', name: 'I2C (Inter-Integrated Circuit)', category: 'physical', description: 'Short-range multi-master bus for sensor/chip communication', encryption: false, bidirectional: true },
+  { id: 'spi', name: 'SPI (Serial Peripheral Interface)', category: 'physical', description: 'High-speed full-duplex synchronous serial for embedded systems', encryption: false, bidirectional: true },
+  { id: 'onewire', name: '1-Wire (Dallas/Maxim)', category: 'physical', description: 'Single-wire bus for temperature/ID sensors, parasitic power', encryption: false, bidirectional: true },
+  { id: 'jtag-swd', name: 'JTAG/SWD Debug Port', category: 'physical', description: 'Hardware debug interface for firmware extraction and monitoring', encryption: false, bidirectional: true },
+  { id: 'gpio-bitbang', name: 'GPIO Bitbang', category: 'physical', description: 'Software-driven pin toggling for custom protocols', encryption: false, bidirectional: true },
+  { id: 'mil-std-1553', name: 'MIL-STD-1553', category: 'physical', description: 'Military avionics data bus, deterministic 1Mbps, triple-redundant', encryption: false, bidirectional: true },
+  { id: 'arinc-429', name: 'ARINC 429', category: 'physical', description: 'Commercial aviation unidirectional data bus (100Kbps)', encryption: false, bidirectional: false },
+  // Exotic / Non-TCP/IP
+  { id: 'ipx-spx', name: 'IPX/SPX (Novell)', category: 'exotic', description: 'Legacy Novell NetWare protocol suite for LAN communication', encryption: false, bidirectional: true },
+  { id: 'decnet', name: 'DECnet Phase IV/V', category: 'exotic', description: 'Digital Equipment Corporation proprietary network stack', encryption: false, bidirectional: true },
+  { id: 'appletalk', name: 'AppleTalk (DDP/ATP)', category: 'exotic', description: 'Legacy Apple networking with zero-config discovery', encryption: false, bidirectional: true },
+  { id: 'x25', name: 'X.25 Packet Switching', category: 'exotic', description: 'ITU-T virtual circuit WAN protocol, legacy banking/ATM networks', encryption: false, bidirectional: true },
+  { id: 'frame-relay', name: 'Frame Relay (DLCI)', category: 'exotic', description: 'WAN protocol with virtual circuits, predecessor to MPLS', encryption: false, bidirectional: true },
+  { id: 'atm-aal5', name: 'ATM/AAL5 (53-byte cells)', category: 'exotic', description: 'Asynchronous Transfer Mode fixed-cell switching, telco backbone', encryption: false, bidirectional: true },
+  { id: 'token-ring', name: 'Token Ring (IEEE 802.5)', category: 'exotic', description: 'Deterministic ring-topology LAN with token passing', encryption: false, bidirectional: true },
+  { id: 'fddi', name: 'FDDI (Fiber Ring)', category: 'exotic', description: 'Dual-ring fiber LAN at 100Mbps with self-healing failover', encryption: false, bidirectional: true },
+  { id: 'fibre-channel', name: 'Fibre Channel (FC-4)', category: 'exotic', description: 'SAN storage networking, 128Gbps, lossless ordered delivery', encryption: true, bidirectional: true },
+  { id: 'infiniband-raw', name: 'InfiniBand (Verbs API)', category: 'exotic', description: 'HPC interconnect with RDMA verbs for direct memory operations', encryption: false, bidirectional: true },
+  { id: 'zigbee', name: 'Zigbee (IEEE 802.15.4)', category: 'exotic', description: 'Low-power mesh networking for IoT/smart building sensors', encryption: true, bidirectional: true },
+  { id: 'zwave', name: 'Z-Wave (Sub-GHz Mesh)', category: 'exotic', description: 'Home automation mesh at 100Kbps, 232 device limit', encryption: true, bidirectional: true },
+  { id: 'lora-lorawan', name: 'LoRa/LoRaWAN', category: 'exotic', description: 'Long-range low-power WAN for IoT at 50Kbps over 15km', encryption: true, bidirectional: false },
+  { id: 'bluetooth-hci', name: 'Bluetooth HCI (Host Controller)', category: 'exotic', description: 'BLE/Classic Bluetooth packet-level monitoring via HCI socket', encryption: true, bidirectional: true },
+  { id: 'nfc-ndef', name: 'NFC (Near Field Communication)', category: 'exotic', description: 'Short-range (10cm) 13.56MHz for access control and payment', encryption: true, bidirectional: true },
+  { id: 'profinet', name: 'PROFINET (Industrial Ethernet)', category: 'exotic', description: 'Siemens industrial real-time Ethernet for factory automation', encryption: false, bidirectional: true },
+  { id: 'ethercat', name: 'EtherCAT', category: 'exotic', description: 'Beckhoff real-time industrial Ethernet with sub-microsecond jitter', encryption: false, bidirectional: true },
+  { id: 'powerlink', name: 'POWERLINK (Industrial)', category: 'exotic', description: 'Open-source real-time industrial Ethernet protocol', encryption: false, bidirectional: true },
   { id: 'zeromq-tcp', name: 'ZeroMQ (tcp://)', category: 'messaging', description: 'Brokerless messaging with various patterns', encryption: true, bidirectional: true },
   { id: 'nanomsg', name: 'nanomsg/nng', category: 'messaging', description: 'Next-gen ZeroMQ alternative with simpler API', encryption: true, bidirectional: true },
 ];
@@ -524,7 +566,8 @@ function TransportStep({ protocols, categories, selected, setSelected, onNext, o
   const catLabels: Record<string, string> = {
     http: 'HTTP/HTTPS', tcp: 'TCP Sockets', udp: 'UDP', ipc: 'Inter-Process (IPC)',
     rpc: 'RPC Frameworks', streaming: 'Streaming Protocols', realtime: 'Real-Time',
-    hpc: 'High-Performance / Kernel Bypass', telecom: 'Telecom', messaging: 'Messaging',
+    hpc: 'High-Performance / Kernel Bypass', telecom: 'Telecom / SS7 / 5G', messaging: 'Messaging',
+    physical: 'Physical / Serial / Bus', exotic: 'Non-TCP/IP / Exotic / Industrial',
   };
 
   return (
@@ -717,20 +760,46 @@ function SamplingStep({ enabled, setEnabled, rate, setRate, discardAfterGraph, s
 
             {discardAfterGraph && (
               <div className="p-3 bg-cyan-500/5 border border-cyan-500/20 rounded-lg">
-                <div className="text-xs text-cyan-300 font-medium mb-1">Graph-Only Pipeline Flow:</div>
-                <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                  <span className="px-1.5 py-0.5 bg-slate-800 rounded">Source (100%)</span>
-                  <ArrowRight className="w-3 h-3" />
-                  <span className="px-1.5 py-0.5 bg-slate-800 rounded">Spark Window</span>
-                  <ArrowRight className="w-3 h-3" />
-                  <span className="px-1.5 py-0.5 bg-cyan-900/50 rounded text-cyan-300">CET/CEP Graphs</span>
-                  <ArrowRight className="w-3 h-3" />
-                  <span className="px-1.5 py-0.5 bg-red-900/50 rounded text-red-300">Discard Raw</span>
+                <div className="text-xs text-cyan-300 font-medium mb-2">Parallel Real-Time Pipeline:</div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                    <span className="px-1.5 py-0.5 bg-slate-800 rounded font-medium">Source (100%)</span>
+                    <ArrowRight className="w-3 h-3" />
+                    <span className="px-1.5 py-0.5 bg-orange-900/60 border border-orange-500/40 rounded text-orange-300 font-medium">PARALLEL FORK</span>
+                  </div>
+                  <div className="pl-6 border-l-2 border-cyan-500/30 space-y-1">
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <span className="text-cyan-400 font-bold w-4">1</span>
+                      <span className="px-1.5 py-0.5 bg-cyan-900/50 border border-cyan-500/30 rounded text-cyan-300 font-medium">CEP Engine (REAL-TIME)</span>
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                      <span className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Pattern Detection</span>
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                      <span className="px-1.5 py-0.5 bg-emerald-900/50 rounded text-emerald-300">Alerts</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <span className="text-cyan-400 font-bold w-4">2</span>
+                      <span className="px-1.5 py-0.5 bg-cyan-900/50 border border-cyan-500/30 rounded text-cyan-300 font-medium">CET Graph (REAL-TIME)</span>
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                      <span className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Trend Aggregation</span>
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                      <span className="px-1.5 py-0.5 bg-emerald-900/50 rounded text-emerald-300">Store Trends</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <span className="text-slate-500 font-bold w-4">3</span>
+                      <span className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Sample ({rate}%)</span>
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                      <span className="px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">Normalize</span>
+                      <ArrowRight className="w-3 h-3 text-slate-500" />
+                      <span className="px-1.5 py-0.5 bg-emerald-900/50 rounded text-emerald-300">Store Events</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <span className="text-red-400 font-bold w-4">4</span>
+                      <span className="px-1.5 py-0.5 bg-red-900/50 border border-red-500/30 rounded text-red-300">Discard {100-rate}% raw (after CEP/CET processed)</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
-                  <span className="px-1.5 py-0.5 bg-slate-800 rounded">Sample ({rate}%)</span>
-                  <ArrowRight className="w-3 h-3" />
-                  <span className="px-1.5 py-0.5 bg-emerald-900/50 rounded text-emerald-300">Store for Investigation</span>
+                <div className="mt-2 px-2 py-1.5 bg-orange-500/5 border border-orange-500/20 rounded text-[10px] text-orange-200">
+                  CEP and CET process raw events IN PARALLEL before any normalization or sampling decisions. No event is missed by graph engines.
                 </div>
               </div>
             )}

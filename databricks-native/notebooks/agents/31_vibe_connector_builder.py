@@ -5,10 +5,15 @@
 # MAGIC Production-grade connector generation and deployment system with:
 # MAGIC - LLM-powered connector code generation (GPT-4o)
 # MAGIC - 44+ acquisition methods (API, Push, Streaming, Network, Kernel, Storage, DB, IoT)
-# MAGIC - 26+ transport protocols (HTTP, TCP, UDP, IPC, RPC, Streaming, HPC, Telecom)
+# MAGIC - 60+ transport protocols (HTTP, TCP, UDP, IPC, RPC, Streaming, HPC, Telecom, Physical, Exotic)
+# MAGIC - Physical serial protocols: RS232, RS485, CAN Bus, I2C, SPI, MIL-STD-1553, ARINC 429
+# MAGIC - Telecom signaling: SS7/MTP, SIGTRAN, ISUP, MAP/CAMEL, GTP, PFCP, SIP/SDP, Diameter
+# MAGIC - Exotic non-TCP/IP: IPX/SPX, DECnet, X.25, Frame Relay, ATM, Token Ring, Fibre Channel
+# MAGIC - IoT/Industrial: Zigbee, LoRa/LoRaWAN, PROFINET, EtherCAT, BACnet, DNP3
 # MAGIC - Statistical sampling with Spark Structured Streaming integration
 # MAGIC - Data quality validation framework
 # MAGIC - Kernel-level eBPF/XDP connector support
+# MAGIC - PARALLEL CEP/CET real-time processing (events fork BEFORE normalization)
 # MAGIC - Custom data contract generation
 # MAGIC - OCSF/ECS/CIM/Sigma/STIX normalization targets
 
@@ -174,6 +179,320 @@ ACQUISITION_METHODS = {
 
 total_methods = sum(len(v) for v in ACQUISITION_METHODS.values())
 print(f"Registered {total_methods} acquisition methods across {len(ACQUISITION_METHODS)} categories")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Transport Protocols Registry (60+)
+
+# COMMAND ----------
+
+TRANSPORT_PROTOCOLS = {
+    "http": [
+        {"id": "https-tls13", "name": "HTTPS/TLS 1.3", "layer": "L7"},
+        {"id": "http2-stream", "name": "HTTP/2 Multiplexed Streams", "layer": "L7"},
+        {"id": "http3-quic", "name": "HTTP/3 (QUIC)", "layer": "L7"},
+        {"id": "rest-json", "name": "REST/JSON", "layer": "L7"},
+        {"id": "graphql", "name": "GraphQL over HTTP", "layer": "L7"},
+    ],
+    "tcp": [
+        {"id": "tcp-raw", "name": "Raw TCP Socket", "layer": "L4"},
+        {"id": "tcp-tls", "name": "TCP + mTLS", "layer": "L4"},
+        {"id": "tcp-syslog", "name": "TCP Syslog (RFC 5424)", "layer": "L4"},
+        {"id": "tcp-cef", "name": "TCP CEF/LEEF", "layer": "L4"},
+    ],
+    "udp": [
+        {"id": "udp-syslog", "name": "UDP Syslog (RFC 3164)", "layer": "L4"},
+        {"id": "udp-netflow", "name": "NetFlow v5/v9/IPFIX", "layer": "L4"},
+        {"id": "udp-sflow", "name": "sFlow v5", "layer": "L4"},
+        {"id": "udp-snmp", "name": "SNMP v2c/v3 Traps", "layer": "L4"},
+        {"id": "dtls", "name": "DTLS 1.2/1.3", "layer": "L4"},
+    ],
+    "ipc": [
+        {"id": "unix-socket", "name": "Unix Domain Socket", "layer": "IPC"},
+        {"id": "named-pipe", "name": "Named Pipe (FIFO)", "layer": "IPC"},
+        {"id": "shared-mem", "name": "Shared Memory (shm)", "layer": "IPC"},
+        {"id": "dbus", "name": "D-Bus (Linux IPC)", "layer": "IPC"},
+        {"id": "mmap-ring", "name": "Memory-Mapped Ring Buffer", "layer": "IPC"},
+    ],
+    "rpc": [
+        {"id": "grpc-h2", "name": "gRPC over HTTP/2", "layer": "L7"},
+        {"id": "thrift", "name": "Apache Thrift Binary", "layer": "L7"},
+        {"id": "cap-n-proto", "name": "Cap'n Proto RPC", "layer": "L7"},
+        {"id": "flatbuffers", "name": "FlatBuffers RPC", "layer": "L7"},
+    ],
+    "streaming": [
+        {"id": "kafka-proto", "name": "Kafka Binary Protocol", "layer": "L7"},
+        {"id": "amqp-091", "name": "AMQP 0-9-1", "layer": "L7"},
+        {"id": "mqtt-v5", "name": "MQTT v5", "layer": "L7"},
+        {"id": "nats-proto", "name": "NATS Protocol", "layer": "L7"},
+        {"id": "redis-resp3", "name": "Redis RESP3", "layer": "L7"},
+    ],
+    "hpc": [
+        {"id": "rdma-roce", "name": "RDMA over Converged Ethernet", "layer": "L2"},
+        {"id": "infiniband", "name": "InfiniBand Verbs", "layer": "L2"},
+        {"id": "xdp-af", "name": "XDP AF_XDP Zero-Copy", "layer": "L2"},
+        {"id": "dpdk-pmd", "name": "DPDK Poll-Mode Driver", "layer": "L2"},
+    ],
+    "physical": [
+        {"id": "rs232", "name": "RS-232 Serial", "layer": "L1"},
+        {"id": "rs485", "name": "RS-485 Multi-Drop", "layer": "L1"},
+        {"id": "can-bus", "name": "CAN Bus 2.0A/B", "layer": "L1-L2"},
+        {"id": "can-fd", "name": "CAN FD (Flexible Data-Rate)", "layer": "L1-L2"},
+        {"id": "i2c", "name": "I2C (Inter-Integrated Circuit)", "layer": "L1"},
+        {"id": "spi", "name": "SPI (Serial Peripheral Interface)", "layer": "L1"},
+        {"id": "mil-std-1553", "name": "MIL-STD-1553B (Military Avionics)", "layer": "L1-L2"},
+        {"id": "arinc-429", "name": "ARINC 429 (Commercial Avionics)", "layer": "L1-L2"},
+        {"id": "arinc-664", "name": "ARINC 664/AFDX (Avionics Full-Duplex)", "layer": "L2"},
+        {"id": "spacewire", "name": "SpaceWire (ESA/NASA)", "layer": "L1-L2"},
+    ],
+    "telecom": [
+        {"id": "ss7-mtp", "name": "SS7/MTP (Signaling System 7)", "layer": "L2-L3"},
+        {"id": "sigtran", "name": "SIGTRAN (SS7 over IP)", "layer": "L4"},
+        {"id": "isup", "name": "ISUP (ISDN User Part)", "layer": "L7"},
+        {"id": "map-camel", "name": "MAP/CAMEL (Mobile Application Part)", "layer": "L7"},
+        {"id": "gtp-c", "name": "GTP-C (GPRS Tunnelling Control)", "layer": "L5"},
+        {"id": "gtp-u", "name": "GTP-U (GPRS Tunnelling User)", "layer": "L5"},
+        {"id": "pfcp", "name": "PFCP (5G Packet Forwarding Control)", "layer": "L7"},
+        {"id": "diameter", "name": "Diameter (AAA Protocol)", "layer": "L7"},
+        {"id": "sip-sdp", "name": "SIP/SDP (Session Initiation)", "layer": "L7"},
+        {"id": "megaco-h248", "name": "MEGACO/H.248 (Media Gateway)", "layer": "L7"},
+        {"id": "5g-ngap", "name": "5G NGAP (NG Application Protocol)", "layer": "L7"},
+        {"id": "5g-xnap", "name": "5G XnAP (Xn Application Protocol)", "layer": "L7"},
+    ],
+    "messaging": [
+        {"id": "zmq-tcp", "name": "ZeroMQ (tcp://)", "layer": "L4"},
+        {"id": "zmq-ipc", "name": "ZeroMQ (ipc://)", "layer": "IPC"},
+        {"id": "nanomsg", "name": "nanomsg/nng", "layer": "L4"},
+        {"id": "dds-rtps", "name": "DDS/RTPS (Real-Time Pub/Sub)", "layer": "L7"},
+    ],
+    "exotic": [
+        {"id": "ipx-spx", "name": "IPX/SPX (Novell NetWare)", "layer": "L3-L4"},
+        {"id": "decnet", "name": "DECnet Phase IV/V", "layer": "L3"},
+        {"id": "x25", "name": "X.25 Packet Switching", "layer": "L3"},
+        {"id": "frame-relay", "name": "Frame Relay (DLCI)", "layer": "L2"},
+        {"id": "atm-aal5", "name": "ATM AAL5 (Cell Switching)", "layer": "L2"},
+        {"id": "token-ring", "name": "Token Ring (IEEE 802.5)", "layer": "L2"},
+        {"id": "fddi", "name": "FDDI (Fiber Distributed Data)", "layer": "L2"},
+        {"id": "fibre-channel", "name": "Fibre Channel (FC-4)", "layer": "L2-L4"},
+        {"id": "zigbee", "name": "Zigbee (IEEE 802.15.4)", "layer": "L1-L3"},
+        {"id": "lora", "name": "LoRa/LoRaWAN", "layer": "L1-L2"},
+        {"id": "profinet", "name": "PROFINET IRT (Industrial)", "layer": "L2"},
+        {"id": "ethercat", "name": "EtherCAT (Industrial Ethernet)", "layer": "L2"},
+        {"id": "bacnet", "name": "BACnet (Building Automation)", "layer": "L7"},
+        {"id": "dnp3", "name": "DNP3 (SCADA/Utilities)", "layer": "L7"},
+    ],
+}
+
+total_protocols = sum(len(v) for v in TRANSPORT_PROTOCOLS.values())
+print(f"Registered {total_protocols} transport protocols across {len(TRANSPORT_PROTOCOLS)} categories")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Parallel CEP/CET Real-Time Processing Architecture
+# MAGIC
+# MAGIC **CRITICAL: Events FORK before normalization. CEP and CET engines process raw events in PARALLEL.**
+# MAGIC
+# MAGIC ```
+# MAGIC                        +---> [CEP Engine] Complex Event Processing (pattern matching)
+# MAGIC                        |         |
+# MAGIC   Raw Events ----+----+---> [CET Engine] Correlation Event Trends (graph scoring)
+# MAGIC        |          |         |
+# MAGIC        |          |    +----+----> [Real-Time Graph] (immediate visualization)
+# MAGIC        |          |
+# MAGIC        |          +---> [Normalization Pipeline] --> Delta Lake (persistent storage)
+# MAGIC        |
+# MAGIC        +---> [Sampling Decision] (if sampling enabled)
+# MAGIC ```
+# MAGIC
+# MAGIC The fork happens at the INGESTION layer, not after normalization.
+# MAGIC This ensures real-time threat detection even before schema mapping completes.
+
+# COMMAND ----------
+
+from pyspark.sql import functions as F
+from pyspark.sql.streaming import StreamingQuery
+
+class ParallelCEPCETProcessor:
+    """
+    Routes raw events simultaneously to:
+    1. CEP Engine - Complex Event Processing (pattern matching, temporal sequences)
+    2. CET Engine - Correlation Event Trends (graph scoring, anomaly trends)
+    3. Normalization Pipeline - Schema mapping to OCSF/ECS/etc for persistent storage
+
+    All three run IN PARALLEL on the same raw event stream.
+    """
+
+    def __init__(self, connector_id: str, source_topic: str):
+        self.connector_id = connector_id
+        self.source_topic = source_topic
+        self.queries: list[StreamingQuery] = []
+
+    def start_parallel_pipelines(self):
+        """Start all three parallel processing pipelines from the same source."""
+
+        # Shared raw stream (read once, fan-out to multiple sinks)
+        raw_stream = (
+            spark.readStream
+            .format("kafka")
+            .option("kafka.bootstrap.servers", dbutils.secrets.get("security", "kafka_brokers"))
+            .option("subscribe", self.source_topic)
+            .option("startingOffsets", "latest")
+            .option("maxOffsetsPerTrigger", 100000)
+            .option("kafka.consumer.group.id", f"{self.connector_id}_parallel")
+            .load()
+            .select(
+                F.col("key").cast("string").alias("event_key"),
+                F.col("value").cast("string").alias("raw_payload"),
+                F.col("timestamp").alias("ingest_ts"),
+                F.col("partition"),
+                F.col("offset"),
+            )
+        )
+
+        # PIPELINE 1: CEP Engine (pattern matching on raw events)
+        cep_query = (
+            raw_stream.writeStream
+            .format("delta")
+            .outputMode("append")
+            .option("checkpointLocation", f"/tmp/checkpoints/{self.connector_id}/cep")
+            .queryName(f"{self.connector_id}_cep_realtime")
+            .foreachBatch(self._process_cep_batch)
+            .trigger(processingTime="5 seconds")
+            .start()
+        )
+        self.queries.append(cep_query)
+
+        # PIPELINE 2: CET Engine (graph correlation on raw events)
+        cet_query = (
+            raw_stream.writeStream
+            .format("delta")
+            .outputMode("append")
+            .option("checkpointLocation", f"/tmp/checkpoints/{self.connector_id}/cet")
+            .queryName(f"{self.connector_id}_cet_realtime")
+            .foreachBatch(self._process_cet_batch)
+            .trigger(processingTime="5 seconds")
+            .start()
+        )
+        self.queries.append(cet_query)
+
+        # PIPELINE 3: Normalization + Persistence (can take longer, not blocking detection)
+        norm_query = (
+            raw_stream.writeStream
+            .format("delta")
+            .outputMode("append")
+            .option("checkpointLocation", f"/tmp/checkpoints/{self.connector_id}/norm")
+            .queryName(f"{self.connector_id}_normalization")
+            .foreachBatch(self._process_normalization_batch)
+            .trigger(processingTime="30 seconds")
+            .start()
+        )
+        self.queries.append(norm_query)
+
+        print(f"[{self.connector_id}] PARALLEL pipelines started:")
+        print(f"  CEP Engine:    5s trigger (pattern matching)")
+        print(f"  CET Engine:    5s trigger (graph correlation)")
+        print(f"  Normalization: 30s trigger (schema mapping + persistence)")
+        return self.queries
+
+    def _process_cep_batch(self, df, batch_id):
+        """CEP: Complex Event Processing - temporal pattern matching on RAW events."""
+        if df.isEmpty():
+            return
+
+        event_count = df.count()
+
+        # Parse raw JSON for CEP pattern matching
+        parsed = df.select(
+            F.from_json("raw_payload", "event_type STRING, src_ip STRING, dst_ip STRING, action STRING, severity INT, timestamp STRING").alias("e"),
+            "ingest_ts"
+        ).select("e.*", "ingest_ts")
+
+        # Detect multi-step attack patterns (e.g., recon -> exploit -> lateral)
+        windowed = parsed.groupBy(
+            F.window("ingest_ts", "2 minutes", "30 seconds"),
+            "src_ip"
+        ).agg(
+            F.collect_set("event_type").alias("event_types"),
+            F.count("*").alias("event_count"),
+            F.max("severity").alias("max_severity"),
+        ).filter(F.size("event_types") >= 3)
+
+        # Write CEP matches to Delta (immediate alerting)
+        if windowed.count() > 0:
+            windowed.write.format("delta").mode("append").saveAsTable(
+                f"{catalog}.{schema}.{self.connector_id}_cep_matches"
+            )
+            print(f"  [CEP] Batch {batch_id}: {windowed.count()} pattern matches from {event_count} events")
+
+    def _process_cet_batch(self, df, batch_id):
+        """CET: Correlation Event Trends - graph scoring on RAW events."""
+        if df.isEmpty():
+            return
+
+        event_count = df.count()
+
+        # Parse raw for trend computation
+        parsed = df.select(
+            F.from_json("raw_payload", "event_type STRING, src_ip STRING, dst_ip STRING, severity INT, timestamp STRING").alias("e"),
+            "ingest_ts"
+        ).select("e.*", "ingest_ts")
+
+        # Compute rolling aggregates for graph visualization
+        trends = parsed.groupBy(
+            F.window("ingest_ts", "1 minute"),
+            "event_type", "src_ip"
+        ).agg(
+            F.count("*").alias("event_count"),
+            F.avg("severity").alias("avg_severity"),
+            F.max("severity").alias("max_severity"),
+            F.countDistinct("dst_ip").alias("unique_targets"),
+        )
+
+        # Write trend data (lightweight, for real-time graph rendering)
+        trends.write.format("delta").mode("append").saveAsTable(
+            f"{catalog}.{schema}.{self.connector_id}_cet_trends"
+        )
+        print(f"  [CET] Batch {batch_id}: {event_count} events -> {trends.count()} trend records")
+
+    def _process_normalization_batch(self, df, batch_id):
+        """Normalization: Full schema mapping + persistent storage (slower, thorough)."""
+        if df.isEmpty():
+            return
+
+        event_count = df.count()
+
+        # Full OCSF normalization (more expensive, can lag behind CEP/CET)
+        normalized = df.select(
+            F.from_json("raw_payload", "event_type STRING, src_ip STRING, dst_ip STRING, action STRING, severity INT, user STRING, timestamp STRING").alias("e"),
+            "ingest_ts", "event_key"
+        ).select(
+            F.col("event_key").alias("event_id"),
+            F.col("e.event_type").alias("category_name"),
+            F.col("e.src_ip").alias("src_endpoint_ip"),
+            F.col("e.dst_ip").alias("dst_endpoint_ip"),
+            F.col("e.action").alias("activity_name"),
+            F.col("e.severity").alias("severity_id"),
+            F.col("e.user").alias("actor_user_name"),
+            F.col("ingest_ts").alias("metadata_logged_time"),
+            F.current_timestamp().alias("metadata_processed_time"),
+            F.lit(self.connector_id).alias("connector_id"),
+            F.lit("OCSF v1.3.0").alias("schema_version"),
+        )
+
+        normalized.write.format("delta").mode("append").saveAsTable(
+            f"{catalog}.{schema}.normalized_events"
+        )
+        print(f"  [NORM] Batch {batch_id}: {event_count} events normalized and persisted")
+
+    def stop_all(self):
+        for q in self.queries:
+            q.stop()
+        print(f"[{self.connector_id}] All parallel pipelines stopped")
+
+
+print("ParallelCEPCETProcessor defined - events fork BEFORE normalization")
 
 # COMMAND ----------
 
@@ -664,17 +983,22 @@ Sampling Rate: 5% (25,000 EPS retained for investigation)
 Graph Processing: 100% through CET/CEP (trends and correlations)
 Storage: Only 5% persisted to Delta Lake
 
-Pipeline Flow:
+Pipeline Flow (PARALLEL FORK at ingestion):
   DNS Server (500K EPS)
        |
        v
-  [Spark Structured Streaming]
+  [Spark Structured Streaming - PARALLEL FORK]
        |
-       +---> [100%] CET/CEP Graph Engine --> Delta (aggregated trends only)
+       +---> [100%] CEP Engine (5s trigger) --> Pattern Matches --> Alerts
        |
-       +---> [5%]  Reservoir Sampler --> Delta (raw events for investigation)
+       +---> [100%] CET Engine (5s trigger) --> Graph Trends --> Real-Time Viz
        |
-       +---> [95%] DISCARDED (raw events not stored)
+       +---> [5%]  Reservoir Sampler --> Normalization --> Delta Lake (persistent)
+       |
+       +---> [95%] DISCARDED (raw events not stored after CEP/CET)
+
+  NOTE: CEP and CET see ALL events in real-time BEFORE normalization.
+  Only the sampled 5% goes through full OCSF schema mapping for storage.
 
 WARNING: 95% of raw events are permanently lost.
 Only use for high-volume telemetry where statistical accuracy is sufficient.
@@ -745,8 +1069,13 @@ def run_data_quality_check(connector_id: str):
 # MAGIC | Feature | Implementation |
 # MAGIC |---------|---------------|
 # MAGIC | Acquisition Methods | 44+ methods across 9 categories (API, Push, Streaming, Network, Kernel, Storage, DB, IoT) |
-# MAGIC | Transport Protocols | 26+ protocols (HTTP, TCP, UDP, IPC, RPC, HPC, Telecom) |
+# MAGIC | Transport Protocols | 60+ protocols across 12 categories (HTTP, TCP, UDP, IPC, RPC, Streaming, HPC, Physical, Telecom, Messaging, Exotic) |
+# MAGIC | Physical Protocols | RS-232, RS-485, CAN Bus 2.0/FD, I2C, SPI, MIL-STD-1553B, ARINC 429/664, SpaceWire |
+# MAGIC | Telecom Protocols | SS7/MTP, SIGTRAN, ISUP, MAP/CAMEL, GTP-C/U, PFCP, Diameter, SIP/SDP, 5G NGAP/XnAP |
+# MAGIC | Exotic Protocols | IPX/SPX, DECnet, X.25, Frame Relay, ATM AAL5, Token Ring, FDDI, Fibre Channel |
+# MAGIC | IoT/Industrial | Zigbee, LoRa/LoRaWAN, PROFINET IRT, EtherCAT, BACnet, DNP3 |
 # MAGIC | Kernel Connectors | eBPF/XDP with CO-RE, ring buffers, per-CPU maps |
+# MAGIC | Parallel CEP/CET | Events fork BEFORE normalization; CEP + CET process in PARALLEL in real-time |
 # MAGIC | Statistical Sampling | Reservoir sampling with configurable rate, Spark Structured Streaming |
 # MAGIC | Graph-Only Mode | 100% through CET/CEP, discard raw after graph computation |
 # MAGIC | Data Quality | Schema validation, field presence, timestamp drift, schema evolution, volume anomaly, dedup |

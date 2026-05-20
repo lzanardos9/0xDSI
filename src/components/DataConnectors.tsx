@@ -211,19 +211,19 @@ export default function DataConnectors() {
             </div>
             <div className="text-sm font-medium text-teal-400">Events/Sec</div>
           </div>
-          <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-4 border border-orange-200">
+          <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
             <div className="flex items-center justify-between mb-2">
               <Network className="w-6 h-6 text-orange-400" />
-              <span className="text-2xl font-bold text-orange-700">
+              <span className="text-2xl font-bold text-orange-300">
                 {totalMBPS.toFixed(1)}
               </span>
             </div>
             <div className="text-sm font-medium text-orange-400">MB/s</div>
           </div>
-          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 border border-red-200">
+          <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
             <div className="flex items-center justify-between mb-2">
               <AlertTriangle className="w-6 h-6 text-red-400" />
-              <span className="text-2xl font-bold text-red-700">{alerts.length}</span>
+              <span className="text-2xl font-bold text-red-300">{alerts.length}</span>
             </div>
             <div className="text-sm font-medium text-red-400">Degraded</div>
           </div>
@@ -296,18 +296,18 @@ export default function DataConnectors() {
 
     return (
       <div className="space-y-6">
-        <div className="bg-gradient-to-r from-purple-600 to-purple-700 rounded-xl p-6 text-white">
+        <div className="bg-gradient-to-r from-teal-900/60 to-cyan-900/60 rounded-xl p-6 text-white border border-teal-500/20">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-2xl font-bold flex items-center space-x-2">
-                <Code className="w-8 h-8" />
+                <Code className="w-8 h-8 text-teal-400" />
                 <span>Bytecode Weaving Instrumentation</span>
               </h3>
               <p className="text-slate-300 mt-2">Runtime code injection and function interception</p>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-bold">{bytecodeInstrumentation.length}</div>
-              <div className="text-slate-300 text-sm">Active Instrumentations</div>
+              <div className="text-3xl font-bold text-teal-300">{bytecodeInstrumentation.length}</div>
+              <div className="text-slate-400 text-sm">Active Instrumentations</div>
             </div>
           </div>
         </div>
@@ -368,24 +368,24 @@ export default function DataConnectors() {
                 <table className="w-full">
                   <thead className="bg-slate-800/30 border-b border-slate-700/50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Time</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Thread</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Class</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Method</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Exec Time</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Depth</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Time</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Thread</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Class</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Method</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Exec Time</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Depth</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-700/30">
                     {interceptedFunctions.filter(f => {
                       const inst = bytecodeInstrumentation.find(b => b.connector_id === selectedConnector.id);
                       return inst && f.instrumentation_id === inst.id;
                     }).map((func) => (
                       <tr key={func.id} className="hover:bg-slate-700/30">
-                        <td className="px-4 py-3 text-xs font-mono text-slate-600">
+                        <td className="px-4 py-3 text-xs font-mono text-slate-400">
                           {new Date(func.timestamp).toLocaleTimeString()}
                         </td>
-                        <td className="px-4 py-3 text-xs font-mono text-slate-600">{func.thread_id}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-slate-400">{func.thread_id}</td>
                         <td className="px-4 py-3 text-xs font-mono text-cyan-400">{func.class_name}</td>
                         <td className="px-4 py-3 text-xs font-mono text-white">{func.method_name}</td>
                         <td className="px-4 py-3 text-xs text-slate-400">
@@ -410,28 +410,28 @@ export default function DataConnectors() {
                 <table className="w-full">
                   <thead className="bg-slate-800/30 border-b border-slate-700/50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Time</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Source</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Type</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">String Value</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Length</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase">Flags</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Time</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Source</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Type</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">String Value</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Length</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Flags</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-700/30">
                     {stringIntercepts.filter(s => {
                       const inst = bytecodeInstrumentation.find(b => b.connector_id === selectedConnector.id);
                       return inst && s.instrumentation_id === inst.id;
                     }).map((str) => (
                       <tr key={str.id} className="hover:bg-slate-700/30">
-                        <td className="px-4 py-3 text-xs font-mono text-slate-600">
+                        <td className="px-4 py-3 text-xs font-mono text-slate-400">
                           {new Date(str.timestamp).toLocaleTimeString()}
                         </td>
                         <td className="px-4 py-3 text-xs font-mono text-cyan-400">
                           {str.source_class}.{str.source_method}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-cyan-400">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-cyan-400">
                             {str.string_type}
                           </span>
                         </td>
@@ -442,17 +442,17 @@ export default function DataConnectors() {
                         <td className="px-4 py-3">
                           <div className="flex space-x-1">
                             {str.is_sensitive && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-500/10 text-yellow-400">
                                 Sensitive
                               </span>
                             )}
                             {str.contains_credentials && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400">
                                 Creds
                               </span>
                             )}
                             {str.contains_pii && (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400">
                                 PII
                               </span>
                             )}
@@ -478,18 +478,18 @@ export default function DataConnectors() {
 
     return (
       <div className="space-y-6">
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl p-6 text-white">
+        <div className="bg-gradient-to-r from-blue-900/60 to-slate-800/60 rounded-xl p-6 text-white border border-blue-500/20">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-2xl font-bold flex items-center space-x-2">
-                <Brain className="w-8 h-8" />
+                <Brain className="w-8 h-8 text-blue-400" />
                 <span>AI Document Analysis</span>
               </h3>
-              <p className="text-indigo-200 mt-2">Automated extraction of risks, assets, BIAs, and compliance from documents</p>
+              <p className="text-slate-300 mt-2">Automated extraction of risks, assets, BIAs, and compliance from documents</p>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-bold">{documents.length}</div>
-              <div className="text-indigo-200 text-sm">Documents Analyzed</div>
+              <div className="text-3xl font-bold text-blue-300">{documents.length}</div>
+              <div className="text-slate-400 text-sm">Documents Analyzed</div>
             </div>
           </div>
         </div>
@@ -501,12 +501,12 @@ export default function DataConnectors() {
               onClick={() => setSelectedDocument(doc)}
               className={`text-left p-4 rounded-lg border-2 transition-all ${
                 selectedDocument?.id === doc.id
-                  ? 'border-indigo-500 bg-indigo-50 shadow-lg'
-                  : 'border-slate-200 bg-white hover:border-indigo-300'
+                  ? 'border-cyan-500/50 bg-cyan-500/10 shadow-lg shadow-cyan-500/10'
+                  : 'border-slate-700/50 bg-slate-800/30 hover:border-cyan-500/40'
               }`}
             >
               <div className="flex items-start justify-between mb-2">
-                <FileText className={`w-5 h-5 ${selectedDocument?.id === doc.id ? 'text-indigo-600' : 'text-slate-400'}`} />
+                <FileText className={`w-5 h-5 ${selectedDocument?.id === doc.id ? 'text-cyan-400' : 'text-slate-400'}`} />
                 <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(doc.status)}`}>
                   {doc.status}
                 </span>
@@ -514,7 +514,7 @@ export default function DataConnectors() {
               <div className="text-sm font-medium text-white mb-1 truncate">{doc.document_name}</div>
               <div className="text-xs text-slate-400 mb-2">{doc.document_type} • {doc.file_format}</div>
               <div className="text-xs text-slate-400">
-                Confidence: <span className="font-bold text-indigo-600">{doc.confidence_score}%</span>
+                Confidence: <span className="font-bold text-cyan-400">{doc.confidence_score}%</span>
               </div>
             </button>
           ))}
@@ -530,10 +530,10 @@ export default function DataConnectors() {
                 </div>
                 <div className="text-sm font-medium text-cyan-400">Extracted Assets</div>
               </div>
-              <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 border border-red-200">
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
                 <div className="flex items-center justify-between mb-2">
                   <AlertTriangle className="w-6 h-6 text-red-400" />
-                  <span className="text-2xl font-bold text-red-700">{selectedDocRisks.length}</span>
+                  <span className="text-2xl font-bold text-red-300">{selectedDocRisks.length}</span>
                 </div>
                 <div className="text-sm font-medium text-red-400">Risk Assessments</div>
               </div>
@@ -553,7 +553,7 @@ export default function DataConnectors() {
               </div>
             </div>
 
-            <div className="text-center text-slate-600 py-8">
+            <div className="text-center text-slate-500 py-8">
               Detailed analysis panels available (Assets, Risks, BIA, Insights)
             </div>
           </>
