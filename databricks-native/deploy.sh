@@ -36,7 +36,8 @@ echo ""
 echo "[1/5] Building React frontend..."
 cd "${PROJECT_ROOT}"
 
-if [ ! -d "node_modules" ]; then
+if [ ! -x "node_modules/.bin/vite" ]; then
+    echo "  Installing dependencies..."
     npm install
 fi
 
