@@ -6,22 +6,15 @@ resources:
     raw_event_ingestion:
       name: "[0xDSI] Agent 01 - Raw Event Ingestion"
       schedule:
-        quartz_cron_expression: "0 0 0 * * ?"  # Restarts daily (streaming job)
+        quartz_cron_expression: "0 0 0 * * ?"
         timezone_id: "UTC"
-      job_clusters:
-        - job_cluster_key: streaming_cluster
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
-            spark_conf:
-              spark.databricks.delta.optimizeWrite.enabled: "true"
-            autoscale:
-              min_workers: 1
-              max_workers: 4
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: ingest_events
-          job_cluster_key: streaming_cluster
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/ingestion/01_raw_event_ingestion.py
             base_parameters:
@@ -34,15 +27,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 0 * * ?"
         timezone_id: "UTC"
-      job_clusters:
-        - job_cluster_key: streaming_cluster
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: enrich_events
-          job_cluster_key: streaming_cluster
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/ingestion/02_enrichment_pipeline.py
             base_parameters:
@@ -57,17 +48,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 0 * * ?"
         timezone_id: "UTC"
-      job_clusters:
-        - job_cluster_key: correlation_cluster
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 3
-            spark_conf:
-              spark.sql.streaming.stateStore.providerClass: "org.apache.spark.sql.execution.streaming.state.RocksDBStateStoreProvider"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: correlate_events
-          job_cluster_key: correlation_cluster
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/correlation/01_streaming_correlation_engine.py
             base_parameters:
@@ -77,14 +64,15 @@ resources:
     negative_correlation:
       name: "[0xDSI] Agent 07 - Negative Correlation"
       schedule:
-        quartz_cron_expression: "0 */5 * * * ?"  # Every 5 minutes
+        quartz_cron_expression: "0 */5 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: check_absences
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/correlation/02_negative_correlation.py
             base_parameters:
@@ -97,14 +85,15 @@ resources:
     behavioral_anomaly:
       name: "[0xDSI] Agent 10 - Behavioral Anomaly Detection"
       schedule:
-        quartz_cron_expression: "0 */15 * * * ?"  # Every 15 minutes
+        quartz_cron_expression: "0 */15 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: detect_anomalies
-          new_cluster:
-            spark_version: "15.4.x-ml-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/detection/01_behavioral_anomaly_detection.py
             base_parameters:
@@ -117,15 +106,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 0 * * ?"
         timezone_id: "UTC"
-      job_clusters:
-        - job_cluster_key: streaming_cluster
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: match_iocs
-          job_cluster_key: streaming_cluster
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/detection/02_threat_intel_matching.py
             base_parameters:
@@ -138,14 +125,15 @@ resources:
     automated_response:
       name: "[0xDSI] Agent 15 - Automated Response"
       schedule:
-        quartz_cron_expression: "0 */2 * * * ?"  # Every 2 minutes
+        quartz_cron_expression: "0 */2 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: execute_responses
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/response/01_automated_response.py
             base_parameters:
@@ -156,14 +144,15 @@ resources:
     case_management:
       name: "[0xDSI] Agent 16 - Case Management"
       schedule:
-        quartz_cron_expression: "0 */5 * * * ?"  # Every 5 minutes
+        quartz_cron_expression: "0 */5 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: manage_cases
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/response/02_case_management.py
             base_parameters:
@@ -176,14 +165,15 @@ resources:
     threat_scoring_training:
       name: "[0xDSI] Agent 20 - Threat Scoring Model Training"
       schedule:
-        quartz_cron_expression: "0 0 2 ? * SUN"  # Weekly Sunday 2am
+        quartz_cron_expression: "0 0 2 ? * SUN"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: train_model
-          new_cluster:
-            spark_version: "15.4.x-ml-scala2.12"
-            node_type_id: "i3.2xlarge"
-            num_workers: 4
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/ml_training/01_threat_scoring_model.py
             base_parameters:
@@ -197,14 +187,15 @@ resources:
     graph_correlation:
       name: "[0xDSI] Agent 08 - Graph Correlation"
       schedule:
-        quartz_cron_expression: "0 */10 * * * ?"  # Every 10 minutes
+        quartz_cron_expression: "0 */10 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: graph_correlate
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/correlation/03_graph_correlation.py
             base_parameters:
@@ -217,15 +208,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 0 * * ?"
         timezone_id: "UTC"
-      job_clusters:
-        - job_cluster_key: streaming_cluster
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: temporal_correlate
-          job_cluster_key: streaming_cluster
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/correlation/04_temporal_window_correlator.py
             base_parameters:
@@ -238,14 +227,15 @@ resources:
     schema_enforcement:
       name: "[0xDSI] Agent 03 - Schema Enforcement"
       schedule:
-        quartz_cron_expression: "0 */5 * * * ?"  # Every 5 minutes
+        quartz_cron_expression: "0 */5 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: enforce_schema
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/ingestion/03_schema_enforcement.py
             base_parameters:
@@ -255,14 +245,15 @@ resources:
     quarantine_handler:
       name: "[0xDSI] Agent 04 - Quarantine Handler"
       schedule:
-        quartz_cron_expression: "0 */15 * * * ?"  # Every 15 minutes
+        quartz_cron_expression: "0 */15 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: handle_quarantine
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/ingestion/04_quarantine_handler.py
             base_parameters:
@@ -275,14 +266,15 @@ resources:
     triage_agent:
       name: "[0xDSI] Agent 25 - LLM Triage Agent"
       schedule:
-        quartz_cron_expression: "0 */3 * * * ?"  # Every 3 minutes
+        quartz_cron_expression: "0 */3 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: triage_alerts
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/01_triage_agent.py
             base_parameters:
@@ -294,14 +286,15 @@ resources:
     enrichment_agent:
       name: "[0xDSI] Agent 26 - LLM Enrichment Agent"
       schedule:
-        quartz_cron_expression: "0 */5 * * * ?"  # Every 5 minutes
+        quartz_cron_expression: "0 */5 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: enrich_alerts
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/02_enrichment_agent.py
             base_parameters:
@@ -312,14 +305,15 @@ resources:
     threat_hunter_agent:
       name: "[0xDSI] Agent 27 - Autonomous Threat Hunter"
       schedule:
-        quartz_cron_expression: "0 0 */4 * * ?"  # Every 4 hours
+        quartz_cron_expression: "0 0 */4 * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: hunt_threats
-          new_cluster:
-            spark_version: "15.4.x-ml-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/03_threat_hunter_agent.py
             base_parameters:
@@ -331,14 +325,15 @@ resources:
     agent_orchestrator:
       name: "[0xDSI] Agent 30 - Multi-Agent Orchestrator"
       schedule:
-        quartz_cron_expression: "0 */10 * * * ?"  # Every 10 minutes
+        quartz_cron_expression: "0 */10 * * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: orchestrate
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/04_orchestrator.py
             base_parameters:
@@ -353,14 +348,15 @@ resources:
     feature_engineering:
       name: "[0xDSI] Agent 21 - Feature Engineering"
       schedule:
-        quartz_cron_expression: "0 0 1 * * ?"  # Daily at 1am
+        quartz_cron_expression: "0 0 1 * * ?"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: compute_features
-          new_cluster:
-            spark_version: "15.4.x-ml-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/ml_training/02_feature_engineering.py
             base_parameters:
@@ -373,12 +369,13 @@ resources:
     # ─────────────────────────────────────────────────────
     initial_setup:
       name: "[0xDSI] Setup - Create Schema and Seed Data"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: create_tables
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/setup/01_create_catalog_schema.py
             base_parameters:
@@ -387,10 +384,7 @@ resources:
         - task_key: seed_demo_data
           depends_on:
             - task_key: create_tables
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/setup/02_seed_demo_data.py
             base_parameters:
@@ -405,12 +399,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */5 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: sage_enrich
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/05_sage_enrichment.py
             base_parameters:
@@ -422,12 +417,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */10 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: nova_investigate
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/06_nova_investigation.py
             base_parameters:
@@ -439,12 +435,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */2 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: vanguard_respond
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/07_vanguard_response.py
             base_parameters:
@@ -459,12 +456,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */4 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: cti_attribute
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/08_cti_attribution.py
             base_parameters:
@@ -476,12 +474,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */2 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: discover_patterns
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 2
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/09_pattern_discovery.py
             base_parameters:
@@ -493,12 +492,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */15 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: embed_alerts
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/10_vector_memory.py
             base_parameters:
@@ -513,12 +513,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */6 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: red_team_sim
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/11_red_team.py
             base_parameters:
@@ -530,12 +531,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 8 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: blue_team_audit
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/12_blue_team.py
             base_parameters:
@@ -547,12 +549,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */30 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: forensic_analysis
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/13_forensics.py
             base_parameters:
@@ -564,12 +567,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */5 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: honeypot_check
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/14_honeypot.py
             base_parameters:
@@ -584,12 +588,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 6 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: daily_briefing
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/15_ciso_assistant.py
             base_parameters:
@@ -601,12 +606,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */4 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: generate_playbooks
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/16_playbook_generator.py
             base_parameters:
@@ -618,12 +624,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */10 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: summarize_incidents
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/17_incident_summarizer.py
             base_parameters:
@@ -635,12 +642,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */15 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: analyze_docs
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/18_document_analyzer.py
             base_parameters:
@@ -652,12 +660,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */10 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: analyze_malware
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/19_malware_sandbox.py
             base_parameters:
@@ -672,12 +681,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */5 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: scan_llm_interactions
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/20_llm_guardrails.py
             base_parameters:
@@ -689,12 +699,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */1 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: check_model_integrity
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/21_model_poisoning_guard.py
             base_parameters:
@@ -706,12 +717,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */8 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: simulate_campaign
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/22_threat_simulator.py
             base_parameters:
@@ -723,12 +735,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */5 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: normalize_feeds
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/23_connector_adapter.py
             base_parameters:
@@ -740,12 +753,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */15 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: fetch_and_correlate
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/24_threat_radar.py
             base_parameters:
@@ -757,12 +771,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */2 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: process_feedback
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/25_alhf_learning.py
             base_parameters:
@@ -774,12 +789,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */5 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: graph_cep_detect
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 2
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/26_realtime_graph_cep.py
             base_parameters:
@@ -791,12 +807,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */10 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: vector_score
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/27_vector_scoring.py
             base_parameters:
@@ -808,12 +825,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */3 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: ai_correlate
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/agents/28_ai_correlation.py
             base_parameters:
@@ -828,12 +846,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */10 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: supply_chain_check
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/correlation/05_supply_chain_risk.py
             base_parameters:
@@ -845,12 +864,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 */10 * ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: cspm_check
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 1
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/correlation/06_cloud_posture.py
             base_parameters:
@@ -862,12 +882,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 2 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: build_baseline
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 2
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/ml_training/03_ueba_behavioral_baseline.py
             base_parameters:
@@ -879,12 +900,13 @@ resources:
       schedule:
         quartz_cron_expression: "0 0 */4 ? * *"
         timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
       tasks:
         - task_key: zero_day_scan
-          new_cluster:
-            spark_version: "15.4.x-scala2.12"
-            node_type_id: "m5.large"
-            num_workers: 2
+          environment_key: default
           notebook_task:
             notebook_path: ../notebooks/ml_training/04_graphrag_zero_day.py
             base_parameters:
