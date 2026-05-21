@@ -95,7 +95,7 @@ export default function KSValidationPanel() {
   useEffect(() => {
     const interval = setInterval(() => {
       setAnimationPhase((p) => (p + 1) % 100);
-    }, 50);
+    }, 120);
     return () => clearInterval(interval);
   }, []);
 
@@ -155,9 +155,9 @@ export default function KSValidationPanel() {
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left: CDF Visualization + Entity List */}
-        <div className="w-2/3 flex flex-col border-r border-slate-800">
+        <div className="w-2/3 flex flex-col border-r border-slate-800 min-h-0">
           {/* CDF Overlay Visualization */}
-          <div className="h-[280px] p-4 border-b border-slate-800">
+          <div className="shrink-0 h-[260px] p-4 border-b border-slate-800 overflow-hidden">
             <CDFVisualization
               entity={selectedEntity ?? data[0]}
               animationPhase={animationPhase}
@@ -165,7 +165,7 @@ export default function KSValidationPanel() {
           </div>
 
           {/* Feature P-Value Heatmap */}
-          <div className="flex-1 overflow-auto p-4">
+          <div className="flex-1 min-h-0 overflow-auto p-4">
             <FeatureHeatmap data={data} onSelect={setSelectedEntity} selected={selectedEntity} />
           </div>
         </div>
@@ -200,8 +200,10 @@ function MetricCard({ label, value, icon, color }: { label: string; value: strin
   );
 }
 
-function CDFVisualization({ entity, animationPhase }: { entity: KSVerdict; animationPhase: number }) {
+function CDFVisualization({ entity }: { entity: KSVerdict; animationPhase: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number>(0);
+  const timeRef = useRef(0);
   const cdfData = useMemo(() => generateCDFPair(entity.ks_boost_applied), [entity.entity_id]);
 
   useEffect(() => {
@@ -210,13 +212,23 @@ function CDFVisualization({ entity, animationPhase }: { entity: KSVerdict; anima
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-    const w = rect.width;
-    const h = rect.height;
+    let running = true;
+
+    function draw() {
+      if (!running || !canvas) return;
+      timeRef.current += 0.015;
+
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        rafRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      const w = rect.width;
+      const h = rect.height;
 
     ctx.clearRect(0, 0, w, h);
 
@@ -280,7 +292,7 @@ function CDFVisualization({ entity, animationPhase }: { entity: KSVerdict; anima
     }
 
     // Animated KS distance indicator
-    const pulse = Math.sin(animationPhase * 0.1) * 0.3 + 0.7;
+    const pulse = Math.sin(timeRef.current * 2) * 0.3 + 0.7;
     ctx.strokeStyle = `rgba(255, 90, 90, ${pulse})`;
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
@@ -341,11 +353,21 @@ function CDFVisualization({ entity, animationPhase }: { entity: KSVerdict; anima
     ctx.rotate(-Math.PI / 2);
     ctx.fillText('Cumulative Probability', 0, 0);
     ctx.restore();
-  }, [entity, cdfData, animationPhase]);
+
+      rafRef.current = requestAnimationFrame(draw);
+    }
+
+    rafRef.current = requestAnimationFrame(draw);
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, [entity, cdfData]);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-2">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between mb-2 shrink-0">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-emerald-400" />
           CDF Comparison -- KS Distance Visualization
@@ -360,7 +382,9 @@ function CDFVisualization({ entity, animationPhase }: { entity: KSVerdict; anima
           {entity.ks_boost_applied ? 'ANOMALOUS' : entity.suppressed ? 'SUPPRESSED' : 'NORMAL'}
         </div>
       </div>
-      <canvas ref={canvasRef} className="flex-1 w-full rounded-lg bg-slate-900/50 border border-slate-700/50" />
+      <div className="flex-1 min-h-0 relative rounded-lg bg-slate-900/50 border border-slate-700/50 overflow-hidden">
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      </div>
     </div>
   );
 }
