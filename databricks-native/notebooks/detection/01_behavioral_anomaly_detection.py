@@ -21,7 +21,12 @@ spark.sql(f"USE SCHEMA `{schema}`")
 from pyspark.sql.functions import *
 from pyspark.ml.feature import VectorAssembler, StandardScaler
 from pyspark.ml.clustering import KMeans
+import mlflow
+import mlflow.spark
 import numpy as np
+
+mlflow.set_experiment(f"/Shared/0xDSI/experiments/behavioral_anomaly_detection")
+mlflow.autolog(disable=True)
 
 # COMMAND ----------
 
@@ -67,25 +72,44 @@ assembled = assembler.transform(user_features)
 scaler_model = scaler.fit(assembled)
 scaled = scaler_model.transform(assembled)
 
-kmeans = KMeans(k=3, featuresCol="features", predictionCol="cluster", seed=42)
-model = kmeans.fit(scaled)
-clustered = model.transform(scaled)
+with mlflow.start_run(run_name=f"behavioral_anomaly_{lookback_hours}h"):
+    mlflow.log_param("lookback_hours", lookback_hours)
+    mlflow.log_param("k_clusters", 3)
+    mlflow.log_param("risk_threshold", 30)
+    mlflow.log_metric("users_analyzed", scaled.count())
 
-cluster_sizes = clustered.groupBy("cluster").count().collect()
-smallest_cluster = min(cluster_sizes, key=lambda x: x["count"])
-anomaly_cluster = smallest_cluster["cluster"]
+    kmeans = KMeans(k=3, featuresCol="features", predictionCol="cluster", seed=42)
+    model = kmeans.fit(scaled)
+    clustered = model.transform(scaled)
 
-anomalies = (
-    clustered
-    .filter(col("cluster") == anomaly_cluster)
-    .withColumn("risk_score",
-        (col("failure_count") * 10 + col("off_hours_events") * 15 + col("unique_ips") * 5)
-        .cast("int")
+    # Log cluster quality metrics
+    mlflow.log_metric("wssse", model.summary.trainingCost)
+    cluster_sizes = clustered.groupBy("cluster").count().collect()
+    for cs in cluster_sizes:
+        mlflow.log_metric(f"cluster_{cs['cluster']}_size", cs["count"])
+
+    smallest_cluster = min(cluster_sizes, key=lambda x: x["count"])
+    anomaly_cluster = smallest_cluster["cluster"]
+    mlflow.log_param("anomaly_cluster_id", anomaly_cluster)
+
+    anomalies = (
+        clustered
+        .filter(col("cluster") == anomaly_cluster)
+        .withColumn("risk_score",
+            (col("failure_count") * 10 + col("off_hours_events") * 15 + col("unique_ips") * 5)
+            .cast("int")
+        )
+        .filter(col("risk_score") > 30)
     )
-    .filter(col("risk_score") > 30)
-)
 
-print(f"Anomalous users detected: {anomalies.count()}")
+    anomaly_count = anomalies.count()
+    mlflow.log_metric("anomalies_detected", anomaly_count)
+    mlflow.log_metric("anomaly_rate", anomaly_count / max(1, scaled.count()))
+
+    # Log model to registry for versioning
+    mlflow.spark.log_model(model, "kmeans_behavioral_model")
+
+    print(f"Anomalous users detected: {anomaly_count}")
 
 # COMMAND ----------
 

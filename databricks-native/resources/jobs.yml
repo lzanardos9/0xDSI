@@ -912,3 +912,182 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # PRODUCTION INTEGRATION AGENTS
+    # ─────────────────────────────────────────────────────
+    detection_confluence:
+      name: "[0xDSI] Correlation 07 - Detection Confluence Fusion"
+      schedule:
+        quartz_cron_expression: "0 */1 * ? * *"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: fuse_signals
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/correlation/07_detection_confluence.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              fusion_window_seconds: "60"
+              escalation_threshold: "0.78"
+
+    kafka_ingestion:
+      name: "[0xDSI] Ingestion 05 - Kafka/EventHub Connector"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: stream_ingest
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/05_kafka_eventhub_connector.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              source_type: "kafka"
+              topics: "security-events"
+
+    threat_feed_ingestion:
+      name: "[0xDSI] Ingestion 06 - Threat Feed Connector"
+      schedule:
+        quartz_cron_expression: "0 0 */4 ? * *"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: pull_feeds
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/06_threat_feed_connector.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              feeds: "otx,abuseipdb,misp,virustotal"
+              lookback_days: "7"
+
+    vector_search_indexer:
+      name: "[0xDSI] Agent 32 - Vector Search Index Manager"
+      schedule:
+        quartz_cron_expression: "0 */30 * ? * *"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: embed_and_sync
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/32_vector_search_index.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              embedding_model: "databricks-bge-large-en"
+              vector_search_endpoint: "0xdsi-vector-search"
+              lookback_hours: "24"
+
+    notification_dispatcher:
+      name: "[0xDSI] Response 03 - Notification Dispatcher"
+      schedule:
+        quartz_cron_expression: "0 */2 * ? * *"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: dispatch_notifications
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/response/03_notification_integrations.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              notification_batch_size: "50"
+
+    ticketing_sync:
+      name: "[0xDSI] Response 04 - Ticketing System Sync"
+      schedule:
+        quartz_cron_expression: "0 */10 * ? * *"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: sync_tickets
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/response/04_ticketing_integration.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              ticketing_system: "servicenow"
+              sync_direction: "bidirectional"
+
+    connector_version_monitor:
+      name: "[0xDSI] Agent 29 - Connector Version Monitor"
+      schedule:
+        quartz_cron_expression: "0 0 */6 ? * *"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: check_connectors
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/29_connector_version_agent.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    stateful_backdoor_defense:
+      name: "[0xDSI] Agent 30 - Stateful Backdoor Defense"
+      schedule:
+        quartz_cron_expression: "0 */5 * ? * *"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: backdoor_scan
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/30_stateful_backdoor_defense.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    ml_model_monitoring:
+      name: "[0xDSI] ML 05 - Model Monitoring & Drift Detection"
+      schedule:
+        quartz_cron_expression: "0 0 */6 ? * *"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: check_models
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ml_training/05_model_monitoring.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              drift_threshold: "0.15"
+              staleness_days: "7"

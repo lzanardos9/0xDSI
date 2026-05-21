@@ -1326,8 +1326,272 @@ print("Threat escalation & scoring tables created")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Production Integration Tables (Detection Confluence, Notifications, Ticketing, Vector Search)
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS confluence_verdicts (
+    id STRING NOT NULL,
+    entity_id STRING NOT NULL,
+    fused_score DOUBLE NOT NULL,
+    priority STRING,
+    contributing_lenses STRING,
+    lens_count INT,
+    kill_chain_stage STRING,
+    signal_count INT,
+    arbiter_mode STRING DEFAULT 'bayesian_weighted',
+    escalated BOOLEAN DEFAULT false,
+    verdict_time TIMESTAMP DEFAULT current_timestamp(),
+    fusion_window_seconds INT,
+    weights_snapshot STRING
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS confluence_lineage (
+    id STRING NOT NULL,
+    source_signal_id STRING NOT NULL,
+    source_lens STRING,
+    verdict_id STRING NOT NULL,
+    entity_id STRING,
+    contribution_weight DOUBLE,
+    raw_score DOUBLE,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS confluence_lens_weights (
+    id STRING DEFAULT uuid(),
+    weights_json STRING NOT NULL,
+    version INT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    description STRING,
+    updated_by STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS confluence_arbiter_runs (
+    id STRING NOT NULL,
+    run_time TIMESTAMP NOT NULL,
+    fusion_window_seconds INT,
+    escalation_threshold DOUBLE,
+    signals_processed INT,
+    verdicts_generated INT,
+    verdicts_escalated INT,
+    weights_used STRING,
+    lens_signal_counts STRING
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS vector_hunt_matches (
+    id STRING DEFAULT uuid(),
+    alert_id STRING NOT NULL,
+    similarity_score DOUBLE NOT NULL,
+    matched_threat_pattern STRING,
+    kill_chain_phase STRING,
+    matched_at TIMESTAMP DEFAULT current_timestamp(),
+    processed_by_confluence BOOLEAN DEFAULT false
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS formula_priority_scores (
+    id STRING DEFAULT uuid(),
+    entity_id STRING NOT NULL,
+    priority_score DOUBLE NOT NULL,
+    priority_reason STRING,
+    scored_at TIMESTAMP DEFAULT current_timestamp(),
+    processed_by_confluence BOOLEAN DEFAULT false
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS slm_classifications (
+    id STRING DEFAULT uuid(),
+    alert_id STRING NOT NULL,
+    classification STRING NOT NULL,
+    confidence DOUBLE,
+    mitre_tactic STRING,
+    classified_at TIMESTAMP DEFAULT current_timestamp(),
+    processed_by_confluence BOOLEAN DEFAULT false
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS graph_anomaly_detections (
+    id STRING DEFAULT uuid(),
+    source_entity STRING NOT NULL,
+    anomaly_score DOUBLE NOT NULL,
+    pattern_type STRING,
+    kill_chain_phase STRING,
+    detected_at TIMESTAMP DEFAULT current_timestamp(),
+    processed_by_confluence BOOLEAN DEFAULT false
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS notification_log (
+    id STRING NOT NULL,
+    alert_id STRING NOT NULL,
+    channel STRING NOT NULL,
+    priority STRING,
+    status STRING DEFAULT 'pending',
+    response_detail STRING,
+    sent_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS notification_routes (
+    id STRING DEFAULT uuid(),
+    severity STRING NOT NULL,
+    channel STRING NOT NULL,
+    priority STRING DEFAULT 'P3',
+    enabled BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS analyst_oncall (
+    id STRING DEFAULT uuid(),
+    email STRING NOT NULL,
+    name STRING,
+    is_active BOOLEAN DEFAULT true,
+    shift_start TIMESTAMP,
+    shift_end TIMESTAMP,
+    team STRING DEFAULT 'soc_tier1'
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS ticket_sync_log (
+    id STRING NOT NULL,
+    case_id STRING NOT NULL,
+    ticketing_system STRING NOT NULL,
+    external_ticket_id STRING,
+    sync_direction STRING DEFAULT 'outbound',
+    status STRING DEFAULT 'pending',
+    error_message STRING,
+    synced_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS connector_registry (
+    id STRING DEFAULT uuid(),
+    name STRING NOT NULL,
+    connector_type STRING,
+    source_system STRING,
+    health_check_url STRING,
+    health_status STRING DEFAULT 'unknown',
+    enabled BOOLEAN DEFAULT true,
+    last_health_check TIMESTAMP,
+    config MAP<STRING, STRING>,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS connector_health_log (
+    id STRING NOT NULL,
+    connector_id STRING NOT NULL,
+    connector_name STRING,
+    status STRING NOT NULL,
+    health_detail STRING,
+    throughput_detail STRING,
+    issues STRING,
+    checked_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS connector_metrics (
+    id STRING DEFAULT uuid(),
+    connector_id STRING NOT NULL,
+    events_per_minute DOUBLE,
+    error_rate DOUBLE DEFAULT 0.0,
+    latency_ms DOUBLE,
+    recorded_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS connector_schema_history (
+    id STRING DEFAULT uuid(),
+    connector_id STRING NOT NULL,
+    schema_hash STRING NOT NULL,
+    schema_fields STRING,
+    checked_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS quarantine_events (
+    id STRING DEFAULT uuid(),
+    event_type STRING,
+    timestamp TIMESTAMP,
+    source_ip STRING,
+    dest_ip STRING,
+    user_id STRING,
+    hostname STRING,
+    action STRING,
+    severity STRING,
+    description STRING,
+    source_topic STRING,
+    source_partition INT,
+    source_offset BIGINT,
+    raw_data STRING,
+    ingestion_time TIMESTAMP DEFAULT current_timestamp(),
+    parse_status STRING DEFAULT 'failed',
+    source_connector STRING
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS ml_model_monitoring (
+    experiment STRING NOT NULL,
+    status STRING NOT NULL,
+    last_run STRING,
+    staleness_days INT,
+    drift_detected BOOLEAN DEFAULT false,
+    drift_details STRING,
+    checked_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+print("Production integration tables created (18 tables)")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Setup Complete
-# MAGIC All 70+ tables have been created in Unity Catalog.
+# MAGIC All 90+ tables have been created in Unity Catalog.
 
 # COMMAND ----------
 

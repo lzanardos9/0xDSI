@@ -17,11 +17,13 @@ spark.sql(f"USE SCHEMA {schema}")
 
 # COMMAND ----------
 
+import mlflow
 import mlflow.deployments
 import json
 from pyspark.sql import functions as F
 from datetime import datetime
 
+mlflow.set_experiment(f"/Shared/0xDSI/experiments/graphrag_zero_day_detection")
 client = mlflow.deployments.get_deploy_client("databricks")
 
 # COMMAND ----------
@@ -88,6 +90,10 @@ print(f"Analyzing {len(unsigned_events)} unsigned high-severity events")
 # COMMAND ----------
 
 zero_day_candidates = []
+mlflow_run = mlflow.start_run(run_name=f"graphrag_zeroday_{datetime.utcnow().strftime('%Y%m%d_%H%M')}")
+mlflow.log_param("model_endpoint", "databricks-meta-llama-3-1-70b-instruct")
+mlflow.log_param("unsigned_events_count", len(unsigned_events))
+mlflow.log_metric("knowledge_graph_nodes", knowledge_graph.count())
 
 # Group by source_ip for pattern analysis
 from collections import defaultdict
@@ -150,5 +156,13 @@ if zero_day_candidates:
                 'initial-access', {candidate["confidence"] / 100.0}, {candidate["confidence"]}, current_timestamp()
             )
         """)
+
+# Log experiment metrics
+mlflow.log_metric("zero_day_candidates", len(zero_day_candidates))
+mlflow.log_metric("ip_groups_analyzed", len(ip_groups))
+mlflow.log_metric("avg_confidence", sum(c["confidence"] for c in zero_day_candidates) / max(1, len(zero_day_candidates)))
+if zero_day_candidates:
+    mlflow.log_dict({"candidates": zero_day_candidates}, "zero_day_candidates.json")
+mlflow.end_run()
 
 print(f"Zero-day analysis complete. Candidates: {len(zero_day_candidates)}")
