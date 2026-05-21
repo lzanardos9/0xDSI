@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Shield, AlertTriangle, ChevronRight, ChevronDown, Code, Wrench, Clock, ExternalLink, Search, Filter, Copy, Check } from 'lucide-react';
+import { Shield, AlertTriangle, ChevronRight, ChevronDown, Code, Wrench, Clock, ExternalLink, Search, Filter, Copy, Check, Brain } from 'lucide-react';
+import RuleFromRemediationModal from './RuleFromRemediationModal';
 
 interface Vulnerability {
   id: string;
@@ -56,6 +57,7 @@ export default function GlasswingResults({ vulnerabilities, loading }: Glasswing
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [patchFilter, setPatchFilter] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [ruleModalVuln, setRuleModalVuln] = useState<Vulnerability | null>(null);
 
   const filtered = vulnerabilities.filter(v => {
     if (severityFilter !== 'all' && v.severity !== severityFilter) return false;
@@ -248,9 +250,20 @@ export default function GlasswingResults({ vulnerabilities, loading }: Glasswing
 
                   {vuln.remediation_steps && (
                     <div className="bg-cyan-950/20 border border-cyan-500/20 rounded-lg p-3">
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                        <span className="text-xs font-medium text-cyan-400">Remediation</span>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                          <span className="text-xs font-medium text-cyan-400">Remediation</span>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setRuleModalVuln(vuln); }}
+                          className="group flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 hover:border-cyan-400/60 hover:from-cyan-500/20 hover:to-blue-500/20 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-500/10"
+                        >
+                          <Brain className="w-3 h-3 text-cyan-400 group-hover:text-cyan-300 transition-colors" />
+                          <span className="text-[10px] font-semibold text-cyan-300 group-hover:text-cyan-200 uppercase tracking-wide transition-colors">
+                            Create Correlation Rule
+                          </span>
+                        </button>
                       </div>
                       <p className="text-xs text-slate-300 leading-relaxed">{vuln.remediation_steps}</p>
                     </div>
@@ -277,6 +290,13 @@ export default function GlasswingResults({ vulnerabilities, loading }: Glasswing
           <AlertTriangle className="w-8 h-8 text-slate-600 mx-auto mb-2" />
           <p className="text-sm text-slate-500">No vulnerabilities match your filters</p>
         </div>
+      )}
+
+      {ruleModalVuln && (
+        <RuleFromRemediationModal
+          vulnerability={ruleModalVuln}
+          onClose={() => setRuleModalVuln(null)}
+        />
       )}
 
       <style>{`
