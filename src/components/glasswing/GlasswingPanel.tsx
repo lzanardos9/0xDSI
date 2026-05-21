@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Scan, Shield, GitBranch, History, Zap, ExternalLink } from 'lucide-react';
+import { Scan, Shield, GitBranch, History, Zap, ExternalLink, Workflow } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import GlasswingStats from './GlasswingStats';
 import GlasswingScanner from './GlasswingScanner';
 import GlasswingResults from './GlasswingResults';
 import GlasswingExploitGraph from './GlasswingExploitGraph';
 import GlasswingScanHistory from './GlasswingScanHistory';
+import MythosPipelineView from './MythosPipelineView';
 
-type Tab = 'scanner' | 'results' | 'exploits' | 'history';
+type Tab = 'scanner' | 'results' | 'exploits' | 'history' | 'pipeline';
 
 interface ScanRecord {
   id: string;
@@ -67,6 +68,7 @@ interface ExploitRecord {
 }
 
 const TABS: { id: Tab; label: string; icon: typeof Scan }[] = [
+  { id: 'pipeline', label: 'Mythos Pipeline', icon: Workflow },
   { id: 'scanner', label: 'Scanner', icon: Scan },
   { id: 'results', label: 'Vulnerabilities', icon: Shield },
   { id: 'exploits', label: 'Exploit Chains', icon: GitBranch },
@@ -74,7 +76,7 @@ const TABS: { id: Tab; label: string; icon: typeof Scan }[] = [
 ];
 
 export default function GlasswingPanel() {
-  const [activeTab, setActiveTab] = useState<Tab>('scanner');
+  const [activeTab, setActiveTab] = useState<Tab>('pipeline');
   const [loading, setLoading] = useState(true);
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [vulnerabilities, setVulnerabilities] = useState<VulnRecord[]>([]);
@@ -268,6 +270,9 @@ export default function GlasswingPanel() {
       )}
 
       <div>
+        {activeTab === 'pipeline' && (
+          <MythosPipelineView />
+        )}
         {activeTab === 'scanner' && (
           <GlasswingScanner activeScan={activeScan} onLaunchScan={handleLaunchScan} />
         )}

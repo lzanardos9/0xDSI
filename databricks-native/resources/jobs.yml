@@ -1091,3 +1091,92 @@ resources:
               schema: ${var.schema}
               drift_threshold: "0.15"
               staleness_days: "7"
+
+    # ─────────────────────────────────────────────────────
+    # GLASSWING / MYTHOS VULNERABILITY PIPELINE
+    # ─────────────────────────────────────────────────────
+    glasswing_mythos_pipeline:
+      name: "[0xDSI] Glasswing Mythos - Full Triage Pipeline"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: ingest_findings
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/33_glasswing_ingest.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              input_format: "sarif"
+
+        - task_key: semantic_dedup
+          environment_key: default
+          depends_on:
+            - task_key: ingest_findings
+          notebook_task:
+            notebook_path: ../notebooks/agents/34_glasswing_dedup.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              similarity_threshold: "0.85"
+
+        - task_key: reachability_correlation
+          environment_key: default
+          depends_on:
+            - task_key: semantic_dedup
+          notebook_task:
+            notebook_path: ../notebooks/agents/35_glasswing_reachability.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+              min_traffic_threshold: "10"
+
+        - task_key: blast_radius_scoring
+          environment_key: default
+          depends_on:
+            - task_key: reachability_correlation
+          notebook_task:
+            notebook_path: ../notebooks/agents/36_glasswing_blast_radius.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              p1_threshold: "0.9"
+              p2_threshold: "0.7"
+
+        - task_key: auto_patch_generation
+          environment_key: default
+          depends_on:
+            - task_key: blast_radius_scoring
+          notebook_task:
+            notebook_path: ../notebooks/agents/37_glasswing_auto_patch.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              auto_deploy_threshold: "0.9"
+              max_patches_per_run: "20"
+
+    glasswing_detection_confluence:
+      name: "[0xDSI] Glasswing - Detection Confluence Feed"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: confluence_fusion
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/correlation/07_detection_confluence.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              fusion_window_seconds: "300"
+              escalation_threshold: "0.78"
