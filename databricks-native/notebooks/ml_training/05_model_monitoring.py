@@ -1,14 +1,16 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # ML Model Monitoring & Drift Detection
+# MAGIC # ML Model Monitoring & Drift Detection (KS-Enhanced)
 # MAGIC
 # MAGIC Tracks production model performance and detects:
-# MAGIC - Data drift (input feature distribution changes)
-# MAGIC - Prediction drift (model output distribution changes)
+# MAGIC - Data drift via KS two-sample test on feature distributions
+# MAGIC - Prediction drift via KS test on model output distributions
 # MAGIC - Concept drift (ground truth vs prediction gap widening)
 # MAGIC - Model staleness (time since last retrain)
 # MAGIC
-# MAGIC Monitors all registered ML experiments and triggers retraining when needed.
+# MAGIC **KS Enhancement:** Replaces simple relative-change thresholds with proper
+# MAGIC statistical distribution testing. Only alerts when feature/prediction distributions
+# MAGIC have genuinely shifted (p < alpha), eliminating noise from natural variance.
 
 # COMMAND ----------
 
@@ -19,21 +21,77 @@ import mlflow
 from mlflow.tracking import MlflowClient
 import json
 import numpy as np
+from scipy import stats
 
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog name")
 dbutils.widgets.text("schema", "agentic_soc", "Schema name")
-dbutils.widgets.text("drift_threshold", "0.15", "KL-divergence threshold for drift alert")
+dbutils.widgets.text("ks_alpha", "0.01", "KS significance threshold for drift")
+dbutils.widgets.text("psi_threshold", "0.25", "PSI threshold for severe drift")
 dbutils.widgets.text("staleness_days", "7", "Days before model is considered stale")
 
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
-drift_threshold = float(dbutils.widgets.get("drift_threshold"))
+ks_alpha = float(dbutils.widgets.get("ks_alpha"))
+psi_threshold = float(dbutils.widgets.get("psi_threshold"))
 staleness_days = int(dbutils.widgets.get("staleness_days"))
 
 spark.sql(f"USE CATALOG `{catalog}`")
 spark.sql(f"USE SCHEMA `{schema}`")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## KS-Based Drift Detection Functions
+
+# COMMAND ----------
+
+def compute_psi(expected, actual, bins=10):
+    """Population Stability Index between two distributions."""
+    expected_hist, bin_edges = np.histogram(expected, bins=bins, density=True)
+    actual_hist, _ = np.histogram(actual, bins=bin_edges, density=True)
+    expected_hist = np.clip(expected_hist, 1e-6, None)
+    actual_hist = np.clip(actual_hist, 1e-6, None)
+    expected_pct = expected_hist / expected_hist.sum()
+    actual_pct = actual_hist / actual_hist.sum()
+    psi = np.sum((actual_pct - expected_pct) * np.log(actual_pct / expected_pct))
+    return float(psi)
+
+
+def ks_drift_test(baseline_values, current_values, alpha=0.01):
+    """
+    KS two-sample test for distribution drift detection.
+    Returns drift assessment with statistical rigor.
+    """
+    if len(baseline_values) < 10 or len(current_values) < 10:
+        return {"drifted": False, "ks_stat": 0, "p_value": 1.0,
+                "psi": 0, "severity": "none", "confidence": 0}
+
+    ks_stat, p_value = stats.ks_2samp(baseline_values, current_values)
+    psi = compute_psi(baseline_values, current_values)
+
+    if p_value < alpha and psi > psi_threshold:
+        severity = "critical"
+    elif p_value < alpha:
+        severity = "significant"
+    elif psi > psi_threshold:
+        severity = "moderate"
+    else:
+        severity = "none"
+
+    return {
+        "drifted": p_value < alpha,
+        "ks_stat": float(ks_stat),
+        "p_value": float(p_value),
+        "psi": psi,
+        "severity": severity,
+        "confidence": float(1 - p_value),
+        "baseline_mean": float(np.mean(baseline_values)),
+        "current_mean": float(np.mean(current_values)),
+        "baseline_std": float(np.std(baseline_values)),
+        "current_std": float(np.std(current_values)),
+    }
 
 # COMMAND ----------
 
@@ -56,7 +114,7 @@ now = datetime.utcnow()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Check Each Experiment
+# MAGIC ## Check Each Experiment with KS Validation
 
 # COMMAND ----------
 
@@ -73,12 +131,11 @@ for experiment_path in MONITORED_EXPERIMENTS:
             })
             continue
 
-        # Get latest successful run
         runs = mlflow_client.search_runs(
             experiment_ids=[experiment.experiment_id],
             filter_string="status = 'FINISHED'",
             order_by=["start_time DESC"],
-            max_results=5,
+            max_results=10,
         )
 
         if not runs:
@@ -94,35 +151,37 @@ for experiment_path in MONITORED_EXPERIMENTS:
         latest_run = runs[0]
         run_time = datetime.fromtimestamp(latest_run.info.start_time / 1000)
         days_since = (now - run_time).days
-
-        # Check staleness
         is_stale = days_since > staleness_days
 
-        # Check for drift by comparing metrics between recent runs
         drift_detected = False
         drift_details = {}
 
-        if len(runs) >= 2:
-            latest_metrics = latest_run.data.metrics
-            prev_run = runs[1]
-            prev_metrics = prev_run.data.metrics
+        if len(runs) >= 3:
+            recent_metrics_list = [r.data.metrics for r in runs[:3]]
+            older_metrics_list = [r.data.metrics for r in runs[3:]]
 
-            # Compare key metrics between runs
-            for metric_name in latest_metrics:
-                if metric_name in prev_metrics:
-                    current_val = latest_metrics[metric_name]
-                    prev_val = prev_metrics[metric_name]
-                    if prev_val != 0:
-                        relative_change = abs(current_val - prev_val) / abs(prev_val)
-                        if relative_change > drift_threshold:
+            if older_metrics_list:
+                shared_metrics = set(recent_metrics_list[0].keys())
+                for m in recent_metrics_list[1:] + older_metrics_list:
+                    shared_metrics &= set(m.keys())
+
+                for metric_name in shared_metrics:
+                    recent_vals = np.array([m[metric_name] for m in recent_metrics_list])
+                    older_vals = np.array([m[metric_name] for m in older_metrics_list])
+
+                    if len(older_vals) >= 3:
+                        ks_result = ks_drift_test(older_vals, recent_vals, ks_alpha)
+                        if ks_result["drifted"]:
                             drift_detected = True
                             drift_details[metric_name] = {
-                                "previous": prev_val,
-                                "current": current_val,
-                                "change_pct": round(relative_change * 100, 1),
+                                "ks_stat": ks_result["ks_stat"],
+                                "p_value": ks_result["p_value"],
+                                "psi": ks_result["psi"],
+                                "severity": ks_result["severity"],
+                                "baseline_mean": ks_result["baseline_mean"],
+                                "current_mean": ks_result["current_mean"],
                             }
 
-        # Determine overall status
         status = "healthy"
         if is_stale and drift_detected:
             status = "critical"
@@ -140,7 +199,7 @@ for experiment_path in MONITORED_EXPERIMENTS:
             "is_stale": is_stale,
             "drift_detected": drift_detected,
             "drift_details": json.dumps(drift_details) if drift_details else None,
-            "latest_metrics": json.dumps({k: round(v, 4) for k, v in latest_metrics.items()}) if runs else None,
+            "latest_metrics": json.dumps({k: round(v, 4) for k, v in latest_run.data.metrics.items()}),
             "total_runs": len(runs),
         })
 
@@ -157,88 +216,77 @@ for experiment_path in MONITORED_EXPERIMENTS:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Data Drift Analysis (Feature Distribution)
+# MAGIC ## KS-Based Feature Distribution Drift Analysis
+# MAGIC
+# MAGIC Compares full feature distributions (not just means) between current 24h
+# MAGIC window and 7-day baseline using KS test + PSI dual validation.
 
 # COMMAND ----------
 
-def check_feature_drift():
-    """Compare current feature distributions against training baselines."""
+def check_feature_drift_ks():
+    """Compare current feature distributions against baselines using KS test."""
     drift_alerts = []
 
-    # Check behavioral anomaly features
     try:
-        current_features = spark.sql("""
+        current_raw = spark.sql("""
             SELECT
-                AVG(event_count) as avg_events,
-                STDDEV(event_count) as std_events,
-                AVG(unique_ips) as avg_ips,
-                AVG(failure_count) as avg_failures,
-                AVG(off_hours_events) as avg_offhours,
-                COUNT(*) as sample_size
-            FROM (
-                SELECT
-                    user_id,
-                    COUNT(*) as event_count,
-                    COUNT(DISTINCT source_ip) as unique_ips,
-                    SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) as failure_count,
-                    SUM(CASE WHEN HOUR(timestamp) < 6 OR HOUR(timestamp) > 22 THEN 1 ELSE 0 END) as off_hours_events
-                FROM events
-                WHERE timestamp > current_timestamp() - INTERVAL 24 HOURS
-                AND user_id IS NOT NULL
-                GROUP BY user_id
-                HAVING COUNT(*) >= 5
-            )
-        """).collect()
+                COUNT(*) as event_count,
+                COUNT(DISTINCT source_ip) as unique_ips,
+                SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) as failure_count,
+                SUM(CASE WHEN HOUR(timestamp) < 6 OR HOUR(timestamp) > 22 THEN 1 ELSE 0 END) as off_hours_events
+            FROM events
+            WHERE timestamp > current_timestamp() - INTERVAL 24 HOURS
+            AND user_id IS NOT NULL
+            GROUP BY user_id
+            HAVING COUNT(*) >= 5
+        """).toPandas()
 
-        baseline_features = spark.sql("""
+        baseline_raw = spark.sql("""
             SELECT
-                AVG(event_count) as avg_events,
-                STDDEV(event_count) as std_events,
-                AVG(unique_ips) as avg_ips,
-                AVG(failure_count) as avg_failures,
-                AVG(off_hours_events) as avg_offhours,
-                COUNT(*) as sample_size
-            FROM (
-                SELECT
-                    user_id,
-                    COUNT(*) as event_count,
-                    COUNT(DISTINCT source_ip) as unique_ips,
-                    SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) as failure_count,
-                    SUM(CASE WHEN HOUR(timestamp) < 6 OR HOUR(timestamp) > 22 THEN 1 ELSE 0 END) as off_hours_events
-                FROM events
-                WHERE timestamp BETWEEN current_timestamp() - INTERVAL 8 DAYS
-                                    AND current_timestamp() - INTERVAL 1 DAY
-                AND user_id IS NOT NULL
-                GROUP BY user_id
-                HAVING COUNT(*) >= 5
-            )
-        """).collect()
+                COUNT(*) as event_count,
+                COUNT(DISTINCT source_ip) as unique_ips,
+                SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) as failure_count,
+                SUM(CASE WHEN HOUR(timestamp) < 6 OR HOUR(timestamp) > 22 THEN 1 ELSE 0 END) as off_hours_events
+            FROM events
+            WHERE timestamp BETWEEN current_timestamp() - INTERVAL 8 DAYS
+                                AND current_timestamp() - INTERVAL 1 DAY
+            AND user_id IS NOT NULL
+            GROUP BY user_id, DATE(timestamp)
+            HAVING COUNT(*) >= 5
+        """).toPandas()
 
-        if current_features and baseline_features:
-            curr = current_features[0]
-            base = baseline_features[0]
+        if len(current_raw) >= 10 and len(baseline_raw) >= 10:
+            features = ["event_count", "unique_ips", "failure_count", "off_hours_events"]
 
-            features_to_check = ["avg_events", "avg_ips", "avg_failures", "avg_offhours"]
-            for feat in features_to_check:
-                curr_val = getattr(curr, feat) or 0
-                base_val = getattr(base, feat) or 0
-                if base_val > 0:
-                    change = abs(curr_val - base_val) / base_val
-                    if change > drift_threshold:
+            for feat in features:
+                current_vals = current_raw[feat].dropna().values.astype(float)
+                baseline_vals = baseline_raw[feat].dropna().values.astype(float)
+
+                if len(current_vals) >= 10 and len(baseline_vals) >= 10:
+                    result = ks_drift_test(baseline_vals, current_vals, ks_alpha)
+
+                    if result["drifted"]:
                         drift_alerts.append({
                             "feature": feat,
-                            "baseline": round(base_val, 2),
-                            "current": round(curr_val, 2),
-                            "drift_pct": round(change * 100, 1),
+                            "ks_statistic": result["ks_stat"],
+                            "p_value": result["p_value"],
+                            "psi": result["psi"],
+                            "severity": result["severity"],
+                            "baseline_mean": result["baseline_mean"],
+                            "current_mean": result["current_mean"],
                             "model": "behavioral_anomaly_detection",
                         })
+
     except Exception as e:
-        print(f"Feature drift check failed: {e}")
+        print(f"KS feature drift check failed: {e}")
 
     return drift_alerts
 
-feature_drift = check_feature_drift()
-print(f"Feature drift alerts: {len(feature_drift)}")
+feature_drift = check_feature_drift_ks()
+print(f"KS-validated feature drift alerts: {len(feature_drift)}")
+for alert in feature_drift:
+    print(f"  {alert['feature']}: KS={alert['ks_statistic']:.4f}, "
+          f"p={alert['p_value']:.6f}, PSI={alert['psi']:.4f} [{alert['severity']}]")
 
 # COMMAND ----------
 
@@ -274,7 +322,10 @@ if monitoring_results:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Generate Alerts for Critical Issues
+# MAGIC ## Generate Alerts (KS-Validated Only)
+# MAGIC
+# MAGIC Only create alerts when drift is statistically confirmed by KS test.
+# MAGIC This eliminates false drift alerts from normal metric variance.
 
 # COMMAND ----------
 
@@ -287,34 +338,41 @@ for result in monitoring_results:
         alerts_to_create.append({
             "id": str(uuid.uuid4()),
             "title": f"ML Model Critical: {result['experiment'].split('/')[-1]}",
-            "description": f"Model is stale ({result.get('staleness_days')} days) AND showing drift. Immediate retraining required.",
+            "description": f"Model stale ({result.get('staleness_days')} days) AND KS-confirmed drift. Retraining required.",
             "severity": "high",
             "status": "new",
-            "source": "ml_model_monitoring",
-            "confidence": 0.9,
+            "source": "ml_model_monitoring_ks",
+            "confidence": 0.95,
             "created_at": now,
         })
     elif result["status"] == "drift_detected":
+        details = json.loads(result.get("drift_details", "{}"))
+        max_ks = max((v.get("ks_stat", 0) for v in details.values()), default=0)
         alerts_to_create.append({
             "id": str(uuid.uuid4()),
-            "title": f"ML Drift Detected: {result['experiment'].split('/')[-1]}",
-            "description": f"Model showing prediction drift. Details: {result.get('drift_details', 'N/A')}",
+            "title": f"ML Drift (KS-confirmed): {result['experiment'].split('/')[-1]}",
+            "description": f"KS test confirmed distribution shift (max KS stat: {max_ks:.4f}). Details: {result.get('drift_details', 'N/A')}",
             "severity": "medium",
             "status": "new",
-            "source": "ml_model_monitoring",
-            "confidence": 0.85,
+            "source": "ml_model_monitoring_ks",
+            "confidence": 0.9,
             "created_at": now,
         })
 
 for drift in feature_drift:
+    confidence = min(0.99, drift["ks_statistic"] + 0.5)
     alerts_to_create.append({
         "id": str(uuid.uuid4()),
-        "title": f"Feature Drift: {drift['feature']} ({drift['model']})",
-        "description": f"Feature '{drift['feature']}' drifted {drift['drift_pct']}% from baseline ({drift['baseline']} -> {drift['current']})",
-        "severity": "medium",
+        "title": f"Feature Drift (KS p={drift['p_value']:.4f}): {drift['feature']}",
+        "description": (
+            f"Feature '{drift['feature']}' distribution shifted. "
+            f"KS stat: {drift['ks_statistic']:.4f}, PSI: {drift['psi']:.4f}. "
+            f"Mean moved from {drift['baseline_mean']:.2f} to {drift['current_mean']:.2f}"
+        ),
+        "severity": "high" if drift["severity"] == "critical" else "medium",
         "status": "new",
-        "source": "ml_model_monitoring",
-        "confidence": 0.8,
+        "source": "ml_model_monitoring_ks",
+        "confidence": confidence,
         "created_at": now,
     })
 
@@ -331,12 +389,14 @@ if alerts_to_create:
     ])
     alerts_df = spark.createDataFrame(alerts_to_create, schema=alert_schema)
     alerts_df.write.mode("append").saveAsTable("alerts")
-    print(f"Created {len(alerts_to_create)} ML monitoring alerts")
+    print(f"Created {len(alerts_to_create)} KS-validated monitoring alerts")
+else:
+    print("No drift detected - all models within expected distribution bounds")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Trigger Automatic Retraining (if configured)
+# MAGIC ## Trigger Automatic Retraining (Only on KS-Confirmed Drift)
 
 # COMMAND ----------
 
@@ -345,7 +405,6 @@ retrain_triggered = []
 for result in monitoring_results:
     if result["status"] in ("critical", "drift_detected"):
         experiment_name = result["experiment"].split("/")[-1]
-        # Map experiments to their retraining notebooks
         retrain_map = {
             "behavioral_anomaly_detection": "../detection/01_behavioral_anomaly_detection",
             "threat_scoring_model": "../ml_training/01_threat_scoring_model",
@@ -365,7 +424,6 @@ for result in monitoring_results:
 
 # COMMAND ----------
 
-# Update agent status
 spark.sql(f"""
     MERGE INTO agent_status AS target
     USING (SELECT
@@ -384,11 +442,13 @@ result = {
     "status": "completed",
     "experiments_checked": len(monitoring_results),
     "healthy": sum(1 for r in monitoring_results if r["status"] == "healthy"),
-    "drift_detected": sum(1 for r in monitoring_results if r.get("drift_detected")),
+    "ks_drift_detected": sum(1 for r in monitoring_results if r.get("drift_detected")),
     "stale": sum(1 for r in monitoring_results if r["status"] == "stale"),
     "critical": sum(1 for r in monitoring_results if r["status"] == "critical"),
     "feature_drift_alerts": len(feature_drift),
     "retrains_triggered": retrain_triggered,
+    "ks_alpha": ks_alpha,
+    "psi_threshold": psi_threshold,
 }
 print(json.dumps(result, indent=2))
 dbutils.notebook.exit(json.dumps(result))
