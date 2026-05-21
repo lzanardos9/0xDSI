@@ -3,9 +3,10 @@ import {
   Activity, AlertTriangle, Brain, Gauge, Network, Target, Users, Zap,
   GitBranch, Sparkles, ChevronRight, Layers, Workflow, Eye, Scale,
   Waves, Sigma, FlaskConical, Beaker, Bot, Cpu, Skull, ShieldAlert, Globe,
-  Binary, GitMerge, Search, X
+  Binary, GitMerge, Search, X, BarChart3
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import KSValidationPanel from './confluence/KSValidationPanel';
 
 type Lens = {
   id: string;
@@ -131,7 +132,7 @@ const PRIORITY_STYLE: Record<string, { bg: string; ring: string; text: string }>
   P4: { bg: 'bg-sky-500/20', ring: 'ring-sky-500/60', text: 'text-sky-300' },
 };
 
-type Tab = 'river' | 'verdicts' | 'sunburst' | 'lineage' | 'formula' | 'disagree' | 'ml' | 'agents' | 'chains';
+type Tab = 'river' | 'verdicts' | 'sunburst' | 'lineage' | 'formula' | 'disagree' | 'ml' | 'agents' | 'chains' | 'ks';
 
 export default function DetectionConfluence() {
   const [tab, setTab] = useState<Tab>('river');
@@ -252,6 +253,9 @@ export default function DetectionConfluence() {
         {tab === 'chains' && (
           <AttackChainsView chains={chains} verdicts={filteredVerdicts} mlInvocations={mlInvocations} agentActions={agentActions} />
         )}
+        {tab === 'ks' && (
+          <KSValidationPanel />
+        )}
       </div>
     </div>
   );
@@ -324,6 +328,7 @@ function Tabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
     { id: 'ml', label: 'ML Model Fusion', icon: Cpu },
     { id: 'agents', label: 'Agentic Operations', icon: Bot },
     { id: 'chains', label: 'Complex Attack Chains', icon: Skull },
+    { id: 'ks', label: 'KS Validation', icon: BarChart3 },
   ];
   return (
     <div className="border-b border-slate-800 bg-slate-900/60 px-6">
