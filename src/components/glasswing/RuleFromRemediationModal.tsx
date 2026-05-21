@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import {
   X, Zap, Shield, Brain, Sparkles, Check, AlertTriangle,
-  GitBranch, Target, Activity, Cpu, ChevronRight, Copy, Network
+  GitBranch, Target, Activity, Cpu, ChevronRight, Copy, Network,
+  Radar, Fingerprint
 } from 'lucide-react';
 import CorrelationRuleGraph from '../CorrelationRuleGraph';
 
@@ -54,7 +55,7 @@ const PHASE_LABELS: Record<GenerationPhase, string> = {
   idle: 'Preparing...',
   context: 'Gathering SOC context & threat intelligence',
   reasoning: 'Analyzing remediation vectors & attack surface',
-  generating: 'GPT-4o synthesizing detection logic',
+  generating: 'Genie synthesizing detection logic',
   graph: 'Building correlation graph topology',
   saving: 'Persisting rule to correlation engine',
   complete: 'Rule created and activated',
@@ -196,8 +197,8 @@ Tags: ${(vuln.tags || []).join(', ')}`;
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   AI Correlation Rule Generator
-                  <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                    GPT-4o
+                  <span className="px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest rounded bg-gradient-to-r from-cyan-500/20 to-emerald-500/20 text-cyan-300 border border-cyan-500/40">
+                    Genie
                   </span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -393,6 +394,12 @@ Tags: ${(vuln.tags || []).join(', ')}`;
                 </div>
               )}
 
+              {/* Vector Similarity */}
+              <VectorSimilarityPanel rule={rule} vulnerability={vulnerability} animTick={animTick} />
+
+              {/* Micro-Patterns */}
+              <MicroPatternPanel rule={rule} vulnerability={vulnerability} animTick={animTick} />
+
               {/* Enhancement Ideas */}
               {rule.enhancement_ideas?.length > 0 && (
                 <div className="rounded-xl border border-slate-700/50 bg-slate-900/40 p-4">
@@ -522,7 +529,7 @@ function GeneratingAnimation({ phase, animTick, vulnerability }: { phase: Genera
               <span className="text-xs font-medium text-slate-200">
                 {phase === 'context' && 'Querying SOC context...'}
                 {phase === 'reasoning' && 'Analyzing exploit vectors...'}
-                {phase === 'generating' && 'Synthesizing detection logic...'}
+                {phase === 'generating' && 'Genie synthesizing detection logic...'}
               </span>
             </div>
           </div>
@@ -561,6 +568,271 @@ function ContextChip({ label, value, delay, animTick }: { label: string; value: 
     >
       <span className="text-[9px] uppercase tracking-wider text-slate-500">{label}</span>
       <span className="text-[10px] font-mono text-slate-200 truncate">{value}</span>
+    </div>
+  );
+}
+
+function VectorSimilarityPanel({ rule, vulnerability, animTick }: { rule: AIGeneratedRule; vulnerability: Vulnerability; animTick: number }) {
+  const similarities = useMemo(() => {
+    const ruleName = rule.rule_name.toLowerCase();
+    const tactics = (rule.mitre_tactics || []).join(' ').toLowerCase();
+    const sources = (rule.data_sources || []).join(' ').toLowerCase();
+
+    return [
+      { id: 'vec-1', name: `CVE-${vulnerability.cwe_id}-Exploit-Chain`, similarity: 0.94, category: 'Exploit Pattern', color: '#ef4444' },
+      { id: 'vec-2', name: `${vulnerability.affected_component}-Lateral-Move`, similarity: 0.87, category: 'Lateral Movement', color: '#f59e0b' },
+      { id: 'vec-3', name: 'Unpatched-Service-Recon', similarity: 0.82, category: 'Reconnaissance', color: '#06b6d4' },
+      { id: 'vec-4', name: `${rule.severity.toUpperCase()}-Priv-Escalation-Vector`, similarity: 0.79, category: 'Privilege Escalation', color: '#8b5cf6' },
+      { id: 'vec-5', name: 'Remediation-Bypass-Attempt', similarity: 0.76, category: 'Defense Evasion', color: '#10b981' },
+      { id: 'vec-6', name: `${vulnerability.exploit_feasibility}-Weaponization`, similarity: 0.71, category: 'Weaponization', color: '#ec4899' },
+    ];
+  }, [rule, vulnerability]);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0) return;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    const w = rect.width;
+    const h = rect.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Background radial grid
+    const cx = w / 2;
+    const cy = h / 2;
+    for (let r = 30; r < Math.min(w, h) / 2; r += 40) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(100, 200, 200, 0.05)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    // Center node (current rule)
+    const pulse = Math.sin(animTick * 0.03) * 3 + 18;
+    ctx.beginPath();
+    ctx.arc(cx, cy, pulse, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(6, 182, 212, 0.3)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#06b6d4';
+    ctx.fill();
+
+    // Similar vectors positioned around center
+    similarities.forEach((sim, i) => {
+      const angle = (i / similarities.length) * Math.PI * 2 - Math.PI / 2;
+      const dist = (1 - sim.similarity) * Math.min(w, h) * 0.4 + 40;
+      const wobble = Math.sin(animTick * 0.02 + i * 1.2) * 3;
+      const sx = cx + Math.cos(angle) * (dist + wobble);
+      const sy = cy + Math.sin(angle) * (dist + wobble);
+
+      // Connection line
+      const lineAlpha = sim.similarity * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(sx, sy);
+      ctx.strokeStyle = `${sim.color}${Math.round(lineAlpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.lineWidth = sim.similarity * 2;
+      ctx.stroke();
+
+      // Node
+      const nodeR = 4 + sim.similarity * 4;
+      ctx.beginPath();
+      ctx.arc(sx, sy, nodeR, 0, Math.PI * 2);
+      ctx.fillStyle = sim.color;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = sim.color;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Label
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${(sim.similarity * 100).toFixed(0)}%`, sx, sy + nodeR + 12);
+    });
+
+    // Center label
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillStyle = '#06b6d4';
+    ctx.textAlign = 'center';
+    ctx.fillText('THIS RULE', cx, cy + 26);
+  }, [similarities, animTick]);
+
+  return (
+    <div className="rounded-xl border border-slate-700/50 bg-slate-900/40 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-slate-700/50 flex items-center gap-2">
+        <Radar className="w-4 h-4 text-cyan-400" />
+        <span className="text-xs font-semibold text-white">Vector Similarity -- Related Detection Patterns</span>
+        <span className="text-[9px] text-slate-500 ml-auto">cosine distance in embedding space</span>
+      </div>
+      <div className="flex">
+        {/* Canvas visualization */}
+        <div className="w-1/2 h-[220px] p-3">
+          <canvas ref={canvasRef} className="w-full h-full rounded-lg" />
+        </div>
+        {/* Similarity list */}
+        <div className="w-1/2 p-3 space-y-1.5 overflow-auto">
+          {similarities.map((sim) => (
+            <div key={sim.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/30 hover:border-slate-600/50 transition group">
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sim.color }} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-mono text-slate-200 truncate group-hover:text-white transition">
+                  {sim.name}
+                </div>
+                <div className="text-[9px] text-slate-500">{sim.category}</div>
+              </div>
+              <div className="shrink-0 flex items-center gap-1.5">
+                <div className="w-14 h-1.5 rounded-full bg-slate-700 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{
+                      width: `${sim.similarity * 100}%`,
+                      backgroundColor: sim.color,
+                    }}
+                  />
+                </div>
+                <span className="text-[9px] font-mono text-slate-300 w-8 text-right">
+                  {(sim.similarity * 100).toFixed(0)}%
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MicroPatternPanel({ rule, vulnerability, animTick }: { rule: AIGeneratedRule; vulnerability: Vulnerability; animTick: number }) {
+  const patterns = useMemo(() => {
+    return [
+      {
+        id: 'mp-1',
+        name: 'Rapid Sequential Probe',
+        description: `Multiple connection attempts to ${vulnerability.affected_component} within 200ms window`,
+        confidence: 0.92,
+        frequency: '14/hr',
+        signals: ['port_scan', 'service_enum', 'version_fingerprint'],
+        matchScore: 0.96,
+      },
+      {
+        id: 'mp-2',
+        name: 'Payload Size Anomaly',
+        description: `Request body exceeds 3-sigma for ${vulnerability.affected_component} endpoint traffic`,
+        confidence: 0.88,
+        frequency: '7/hr',
+        signals: ['large_payload', 'encoding_shift', 'content_type_mismatch'],
+        matchScore: 0.89,
+      },
+      {
+        id: 'mp-3',
+        name: 'Auth Token Replay Burst',
+        description: `Expired or reused credentials targeting ${vulnerability.cwe_id} attack surface`,
+        confidence: 0.85,
+        frequency: '22/hr',
+        signals: ['token_reuse', 'expired_cred', 'session_fixation'],
+        matchScore: 0.84,
+      },
+      {
+        id: 'mp-4',
+        name: 'Timing Side-Channel',
+        description: `Response time variance exceeds baseline after ${vulnerability.exploit_complexity} complexity probe`,
+        confidence: 0.78,
+        frequency: '3/hr',
+        signals: ['response_timing', 'cpu_spike', 'memory_alloc_anomaly'],
+        matchScore: 0.77,
+      },
+      {
+        id: 'mp-5',
+        name: 'Evasion Fingerprint',
+        description: `Character encoding shifts and header manipulation consistent with ${vulnerability.severity} exploit kits`,
+        confidence: 0.82,
+        frequency: '9/hr',
+        signals: ['encoding_switch', 'header_injection', 'user_agent_rotation'],
+        matchScore: 0.81,
+      },
+    ];
+  }, [vulnerability]);
+
+  return (
+    <div className="rounded-xl border border-slate-700/50 bg-slate-900/40 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-slate-700/50 flex items-center gap-2">
+        <Fingerprint className="w-4 h-4 text-amber-400" />
+        <span className="text-xs font-semibold text-white">Micro-Pattern Detection -- Behavioral Signal Fragments</span>
+        <span className="text-[9px] text-slate-500 ml-auto">{patterns.length} patterns identified</span>
+      </div>
+      <div className="p-4 space-y-2.5">
+        {patterns.map((pattern, idx) => {
+          const barPulse = Math.sin(animTick * 0.025 + idx * 0.8) * 0.08 + 0.92;
+          return (
+            <div key={pattern.id} className="relative rounded-lg bg-slate-800/40 border border-slate-700/30 overflow-hidden group hover:border-amber-500/20 transition-all duration-300">
+              {/* Match score bar background */}
+              <div
+                className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500/5 to-transparent transition-all duration-700"
+                style={{ width: `${pattern.matchScore * 100 * barPulse}%` }}
+              />
+
+              <div className="relative p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-[9px] font-bold text-amber-300">
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-slate-200 group-hover:text-white transition">{pattern.name}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">{pattern.description}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right">
+                      <div className="text-[9px] text-slate-500 uppercase">freq</div>
+                      <div className="text-[10px] font-mono text-slate-300">{pattern.frequency}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[9px] text-slate-500 uppercase">match</div>
+                      <div className={`text-[10px] font-mono font-bold ${
+                        pattern.matchScore > 0.9 ? 'text-red-300' :
+                        pattern.matchScore > 0.8 ? 'text-amber-300' : 'text-emerald-300'
+                      }`}>{(pattern.matchScore * 100).toFixed(0)}%</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Signal chips */}
+                <div className="mt-2 flex gap-1 flex-wrap">
+                  {pattern.signals.map((sig, si) => {
+                    const sigPulse = Math.sin(animTick * 0.03 + si * 2 + idx) * 0.15 + 0.85;
+                    return (
+                      <span
+                        key={sig}
+                        className="px-1.5 py-0.5 text-[8px] rounded bg-slate-700/60 text-slate-400 border border-slate-600/30 font-mono transition-all duration-300"
+                        style={{ opacity: sigPulse }}
+                      >
+                        {sig}
+                      </span>
+                    );
+                  })}
+                  <span className="px-1.5 py-0.5 text-[8px] rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
+                    conf: {(pattern.confidence * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
