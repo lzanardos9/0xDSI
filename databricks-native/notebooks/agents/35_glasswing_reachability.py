@@ -26,27 +26,26 @@
 
 # COMMAND ----------
 
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from datetime import datetime, timedelta
 import json
 import uuid
 import re
+import math
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog name")
-dbutils.widgets.text("schema", "agentic_soc", "Schema name")
+# Configuration
 dbutils.widgets.text("lookback_hours", "24", "Hours of event history to analyze")
 dbutils.widgets.text("min_traffic_threshold", "10", "Minimum requests to consider reachable")
 
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
 lookback_hours = int(dbutils.widgets.get("lookback_hours"))
 min_traffic_threshold = int(dbutils.widgets.get("min_traffic_threshold"))
-
-spark.sql(f"USE CATALOG `{catalog}`")
-spark.sql(f"USE SCHEMA `{schema}`")
 
 now = datetime.utcnow()
 lookback_start = now - timedelta(hours=lookback_hours)
@@ -57,33 +56,58 @@ print(f"Reachability run {run_id} | lookback={lookback_hours}h | min_traffic={mi
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Helper Functions
+
+# COMMAND ----------
+
+def severity_rank(level: str) -> int:
+    """Helper to rank severity levels numerically."""
+    ranks = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    return ranks.get(level, 0)
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Load Open Root Causes and Their Findings
 
 # COMMAND ----------
 
-root_causes_df = spark.sql("""
-    SELECT * FROM glasswing_root_causes
-    WHERE status = 'open'
-""")
-root_cause_count = root_causes_df.count()
+try:
+    root_causes_query = (
+        qb("glasswing_root_causes")
+        .select(["*"])
+        .where_eq("status", "open")
+        .describe("Load open root causes for reachability analysis")
+        .build()
+    )
+    root_causes_df = spark.sql(root_causes_query.sql)
+    root_cause_count = root_causes_df.count()
 
-if root_cause_count == 0:
-    print("No open root causes to analyze. Exiting.")
-    result = {"status": "no_data", "root_causes_analyzed": 0, "reachable_count": 0}
-    dbutils.notebook.exit(json.dumps(result))
+    if root_cause_count == 0:
+        print("No open root causes to analyze. Exiting.")
+        result = {"status": "no_data", "root_causes_analyzed": 0, "reachable_count": 0}
+        mon.log_complete(rows_processed=0)
+        dbutils.notebook.exit(json.dumps(result))
 
-root_causes = root_causes_df.collect()
-print(f"Loaded {root_cause_count} open root causes for reachability analysis")
+    root_causes = root_causes_df.collect()
+    print(f"Loaded {root_cause_count} open root causes for reachability analysis")
 
-# Load associated findings
-findings_df = spark.sql("""
-    SELECT id, finding_id, file_path, codebase, vuln_class, poc_code,
-           root_cause_group_id, exploit_chain_id
-    FROM glasswing_findings
-    WHERE status = 'clustered'
-""")
-findings_list = findings_df.collect()
-print(f"Loaded {len(findings_list)} clustered findings")
+    # Load associated findings
+    findings_query = (
+        qb("glasswing_findings")
+        .select(["id", "finding_id", "file_path", "codebase", "vuln_class",
+                 "poc_code", "root_cause_group_id", "exploit_chain_id"])
+        .where_eq("status", "clustered")
+        .describe("Load clustered findings for route extraction")
+        .build()
+    )
+    findings_df = spark.sql(findings_query.sql)
+    findings_list = findings_df.collect()
+    print(f"Loaded {len(findings_list)} clustered findings")
+
+except Exception as e:
+    mon.log_error(e, "Failed to load root causes or findings")
+    raise
 
 # COMMAND ----------
 
@@ -98,7 +122,13 @@ print(f"Loaded {len(findings_list)} clustered findings")
 def load_service_map():
     """Load service map from table or generate heuristic mapping."""
     try:
-        svc_df = spark.sql("SELECT * FROM service_map")
+        svc_query = (
+            qb("service_map")
+            .select(["*"])
+            .describe("Load service map for route resolution")
+            .build()
+        )
+        svc_df = spark.sql(svc_query.sql)
         if svc_df.count() > 0:
             return {row["file_pattern"]: row for row in svc_df.collect()}
     except Exception:
@@ -166,7 +196,7 @@ def extract_routes_from_path(file_path: str, codebase: str) -> list:
         parts = file_path.replace("\\", "/").split("/")
         meaningful = [p for p in parts if p and not p.startswith(".") and "." not in p][-2:]
         if meaningful:
-            routes.append(f"/{'/' .join(meaningful)}")
+            routes.append(f"/{'/'.join(meaningful)}")
 
     return routes
 
@@ -194,69 +224,80 @@ print(f"Extracted {total_routes} potential API routes from {len(finding_routes)}
 
 # MAGIC %md
 # MAGIC ## Query Live Event Stream
+# MAGIC
+# MAGIC Uses a DataFrame join approach instead of building SQL from untrusted route patterns.
 
 # COMMAND ----------
 
-# Collect all unique route patterns to query
-all_route_patterns = set()
-for info in finding_routes.values():
-    for route in info["routes"]:
-        # Convert wildcards to SQL LIKE patterns
-        pattern = route.replace("*", "%")
-        all_route_patterns.add(pattern)
+with mon.time("event_stream_query"):
+    # Collect all unique route patterns for matching
+    all_route_patterns = set()
+    for info in finding_routes.values():
+        for route in info["routes"]:
+            # Convert wildcards to SQL LIKE patterns
+            pattern = route.replace("*", "%")
+            all_route_patterns.add(pattern)
 
-# Query events table for traffic hitting these endpoints
-route_conditions = " OR ".join([f"request_path LIKE '{p}'" for p in all_route_patterns])
+    # Build a route patterns DataFrame for safe join-based matching
+    route_pattern_rows = [{"route_pattern": p} for p in all_route_patterns]
+    route_patterns_df = spark.createDataFrame(route_pattern_rows)
+    route_patterns_df.createOrReplaceTempView("_route_patterns")
 
-try:
-    events_query = f"""
-        SELECT
-            request_path,
-            source_ip,
-            COUNT(*) as request_count,
-            COUNT(DISTINCT source_ip) as unique_sources,
-            SUM(CASE WHEN is_external = true THEN 1 ELSE 0 END) as external_requests,
-            COLLECT_SET(source_ip) as source_ips,
-            MAX(event_time) as last_seen
-        FROM events
-        WHERE event_time >= '{lookback_start.isoformat()}'
-            AND ({route_conditions})
-        GROUP BY request_path, source_ip
-    """
-    events_df = spark.sql(events_query)
-    traffic_data = events_df.collect()
-    print(f"Found {len(traffic_data)} traffic records hitting vulnerable endpoints")
-except Exception as e:
-    print(f"Events table query failed: {e}")
-    print("Generating synthetic traffic data for pipeline validation...")
+    try:
+        # Use a safe cross-join with LIKE matching via temp view
+        # This avoids building raw SQL from route patterns
+        events_table = cfg.get_table_path("events")
+        lookback_iso = lookback_start.isoformat()
 
-    # Synthetic traffic data for demo
-    traffic_data = []
-    synthetic_traffic = [
-        ("/api/v2/nodes/register", "198.51.100.47", 342, True),
-        ("/api/v1/search", "203.0.113.12", 1847, True),
-        ("/api/v1/artifacts", "198.51.100.99", 56, True),
-        ("/api/webhooks", "10.0.0.15", 230, False),
-        ("/api/v1/storage/file_handler", "172.16.0.8", 12, False),
-        ("/auth/*", "198.51.100.200", 891, True),
-        ("/api/v1/rbac/evaluator", "203.0.113.55", 127, True),
-        ("/login", "192.0.2.100", 4521, True),
-        ("/api/integrations", "198.51.100.33", 78, True),
-    ]
+        events_query = f"""
+            SELECT
+                e.request_path,
+                e.source_ip,
+                COUNT(*) as request_count,
+                COUNT(DISTINCT e.source_ip) as unique_sources,
+                SUM(CASE WHEN e.is_external = true THEN 1 ELSE 0 END) as external_requests,
+                COLLECT_SET(e.source_ip) as source_ips,
+                MAX(e.event_time) as last_seen
+            FROM {events_table} e
+            INNER JOIN _route_patterns rp
+                ON e.request_path LIKE rp.route_pattern
+            WHERE e.event_time >= '{lookback_iso}'
+            GROUP BY e.request_path, e.source_ip
+        """
+        events_df = spark.sql(events_query)
+        traffic_data = events_df.collect()
+        print(f"Found {len(traffic_data)} traffic records hitting vulnerable endpoints")
+    except Exception as e:
+        print(f"Events table query failed: {e}")
+        print("Generating synthetic traffic data for pipeline validation...")
 
-    from pyspark.sql import Row
-    traffic_data = [
-        Row(
-            request_path=path,
-            source_ip=ip,
-            request_count=count,
-            unique_sources=max(1, count // 20),
-            external_requests=count if is_ext else 0,
-            source_ips=[ip],
-            last_seen=now - timedelta(minutes=idx * 7)
-        )
-        for idx, (path, ip, count, is_ext) in enumerate(synthetic_traffic)
-    ]
+        # Synthetic traffic data for demo
+        traffic_data = []
+        synthetic_traffic = [
+            ("/api/v2/nodes/register", "198.51.100.47", 342, True),
+            ("/api/v1/search", "203.0.113.12", 1847, True),
+            ("/api/v1/artifacts", "198.51.100.99", 56, True),
+            ("/api/webhooks", "10.0.0.15", 230, False),
+            ("/api/v1/storage/file_handler", "172.16.0.8", 12, False),
+            ("/auth/*", "198.51.100.200", 891, True),
+            ("/api/v1/rbac/evaluator", "203.0.113.55", 127, True),
+            ("/login", "192.0.2.100", 4521, True),
+            ("/api/integrations", "198.51.100.33", 78, True),
+        ]
+
+        from pyspark.sql import Row
+        traffic_data = [
+            Row(
+                request_path=path,
+                source_ip=ip,
+                request_count=count,
+                unique_sources=max(1, count // 20),
+                external_requests=count if is_ext else 0,
+                source_ips=[ip],
+                last_seen=now - timedelta(minutes=idx * 7)
+            )
+            for idx, (path, ip, count, is_ext) in enumerate(synthetic_traffic)
+        ]
 
 # COMMAND ----------
 
@@ -266,12 +307,15 @@ except Exception as e:
 # COMMAND ----------
 
 try:
-    ioc_df = spark.sql("""
-        SELECT indicator, indicator_type, threat_level, source
-        FROM ioc_entries
-        WHERE indicator_type = 'ip'
-          AND is_active = true
-    """)
+    ioc_query = (
+        qb("ioc_entries")
+        .select(["indicator", "indicator_type", "threat_level", "source"])
+        .where_eq("indicator_type", "ip")
+        .where_eq("is_active", True)
+        .describe("Load active IOC IP indicators for cross-reference")
+        .build()
+    )
+    ioc_df = spark.sql(ioc_query.sql)
     known_bad_ips = {row["indicator"]: row for row in ioc_df.collect()}
     print(f"Loaded {len(known_bad_ips)} active IOC IP indicators")
 except Exception as e:
@@ -309,8 +353,6 @@ def calculate_reachability_score(
     - IOC correlation factor (0-0.3): known bad actors hitting the endpoint
     - Attack surface factor (0-0.15): vuln class susceptibility to remote exploit
     """
-    import math
-
     # Traffic volume: log-normalized, capped
     traffic_factor = min(0.3, 0.3 * (math.log10(max(traffic_volume, 1)) / 4.0))
 
@@ -372,111 +414,111 @@ for row in traffic_data:
         route_traffic[path]["ioc_hits"].append(known_bad_ips[src_ip])
     route_traffic[path]["source_ips"].add(src_ip)
 
+# COMMAND ----------
 
-# Calculate reachability for each root cause
-reachability_results = []
-reachable_count = 0
-alerts_to_create = []
+# MAGIC %md
+# MAGIC ## Compute Reachability for Each Root Cause
 
-for rc in root_causes:
-    rc_id = rc["id"]
-    rc_finding_ids = json.loads(rc["finding_ids"])
+# COMMAND ----------
 
-    # Find all routes associated with this root cause's findings
-    rc_routes = set()
-    rc_vuln_class = rc["vuln_class"]
-    for fid in rc_finding_ids:
-        if fid in finding_routes:
-            rc_routes.update(finding_routes[fid]["routes"])
+with mon.time("reachability_calculation"):
+    reachability_results = []
+    reachable_count = 0
+    alerts_to_create = []
 
-    # Match routes against traffic
-    total_traffic = 0
-    total_external = 0
-    total_unique_sources = 0
-    has_ioc = False
-    ioc_max_level = "low"
-    matched_routes = []
-    ioc_matches = []
+    for rc in root_causes:
+        rc_id = rc["id"]
+        rc_finding_ids = json.loads(rc["finding_ids"])
 
-    for route in rc_routes:
-        # Check exact and wildcard matches
-        for traffic_route, traffic_info in route_traffic.items():
-            route_pattern = route.replace("*", "")
-            if traffic_route.startswith(route_pattern) or route_pattern in traffic_route:
-                total_traffic += traffic_info["total_requests"]
-                total_external += traffic_info["external_requests"]
-                total_unique_sources += traffic_info["unique_sources"]
-                matched_routes.append(traffic_route)
-                if traffic_info["ioc_hits"]:
-                    has_ioc = True
-                    for ioc in traffic_info["ioc_hits"]:
-                        ioc_matches.append(ioc)
-                        if severity_rank(ioc["threat_level"]) > severity_rank(ioc_max_level):
-                            ioc_max_level = ioc["threat_level"]
+        # Find all routes associated with this root cause's findings
+        rc_routes = set()
+        rc_vuln_class = rc["vuln_class"]
+        for fid in rc_finding_ids:
+            if fid in finding_routes:
+                rc_routes.update(finding_routes[fid]["routes"])
 
-    # Calculate score
-    is_reachable = total_traffic >= min_traffic_threshold
-    score = calculate_reachability_score(
-        traffic_volume=total_traffic,
-        external_source_count=total_unique_sources,
-        has_ioc_traffic=has_ioc,
-        ioc_threat_level=ioc_max_level,
-        attacker_params_detected=total_external > 0,
-        vuln_class=rc_vuln_class,
-    )
+        # Match routes against traffic
+        total_traffic = 0
+        total_external = 0
+        total_unique_sources = 0
+        has_ioc = False
+        ioc_max_level = "low"
+        matched_routes = []
+        ioc_matches = []
 
-    reachability_results.append({
-        "id": str(uuid.uuid4()),
-        "root_cause_id": rc_id,
-        "reachability_score": score,
-        "is_reachable": is_reachable and score > 0.2,
-        "traffic_volume": total_traffic,
-        "external_request_count": total_external,
-        "unique_source_ips": total_unique_sources,
-        "matched_routes": json.dumps(matched_routes[:20]),
-        "ioc_correlation_count": len(ioc_matches),
-        "ioc_max_threat_level": ioc_max_level if has_ioc else None,
-        "ioc_indicators": json.dumps([i["indicator"] for i in ioc_matches[:10]]),
-        "lookback_hours": lookback_hours,
-        "analyzed_at": now,
-    })
+        for route in rc_routes:
+            # Check exact and wildcard matches
+            for traffic_route, traffic_info in route_traffic.items():
+                route_pattern = route.replace("*", "")
+                if traffic_route.startswith(route_pattern) or route_pattern in traffic_route:
+                    total_traffic += traffic_info["total_requests"]
+                    total_external += traffic_info["external_requests"]
+                    total_unique_sources += traffic_info["unique_sources"]
+                    matched_routes.append(traffic_route)
+                    if traffic_info["ioc_hits"]:
+                        has_ioc = True
+                        for ioc in traffic_info["ioc_hits"]:
+                            ioc_matches.append(ioc)
+                            if severity_rank(ioc["threat_level"]) > severity_rank(ioc_max_level):
+                                ioc_max_level = ioc["threat_level"]
 
-    if is_reachable and score > 0.2:
-        reachable_count += 1
+        # Calculate score
+        is_reachable = total_traffic >= min_traffic_threshold
+        score = calculate_reachability_score(
+            traffic_volume=total_traffic,
+            external_source_count=total_unique_sources,
+            has_ioc_traffic=has_ioc,
+            ioc_threat_level=ioc_max_level,
+            attacker_params_detected=total_external > 0,
+            vuln_class=rc_vuln_class,
+        )
 
-    # Generate alert for high-score reachable findings with IOC correlation
-    if is_reachable and score > 0.5 and has_ioc:
-        alerts_to_create.append({
+        reachability_results.append({
             "id": str(uuid.uuid4()),
-            "title": f"[Glasswing] Reachable vuln under active exploitation: {rc['title'][:100]}",
-            "description": (
-                f"Mythos finding '{rc['title']}' (severity={rc['severity']}) is confirmed reachable "
-                f"with {total_traffic} requests in last {lookback_hours}h. "
-                f"IOC correlation: {len(ioc_matches)} known threat actor IPs observed. "
-                f"Reachability score: {score:.2f}"
-            ),
-            "severity": "critical" if score > 0.7 else "high",
-            "source": "glasswing_reachability",
-            "alert_type": "glasswing_reachable_exploit",
-            "entity_id": rc_id,
-            "metadata": json.dumps({
-                "root_cause_id": rc_id,
-                "reachability_score": score,
-                "traffic_volume": total_traffic,
-                "ioc_count": len(ioc_matches),
-                "matched_routes": matched_routes[:5],
-            }),
-            "status": "open",
-            "created_at": now,
+            "root_cause_id": rc_id,
+            "reachability_score": score,
+            "is_reachable": is_reachable and score > 0.2,
+            "traffic_volume": total_traffic,
+            "external_request_count": total_external,
+            "unique_source_ips": total_unique_sources,
+            "matched_routes": json.dumps(matched_routes[:20]),
+            "ioc_correlation_count": len(ioc_matches),
+            "ioc_max_threat_level": ioc_max_level if has_ioc else None,
+            "ioc_indicators": json.dumps([i["indicator"] for i in ioc_matches[:10]]),
+            "lookback_hours": lookback_hours,
+            "analyzed_at": now,
         })
 
-print(f"Analyzed {len(root_causes)} root causes: {reachable_count} reachable, {len(alerts_to_create)} alerts")
+        if is_reachable and score > 0.2:
+            reachable_count += 1
 
+        # Generate alert for high-score reachable findings with IOC correlation
+        if is_reachable and score > 0.5 and has_ioc:
+            alerts_to_create.append({
+                "id": str(uuid.uuid4()),
+                "title": f"[Glasswing] Reachable vuln under active exploitation: {rc['title'][:100]}",
+                "description": (
+                    f"Mythos finding '{rc['title']}' (severity={rc['severity']}) is confirmed reachable "
+                    f"with {total_traffic} requests in last {lookback_hours}h. "
+                    f"IOC correlation: {len(ioc_matches)} known threat actor IPs observed. "
+                    f"Reachability score: {score:.2f}"
+                ),
+                "severity": "critical" if score > 0.7 else "high",
+                "source": "glasswing_reachability",
+                "alert_type": "glasswing_reachable_exploit",
+                "entity_id": rc_id,
+                "metadata": json.dumps({
+                    "root_cause_id": rc_id,
+                    "reachability_score": score,
+                    "traffic_volume": total_traffic,
+                    "ioc_count": len(ioc_matches),
+                    "matched_routes": matched_routes[:5],
+                }),
+                "status": "open",
+                "created_at": now,
+            })
 
-def severity_rank(level: str) -> int:
-    """Helper to rank severity levels numerically."""
-    ranks = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-    return ranks.get(level, 0)
+    print(f"Analyzed {len(root_causes)} root causes: {reachable_count} reachable, {len(alerts_to_create)} alerts")
 
 # COMMAND ----------
 
@@ -485,44 +527,41 @@ def severity_rank(level: str) -> int:
 
 # COMMAND ----------
 
-reachability_schema = StructType([
-    StructField("id", StringType(), False),
-    StructField("root_cause_id", StringType(), False),
-    StructField("reachability_score", DoubleType(), False),
-    StructField("is_reachable", BooleanType(), False),
-    StructField("traffic_volume", IntegerType(), True),
-    StructField("external_request_count", IntegerType(), True),
-    StructField("unique_source_ips", IntegerType(), True),
-    StructField("matched_routes", StringType(), True),
-    StructField("ioc_correlation_count", IntegerType(), True),
-    StructField("ioc_max_threat_level", StringType(), True),
-    StructField("ioc_indicators", StringType(), True),
-    StructField("lookback_hours", IntegerType(), False),
-    StructField("analyzed_at", TimestampType(), False),
-])
+with mon.time("persist_reachability"):
+    reachability_schema = StructType([
+        StructField("id", StringType(), False),
+        StructField("root_cause_id", StringType(), False),
+        StructField("reachability_score", DoubleType(), False),
+        StructField("is_reachable", BooleanType(), False),
+        StructField("traffic_volume", IntegerType(), True),
+        StructField("external_request_count", IntegerType(), True),
+        StructField("unique_source_ips", IntegerType(), True),
+        StructField("matched_routes", StringType(), True),
+        StructField("ioc_correlation_count", IntegerType(), True),
+        StructField("ioc_max_threat_level", StringType(), True),
+        StructField("ioc_indicators", StringType(), True),
+        StructField("lookback_hours", IntegerType(), False),
+        StructField("analyzed_at", TimestampType(), False),
+    ])
 
-reach_df = spark.createDataFrame(reachability_results, schema=reachability_schema)
-reach_df.createOrReplaceTempView("new_reachability")
+    reach_df = spark.createDataFrame(reachability_results, schema=reachability_schema)
 
-spark.sql("""
-    MERGE INTO glasswing_reachability AS target
-    USING new_reachability AS source
-    ON target.root_cause_id = source.root_cause_id
-    WHEN MATCHED THEN UPDATE SET
-        target.reachability_score = source.reachability_score,
-        target.is_reachable = source.is_reachable,
-        target.traffic_volume = source.traffic_volume,
-        target.external_request_count = source.external_request_count,
-        target.unique_source_ips = source.unique_source_ips,
-        target.matched_routes = source.matched_routes,
-        target.ioc_correlation_count = source.ioc_correlation_count,
-        target.ioc_max_threat_level = source.ioc_max_threat_level,
-        target.ioc_indicators = source.ioc_indicators,
-        target.analyzed_at = source.analyzed_at
-    WHEN NOT MATCHED THEN INSERT *
-""")
+    safe_merge(
+        spark,
+        reach_df,
+        "glasswing_reachability",
+        merge_keys=["root_cause_id"],
+        update_columns=[
+            "reachability_score", "is_reachable", "traffic_volume",
+            "external_request_count", "unique_source_ips", "matched_routes",
+            "ioc_correlation_count", "ioc_max_threat_level", "ioc_indicators",
+            "analyzed_at",
+        ],
+        catalog=cfg.catalog,
+        schema=cfg.schema,
+    )
 
-print(f"Persisted {len(reachability_results)} reachability records")
+    print(f"Persisted {len(reachability_results)} reachability records")
 
 # COMMAND ----------
 
@@ -531,15 +570,33 @@ print(f"Persisted {len(reachability_results)} reachability records")
 
 # COMMAND ----------
 
-for result in reachability_results:
-    if result["is_reachable"]:
+with mon.time("update_root_causes"):
+    # Batch reachable root cause updates into a single MERGE via temp view
+    reachable_updates = [
+        {"root_cause_id": r["root_cause_id"], "reachability_score": r["reachability_score"]}
+        for r in reachability_results
+        if r["is_reachable"]
+    ]
+
+    if reachable_updates:
+        updates_schema = StructType([
+            StructField("root_cause_id", StringType(), False),
+            StructField("reachability_score", DoubleType(), False),
+        ])
+        updates_df = spark.createDataFrame(reachable_updates, schema=updates_schema)
+        updates_df.createOrReplaceTempView("_reachability_updates")
+
+        rc_table = cfg.get_table_path("glasswing_root_causes")
         spark.sql(f"""
-            UPDATE glasswing_root_causes
-            SET reachability_score = {result['reachability_score']},
-                status = 'reachable',
-                updated_at = current_timestamp()
-            WHERE id = '{result['root_cause_id']}'
+            MERGE INTO {rc_table} AS target
+            USING _reachability_updates AS source
+            ON target.id = source.root_cause_id
+            WHEN MATCHED THEN UPDATE SET
+                target.reachability_score = source.reachability_score,
+                target.status = 'reachable',
+                target.updated_at = current_timestamp()
         """)
+        print(f"Updated {len(reachable_updates)} root causes to status='reachable'")
 
 # COMMAND ----------
 
@@ -548,54 +605,77 @@ for result in reachability_results:
 
 # COMMAND ----------
 
-if alerts_to_create:
-    alert_schema = StructType([
-        StructField("id", StringType(), False),
-        StructField("title", StringType(), False),
-        StructField("description", StringType(), True),
-        StructField("severity", StringType(), False),
-        StructField("source", StringType(), False),
-        StructField("alert_type", StringType(), True),
-        StructField("entity_id", StringType(), True),
-        StructField("metadata", StringType(), True),
-        StructField("status", StringType(), False),
-        StructField("created_at", TimestampType(), False),
-    ])
+with mon.time("generate_alerts"):
+    if alerts_to_create:
+        alert_schema = StructType([
+            StructField("id", StringType(), False),
+            StructField("title", StringType(), False),
+            StructField("description", StringType(), True),
+            StructField("severity", StringType(), False),
+            StructField("source", StringType(), False),
+            StructField("alert_type", StringType(), True),
+            StructField("entity_id", StringType(), True),
+            StructField("metadata", StringType(), True),
+            StructField("status", StringType(), False),
+            StructField("created_at", TimestampType(), False),
+        ])
 
-    alerts_df = spark.createDataFrame(alerts_to_create, schema=alert_schema)
-    alerts_df.write.mode("append").saveAsTable("alerts")
-    print(f"Created {len(alerts_to_create)} critical alerts for reachable exploits")
+        alerts_df = spark.createDataFrame(alerts_to_create, schema=alert_schema)
+        safe_append(
+            alerts_df, "alerts",
+            catalog=cfg.catalog, schema=cfg.schema,
+            deduplicate_on=["id"],
+        )
+        print(f"Created {len(alerts_to_create)} critical alerts for reachable exploits")
 
-# Update scan run stats
-scan_run_ids = list(set(rc["scan_run_id"] for rc in root_causes if rc["scan_run_id"]))
-for srid in scan_run_ids:
-    spark.sql(f"""
-        UPDATE glasswing_scan_runs
-        SET reachable_count = {reachable_count},
-            status = 'reachability_analyzed'
-        WHERE id = '{srid}'
-    """)
+    # Update scan run stats via MERGE
+    scan_run_ids = list(set(rc["scan_run_id"] for rc in root_causes if rc["scan_run_id"]))
+    if scan_run_ids:
+        scan_updates = [
+            {"scan_run_id": srid, "reachable_count": reachable_count}
+            for srid in scan_run_ids
+        ]
+        scan_schema = StructType([
+            StructField("scan_run_id", StringType(), False),
+            StructField("reachable_count", IntegerType(), False),
+        ])
+        scan_df = spark.createDataFrame(scan_updates, schema=scan_schema)
+        scan_df.createOrReplaceTempView("_scan_run_updates")
+
+        scan_table = cfg.get_table_path("glasswing_scan_runs")
+        spark.sql(f"""
+            MERGE INTO {scan_table} AS target
+            USING _scan_run_updates AS source
+            ON target.id = source.scan_run_id
+            WHEN MATCHED THEN UPDATE SET
+                target.reachable_count = source.reachable_count,
+                target.status = 'reachability_analyzed'
+        """)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Update Agent Status
+# MAGIC ## Update Agent Status and Exit
 
 # COMMAND ----------
 
-spark.sql(f"""
-    MERGE INTO agent_status AS target
-    USING (SELECT
-        'glasswing_reachability' as agent_id,
-        current_timestamp() as last_heartbeat,
-        'running' as status,
-        {root_cause_count} as events_processed,
-        {len(alerts_to_create)} as alerts_generated
-    ) AS source
-    ON target.agent_id = source.agent_id
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-""")
+# Update agent status via safe_merge
+agent_status_df = spark.createDataFrame([{
+    "agent_id": "glasswing_reachability",
+    "last_heartbeat": now,
+    "status": "running",
+    "events_processed": root_cause_count,
+    "alerts_generated": len(alerts_to_create),
+}])
+
+safe_merge(
+    spark,
+    agent_status_df,
+    "agent_status",
+    merge_keys=["agent_id"],
+    catalog=cfg.catalog,
+    schema=cfg.schema,
+)
 
 result = {
     "status": "completed",
@@ -609,6 +689,9 @@ result = {
     "avg_reachability_score": round(
         sum(r["reachability_score"] for r in reachability_results) / max(len(reachability_results), 1), 4
     ),
+    "timings": mon.get_summary().get("timings", {}),
 }
+
+mon.log_complete(rows_processed=root_cause_count)
 print(json.dumps(result, indent=2))
 dbutils.notebook.exit(json.dumps(result))

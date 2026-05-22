@@ -1,195 +1,269 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 10 - Vector Memory Agent
-# MAGIC Manages the vector embedding store for semantic similarity search.
-# MAGIC Generates embeddings for alerts, events, and threat intel using
-# MAGIC Foundation Model Embeddings API. Powers similarity-based threat hunting.
+# MAGIC # Agent 10 - Vector Memory
+# MAGIC Manages vector embeddings for semantic similarity search across security alerts.
+# MAGIC Generates embeddings using Databricks BGE model, stores them in Delta, and
+# MAGIC provides cosine-similarity search for finding related historical alerts.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
+# MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
 
-import mlflow.deployments
 import json
-from datetime import datetime
+import numpy as np
+from datetime import datetime, timedelta
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, FloatType
-
-client = mlflow.deployments.get_deploy_client("databricks")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Generate Embeddings for New Alerts
-
-# COMMAND ----------
-
-unembedded_alerts = spark.sql("""
-    SELECT a.id, a.title, a.description, a.severity, a.mitre_tactic,
-           a.mitre_technique, a.source_ip, a.dest_ip
-    FROM alerts a
-    LEFT JOIN alert_embeddings ae ON a.id = ae.alert_id
-    WHERE ae.alert_id IS NULL
-      AND a.created_at > current_timestamp() - INTERVAL 6 HOURS
-    ORDER BY a.created_at DESC
-    LIMIT 100
-""").collect()
-
-print(f"Found {len(unembedded_alerts)} alerts needing embeddings")
+import mlflow.deployments
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Embedding Generation
+# MAGIC ## Configuration
 
 # COMMAND ----------
 
-def generate_embedding(text):
-    """Generate embedding using Databricks Foundation Model Embeddings."""
-    response = client.predict(
-        endpoint="databricks-bge-large-en",
-        inputs={"input": [text]}
+dbutils.widgets.text("lookback_hours", "6", "Alert lookback window")
+dbutils.widgets.text("batch_size", "20", "Embedding batch size")
+dbutils.widgets.text("similarity_threshold", "0.80", "Min cosine similarity for matches")
+
+lookback_hours = int(dbutils.widgets.get("lookback_hours"))
+BATCH_SIZE = int(dbutils.widgets.get("batch_size"))
+SIMILARITY_THRESHOLD = float(dbutils.widgets.get("similarity_threshold"))
+EMBEDDING_MODEL = "databricks-bge-large-en"
+
+mon.log_event("config_loaded", {
+    "lookback_hours": lookback_hours,
+    "batch_size": BATCH_SIZE,
+    "embedding_model": EMBEDDING_MODEL,
+})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Ensure Output Table Exists
+
+# COMMAND ----------
+
+spark.sql(f"""
+CREATE TABLE IF NOT EXISTS {cfg.get_table_path('alert_embeddings')} (
+    alert_id STRING,
+    alert_text STRING,
+    embedding ARRAY<FLOAT>,
+    created_at TIMESTAMP,
+    alert_type STRING,
+    severity STRING,
+    source STRING
+)
+USING DELTA
+""")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Embedding Client
+
+# COMMAND ----------
+
+deploy_client = mlflow.deployments.get_deploy_client("databricks")
+
+
+def generate_embeddings_batch(texts):
+    """Generate embeddings for a batch of texts via Databricks BGE model."""
+    response = deploy_client.predict(
+        endpoint=EMBEDDING_MODEL,
+        inputs={"input": texts}
     )
-    return response.data[0].embedding
-
-def alert_to_text(alert):
-    """Convert alert to semantic text for embedding."""
-    return f"{alert.title}. {alert.description}. Tactic: {alert.mitre_tactic}. Technique: {alert.mitre_technique}. Severity: {alert.severity}. Source: {alert.source_ip}. Target: {alert.dest_ip}."
+    return [item["embedding"] for item in response["data"]]
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Batch Embed Alerts
+# MAGIC ## Fetch Unprocessed Alerts
 
 # COMMAND ----------
 
-embeddings_data = []
-BATCH_SIZE = 20
+def get_unprocessed_alerts():
+    """Retrieve alerts that do not yet have embeddings."""
+    alerts_table = cfg.get_table_path("alerts")
+    embeddings_table = cfg.get_table_path("alert_embeddings")
+    cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
 
-for i in range(0, len(unembedded_alerts), BATCH_SIZE):
-    batch = unembedded_alerts[i:i+BATCH_SIZE]
-    texts = [alert_to_text(a) for a in batch]
+    alerts_df = spark.table(alerts_table).filter(F.col("created_at") >= F.lit(cutoff))
+    existing_ids = spark.table(embeddings_table).select("alert_id")
 
-    try:
-        response = client.predict(
-            endpoint="databricks-bge-large-en",
-            inputs={"input": texts}
+    unprocessed = (
+        alerts_df
+        .join(existing_ids, on="alert_id", how="left_anti")
+        .select(
+            F.col("alert_id"),
+            F.concat_ws(" | ",
+                F.coalesce(F.col("title"), F.lit("")),
+                F.coalesce(F.col("description"), F.lit("")),
+                F.coalesce(F.col("alert_type"), F.lit("")),
+                F.coalesce(F.col("severity"), F.lit("")),
+            ).alias("alert_text"),
+            F.col("alert_type"),
+            F.col("severity"),
+            F.coalesce(F.col("source"), F.lit("unknown")).alias("source"),
         )
-
-        for j, alert in enumerate(batch):
-            embeddings_data.append({
-                "alert_id": alert.id,
-                "embedding": response.data[j].embedding,
-                "text_repr": texts[j][:500],
-                "embedded_at": datetime.utcnow().isoformat(),
-            })
-    except Exception as e:
-        print(f"Batch {i} failed: {e}")
-
-print(f"Generated {len(embeddings_data)} embeddings")
+        .filter(F.length(F.col("alert_text")) > 10)
+    )
+    return unprocessed
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Store Embeddings in Delta
+# MAGIC ## Batch Embedding Processor
 
 # COMMAND ----------
 
-if embeddings_data:
-    embeddings_df = spark.createDataFrame([
-        {
-            "alert_id": e["alert_id"],
-            "embedding": e["embedding"],
-            "text_repr": e["text_repr"],
-            "embedded_at": e["embedded_at"],
-        }
-        for e in embeddings_data
-    ])
-    embeddings_df.write.mode("append").saveAsTable("alert_embeddings")
+def process_alerts_in_batches(alerts_df):
+    """Process alerts in batches of BATCH_SIZE with per-batch error handling."""
+    alerts = alerts_df.collect()
+    all_results = []
+    failed_batches = 0
+
+    for i in range(0, len(alerts), BATCH_SIZE):
+        batch = alerts[i:i + BATCH_SIZE]
+        batch_texts = [row["alert_text"] for row in batch]
+
+        try:
+            with mon.time(f"embedding_batch_{i // BATCH_SIZE}"):
+                embeddings = generate_embeddings_batch(batch_texts)
+
+            for row, embedding in zip(batch, embeddings):
+                all_results.append({
+                    "alert_id": row["alert_id"],
+                    "alert_text": row["alert_text"][:500],
+                    "embedding": embedding,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "alert_type": row["alert_type"],
+                    "severity": row["severity"],
+                    "source": row["source"],
+                })
+
+            mon.log_event("batch_embedded", {"batch_idx": i // BATCH_SIZE, "count": len(batch)})
+
+        except Exception as e:
+            failed_batches += 1
+            mon.log_warning(
+                f"Batch {i // BATCH_SIZE} failed: {str(e)[:200]}",
+                details=json.dumps({"alert_ids": [r["alert_id"] for r in batch]}),
+            )
+            if failed_batches > 5:
+                raise RuntimeError(f"Too many batch failures ({failed_batches}), aborting")
+
+    return all_results, failed_batches
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Similarity Search Function
+# MAGIC ## Cosine Similarity Search
 
 # COMMAND ----------
 
-def find_similar_alerts(query_text, top_k=10):
-    """Find alerts semantically similar to a query."""
-    query_embedding = generate_embedding(query_text)
+def cosine_similarity(vec_a, vec_b):
+    """Compute cosine similarity between two vectors."""
+    a = np.array(vec_a, dtype=np.float32)
+    b = np.array(vec_b, dtype=np.float32)
+    norm_a = np.linalg.norm(a)
+    norm_b = np.linalg.norm(b)
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return float(np.dot(a, b) / (norm_a * norm_b))
 
-    # Load all embeddings and compute cosine similarity
-    all_embeddings = spark.sql("SELECT alert_id, embedding FROM alert_embeddings").collect()
 
-    import numpy as np
+def find_similar_alerts(query_embedding, top_k=10, min_similarity=None):
+    """Find most similar historical alerts for a given embedding vector."""
+    threshold = min_similarity or SIMILARITY_THRESHOLD
+    embeddings_table = cfg.get_table_path("alert_embeddings")
+    historical = spark.table(embeddings_table).select(
+        "alert_id", "alert_text", "embedding", "alert_type", "severity"
+    ).collect()
 
-    query_vec = np.array(query_embedding)
     similarities = []
+    for row in historical:
+        sim = cosine_similarity(query_embedding, row["embedding"])
+        if sim >= threshold:
+            similarities.append({
+                "alert_id": row["alert_id"],
+                "alert_text": row["alert_text"],
+                "similarity": round(sim, 4),
+                "alert_type": row["alert_type"],
+                "severity": row["severity"],
+            })
 
-    for row in all_embeddings:
-        doc_vec = np.array(row.embedding)
-        cosine_sim = np.dot(query_vec, doc_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(doc_vec))
-        similarities.append((row.alert_id, float(cosine_sim)))
-
-    similarities.sort(key=lambda x: x[1], reverse=True)
+    similarities.sort(key=lambda x: x["similarity"], reverse=True)
     return similarities[:top_k]
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Embed Threat Intel for Cross-Reference
+# MAGIC ## Main Execution
 
 # COMMAND ----------
 
-unembedded_ti = spark.sql("""
-    SELECT i.id, i.indicator_type, i.value, i.threat_type, i.tags, i.source
-    FROM ioc_entries i
-    LEFT JOIN ioc_embeddings ie ON i.id = ie.ioc_id
-    WHERE ie.ioc_id IS NULL
-      AND i.created_at > current_timestamp() - INTERVAL 24 HOURS
-    LIMIT 200
-""").collect()
+result = {"status": "failed", "alerts_processed": 0, "failed_batches": 0, "errors": []}
 
-ti_embeddings = []
-for i in range(0, len(unembedded_ti), BATCH_SIZE):
-    batch = unembedded_ti[i:i+BATCH_SIZE]
-    texts = [f"{t.indicator_type}: {t.value}. Type: {t.threat_type}. Tags: {t.tags}. Source: {t.source}" for t in batch]
+try:
+    with mon.time("vector_memory_total"):
+        # Step 1: Get unprocessed alerts
+        with mon.time("fetch_unprocessed"):
+            unprocessed_df = get_unprocessed_alerts()
+            alert_count = unprocessed_df.count()
+            mon.log_event("unprocessed_alerts_found", {"count": alert_count})
 
-    try:
-        response = client.predict(
-            endpoint="databricks-bge-large-en",
-            inputs={"input": texts}
-        )
-        for j, ti in enumerate(batch):
-            ti_embeddings.append({
-                "ioc_id": ti.id,
-                "embedding": response.data[j].embedding,
-                "text_repr": texts[j][:500],
-                "embedded_at": datetime.utcnow().isoformat(),
-            })
-    except Exception as e:
-        print(f"TI batch failed: {e}")
+        if alert_count == 0:
+            result = {"status": "success", "alerts_processed": 0, "message": "no_new_alerts"}
+            mon.log_info("No new alerts to embed")
+        else:
+            # Step 2: Generate embeddings in batches
+            with mon.time("generate_embeddings"):
+                embedded_results, failed_batches = process_alerts_in_batches(unprocessed_df)
+                mon.log_event("embeddings_generated", {
+                    "success_count": len(embedded_results),
+                    "failed_batches": failed_batches,
+                })
 
-if ti_embeddings:
-    ti_df = spark.createDataFrame(ti_embeddings)
-    ti_df.write.mode("append").saveAsTable("ioc_embeddings")
+            # Step 3: Store embeddings in Delta
+            if embedded_results:
+                with mon.time("store_embeddings"):
+                    embeddings_df = spark.createDataFrame(embedded_results)
+                    embeddings_df.write.mode("append").saveAsTable(cfg.get_table_path("alert_embeddings"))
+                    mon.log_event("embeddings_stored", {"count": len(embedded_results)})
 
-print(f"Embedded {len(ti_embeddings)} threat intel indicators")
+            # Step 4: Similarity enrichment on a sample of new alerts
+            enriched_count = 0
+            with mon.time("similarity_enrichment"):
+                for alert in embedded_results[:5]:
+                    try:
+                        similar = find_similar_alerts(alert["embedding"], top_k=5)
+                        if similar:
+                            enriched_count += 1
+                            mon.log_event("similar_alerts_found", {
+                                "alert_id": alert["alert_id"],
+                                "match_count": len(similar),
+                                "top_score": similar[0]["similarity"],
+                            })
+                    except Exception as e:
+                        mon.log_warning(f"Similarity search failed for {alert['alert_id']}: {str(e)[:200]}")
+
+            result["status"] = "success"
+            result["alerts_processed"] = len(embedded_results)
+            result["failed_batches"] = failed_batches
+            result["enriched_sample"] = enriched_count
+            result["total_candidates"] = alert_count
+
+    mon.log_complete(rows_processed=result.get("alerts_processed", 0))
+
+except Exception as e:
+    mon.log_error(e, context="vector_memory_main")
+    result["status"] = "failed"
+    result["errors"].append(str(e)[:500])
 
 # COMMAND ----------
 
-spark.sql("""
-    MERGE INTO agent_status AS t
-    USING (SELECT 'vector-memory' as agent_id, current_timestamp() as last_run, 'active' as status) AS s
-    ON t.agent_id = s.agent_id
-    WHEN MATCHED THEN UPDATE SET last_run = s.last_run, status = s.status
-    WHEN NOT MATCHED THEN INSERT (agent_id, last_run, status) VALUES (s.agent_id, s.last_run, s.status)
-""")
+dbutils.notebook.exit(json.dumps(result))

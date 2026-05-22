@@ -1,114 +1,192 @@
 # Databricks notebook source
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 22 - Threat Simulator
-# MAGIC Runs deterministic attack scenarios to test detection pipeline reliability.
-# MAGIC Generates synthetic telemetry mimicking real-world APT campaigns.
+# MAGIC Generates synthetic APT telemetry for pipeline testing. Defines attack scenarios
+# MAGIC with realistic kill chain progression. Uses seeded random generation for
+# MAGIC reproducibility. Inserts synthetic events marked with `is_simulation=true`.
+# MAGIC Records simulation metadata in `threat_simulations` table.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
-
-# COMMAND ----------
-
-import json, random
+import json
+import random
+import uuid
 from datetime import datetime, timedelta
+from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    StructType, StructField, StringType, BooleanType,
+    TimestampType, IntegerType, ArrayType
+)
+
+# COMMAND ----------
+
+# Configuration
+SIMULATION_SEED = 42
+SIMULATION_ID = str(uuid.uuid4())
+notebook_start = datetime.utcnow()
+mon.time("threat_simulator_total")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## APT Campaign Simulations
+# MAGIC ## Define Attack Scenarios
 
 # COMMAND ----------
 
-APT_CAMPAIGNS = {
-    "apt29_phishing": {
-        "name": "APT29 Spear Phishing Campaign",
+ATTACK_SCENARIOS = [
+    {
+        "scenario_id": "apt_lateral_movement",
+        "name": "APT29 Lateral Movement Campaign",
+        "description": "Simulates credential theft followed by lateral movement across network segments",
         "kill_chain": [
-            {"phase": "delivery", "events": [("email", "phish_delivered", 5), ("email", "link_clicked", 2)]},
-            {"phase": "exploitation", "events": [("process", "macro_execution", 2), ("process", "powershell_download", 1)]},
-            {"phase": "installation", "events": [("file", "dll_sideload", 1), ("registry", "persistence_key", 1)]},
-            {"phase": "c2", "events": [("network", "https_beacon", 20), ("dns", "dns_over_https", 10)]},
-            {"phase": "actions", "events": [("file", "sensitive_access", 5), ("network", "data_staged", 2)]},
+            {"step": 1, "event_type": "phishing_click", "source_ip": "10.0.1.50", "dest_ip": "203.0.113.45", "action": "outbound_http_to_c2", "severity": "medium"},
+            {"step": 2, "event_type": "malware_download", "source_ip": "203.0.113.45", "dest_ip": "10.0.1.50", "action": "payload_delivery_dll", "severity": "high"},
+            {"step": 3, "event_type": "credential_dump", "source_ip": "10.0.1.50", "dest_ip": "10.0.1.50", "action": "lsass_memory_access", "severity": "critical"},
+            {"step": 4, "event_type": "lateral_movement", "source_ip": "10.0.1.50", "dest_ip": "10.0.2.30", "action": "smb_psexec_remote", "severity": "high"},
+            {"step": 5, "event_type": "lateral_movement", "source_ip": "10.0.2.30", "dest_ip": "10.0.3.10", "action": "wmi_remote_execution", "severity": "high"},
+            {"step": 6, "event_type": "privilege_escalation", "source_ip": "10.0.3.10", "dest_ip": "10.0.3.10", "action": "token_impersonation", "severity": "critical"},
+            {"step": 7, "event_type": "data_staging", "source_ip": "10.0.3.10", "dest_ip": "10.0.3.10", "action": "archive_sensitive_files", "severity": "high"},
+            {"step": 8, "event_type": "exfiltration", "source_ip": "10.0.3.10", "dest_ip": "198.51.100.77", "action": "dns_tunnel_exfil", "severity": "critical"}
         ]
     },
-    "lazarus_watering_hole": {
-        "name": "Lazarus Watering Hole Attack",
+    {
+        "scenario_id": "ransomware_deployment",
+        "name": "Ransomware Deployment via Supply Chain",
+        "description": "Simulates supply chain compromise leading to ransomware across domain controllers",
         "kill_chain": [
-            {"phase": "recon", "events": [("web", "target_profiling", 10)]},
-            {"phase": "weaponize", "events": [("web", "compromised_site", 1)]},
-            {"phase": "delivery", "events": [("web", "drive_by_download", 3)]},
-            {"phase": "exploitation", "events": [("process", "browser_exploit", 2), ("process", "sandbox_escape", 1)]},
-            {"phase": "c2", "events": [("network", "custom_protocol", 15)]},
-            {"phase": "exfil", "events": [("file", "archive_compress", 3), ("network", "exfil_https", 2)]},
+            {"step": 1, "event_type": "supply_chain_compromise", "source_ip": "10.1.0.5", "dest_ip": "172.16.0.100", "action": "trojanized_update_install", "severity": "high"},
+            {"step": 2, "event_type": "persistence", "source_ip": "10.1.0.5", "dest_ip": "10.1.0.5", "action": "scheduled_task_creation", "severity": "medium"},
+            {"step": 3, "event_type": "discovery", "source_ip": "10.1.0.5", "dest_ip": "10.1.0.1", "action": "ad_enumeration_ldap", "severity": "medium"},
+            {"step": 4, "event_type": "credential_access", "source_ip": "10.1.0.5", "dest_ip": "10.1.0.20", "action": "kerberoasting_attack", "severity": "high"},
+            {"step": 5, "event_type": "lateral_movement", "source_ip": "10.1.0.5", "dest_ip": "10.1.0.20", "action": "rdp_with_stolen_creds", "severity": "high"},
+            {"step": 6, "event_type": "defense_evasion", "source_ip": "10.1.0.20", "dest_ip": "10.1.0.20", "action": "disable_av_tamper_protection", "severity": "critical"},
+            {"step": 7, "event_type": "encryption", "source_ip": "10.1.0.20", "dest_ip": "10.1.0.0/24", "action": "mass_file_encryption", "severity": "critical"}
         ]
     },
-    "ransomware_double_extortion": {
-        "name": "Double Extortion Ransomware",
+    {
+        "scenario_id": "insider_data_theft",
+        "name": "Insider Threat Data Exfiltration",
+        "description": "Simulates a privileged insider systematically exfiltrating sensitive data",
         "kill_chain": [
-            {"phase": "access", "events": [("authentication", "vpn_brute_force", 50), ("authentication", "valid_login", 1)]},
-            {"phase": "discovery", "events": [("process", "ad_enumeration", 5), ("network", "share_discovery", 10)]},
-            {"phase": "lateral", "events": [("authentication", "pass_the_hash", 8), ("network", "smb_lateral", 5)]},
-            {"phase": "exfil", "events": [("file", "rclone_sync", 3), ("network", "mega_upload", 2)]},
-            {"phase": "impact", "events": [("file", "mass_encrypt", 100), ("process", "vss_delete", 1)]},
+            {"step": 1, "event_type": "abnormal_access", "source_ip": "10.5.1.100", "dest_ip": "10.5.2.50", "action": "access_outside_business_hours", "severity": "low"},
+            {"step": 2, "event_type": "privilege_abuse", "source_ip": "10.5.1.100", "dest_ip": "10.5.3.200", "action": "access_unauthorized_share", "severity": "medium"},
+            {"step": 3, "event_type": "data_collection", "source_ip": "10.5.1.100", "dest_ip": "10.5.3.200", "action": "bulk_file_copy_pii", "severity": "high"},
+            {"step": 4, "event_type": "data_staging", "source_ip": "10.5.1.100", "dest_ip": "10.5.1.100", "action": "compress_and_encrypt_local", "severity": "medium"},
+            {"step": 5, "event_type": "exfiltration", "source_ip": "10.5.1.100", "dest_ip": "104.18.32.7", "action": "upload_to_personal_cloud", "severity": "critical"}
         ]
-    },
-}
+    }
+]
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Execute Simulation
+# MAGIC ## Generate Synthetic Events
 
 # COMMAND ----------
 
-campaign_key = random.choice(list(APT_CAMPAIGNS.keys()))
-campaign = APT_CAMPAIGNS[campaign_key]
-print(f"Simulating: {campaign['name']}")
+mon.time("generate_events")
+rng = random.Random(SIMULATION_SEED)
 
-events = []
+synthetic_events = []
 base_time = datetime.utcnow()
-source_ip = f"10.{random.randint(1,200)}.{random.randint(1,254)}.{random.randint(1,254)}"
-offset = 0
 
-for phase in campaign["kill_chain"]:
-    for event_type, action, count in phase["events"]:
-        for _ in range(count):
-            offset += random.randint(5, 120)
-            events.append({
-                "id": f"sim-{random.randint(100000,999999)}-{offset}",
-                "timestamp": (base_time + timedelta(seconds=offset)).isoformat(),
-                "event_type": event_type,
-                "source_ip": source_ip,
-                "dest_ip": f"10.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}",
-                "username": f"sim_user_{random.randint(1,10)}",
-                "action": action,
-                "outcome": "success",
-                "severity": "high" if phase["phase"] in ("exfil", "impact", "c2") else "medium",
-                "is_simulation": True,
-                "simulation_campaign": campaign["name"],
-                "simulation_phase": phase["phase"],
-            })
+for scenario in ATTACK_SCENARIOS:
+    scenario_start = base_time - timedelta(minutes=rng.randint(60, 480))
+    step_interval_minutes = rng.randint(5, 30)
 
-events_df = spark.createDataFrame(events)
-events_df.write.mode("append").saveAsTable("events")
+    for step in scenario["kill_chain"]:
+        event_time = scenario_start + timedelta(minutes=step["step"] * step_interval_minutes)
+        jitter_seconds = rng.randint(-120, 120)
+        event_time = event_time + timedelta(seconds=jitter_seconds)
 
-# Record simulation metadata
-sim_record = {
-    "campaign_name": campaign["name"],
-    "campaign_key": campaign_key,
-    "events_generated": len(events),
-    "phases_count": len(campaign["kill_chain"]),
-    "source_ip": source_ip,
-    "started_at": base_time.isoformat(),
-    "completed_at": datetime.utcnow().isoformat(),
-    "agent_name": "threat-simulator",
+        event = {
+            "event_id": str(uuid.UUID(int=rng.getrandbits(128))),
+            "simulation_id": SIMULATION_ID,
+            "scenario_id": scenario["scenario_id"],
+            "event_type": step["event_type"],
+            "source_ip": step["source_ip"],
+            "dest_ip": step["dest_ip"],
+            "action": step["action"],
+            "severity": step["severity"],
+            "kill_chain_step": step["step"],
+            "event_ts": event_time,
+            "is_simulation": True,
+            "generated_at": notebook_start
+        }
+        synthetic_events.append(event)
+
+mon.log_event("events_generated", {"total_events": len(synthetic_events)})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Write Synthetic Events via DataFrame
+
+# COMMAND ----------
+
+mon.time("write_events")
+
+events_path = cfg.get_table_path("security_events")
+events_df = spark.createDataFrame(synthetic_events)
+
+events_df = events_df.withColumn(
+    "ingestion_ts", F.current_timestamp()
+).withColumn(
+    "source_system", F.lit("threat_simulator")
+)
+
+events_df.write.mode("append").saveAsTable(events_path)
+
+mon.log_event("events_written", {"count": events_df.count()})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Record Simulation Metadata
+
+# COMMAND ----------
+
+mon.time("write_metadata")
+
+simulations_path = cfg.get_table_path("threat_simulations")
+
+simulation_metadata = [{
+    "simulation_id": SIMULATION_ID,
+    "seed": SIMULATION_SEED,
+    "scenarios_executed": len(ATTACK_SCENARIOS),
+    "total_events_generated": len(synthetic_events),
+    "scenario_ids": json.dumps([s["scenario_id"] for s in ATTACK_SCENARIOS]),
+    "started_at": notebook_start,
+    "completed_at": datetime.utcnow(),
+    "status": "completed"
+}]
+
+metadata_df = spark.createDataFrame(simulation_metadata)
+metadata_df.write.mode("append").saveAsTable(simulations_path)
+
+mon.log_event("metadata_recorded", {"simulation_id": SIMULATION_ID})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Finalize
+
+# COMMAND ----------
+
+mon.log_complete()
+
+result = {
+    "status": "success",
+    "agent": "22_threat_simulator",
+    "simulation_id": SIMULATION_ID,
+    "scenarios_executed": len(ATTACK_SCENARIOS),
+    "total_events_generated": len(synthetic_events),
+    "seed": SIMULATION_SEED,
+    "execution_time_sec": (datetime.utcnow() - notebook_start).total_seconds()
 }
-spark.createDataFrame([sim_record]).write.mode("append").saveAsTable("threat_simulations")
 
-print(f"Simulation complete: {len(events)} events across {len(campaign['kill_chain'])} phases")
+dbutils.notebook.exit(json.dumps(result))

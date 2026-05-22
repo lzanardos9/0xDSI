@@ -28,6 +28,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from datetime import datetime, timedelta
@@ -38,25 +42,17 @@ import hashlib
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog name")
-dbutils.widgets.text("schema", "agentic_soc", "Schema name")
+# Configuration
 dbutils.widgets.text("auto_deploy_threshold", "0.9", "Confidence threshold for auto-deployment")
-dbutils.widgets.text("llm_endpoint", "databricks-meta-llama-3-1-70b-instruct", "LLM endpoint for patch generation")
 dbutils.widgets.text("max_patches_per_run", "20", "Maximum patches to generate per run")
 
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
 auto_deploy_threshold = float(dbutils.widgets.get("auto_deploy_threshold"))
-llm_endpoint = dbutils.widgets.get("llm_endpoint")
 max_patches_per_run = int(dbutils.widgets.get("max_patches_per_run"))
-
-spark.sql(f"USE CATALOG `{catalog}`")
-spark.sql(f"USE SCHEMA `{schema}`")
 
 now = datetime.utcnow()
 run_id = str(uuid.uuid4())
 
-print(f"Auto-patch run {run_id} | threshold={auto_deploy_threshold} | max={max_patches_per_run} | llm={llm_endpoint}")
+print(f"Auto-patch run {run_id} | threshold={auto_deploy_threshold} | max={max_patches_per_run} | llm={cfg.model_endpoint}")
 
 # COMMAND ----------
 
@@ -65,26 +61,36 @@ print(f"Auto-patch run {run_id} | threshold={auto_deploy_threshold} | max={max_p
 
 # COMMAND ----------
 
-candidates_df = spark.sql("""
-    SELECT rc.*, r.reachability_score, r.is_reachable, r.matched_routes,
-           r.ioc_correlation_count, bs.blast_radius as computed_blast_radius
-    FROM glasswing_root_causes rc
-    JOIN glasswing_reachability r ON r.root_cause_id = rc.id
-    LEFT JOIN glasswing_blast_scores bs ON bs.root_cause_id = rc.id
-    WHERE rc.priority IN ('P1', 'P2')
-      AND r.is_reachable = true
-      AND rc.status NOT IN ('patched', 'waf_deployed', 'dismissed')
-    ORDER BY rc.blast_radius DESC
-""")
+try:
+    rc_table = cfg.get_table_path("glasswing_root_causes")
+    reach_table = cfg.get_table_path("glasswing_reachability")
+    blast_table = cfg.get_table_path("glasswing_blast_scores")
 
-candidate_count = candidates_df.count()
-if candidate_count == 0:
-    print("No high-priority reachable findings requiring patches. Exiting.")
-    result = {"status": "no_data", "patches_generated": 0, "waf_rules_created": 0}
-    dbutils.notebook.exit(json.dumps(result))
+    candidates_df = spark.sql(f"""
+        SELECT rc.*, r.reachability_score, r.is_reachable, r.matched_routes,
+               r.ioc_correlation_count, bs.blast_radius as computed_blast_radius
+        FROM {rc_table} rc
+        JOIN {reach_table} r ON r.root_cause_id = rc.id
+        LEFT JOIN {blast_table} bs ON bs.root_cause_id = rc.id
+        WHERE rc.priority IN ('P1', 'P2')
+          AND r.is_reachable = true
+          AND rc.status NOT IN ('patched', 'waf_deployed', 'dismissed')
+        ORDER BY rc.blast_radius DESC
+    """)
 
-candidates = candidates_df.limit(max_patches_per_run).collect()
-print(f"Loaded {len(candidates)} patch candidates (of {candidate_count} total)")
+    candidate_count = candidates_df.count()
+    if candidate_count == 0:
+        print("No high-priority reachable findings requiring patches. Exiting.")
+        result = {"status": "no_data", "patches_generated": 0, "waf_rules_created": 0}
+        mon.log_complete(rows_processed=0)
+        dbutils.notebook.exit(json.dumps(result))
+
+    candidates = candidates_df.limit(max_patches_per_run).collect()
+    print(f"Loaded {len(candidates)} patch candidates (of {candidate_count} total)")
+
+except Exception as e:
+    mon.log_error(e, "Failed to load patch candidates")
+    raise
 
 # COMMAND ----------
 
@@ -146,63 +152,77 @@ def classify_patch_strategy(vuln_class: str, confidence: float, chain_complexity
     # Default to breaking for safety
     return "breaking"
 
+# COMMAND ----------
 
-# Classify all candidates
-classified = []
-for candidate in candidates:
-    finding_ids = json.loads(candidate["finding_ids"]) if candidate["finding_ids"] else []
-    chain_complexity = 1
-    if candidate["exploit_chain_id"]:
+# MAGIC %md
+# MAGIC ## Classify All Candidates
+
+# COMMAND ----------
+
+with mon.time("strategy_classification"):
+    # Pre-load all chain complexities in a single batch query
+    chain_ids = [c["exploit_chain_id"] for c in candidates if c["exploit_chain_id"]]
+    chain_complexity_map = {}
+
+    if chain_ids:
         try:
-            chain_df = spark.sql(
-                f"SELECT total_steps FROM glasswing_exploit_chains "
-                f"WHERE id = '{candidate['exploit_chain_id']}'"
+            chain_query = (
+                qb("glasswing_exploit_chains")
+                .select(["id", "total_steps"])
+                .where_in("id", chain_ids)
+                .describe("Batch load chain complexities for patch classification")
+                .build()
             )
-            if chain_df.count() > 0:
-                chain_complexity = chain_df.first()["total_steps"]
+            chain_df = spark.sql(chain_query.sql)
+            chain_complexity_map = {
+                row["id"]: row["total_steps"] for row in chain_df.collect()
+            }
         except Exception:
             pass
 
-    strategy = classify_patch_strategy(
-        vuln_class=candidate["vuln_class"],
-        confidence=candidate["avg_confidence"],
-        chain_complexity=chain_complexity,
-    )
+    # Classify all candidates
+    classified = []
+    for candidate in candidates:
+        finding_ids = json.loads(candidate["finding_ids"]) if candidate["finding_ids"] else []
+        chain_complexity = chain_complexity_map.get(candidate["exploit_chain_id"], 1) if candidate["exploit_chain_id"] else 1
 
-    classified.append({
-        "candidate": candidate,
-        "strategy": strategy,
-        "chain_complexity": chain_complexity,
-        "finding_ids": finding_ids,
-    })
+        strategy = classify_patch_strategy(
+            vuln_class=candidate["vuln_class"],
+            confidence=candidate["avg_confidence"],
+            chain_complexity=chain_complexity,
+        )
 
-strategy_counts = {"safe_additive": 0, "breaking": 0, "virtual_patch": 0}
-for c in classified:
-    strategy_counts[c["strategy"]] += 1
+        classified.append({
+            "candidate": candidate,
+            "strategy": strategy,
+            "chain_complexity": chain_complexity,
+            "finding_ids": finding_ids,
+        })
 
-print(f"Strategy classification:")
-print(f"  safe_additive (auto-deployable): {strategy_counts['safe_additive']}")
-print(f"  breaking (needs review):         {strategy_counts['breaking']}")
-print(f"  virtual_patch (WAF rule):        {strategy_counts['virtual_patch']}")
+    strategy_counts = {"safe_additive": 0, "breaking": 0, "virtual_patch": 0}
+    for c in classified:
+        strategy_counts[c["strategy"]] += 1
+
+    print(f"Strategy classification:")
+    print(f"  safe_additive (auto-deployable): {strategy_counts['safe_additive']}")
+    print(f"  breaking (needs review):         {strategy_counts['breaking']}")
+    print(f"  virtual_patch (WAF rule):        {strategy_counts['virtual_patch']}")
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Generate Code Patches via LLM
+# MAGIC
+# MAGIC Uses the shared `llm` client (SOCLLMClient) with retry and fallback.
 
 # COMMAND ----------
-
-import mlflow.deployments
-
 
 def generate_code_patch(vuln_class: str, title: str, description: str,
                         file_path: str, poc_code: str, strategy: str) -> dict:
     """
-    Use Foundation Model endpoint to generate a code fix.
+    Use shared LLM client to generate a code fix.
     Returns patch content and metadata.
     """
-    client = mlflow.deployments.get_deploy_client("databricks")
-
     # Build the patch generation prompt
     strategy_instructions = {
         "safe_additive": (
@@ -216,7 +236,7 @@ def generate_code_patch(vuln_class: str, title: str, description: str,
         ),
     }
 
-    prompt = f"""You are a security engineer generating a patch for a vulnerability.
+    user_prompt = f"""You are a security engineer generating a patch for a vulnerability.
 
 VULNERABILITY:
 - Class: {vuln_class}
@@ -234,33 +254,30 @@ Generate the fix as a unified diff patch. Include only the minimal changes neede
 Respond with JSON: {{"patch_diff": "...", "explanation": "...", "test_code": "...", "breaking_changes": []}}"""
 
     try:
-        response = client.predict(
-            endpoint=llm_endpoint,
-            inputs={
-                "messages": [
-                    {"role": "system", "content": "You are a senior security engineer. Generate precise, minimal patches."},
-                    {"role": "user", "content": prompt}
-                ],
-                "max_tokens": 2048,
-                "temperature": 0.1,
-            }
+        response = llm.chat(
+            system="You are a senior security engineer. Generate precise, minimal patches.",
+            user=user_prompt,
+            temperature=0.1,
+            max_tokens=2048,
+            json_mode=True,
         )
 
-        content = response["choices"][0]["message"]["content"]
-        # Attempt to parse JSON from response
-        try:
-            # Handle markdown code blocks in response
-            json_match = re.search(r'```(?:json)?\s*(.*?)```', content, re.DOTALL)
-            if json_match:
-                content = json_match.group(1)
-            patch_data = json.loads(content)
-        except json.JSONDecodeError:
+        # Extract JSON from LLM response
+        patch_data = llm.extract_json(response)
+        if patch_data is None:
             patch_data = {
-                "patch_diff": content,
+                "patch_diff": response.content,
                 "explanation": "Raw LLM output (JSON parse failed)",
                 "test_code": "",
                 "breaking_changes": [],
             }
+
+        mon.log_llm_call(
+            endpoint=response.model,
+            tokens_used=response.tokens_total,
+            latency_ms=response.latency_ms,
+            fallback=response.fallback_used,
+        )
 
         return {
             "success": True,
@@ -271,6 +288,7 @@ Respond with JSON: {{"patch_diff": "...", "explanation": "...", "test_code": "..
         }
 
     except Exception as e:
+        mon.log_warning(f"LLM patch generation failed: {e}")
         print(f"LLM patch generation failed: {e}")
         # Generate template patch for resilience
         return generate_template_patch(vuln_class, file_path, title)
@@ -339,57 +357,90 @@ def generate_template_patch(vuln_class: str, file_path: str, title: str) -> dict
         "breaking_changes": [],
     }
 
+# COMMAND ----------
 
-# Generate patches for safe_additive and breaking strategies
-patches_generated = []
+# MAGIC %md
+# MAGIC ## Generate Patches for Code-Fix Strategies
 
-for item in classified:
-    if item["strategy"] in ("safe_additive", "breaking"):
-        candidate = item["candidate"]
+# COMMAND ----------
 
-        # Get the representative finding's PoC code
-        poc_code = ""
+with mon.time("patch_generation"):
+    # Pre-load all representative finding PoC codes in a single batch query
+    rep_finding_ids = [
+        item["candidate"]["representative_finding_id"]
+        for item in classified
+        if item["strategy"] in ("safe_additive", "breaking")
+        and item["candidate"].get("representative_finding_id")
+    ]
+
+    poc_code_map = {}
+    if rep_finding_ids:
         try:
-            poc_df = spark.sql(f"""
-                SELECT poc_code FROM glasswing_findings
-                WHERE id = '{candidate['representative_finding_id']}'
-            """)
-            if poc_df.count() > 0:
-                poc_code = poc_df.first()["poc_code"] or ""
+            poc_query = (
+                qb("glasswing_findings")
+                .select(["id", "poc_code"])
+                .where_in("id", rep_finding_ids)
+                .describe("Batch load PoC code for patch generation")
+                .build()
+            )
+            poc_df = spark.sql(poc_query.sql)
+            poc_code_map = {
+                row["id"]: (row["poc_code"] or "")
+                for row in poc_df.collect()
+            }
         except Exception:
             pass
 
-        patch_result = generate_code_patch(
-            vuln_class=candidate["vuln_class"],
-            title=candidate["title"],
-            description=candidate["description"] or "",
-            file_path=json.loads(candidate["affected_files"])[0] if candidate["affected_files"] else "unknown",
-            poc_code=poc_code,
-            strategy=item["strategy"],
-        )
+    # Generate patches for safe_additive and breaking strategies
+    patches_generated = []
 
-        if patch_result["success"]:
-            patch_id = str(uuid.uuid4())
-            patches_generated.append({
-                "id": patch_id,
-                "root_cause_id": candidate["id"],
-                "strategy": item["strategy"],
-                "patch_diff": patch_result["patch_diff"],
-                "explanation": patch_result["explanation"],
-                "test_code": patch_result["test_code"],
-                "breaking_changes": json.dumps(patch_result.get("breaking_changes", [])),
-                "target_file": json.loads(candidate["affected_files"])[0] if candidate["affected_files"] else "unknown",
-                "vuln_class": candidate["vuln_class"],
-                "confidence": candidate["avg_confidence"],
-                "auto_deployable": item["strategy"] == "safe_additive" and candidate["avg_confidence"] >= auto_deploy_threshold,
-                "test_status": "pending",
-                "deploy_status": "pending" if item["strategy"] == "safe_additive" else "needs_review",
-                "generated_by": llm_endpoint,
-                "scan_run_id": candidate["scan_run_id"],
-                "created_at": now,
-            })
+    for item in classified:
+        if item["strategy"] in ("safe_additive", "breaking"):
+            candidate = item["candidate"]
 
-print(f"Generated {len(patches_generated)} code patches")
+            # Get PoC code from pre-loaded map
+            poc_code = poc_code_map.get(candidate.get("representative_finding_id", ""), "")
+
+            patch_result = generate_code_patch(
+                vuln_class=candidate["vuln_class"],
+                title=candidate["title"],
+                description=candidate["description"] or "",
+                file_path=json.loads(candidate["affected_files"])[0] if candidate["affected_files"] else "unknown",
+                poc_code=poc_code,
+                strategy=item["strategy"],
+            )
+
+            if patch_result["success"]:
+                patch_id = str(uuid.uuid4())
+
+                # IMPORTANT: breaking changes always require review
+                if item["strategy"] == "breaking":
+                    deploy_status = "needs_review"
+                elif item["strategy"] == "safe_additive" and candidate["avg_confidence"] >= auto_deploy_threshold:
+                    deploy_status = "pending"
+                else:
+                    deploy_status = "needs_review"
+
+                patches_generated.append({
+                    "id": patch_id,
+                    "root_cause_id": candidate["id"],
+                    "strategy": item["strategy"],
+                    "patch_diff": patch_result["patch_diff"],
+                    "explanation": patch_result["explanation"],
+                    "test_code": patch_result["test_code"],
+                    "breaking_changes": json.dumps(patch_result.get("breaking_changes", [])),
+                    "target_file": json.loads(candidate["affected_files"])[0] if candidate["affected_files"] else "unknown",
+                    "vuln_class": candidate["vuln_class"],
+                    "confidence": candidate["avg_confidence"],
+                    "auto_deployable": item["strategy"] == "safe_additive" and candidate["avg_confidence"] >= auto_deploy_threshold,
+                    "test_status": "pending",
+                    "deploy_status": deploy_status,
+                    "generated_by": cfg.model_endpoint,
+                    "scan_run_id": candidate["scan_run_id"],
+                    "created_at": now,
+                })
+
+    print(f"Generated {len(patches_generated)} code patches")
 
 # COMMAND ----------
 
@@ -494,52 +545,76 @@ def generate_waf_rule(signature: dict, vuln_class: str, root_cause_id: str) -> s
     rule_expression = " or ".join(conditions)
     return f"({rule_expression})"
 
+# COMMAND ----------
 
-# Generate WAF rules for virtual_patch candidates
-waf_rules_generated = []
+# MAGIC %md
+# MAGIC ## Generate WAF Rules for Virtual Patch Candidates
 
-for item in classified:
-    if item["strategy"] == "virtual_patch":
-        candidate = item["candidate"]
+# COMMAND ----------
 
-        # Get PoC code
-        poc_code = ""
+with mon.time("waf_rule_generation"):
+    # Pre-load PoC codes for virtual_patch candidates
+    vp_finding_ids = [
+        item["candidate"]["representative_finding_id"]
+        for item in classified
+        if item["strategy"] == "virtual_patch"
+        and item["candidate"].get("representative_finding_id")
+    ]
+
+    vp_poc_map = {}
+    if vp_finding_ids:
         try:
-            poc_df = spark.sql(f"""
-                SELECT poc_code FROM glasswing_findings
-                WHERE id = '{candidate['representative_finding_id']}'
-            """)
-            if poc_df.count() > 0:
-                poc_code = poc_df.first()["poc_code"] or ""
+            vp_poc_query = (
+                qb("glasswing_findings")
+                .select(["id", "poc_code"])
+                .where_in("id", vp_finding_ids)
+                .describe("Batch load PoC code for WAF rule generation")
+                .build()
+            )
+            vp_poc_df = spark.sql(vp_poc_query.sql)
+            vp_poc_map = {
+                row["id"]: (row["poc_code"] or "")
+                for row in vp_poc_df.collect()
+            }
         except Exception:
             pass
 
-        matched_routes = candidate["matched_routes"] if "matched_routes" in candidate.asDict() else "[]"
+    # Generate WAF rules for virtual_patch candidates
+    waf_rules_generated = []
 
-        signature = extract_http_signature(poc_code, candidate["vuln_class"], matched_routes)
-        rule_expression = generate_waf_rule(signature, candidate["vuln_class"], candidate["id"])
+    for item in classified:
+        if item["strategy"] == "virtual_patch":
+            candidate = item["candidate"]
 
-        rule_id = str(uuid.uuid4())
-        rule_name = f"glasswing_vp_{candidate['vuln_class']}_{hashlib.md5(candidate['id'].encode()).hexdigest()[:8]}"
+            # Get PoC code from pre-loaded map
+            poc_code = vp_poc_map.get(candidate.get("representative_finding_id", ""), "")
 
-        waf_rules_generated.append({
-            "id": rule_id,
-            "rule_name": rule_name,
-            "root_cause_id": candidate["id"],
-            "vuln_class": candidate["vuln_class"],
-            "rule_expression": rule_expression,
-            "action": "block",
-            "http_signature": json.dumps(signature),
-            "matched_routes": matched_routes,
-            "severity": candidate["severity"],
-            "confidence": candidate["avg_confidence"],
-            "deploy_status": "ready" if candidate["avg_confidence"] >= auto_deploy_threshold else "needs_review",
-            "deployed_at": now if candidate["avg_confidence"] >= auto_deploy_threshold else None,
-            "scan_run_id": candidate["scan_run_id"],
-            "created_at": now,
-        })
+            matched_routes = candidate["matched_routes"] if "matched_routes" in candidate.asDict() else "[]"
 
-print(f"Generated {len(waf_rules_generated)} WAF virtual patch rules")
+            signature = extract_http_signature(poc_code, candidate["vuln_class"], matched_routes)
+            rule_expression = generate_waf_rule(signature, candidate["vuln_class"], candidate["id"])
+
+            rule_id = str(uuid.uuid4())
+            rule_name = f"glasswing_vp_{candidate['vuln_class']}_{hashlib.md5(candidate['id'].encode()).hexdigest()[:8]}"
+
+            waf_rules_generated.append({
+                "id": rule_id,
+                "rule_name": rule_name,
+                "root_cause_id": candidate["id"],
+                "vuln_class": candidate["vuln_class"],
+                "rule_expression": rule_expression,
+                "action": "block",
+                "http_signature": json.dumps(signature),
+                "matched_routes": matched_routes,
+                "severity": candidate["severity"],
+                "confidence": candidate["avg_confidence"],
+                "deploy_status": "ready" if candidate["avg_confidence"] >= auto_deploy_threshold else "needs_review",
+                "deployed_at": now if candidate["avg_confidence"] >= auto_deploy_threshold else None,
+                "scan_run_id": candidate["scan_run_id"],
+                "created_at": now,
+            })
+
+    print(f"Generated {len(waf_rules_generated)} WAF virtual patch rules")
 
 # COMMAND ----------
 
@@ -548,65 +623,66 @@ print(f"Generated {len(waf_rules_generated)} WAF virtual patch rules")
 
 # COMMAND ----------
 
-def run_regression_test(patch: dict) -> dict:
-    """
-    Execute regression test for a generated patch.
-    In production, this would run in an isolated scratch workspace.
-    Returns test result with pass/fail status.
-    """
-    test_code = patch.get("test_code", "")
-    if not test_code:
-        return {"status": "skipped", "reason": "no_test_code", "passed": None}
+with mon.time("regression_testing"):
+    def run_regression_test(patch: dict) -> dict:
+        """
+        Execute regression test for a generated patch.
+        In production, this would run in an isolated scratch workspace.
+        Returns test result with pass/fail status.
+        """
+        test_code = patch.get("test_code", "")
+        if not test_code:
+            return {"status": "skipped", "reason": "no_test_code", "passed": None}
 
-    try:
-        # In production: submit to a scratch Databricks job or container
-        # For now, validate the patch structure
-        patch_diff = patch.get("patch_diff", "")
+        try:
+            # In production: submit to a scratch Databricks job or container
+            # For now, validate the patch structure
+            patch_diff = patch.get("patch_diff", "")
 
-        # Basic structural validation
-        checks = {
-            "has_diff_markers": "---" in patch_diff or "+++" in patch_diff or "[GLASSWING" in patch_diff,
-            "non_empty": len(patch_diff.strip()) > 10,
-            "has_additions": "+" in patch_diff,
-            "not_destructive": "rm -rf" not in patch_diff and "DROP DATABASE" not in patch_diff,
-            "reasonable_size": len(patch_diff) < 50000,
-        }
+            # Basic structural validation
+            checks = {
+                "has_diff_markers": "---" in patch_diff or "+++" in patch_diff or "[GLASSWING" in patch_diff,
+                "non_empty": len(patch_diff.strip()) > 10,
+                "has_additions": "+" in patch_diff,
+                "not_destructive": "rm -rf" not in patch_diff and "DROP DATABASE" not in patch_diff,
+                "reasonable_size": len(patch_diff) < 50000,
+            }
 
-        all_passed = all(checks.values())
-        failed_checks = [k for k, v in checks.items() if not v]
+            all_passed = all(checks.values())
+            failed_checks = [k for k, v in checks.items() if not v]
 
-        return {
-            "status": "passed" if all_passed else "failed",
-            "passed": all_passed,
-            "checks": checks,
-            "failed_checks": failed_checks,
-            "reason": f"Failed checks: {', '.join(failed_checks)}" if failed_checks else "All validation checks passed",
-        }
+            return {
+                "status": "passed" if all_passed else "failed",
+                "passed": all_passed,
+                "checks": checks,
+                "failed_checks": failed_checks,
+                "reason": f"Failed checks: {', '.join(failed_checks)}" if failed_checks else "All validation checks passed",
+            }
 
-    except Exception as e:
-        return {"status": "error", "passed": False, "reason": str(e)}
+        except Exception as e:
+            return {"status": "error", "passed": False, "reason": str(e)}
 
 
-# Run tests on generated patches
-test_results = {}
-for patch in patches_generated:
-    test_result = run_regression_test(patch)
-    test_results[patch["id"]] = test_result
-    patch["test_status"] = test_result["status"]
+    # Run tests on generated patches
+    test_results = {}
+    for patch in patches_generated:
+        test_result = run_regression_test(patch)
+        test_results[patch["id"]] = test_result
+        patch["test_status"] = test_result["status"]
 
-    # Auto-deploy if safe_additive + passes tests + high confidence
-    if (patch["auto_deployable"]
-        and test_result.get("passed", False)
-        and patch["confidence"] >= auto_deploy_threshold):
-        patch["deploy_status"] = "deployed"
-    elif test_result.get("passed") is False:
-        patch["deploy_status"] = "test_failed"
+        # Auto-deploy if safe_additive + passes tests + high confidence
+        if (patch["auto_deployable"]
+            and test_result.get("passed", False)
+            and patch["confidence"] >= auto_deploy_threshold):
+            patch["deploy_status"] = "deployed"
+        elif test_result.get("passed") is False:
+            patch["deploy_status"] = "test_failed"
 
-passed_count = sum(1 for r in test_results.values() if r.get("passed"))
-failed_count = sum(1 for r in test_results.values() if r.get("passed") is False)
-skipped_count = sum(1 for r in test_results.values() if r.get("status") == "skipped")
+    passed_count = sum(1 for r in test_results.values() if r.get("passed"))
+    failed_count = sum(1 for r in test_results.values() if r.get("passed") is False)
+    skipped_count = sum(1 for r in test_results.values() if r.get("status") == "skipped")
 
-print(f"Regression tests: {passed_count} passed, {failed_count} failed, {skipped_count} skipped")
+    print(f"Regression tests: {passed_count} passed, {failed_count} failed, {skipped_count} skipped")
 
 # COMMAND ----------
 
@@ -615,79 +691,78 @@ print(f"Regression tests: {passed_count} passed, {failed_count} failed, {skipped
 
 # COMMAND ----------
 
-# Persist code patches
-if patches_generated:
-    patch_schema = StructType([
-        StructField("id", StringType(), False),
-        StructField("root_cause_id", StringType(), False),
-        StructField("strategy", StringType(), False),
-        StructField("patch_diff", StringType(), True),
-        StructField("explanation", StringType(), True),
-        StructField("test_code", StringType(), True),
-        StructField("breaking_changes", StringType(), True),
-        StructField("target_file", StringType(), True),
-        StructField("vuln_class", StringType(), True),
-        StructField("confidence", DoubleType(), True),
-        StructField("auto_deployable", BooleanType(), False),
-        StructField("test_status", StringType(), True),
-        StructField("deploy_status", StringType(), False),
-        StructField("generated_by", StringType(), True),
-        StructField("scan_run_id", StringType(), True),
-        StructField("created_at", TimestampType(), False),
-    ])
+with mon.time("persist_patches"):
+    # Persist code patches
+    if patches_generated:
+        patch_schema = StructType([
+            StructField("id", StringType(), False),
+            StructField("root_cause_id", StringType(), False),
+            StructField("strategy", StringType(), False),
+            StructField("patch_diff", StringType(), True),
+            StructField("explanation", StringType(), True),
+            StructField("test_code", StringType(), True),
+            StructField("breaking_changes", StringType(), True),
+            StructField("target_file", StringType(), True),
+            StructField("vuln_class", StringType(), True),
+            StructField("confidence", DoubleType(), True),
+            StructField("auto_deployable", BooleanType(), False),
+            StructField("test_status", StringType(), True),
+            StructField("deploy_status", StringType(), False),
+            StructField("generated_by", StringType(), True),
+            StructField("scan_run_id", StringType(), True),
+            StructField("created_at", TimestampType(), False),
+        ])
 
-    patches_df = spark.createDataFrame(patches_generated, schema=patch_schema)
-    patches_df.createOrReplaceTempView("new_patches")
+        patches_df = spark.createDataFrame(patches_generated, schema=patch_schema)
 
-    spark.sql("""
-        MERGE INTO glasswing_patches AS target
-        USING new_patches AS source
-        ON target.root_cause_id = source.root_cause_id AND target.strategy = source.strategy
-        WHEN MATCHED THEN UPDATE SET
-            target.patch_diff = source.patch_diff,
-            target.explanation = source.explanation,
-            target.test_code = source.test_code,
-            target.test_status = source.test_status,
-            target.deploy_status = source.deploy_status,
-            target.created_at = source.created_at
-        WHEN NOT MATCHED THEN INSERT *
-    """)
-    print(f"Persisted {len(patches_generated)} patches to glasswing_patches")
+        safe_merge(
+            spark,
+            patches_df,
+            "glasswing_patches",
+            merge_keys=["root_cause_id", "strategy"],
+            update_columns=[
+                "patch_diff", "explanation", "test_code",
+                "test_status", "deploy_status", "created_at",
+            ],
+            catalog=cfg.catalog,
+            schema=cfg.schema,
+        )
+        print(f"Persisted {len(patches_generated)} patches to glasswing_patches")
 
-# Persist WAF rules
-if waf_rules_generated:
-    waf_schema = StructType([
-        StructField("id", StringType(), False),
-        StructField("rule_name", StringType(), False),
-        StructField("root_cause_id", StringType(), False),
-        StructField("vuln_class", StringType(), True),
-        StructField("rule_expression", StringType(), False),
-        StructField("action", StringType(), False),
-        StructField("http_signature", StringType(), True),
-        StructField("matched_routes", StringType(), True),
-        StructField("severity", StringType(), True),
-        StructField("confidence", DoubleType(), True),
-        StructField("deploy_status", StringType(), False),
-        StructField("deployed_at", TimestampType(), True),
-        StructField("scan_run_id", StringType(), True),
-        StructField("created_at", TimestampType(), False),
-    ])
+    # Persist WAF rules
+    if waf_rules_generated:
+        waf_schema = StructType([
+            StructField("id", StringType(), False),
+            StructField("rule_name", StringType(), False),
+            StructField("root_cause_id", StringType(), False),
+            StructField("vuln_class", StringType(), True),
+            StructField("rule_expression", StringType(), False),
+            StructField("action", StringType(), False),
+            StructField("http_signature", StringType(), True),
+            StructField("matched_routes", StringType(), True),
+            StructField("severity", StringType(), True),
+            StructField("confidence", DoubleType(), True),
+            StructField("deploy_status", StringType(), False),
+            StructField("deployed_at", TimestampType(), True),
+            StructField("scan_run_id", StringType(), True),
+            StructField("created_at", TimestampType(), False),
+        ])
 
-    waf_df = spark.createDataFrame(waf_rules_generated, schema=waf_schema)
-    waf_df.createOrReplaceTempView("new_waf_rules")
+        waf_df = spark.createDataFrame(waf_rules_generated, schema=waf_schema)
 
-    spark.sql("""
-        MERGE INTO glasswing_waf_rules AS target
-        USING new_waf_rules AS source
-        ON target.root_cause_id = source.root_cause_id
-        WHEN MATCHED THEN UPDATE SET
-            target.rule_expression = source.rule_expression,
-            target.http_signature = source.http_signature,
-            target.deploy_status = source.deploy_status,
-            target.deployed_at = source.deployed_at
-        WHEN NOT MATCHED THEN INSERT *
-    """)
-    print(f"Persisted {len(waf_rules_generated)} WAF rules to glasswing_waf_rules")
+        safe_merge(
+            spark,
+            waf_df,
+            "glasswing_waf_rules",
+            merge_keys=["root_cause_id"],
+            update_columns=[
+                "rule_expression", "http_signature",
+                "deploy_status", "deployed_at",
+            ],
+            catalog=cfg.catalog,
+            schema=cfg.schema,
+        )
+        print(f"Persisted {len(waf_rules_generated)} WAF rules to glasswing_waf_rules")
 
 # COMMAND ----------
 
@@ -696,65 +771,107 @@ if waf_rules_generated:
 
 # COMMAND ----------
 
-# Update root cause status based on patch/WAF deployment
-for patch in patches_generated:
-    if patch["deploy_status"] == "deployed":
+with mon.time("update_statuses"):
+    # Batch root cause status updates into a single MERGE via temp view
+    rc_status_updates = []
+
+    for patch in patches_generated:
+        if patch["deploy_status"] == "deployed":
+            rc_status_updates.append({
+                "root_cause_id": patch["root_cause_id"],
+                "new_status": "patched",
+            })
+        elif patch["deploy_status"] == "needs_review":
+            rc_status_updates.append({
+                "root_cause_id": patch["root_cause_id"],
+                "new_status": "patch_pending_review",
+            })
+
+    for rule in waf_rules_generated:
+        if rule["deploy_status"] == "ready":
+            rc_status_updates.append({
+                "root_cause_id": rule["root_cause_id"],
+                "new_status": "waf_deployed",
+            })
+
+    if rc_status_updates:
+        status_schema = StructType([
+            StructField("root_cause_id", StringType(), False),
+            StructField("new_status", StringType(), False),
+        ])
+        status_df = spark.createDataFrame(rc_status_updates, schema=status_schema)
+        status_df.createOrReplaceTempView("_rc_status_updates")
+
+        rc_table = cfg.get_table_path("glasswing_root_causes")
         spark.sql(f"""
-            UPDATE glasswing_root_causes
-            SET status = 'patched', updated_at = current_timestamp()
-            WHERE id = '{patch['root_cause_id']}'
-        """)
-    elif patch["deploy_status"] == "needs_review":
-        spark.sql(f"""
-            UPDATE glasswing_root_causes
-            SET status = 'patch_pending_review', updated_at = current_timestamp()
-            WHERE id = '{patch['root_cause_id']}'
+            MERGE INTO {rc_table} AS target
+            USING _rc_status_updates AS source
+            ON target.id = source.root_cause_id
+            WHEN MATCHED THEN UPDATE SET
+                target.status = source.new_status,
+                target.updated_at = current_timestamp()
         """)
 
-for rule in waf_rules_generated:
-    if rule["deploy_status"] == "ready":
+    # Update scan run stats via MERGE
+    deployed_patches = sum(1 for p in patches_generated if p["deploy_status"] == "deployed")
+    deployed_waf = sum(1 for r in waf_rules_generated if r["deploy_status"] == "ready")
+
+    scan_run_ids = list(set(
+        [c["candidate"]["scan_run_id"] for c in classified if c["candidate"]["scan_run_id"]]
+    ))
+
+    if scan_run_ids:
+        scan_updates = [
+            {
+                "scan_run_id": srid,
+                "patches_generated": len(patches_generated),
+                "waf_rules_deployed": deployed_waf,
+            }
+            for srid in scan_run_ids
+        ]
+        scan_schema = StructType([
+            StructField("scan_run_id", StringType(), False),
+            StructField("patches_generated", IntegerType(), False),
+            StructField("waf_rules_deployed", IntegerType(), False),
+        ])
+        scan_df = spark.createDataFrame(scan_updates, schema=scan_schema)
+        scan_df.createOrReplaceTempView("_scan_run_patch_updates")
+
+        scan_table = cfg.get_table_path("glasswing_scan_runs")
         spark.sql(f"""
-            UPDATE glasswing_root_causes
-            SET status = 'waf_deployed', updated_at = current_timestamp()
-            WHERE id = '{rule['root_cause_id']}'
+            MERGE INTO {scan_table} AS target
+            USING _scan_run_patch_updates AS source
+            ON target.id = source.scan_run_id
+            WHEN MATCHED THEN UPDATE SET
+                target.patches_generated = source.patches_generated,
+                target.waf_rules_deployed = source.waf_rules_deployed,
+                target.status = 'patching_complete'
         """)
-
-# Update scan run stats
-deployed_patches = sum(1 for p in patches_generated if p["deploy_status"] == "deployed")
-deployed_waf = sum(1 for r in waf_rules_generated if r["deploy_status"] == "ready")
-
-scan_run_ids = list(set(
-    [c["candidate"]["scan_run_id"] for c in classified if c["candidate"]["scan_run_id"]]
-))
-for srid in scan_run_ids:
-    spark.sql(f"""
-        UPDATE glasswing_scan_runs
-        SET patches_generated = {len(patches_generated)},
-            waf_rules_deployed = {deployed_waf},
-            status = 'patching_complete'
-        WHERE id = '{srid}'
-    """)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Update Agent Status
+# MAGIC ## Update Agent Status and Exit
 
 # COMMAND ----------
 
-spark.sql(f"""
-    MERGE INTO agent_status AS target
-    USING (SELECT
-        'glasswing_auto_patch' as agent_id,
-        current_timestamp() as last_heartbeat,
-        'running' as status,
-        {len(classified)} as events_processed,
-        {deployed_patches + deployed_waf} as alerts_generated
-    ) AS source
-    ON target.agent_id = source.agent_id
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-""")
+# Update agent status via safe_merge
+agent_status_df = spark.createDataFrame([{
+    "agent_id": "glasswing_auto_patch",
+    "last_heartbeat": now,
+    "status": "running",
+    "events_processed": len(classified),
+    "alerts_generated": deployed_patches + deployed_waf,
+}])
+
+safe_merge(
+    spark,
+    agent_status_df,
+    "agent_status",
+    merge_keys=["agent_id"],
+    catalog=cfg.catalog,
+    schema=cfg.schema,
+)
 
 result = {
     "status": "completed",
@@ -772,7 +889,10 @@ result = {
         "failed": failed_count,
         "skipped": skipped_count,
     },
-    "llm_endpoint": llm_endpoint,
+    "llm_endpoint": cfg.model_endpoint,
+    "timings": mon.get_summary().get("timings", {}),
 }
+
+mon.log_complete(rows_processed=len(classified))
 print(json.dumps(result, indent=2))
 dbutils.notebook.exit(json.dumps(result))

@@ -1,48 +1,64 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent: Enrichment Agent (LLM-Powered)
-# MAGIC Gathers context: threat intel, asset info, related events, MITRE mapping.
+# MAGIC # Agent 02: Enrichment Agent
+# MAGIC
+# MAGIC Gathers context for alerts: threat intel cross-referencing, asset info,
+# MAGIC related events, user data, and MITRE ATT&CK mapping via LLM.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-dbutils.widgets.text("model_endpoint", "databricks-meta-llama-3-1-70b-instruct", "LLM Endpoint")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-model_endpoint = dbutils.widgets.get("model_endpoint")
-
-spark.sql(f"USE CATALOG `{catalog}`")
-spark.sql(f"USE SCHEMA `{schema}`")
+# MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
 
-import json
+dbutils.widgets.text("batch_size", "50", "Max alerts to enrich per run")
+dbutils.widgets.text("lookback_hours", "2", "Alert age window")
+
+batch_size = int(dbutils.widgets.get("batch_size"))
+lookback_hours = int(dbutils.widgets.get("lookback_hours"))
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
-from databricks.sdk import WorkspaceClient
-
-w = WorkspaceClient()
+from pyspark.sql.types import *
+import json
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Find Alerts Needing Enrichment
+# MAGIC ## Fetch Unenriched Alerts
 
 # COMMAND ----------
 
-alerts_to_enrich = spark.sql("""
-    SELECT a.id, a.title, a.description, a.severity, a.source,
-           a.event_ids, a.mitre_tactic, a.confidence_score
-    FROM alerts a
-    WHERE a.status = 'in_progress'
-    AND a.false_positive = false
-    AND (a.mitre_technique IS NULL OR a.mitre_tactic IS NULL)
-    ORDER BY a.created_at DESC
-    LIMIT 20
-""").collect()
+alerts_table = cfg.get_table_path("alerts")
+enrichments_table = cfg.get_table_path("alert_enrichments")
 
-print(f"Alerts needing enrichment: {len(alerts_to_enrich)}")
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {enrichments_table} (
+        id STRING, alert_id STRING, threat_intel_matches STRING,
+        asset_context STRING, related_events_count INT,
+        mitre_mapping STRING, risk_score INT, enrichment_summary STRING,
+        agent_name STRING, enriched_at TIMESTAMP
+    ) USING DELTA
+    TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+unenriched = spark.sql(f"""
+    SELECT a.* FROM {alerts_table} a
+    LEFT JOIN {enrichments_table} e ON a.id = e.alert_id
+    WHERE a.created_at > current_timestamp() - INTERVAL {lookback_hours} HOURS
+      AND a.status IN ('new', 'in_progress')
+      AND e.alert_id IS NULL
+    ORDER BY CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END
+    LIMIT {batch_size}
+""")
+
+alerts_to_enrich = unenriched.collect()
+mon.log_event("alerts_fetched", {"count": len(alerts_to_enrich)})
+
+if not alerts_to_enrich:
+    mon.log_complete(details={"status": "idle"})
+    dbutils.notebook.exit('{"status": "idle", "enriched": 0}')
 
 # COMMAND ----------
 
@@ -51,158 +67,165 @@ print(f"Alerts needing enrichment: {len(alerts_to_enrich)}")
 
 # COMMAND ----------
 
-def get_threat_intel(indicator: str) -> dict:
-    """Look up IOC in local threat intel."""
-    results = spark.sql(f"""
-        SELECT indicator_type, threat_type, confidence, source, tags
-        FROM ioc_entries
-        WHERE value = '{indicator}'
-        AND (expiry IS NULL OR expiry > current_timestamp())
-    """).collect()
-    if results:
-        r = results[0]
-        return {"found": True, "type": r.indicator_type, "threat": r.threat_type,
-                "confidence": r.confidence, "source": r.source}
-    return {"found": False}
+ioc_table = cfg.get_table_path("ioc_entries")
+assets_table = cfg.get_table_path("asset_registry")
+events_table = cfg.get_table_path("events")
 
 
-def get_asset_context(ip: str) -> dict:
-    """Get asset information for an IP."""
-    results = spark.sql(f"""
-        SELECT hostname, asset_type, criticality, owner, department, os
-        FROM asset_registry WHERE ip_address = '{ip}'
-    """).collect()
-    if results:
-        r = results[0]
-        return {"hostname": r.hostname, "type": r.asset_type,
-                "criticality": r.criticality, "owner": r.owner, "department": r.department}
-    return {"found": False}
-
-
-def get_related_events(event_ids: list, window_minutes: int = 30) -> list:
-    """Find related events within a time window."""
-    if not event_ids:
+def get_threat_intel(alert):
+    """Cross-reference alert IPs against IOC database."""
+    source_ip = getattr(alert, "source_ip", None)
+    dest_ip = getattr(alert, "dest_ip", None)
+    ips = [ip for ip in [source_ip, dest_ip] if ip]
+    if not ips:
         return []
-    ids_str = ",".join([f"'{e}'" for e in event_ids[:10]])
-    results = spark.sql(f"""
-        SELECT e2.event_type, e2.source_ip, e2.user_id, e2.severity, e2.action
-        FROM events e1
-        JOIN events e2 ON (e2.source_ip = e1.source_ip OR e2.user_id = e1.user_id)
-        WHERE e1.id IN ({ids_str})
-        AND e2.timestamp BETWEEN e1.timestamp - INTERVAL {window_minutes} MINUTES
-            AND e1.timestamp + INTERVAL {window_minutes} MINUTES
-        AND e2.id != e1.id
-        LIMIT 50
-    """).collect()
-    return [{"type": r.event_type, "ip": r.source_ip, "user": r.user_id,
-             "severity": r.severity, "action": r.action} for r in results]
 
-
-def get_user_context(user_id: str) -> dict:
-    """Get user profile and risk info."""
-    if not user_id:
-        return {"found": False}
-    results = spark.sql(f"""
-        SELECT display_name, department, role, risk_level
-        FROM user_profiles WHERE id = '{user_id}'
-    """).collect()
-    if results:
-        r = results[0]
-        return {"name": r.display_name, "department": r.department,
-                "role": r.role, "risk_level": r.risk_level}
-    return {"found": False}
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## LLM-Powered MITRE Mapping
-
-# COMMAND ----------
-
-ENRICHMENT_PROMPT = """You are a cybersecurity enrichment agent. Given the alert details and context below,
-provide MITRE ATT&CK mapping and risk assessment.
-
-Respond in JSON:
-{
-  "mitre_tactic": "TA0001",
-  "mitre_technique": "T1110.001",
-  "tactic_name": "Initial Access",
-  "technique_name": "Brute Force: Password Guessing",
-  "risk_score": 75,
-  "kill_chain_phase": "reconnaissance|weaponization|delivery|exploitation|installation|c2|exfiltration",
-  "recommended_actions": ["action1", "action2"],
-  "campaign_indicators": ["indicator1"]
-}"""
-
-def enrich_with_llm(alert, context: dict) -> dict:
-    prompt = f"""Alert: {alert.title}
-Description: {alert.description}
-Severity: {alert.severity}
-Source: {alert.source}
-Current MITRE: {alert.mitre_tactic or 'Unknown'}
-
-Context gathered:
-- Threat Intel: {json.dumps(context.get('threat_intel', {}))}
-- Asset: {json.dumps(context.get('asset', {}))}
-- Related Events: {len(context.get('related_events', []))} events found
-- User: {json.dumps(context.get('user', {}))}
-"""
+    query = (
+        qb().select("value, threat_type, confidence, source")
+        .from_table(ioc_table)
+        .where_in("value", ips)
+        .build()
+    )
     try:
-        response = w.serving_endpoints.query(
-            name=model_endpoint,
-            messages=[
-                {"role": "system", "content": ENRICHMENT_PROMPT},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=512,
-            temperature=0.1
-        )
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        return {"error": str(e)[:200]}
+        return [row.asDict() for row in spark.sql(query).collect()]
+    except Exception:
+        return []
+
+
+def get_asset_context(alert):
+    """Look up asset criticality and ownership."""
+    source_ip = getattr(alert, "source_ip", None)
+    hostname = getattr(alert, "hostname", None)
+    if not source_ip and not hostname:
+        return {}
+
+    conditions = []
+    if source_ip:
+        conditions.append(f"ip_address = '{source_ip}'")
+    if hostname:
+        conditions.append(f"hostname = '{hostname}'")
+
+    try:
+        query = f"SELECT * FROM {assets_table} WHERE {' OR '.join(conditions)} LIMIT 1"
+        rows = spark.sql(query).collect()
+        return rows[0].asDict() if rows else {}
+    except Exception:
+        return {}
+
+
+def get_related_events_count(alert):
+    """Count related events in the past hour."""
+    source_ip = getattr(alert, "source_ip", None)
+    if not source_ip:
+        return 0
+
+    query = (
+        qb().select("COUNT(*) as cnt")
+        .from_table(events_table)
+        .where_eq("source_ip", source_ip)
+        .where_raw("timestamp > current_timestamp() - INTERVAL 1 HOUR")
+        .build()
+    )
+    try:
+        return spark.sql(query).collect()[0].cnt
+    except Exception:
+        return 0
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Execute Enrichment Pipeline
+# MAGIC ## Enrich with LLM MITRE Mapping
 
 # COMMAND ----------
 
-for alert in alerts_to_enrich:
-    context = {}
+ENRICH_PROMPT = """Given this security alert and its context, provide MITRE ATT&CK mapping and risk assessment.
 
-    # Gather all context
-    if alert.event_ids:
-        first_event = spark.sql(f"""
-            SELECT source_ip, user_id FROM events WHERE id = '{alert.event_ids[0]}'
-        """).collect()
-        if first_event:
-            ip = first_event[0].source_ip
-            user_id = first_event[0].user_id
-            if ip:
-                context["threat_intel"] = get_threat_intel(ip)
-                context["asset"] = get_asset_context(ip)
-            if user_id:
-                context["user"] = get_user_context(user_id)
-        context["related_events"] = get_related_events(alert.event_ids)
+Alert: {title} - {description}
+Severity: {severity}
+Threat Intel Matches: {ti_matches}
+Asset Context: {asset_context}
+Related Events: {related_count}
 
-    # LLM enrichment
-    llm_result = enrich_with_llm(alert, context)
+Respond with JSON:
+{{
+  "mitre_tactic": "tactic name",
+  "mitre_technique": "T-ID",
+  "risk_score": 0-100,
+  "summary": "one paragraph enrichment summary"
+}}"""
 
-    if "error" not in llm_result:
-        mitre_tactic = llm_result.get("mitre_tactic", alert.mitre_tactic)
-        mitre_technique = llm_result.get("mitre_technique")
-        risk_score = llm_result.get("risk_score", 50)
+enrichment_results = []
 
-        spark.sql(f"""
-            UPDATE alerts SET
-                mitre_tactic = '{mitre_tactic}',
-                mitre_technique = '{mitre_technique}',
-                risk_score = {risk_score}
-            WHERE id = '{alert.id}'
-        """)
-        print(f"  Enriched {alert.id[:8]}... -> {mitre_tactic}/{mitre_technique} (risk: {risk_score})")
+with mon.time("enrichment_loop"):
+    for alert in alerts_to_enrich:
+        try:
+            ti_matches = get_threat_intel(alert)
+            asset_ctx = get_asset_context(alert)
+            related_count = get_related_events_count(alert)
+
+            prompt = ENRICH_PROMPT.format(
+                title=alert.title or "N/A",
+                description=(alert.description or "N/A")[:300],
+                severity=alert.severity or "unknown",
+                ti_matches=json.dumps(ti_matches)[:300] if ti_matches else "None",
+                asset_context=json.dumps(asset_ctx)[:200] if asset_ctx else "None",
+                related_count=related_count,
+            )
+
+            llm_result = llm.extract_json(prompt)
+            risk_score = int(llm_result.get("risk_score", 50)) if llm_result else 50
+            mitre = json.dumps({"tactic": llm_result.get("mitre_tactic"), "technique": llm_result.get("mitre_technique")}) if llm_result else "{}"
+            summary = llm_result.get("summary", "") if llm_result else ""
+
+            enrichment_results.append({
+                "alert_id": alert.id,
+                "threat_intel_matches": json.dumps(ti_matches)[:1000],
+                "asset_context": json.dumps(asset_ctx)[:500],
+                "related_events_count": related_count,
+                "mitre_mapping": mitre,
+                "risk_score": risk_score,
+                "enrichment_summary": summary[:500],
+            })
+
+        except Exception as e:
+            mon.log_event("enrichment_error", {"alert_id": alert.id, "error": str(e)[:200]})
+            enrichment_results.append({
+                "alert_id": alert.id,
+                "threat_intel_matches": "[]",
+                "asset_context": "{}",
+                "related_events_count": 0,
+                "mitre_mapping": "{}",
+                "risk_score": 50,
+                "enrichment_summary": f"Enrichment failed: {str(e)[:100]}",
+            })
 
 # COMMAND ----------
 
-print(f"Enrichment complete: {len(alerts_to_enrich)} alerts enriched")
+# MAGIC %md
+# MAGIC ## Persist Enrichments
+
+# COMMAND ----------
+
+if enrichment_results:
+    schema = StructType([
+        StructField("alert_id", StringType()),
+        StructField("threat_intel_matches", StringType()),
+        StructField("asset_context", StringType()),
+        StructField("related_events_count", IntegerType()),
+        StructField("mitre_mapping", StringType()),
+        StructField("risk_score", IntegerType()),
+        StructField("enrichment_summary", StringType()),
+    ])
+
+    df = (
+        spark.createDataFrame(enrichment_results, schema=schema)
+        .withColumn("id", expr("uuid()"))
+        .withColumn("agent_name", lit("enrichment_agent"))
+        .withColumn("enriched_at", current_timestamp())
+    )
+    df.write.mode("append").saveAsTable(enrichments_table)
+
+mon.log_complete(details={"enriched": len(enrichment_results)})
+result = {"status": "completed", "enriched": len(enrichment_results)}
+print(json.dumps(result))
+dbutils.notebook.exit(json.dumps(result))

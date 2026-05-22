@@ -1,76 +1,74 @@
 # Databricks notebook source
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # Agent 12 - Blue Team Agent
-# MAGIC Validates blue-team detection coverage against MITRE ATT&CK matrix.
-# MAGIC Identifies gaps in detection rules, measures mean-time-to-detect (MTTD),
-# MAGIC and recommends new rules for uncovered techniques.
+# MAGIC # Agent 12 - Blue Team
+# MAGIC Analyzes detection coverage against MITRE ATT&CK matrix. Identifies gaps,
+# MAGIC calculates MTTD per severity, and uses LLM to recommend new detection rules.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
-
-# COMMAND ----------
-
-import mlflow.deployments
 import json
 from datetime import datetime
-
-client = mlflow.deployments.get_deploy_client("databricks")
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## MITRE ATT&CK Coverage Analysis
+# MAGIC ## Query Correlation Rules for Technique Coverage
 
 # COMMAND ----------
 
-mitre_coverage = spark.sql("""
-    WITH all_techniques AS (
-        SELECT DISTINCT mitre_technique, mitre_tactic
-        FROM alerts
-        WHERE mitre_technique IS NOT NULL
-        UNION
-        SELECT DISTINCT unnested.technique as mitre_technique, unnested.tactic as mitre_tactic
-        FROM correlation_rules,
-        LATERAL VIEW explode(from_json(mitre_mapping, 'array<struct<technique:string,tactic:string>>')) as unnested
-    ),
-    covered AS (
-        SELECT DISTINCT mitre_technique
-        FROM correlation_rules
-        WHERE status = 'active'
-    ),
-    detected_last_30d AS (
-        SELECT mitre_technique, COUNT(*) as detection_count,
-               AVG(UNIX_TIMESTAMP(created_at) - UNIX_TIMESTAMP(
-                   (SELECT MIN(timestamp) FROM events e WHERE e.source_ip = alerts.source_ip
-                    AND e.timestamp > alerts.created_at - INTERVAL 1 HOUR)
-               )) as avg_mttd_seconds
-        FROM alerts
-        WHERE created_at > current_timestamp() - INTERVAL 30 DAYS
-        AND mitre_technique IS NOT NULL
-        GROUP BY mitre_technique
-    )
-    SELECT at.mitre_technique, at.mitre_tactic,
-           CASE WHEN c.mitre_technique IS NOT NULL THEN true ELSE false END as has_rule,
-           COALESCE(d.detection_count, 0) as detections_30d,
-           d.avg_mttd_seconds
-    FROM all_techniques at
-    LEFT JOIN covered c ON at.mitre_technique = c.mitre_technique
-    LEFT JOIN detected_last_30d d ON at.mitre_technique = d.mitre_technique
-    ORDER BY has_rule ASC, detections_30d ASC
-""")
+mon.time("blue_team_init")
 
-total_techniques = mitre_coverage.count()
-covered_count = mitre_coverage.filter("has_rule = true").count()
-coverage_pct = (covered_count / max(total_techniques, 1)) * 100
+rules_table = cfg.get_table_path("correlation_rules")
+alerts_table = cfg.get_table_path("alerts")
+events_table = cfg.get_table_path("events")
+coverage_table = cfg.get_table_path("blue_team_coverage")
 
-print(f"MITRE Coverage: {coverage_pct:.1f}% ({covered_count}/{total_techniques} techniques)")
+rules_df = spark.read.table(rules_table).filter(F.col("status") == "active")
+covered_techniques = (
+    rules_df
+    .select(F.explode(F.from_json(F.col("mitre_mapping"), "array<string>")).alias("technique"))
+    .distinct()
+)
+
+mon.log_event("rules_loaded", {"active_rules": rules_df.count()})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Define Full MITRE ATT&CK Technique Set
+
+# COMMAND ----------
+
+MITRE_TECHNIQUES = [
+    {"id": "T1566.001", "tactic": "initial_access", "name": "Spearphishing Attachment"},
+    {"id": "T1059.001", "tactic": "execution", "name": "PowerShell"},
+    {"id": "T1053.005", "tactic": "persistence", "name": "Scheduled Task"},
+    {"id": "T1068", "tactic": "privilege_escalation", "name": "Exploitation for Privilege Escalation"},
+    {"id": "T1070.004", "tactic": "defense_evasion", "name": "File Deletion"},
+    {"id": "T1003.001", "tactic": "credential_access", "name": "LSASS Memory"},
+    {"id": "T1083", "tactic": "discovery", "name": "File and Directory Discovery"},
+    {"id": "T1021.002", "tactic": "lateral_movement", "name": "SMB/Windows Admin Shares"},
+    {"id": "T1560.001", "tactic": "collection", "name": "Archive via Utility"},
+    {"id": "T1048.003", "tactic": "exfiltration", "name": "Exfiltration Over Unencrypted Protocol"},
+    {"id": "T1486", "tactic": "impact", "name": "Data Encrypted for Impact"},
+    {"id": "T1110.004", "tactic": "credential_access", "name": "Credential Stuffing"},
+    {"id": "T1195.002", "tactic": "initial_access", "name": "Compromise Software Supply Chain"},
+    {"id": "T1078", "tactic": "initial_access", "name": "Valid Accounts"},
+    {"id": "T1071.001", "tactic": "command_and_control", "name": "Web Protocols"},
+    {"id": "T1562.001", "tactic": "defense_evasion", "name": "Disable or Modify Tools"},
+    {"id": "T1046", "tactic": "discovery", "name": "Network Service Discovery"},
+    {"id": "T1027", "tactic": "defense_evasion", "name": "Obfuscated Files or Information"},
+    {"id": "T1105", "tactic": "command_and_control", "name": "Ingress Tool Transfer"},
+    {"id": "T1036.005", "tactic": "defense_evasion", "name": "Match Legitimate Name or Location"},
+]
+
+mitre_df = spark.createDataFrame(MITRE_TECHNIQUES)
 
 # COMMAND ----------
 
@@ -79,86 +77,134 @@ print(f"MITRE Coverage: {coverage_pct:.1f}% ({covered_count}/{total_techniques} 
 
 # COMMAND ----------
 
-gaps = mitre_coverage.filter("has_rule = false").collect()
-print(f"Found {len(gaps)} uncovered techniques")
+mon.time("gap_analysis")
 
-# Generate rule recommendations for top gaps
-gap_recommendations = []
+gaps_df = (
+    mitre_df.alias("m")
+    .join(covered_techniques.alias("c"), mitre_df["id"] == covered_techniques["technique"], "left_anti")
+)
 
-for gap in gaps[:10]:
-    response = client.predict(
-        endpoint="databricks-meta-llama-3-1-70b-instruct",
-        inputs={
-            "messages": [
-                {"role": "system", "content": "You are a detection engineer. Write concise correlation rule descriptions for MITRE ATT&CK techniques."},
-                {"role": "user", "content": f"Write a detection rule for MITRE technique {gap.mitre_technique} (tactic: {gap.mitre_tactic}). Include: rule name, detection logic (1-2 sentences), data sources needed, and false positive considerations. Keep it under 100 words."}
-            ],
-            "max_tokens": 200,
-            "temperature": 0.3
-        }
-    )
+gap_count = gaps_df.count()
+total_techniques = mitre_df.count()
+covered_count = total_techniques - gap_count
+coverage_pct = (covered_count / total_techniques) * 100 if total_techniques > 0 else 0.0
 
-    gap_recommendations.append({
-        "technique": gap.mitre_technique,
-        "tactic": gap.mitre_tactic,
-        "recommendation": response.choices[0].message.content,
-        "priority": "high" if gap.mitre_tactic in ["initial-access", "execution", "impact"] else "medium",
-    })
+mon.log_event("coverage_gaps_identified", {
+    "total_techniques": total_techniques,
+    "covered": covered_count,
+    "gaps": gap_count,
+    "coverage_pct": round(coverage_pct, 2),
+})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## MTTD Analysis
+# MAGIC ## Calculate MTTD Per Severity
 
 # COMMAND ----------
 
-mttd_stats = spark.sql("""
-    SELECT mitre_tactic,
-           COUNT(*) as total_detections,
-           AVG(CASE WHEN avg_mttd_seconds IS NOT NULL THEN avg_mttd_seconds END) as avg_mttd,
-           PERCENTILE(CASE WHEN avg_mttd_seconds IS NOT NULL THEN avg_mttd_seconds END, 0.95) as p95_mttd
-    FROM (
-        SELECT mitre_tactic, mitre_technique, avg_mttd_seconds
-        FROM (
-            SELECT mitre_tactic, mitre_technique,
-                   AVG(UNIX_TIMESTAMP(created_at)) as avg_mttd_seconds
-            FROM alerts
-            WHERE created_at > current_timestamp() - INTERVAL 30 DAYS
-            GROUP BY mitre_tactic, mitre_technique
-        )
-    )
-    GROUP BY mitre_tactic
-    ORDER BY avg_mttd DESC
-""")
+mon.time("mttd_calculation")
 
-mttd_stats.show()
+alerts_with_events = (
+    spark.read.table(alerts_table).alias("a")
+    .join(spark.read.table(events_table).alias("e"), F.col("a.source_event_id") == F.col("e.event_id"))
+    .withColumn("detection_lag_seconds",
+                F.unix_timestamp(F.col("a.created_at")) - F.unix_timestamp(F.col("e.timestamp")))
+    .filter(F.col("detection_lag_seconds") > 0)
+    .filter(F.col("detection_lag_seconds") < 86400)
+)
+
+mttd_by_severity = (
+    alerts_with_events
+    .groupBy("a.severity")
+    .agg(
+        F.avg("detection_lag_seconds").alias("avg_mttd_seconds"),
+        F.expr("percentile_approx(detection_lag_seconds, 0.5)").alias("median_mttd_seconds"),
+        F.expr("percentile_approx(detection_lag_seconds, 0.95)").alias("p95_mttd_seconds"),
+        F.count("*").alias("sample_size"),
+    )
+)
+
+mttd_results = mttd_by_severity.collect()
+mttd_summary = {row.severity: {"avg": row.avg_mttd_seconds, "p95": row.p95_mttd_seconds} for row in mttd_results}
+
+mon.log_event("mttd_calculated", {"severities_analyzed": len(mttd_results)})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Write Coverage Report
+# MAGIC ## LLM Recommendations for Top Gaps
 
 # COMMAND ----------
 
-report = {
-    "report_date": datetime.utcnow().isoformat(),
-    "total_techniques_known": total_techniques,
-    "techniques_with_rules": covered_count,
-    "coverage_percentage": coverage_pct,
-    "gap_count": len(gaps),
-    "top_gap_recommendations": json.dumps(gap_recommendations),
-    "agent_name": "blue-team",
+mon.time("llm_recommendations")
+
+top_gaps = gaps_df.collect()[:5]
+recommendations = []
+
+for gap in top_gaps:
+    prompt = (
+        f"Recommend a detection rule for MITRE ATT&CK technique {gap['id']} "
+        f"({gap['name']}, tactic: {gap['tactic']}). "
+        f"Return JSON with fields: rule_name, detection_logic, data_sources (array), "
+        f"false_positive_notes, estimated_fidelity (high/medium/low)."
+    )
+    try:
+        rec = llm.extract_json(prompt)
+        rec["technique_id"] = gap["id"]
+        rec["tactic"] = gap["tactic"]
+        recommendations.append(rec)
+    except Exception as e:
+        mon.log_error("llm_recommendation_failed", {"technique": gap["id"], "error": str(e)})
+
+mon.log_event("recommendations_generated", {"count": len(recommendations)})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Store Analysis in blue_team_coverage Table
+
+# COMMAND ----------
+
+mon.time("store_results")
+
+analysis_record = [{
+    "analysis_id": f"bt_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+    "run_timestamp": datetime.utcnow(),
+    "total_techniques": total_techniques,
+    "covered_techniques": covered_count,
+    "coverage_pct": coverage_pct,
+    "gap_count": gap_count,
+    "mttd_summary": json.dumps(mttd_summary, default=str),
+    "gap_techniques": json.dumps([g["id"] for g in top_gaps]),
+    "recommendations": json.dumps(recommendations, default=str),
+    "status": "healthy" if coverage_pct >= 70 else "gaps_identified",
+}]
+
+analysis_df = spark.createDataFrame(analysis_record)
+analysis_df.write.format("delta").mode("append").saveAsTable(coverage_table)
+
+mon.log_complete("blue_team_analysis", {
+    "coverage_pct": round(coverage_pct, 2),
+    "gap_count": gap_count,
+    "recommendations": len(recommendations),
+})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Exit
+
+# COMMAND ----------
+
+result = {
+    "agent": "12_blue_team",
+    "coverage_pct": round(coverage_pct, 2),
+    "total_techniques": total_techniques,
+    "gaps_found": gap_count,
+    "mttd_summary": mttd_summary,
+    "recommendations_generated": len(recommendations),
+    "status": analysis_record[0]["status"],
 }
 
-report_df = spark.createDataFrame([report])
-report_df.write.mode("append").saveAsTable("blue_team_reports")
-
-spark.sql("""
-    MERGE INTO agent_status AS t
-    USING (SELECT 'blue-team' as agent_id, current_timestamp() as last_run, 'active' as status) AS s
-    ON t.agent_id = s.agent_id
-    WHEN MATCHED THEN UPDATE SET last_run = s.last_run, status = s.status
-    WHEN NOT MATCHED THEN INSERT (agent_id, last_run, status) VALUES (s.agent_id, s.last_run, s.status)
-""")
-
-print(f"Blue Team report complete. Coverage: {coverage_pct:.1f}%")
+dbutils.notebook.exit(json.dumps(result, default=str))

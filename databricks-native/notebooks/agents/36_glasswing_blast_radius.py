@@ -28,6 +28,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from datetime import datetime, timedelta
@@ -37,18 +41,12 @@ import math
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog name")
-dbutils.widgets.text("schema", "agentic_soc", "Schema name")
+# Configuration
 dbutils.widgets.text("p1_threshold", "0.9", "Blast radius threshold for P1 priority")
 dbutils.widgets.text("p2_threshold", "0.7", "Blast radius threshold for P2 priority")
 
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
 p1_threshold = float(dbutils.widgets.get("p1_threshold"))
 p2_threshold = float(dbutils.widgets.get("p2_threshold"))
-
-spark.sql(f"USE CATALOG `{catalog}`")
-spark.sql(f"USE SCHEMA `{schema}`")
 
 now = datetime.utcnow()
 run_id = str(uuid.uuid4())
@@ -66,24 +64,33 @@ print(f"Blast radius run {run_id} | P1>={p1_threshold} | P2>={p2_threshold} | P3
 
 # COMMAND ----------
 
-reachable_df = spark.sql("""
-    SELECT r.*, rc.vuln_class, rc.title, rc.severity, rc.avg_confidence,
-           rc.finding_count, rc.affected_files, rc.affected_codebases,
-           rc.affected_file_count, rc.affected_codebase_count,
-           rc.exploit_chain_id, rc.scan_run_id
-    FROM glasswing_reachability r
-    JOIN glasswing_root_causes rc ON r.root_cause_id = rc.id
-    WHERE r.is_reachable = true
-""")
+try:
+    reachability_table = cfg.get_table_path("glasswing_reachability")
+    root_causes_table = cfg.get_table_path("glasswing_root_causes")
 
-reachable_count = reachable_df.count()
-if reachable_count == 0:
-    print("No reachable findings to score. Exiting.")
-    result = {"status": "no_data", "scored_count": 0}
-    dbutils.notebook.exit(json.dumps(result))
+    reachable_df = spark.sql(f"""
+        SELECT r.*, rc.vuln_class, rc.title, rc.severity, rc.avg_confidence,
+               rc.finding_count, rc.affected_files, rc.affected_codebases,
+               rc.affected_file_count, rc.affected_codebase_count,
+               rc.exploit_chain_id, rc.scan_run_id
+        FROM {reachability_table} r
+        JOIN {root_causes_table} rc ON r.root_cause_id = rc.id
+        WHERE r.is_reachable = true
+    """)
 
-reachable_list = reachable_df.collect()
-print(f"Loaded {reachable_count} reachable findings for blast radius scoring")
+    reachable_count = reachable_df.count()
+    if reachable_count == 0:
+        print("No reachable findings to score. Exiting.")
+        result = {"status": "no_data", "scored_count": 0}
+        mon.log_complete(rows_processed=0)
+        dbutils.notebook.exit(json.dumps(result))
+
+    reachable_list = reachable_df.collect()
+    print(f"Loaded {reachable_count} reachable findings for blast radius scoring")
+
+except Exception as e:
+    mon.log_error(e, "Failed to load reachable findings")
+    raise
 
 # COMMAND ----------
 
@@ -95,12 +102,15 @@ print(f"Loaded {reachable_count} reachable findings for blast radius scoring")
 # COMMAND ----------
 
 try:
-    asset_df = spark.sql("""
-        SELECT asset_id, asset_name, asset_type, codebase, service_name,
-               environment, criticality, data_sensitivity, host_count
-        FROM asset_registry
-        WHERE environment IN ('production', 'staging')
-    """)
+    asset_query = (
+        qb("asset_registry")
+        .select(["asset_id", "asset_name", "asset_type", "codebase", "service_name",
+                 "environment", "criticality", "data_sensitivity", "host_count"])
+        .where_in("environment", ["production", "staging"])
+        .describe("Load production/staging assets for blast radius calculation")
+        .build()
+    )
+    asset_df = spark.sql(asset_query.sql)
     asset_map = {}
     for row in asset_df.collect():
         key = row["codebase"]
@@ -169,11 +179,14 @@ ASSET_CRITICALITY_WEIGHTS = {
 }
 
 try:
-    classification_df = spark.sql("""
-        SELECT codebase, service_name, max_sensitivity, data_categories,
-               pii_present, secrets_present, compliance_scope
-        FROM data_classification
-    """)
+    classification_query = (
+        qb("data_classification")
+        .select(["codebase", "service_name", "max_sensitivity", "data_categories",
+                 "pii_present", "secrets_present", "compliance_scope"])
+        .describe("Load data classification for sensitivity weighting")
+        .build()
+    )
+    classification_df = spark.sql(classification_query.sql)
     classification_map = {row["codebase"]: row.asDict() for row in classification_df.collect()}
     print(f"Loaded data classification for {len(classification_map)} codebases")
 except Exception as e:
@@ -251,105 +264,125 @@ def assign_priority(blast_radius: float) -> str:
     else:
         return "P4"
 
+# COMMAND ----------
 
-# Score each reachable finding
-scored_results = []
+# MAGIC %md
+# MAGIC ## Score Each Reachable Finding
 
-for row in reachable_list:
-    root_cause_id = row["root_cause_id"]
-    reachability_score = row["reachability_score"]
-    vuln_class = row["vuln_class"]
-    confidence = row["avg_confidence"]
-    codebases = json.loads(row["affected_codebases"]) if row["affected_codebases"] else []
-    chain_id = row["exploit_chain_id"]
+# COMMAND ----------
 
-    # Determine chain complexity
-    chain_complexity = 1
-    if chain_id:
+with mon.time("blast_radius_scoring"):
+    # Pre-load all chain complexities in a single query to avoid N+1
+    chain_ids = [row["exploit_chain_id"] for row in reachable_list if row["exploit_chain_id"]]
+    chain_complexity_map = {}
+
+    if chain_ids:
         try:
-            chain_df = spark.sql(f"SELECT total_steps FROM glasswing_exploit_chains WHERE id = '{chain_id}'")
-            if chain_df.count() > 0:
-                chain_complexity = chain_df.first()["total_steps"]
+            chain_query = (
+                qb("glasswing_exploit_chains")
+                .select(["id", "total_steps"])
+                .where_in("id", chain_ids)
+                .describe("Batch load exploit chain complexities")
+                .build()
+            )
+            chain_df = spark.sql(chain_query.sql)
+            chain_complexity_map = {
+                row["id"]: row["total_steps"] for row in chain_df.collect()
+            }
         except Exception:
-            chain_complexity = 1
+            pass
 
-    # Lookup assets for affected codebases
-    total_hosts = 0
-    max_sensitivity = "internal"
-    max_criticality = "medium"
+    # Score each reachable finding
+    scored_results = []
 
-    for codebase in codebases:
-        assets = asset_map.get(codebase, [])
-        for asset in assets:
-            total_hosts += asset.get("host_count", 1)
-            # Track max sensitivity
-            asset_sens = asset.get("data_sensitivity", "internal")
-            if DATA_SENSITIVITY_WEIGHTS.get(asset_sens, 0) > DATA_SENSITIVITY_WEIGHTS.get(max_sensitivity, 0):
-                max_sensitivity = asset_sens
-            # Track max criticality
-            asset_crit = asset.get("criticality", "medium")
-            if ASSET_CRITICALITY_WEIGHTS.get(asset_crit, 0) > ASSET_CRITICALITY_WEIGHTS.get(max_criticality, 0):
-                max_criticality = asset_crit
+    for row in reachable_list:
+        root_cause_id = row["root_cause_id"]
+        reachability_score = row["reachability_score"]
+        vuln_class = row["vuln_class"]
+        confidence = row["avg_confidence"]
+        codebases = json.loads(row["affected_codebases"]) if row["affected_codebases"] else []
+        chain_id = row["exploit_chain_id"]
 
-    # Check data classification
-    for codebase in codebases:
-        if codebase in classification_map:
-            cls = classification_map[codebase]
-            cls_sens = cls.get("max_sensitivity", "internal")
-            if DATA_SENSITIVITY_WEIGHTS.get(cls_sens, 0) > DATA_SENSITIVITY_WEIGHTS.get(max_sensitivity, 0):
-                max_sensitivity = cls_sens
+        # Determine chain complexity from pre-loaded map
+        chain_complexity = chain_complexity_map.get(chain_id, 1) if chain_id else 1
 
-    # Default if no assets found
-    if total_hosts == 0:
-        total_hosts = 1
+        # Lookup assets for affected codebases
+        total_hosts = 0
+        max_sensitivity = "internal"
+        max_criticality = "medium"
 
-    # Check if PoC exists
-    has_poc = row["ioc_correlation_count"] > 0 if row["ioc_correlation_count"] else False
+        for codebase in codebases:
+            assets = asset_map.get(codebase, [])
+            for asset in assets:
+                total_hosts += asset.get("host_count", 1)
+                # Track max sensitivity
+                asset_sens = asset.get("data_sensitivity", "internal")
+                if DATA_SENSITIVITY_WEIGHTS.get(asset_sens, 0) > DATA_SENSITIVITY_WEIGHTS.get(max_sensitivity, 0):
+                    max_sensitivity = asset_sens
+                # Track max criticality
+                asset_crit = asset.get("criticality", "medium")
+                if ASSET_CRITICALITY_WEIGHTS.get(asset_crit, 0) > ASSET_CRITICALITY_WEIGHTS.get(max_criticality, 0):
+                    max_criticality = asset_crit
 
-    blast_radius = compute_blast_radius(
-        reachability_score=reachability_score,
-        data_sensitivity=max_sensitivity,
-        asset_criticality=max_criticality,
-        host_count=total_hosts,
-        chain_complexity=chain_complexity,
-        confidence=confidence,
-        has_poc=has_poc,
-    )
+        # Check data classification
+        for codebase in codebases:
+            if codebase in classification_map:
+                cls = classification_map[codebase]
+                cls_sens = cls.get("max_sensitivity", "internal")
+                if DATA_SENSITIVITY_WEIGHTS.get(cls_sens, 0) > DATA_SENSITIVITY_WEIGHTS.get(max_sensitivity, 0):
+                    max_sensitivity = cls_sens
 
-    priority = assign_priority(blast_radius)
+        # Default if no assets found
+        if total_hosts == 0:
+            total_hosts = 1
 
-    scored_results.append({
-        "id": str(uuid.uuid4()),
-        "root_cause_id": root_cause_id,
-        "blast_radius": blast_radius,
-        "priority": priority,
-        "reachability_score": reachability_score,
-        "data_sensitivity": max_sensitivity,
-        "data_sensitivity_weight": DATA_SENSITIVITY_WEIGHTS.get(max_sensitivity, 0.5),
-        "asset_criticality": max_criticality,
-        "total_host_count": total_hosts,
-        "chain_complexity": chain_complexity,
-        "confidence": confidence,
-        "vuln_class": vuln_class,
-        "title": row["title"],
-        "severity": row["severity"],
-        "scan_run_id": row["scan_run_id"],
-        "scored_at": now,
-    })
+        # Check if PoC exists
+        has_poc = row["ioc_correlation_count"] > 0 if row["ioc_correlation_count"] else False
 
-# Sort by blast radius descending
-scored_results.sort(key=lambda x: x["blast_radius"], reverse=True)
+        blast_radius = compute_blast_radius(
+            reachability_score=reachability_score,
+            data_sensitivity=max_sensitivity,
+            asset_criticality=max_criticality,
+            host_count=total_hosts,
+            chain_complexity=chain_complexity,
+            confidence=confidence,
+            has_poc=has_poc,
+        )
 
-# Summary
-priority_counts = {"P1": 0, "P2": 0, "P3": 0, "P4": 0}
-for r in scored_results:
-    priority_counts[r["priority"]] += 1
+        priority = assign_priority(blast_radius)
 
-print(f"Scored {len(scored_results)} reachable findings:")
-print(f"  P1 (critical): {priority_counts['P1']}")
-print(f"  P2 (high):     {priority_counts['P2']}")
-print(f"  P3 (medium):   {priority_counts['P3']}")
-print(f"  P4 (low):      {priority_counts['P4']}")
+        scored_results.append({
+            "id": str(uuid.uuid4()),
+            "root_cause_id": root_cause_id,
+            "blast_radius": blast_radius,
+            "priority": priority,
+            "reachability_score": reachability_score,
+            "data_sensitivity": max_sensitivity,
+            "data_sensitivity_weight": DATA_SENSITIVITY_WEIGHTS.get(max_sensitivity, 0.5),
+            "asset_criticality": max_criticality,
+            "total_host_count": total_hosts,
+            "chain_complexity": chain_complexity,
+            "confidence": confidence,
+            "vuln_class": vuln_class,
+            "title": row["title"],
+            "severity": row["severity"],
+            "scan_run_id": row["scan_run_id"],
+            "scored_at": now,
+        })
+
+    # Sort by blast radius descending
+    scored_results.sort(key=lambda x: x["blast_radius"], reverse=True)
+
+    # Summary
+    priority_counts = {"P1": 0, "P2": 0, "P3": 0, "P4": 0}
+    for r in scored_results:
+        priority_counts[r["priority"]] += 1
+
+    print(f"Scored {len(scored_results)} reachable findings:")
+    print(f"  P1 (critical): {priority_counts['P1']}")
+    print(f"  P2 (high):     {priority_counts['P2']}")
+    print(f"  P3 (medium):   {priority_counts['P3']}")
+    print(f"  P4 (low):      {priority_counts['P4']}")
 
 # COMMAND ----------
 
@@ -358,47 +391,43 @@ print(f"  P4 (low):      {priority_counts['P4']}")
 
 # COMMAND ----------
 
-score_schema = StructType([
-    StructField("id", StringType(), False),
-    StructField("root_cause_id", StringType(), False),
-    StructField("blast_radius", DoubleType(), False),
-    StructField("priority", StringType(), False),
-    StructField("reachability_score", DoubleType(), True),
-    StructField("data_sensitivity", StringType(), True),
-    StructField("data_sensitivity_weight", DoubleType(), True),
-    StructField("asset_criticality", StringType(), True),
-    StructField("total_host_count", IntegerType(), True),
-    StructField("chain_complexity", IntegerType(), True),
-    StructField("confidence", DoubleType(), True),
-    StructField("vuln_class", StringType(), True),
-    StructField("title", StringType(), True),
-    StructField("severity", StringType(), True),
-    StructField("scan_run_id", StringType(), True),
-    StructField("scored_at", TimestampType(), False),
-])
+with mon.time("persist_blast_scores"):
+    score_schema = StructType([
+        StructField("id", StringType(), False),
+        StructField("root_cause_id", StringType(), False),
+        StructField("blast_radius", DoubleType(), False),
+        StructField("priority", StringType(), False),
+        StructField("reachability_score", DoubleType(), True),
+        StructField("data_sensitivity", StringType(), True),
+        StructField("data_sensitivity_weight", DoubleType(), True),
+        StructField("asset_criticality", StringType(), True),
+        StructField("total_host_count", IntegerType(), True),
+        StructField("chain_complexity", IntegerType(), True),
+        StructField("confidence", DoubleType(), True),
+        StructField("vuln_class", StringType(), True),
+        StructField("title", StringType(), True),
+        StructField("severity", StringType(), True),
+        StructField("scan_run_id", StringType(), True),
+        StructField("scored_at", TimestampType(), False),
+    ])
 
-scores_df = spark.createDataFrame(scored_results, schema=score_schema)
-scores_df.createOrReplaceTempView("new_blast_scores")
+    scores_df = spark.createDataFrame(scored_results, schema=score_schema)
 
-spark.sql("""
-    MERGE INTO glasswing_blast_scores AS target
-    USING new_blast_scores AS source
-    ON target.root_cause_id = source.root_cause_id
-    WHEN MATCHED THEN UPDATE SET
-        target.blast_radius = source.blast_radius,
-        target.priority = source.priority,
-        target.reachability_score = source.reachability_score,
-        target.data_sensitivity = source.data_sensitivity,
-        target.data_sensitivity_weight = source.data_sensitivity_weight,
-        target.asset_criticality = source.asset_criticality,
-        target.total_host_count = source.total_host_count,
-        target.chain_complexity = source.chain_complexity,
-        target.confidence = source.confidence,
-        target.scored_at = source.scored_at
-    WHEN NOT MATCHED THEN INSERT *
-""")
+    safe_merge(
+        spark,
+        scores_df,
+        "glasswing_blast_scores",
+        merge_keys=["root_cause_id"],
+        update_columns=[
+            "blast_radius", "priority", "reachability_score", "data_sensitivity",
+            "data_sensitivity_weight", "asset_criticality", "total_host_count",
+            "chain_complexity", "confidence", "scored_at",
+        ],
+        catalog=cfg.catalog,
+        schema=cfg.schema,
+    )
 
-print(f"Persisted {len(scored_results)} blast radius scores")
+    print(f"Persisted {len(scored_results)} blast radius scores")
 
 # COMMAND ----------
 
@@ -407,17 +436,39 @@ print(f"Persisted {len(scored_results)} blast radius scores")
 
 # COMMAND ----------
 
-for result in scored_results:
-    spark.sql(f"""
-        UPDATE glasswing_root_causes
-        SET priority = '{result['priority']}',
-            blast_radius = {result['blast_radius']},
-            status = 'scored',
-            updated_at = current_timestamp()
-        WHERE id = '{result['root_cause_id']}'
-    """)
+with mon.time("update_root_cause_priorities"):
+    # Batch all priority updates into a single MERGE via temp view
+    priority_updates = [
+        {
+            "root_cause_id": r["root_cause_id"],
+            "priority": r["priority"],
+            "blast_radius": r["blast_radius"],
+        }
+        for r in scored_results
+    ]
 
-print(f"Updated {len(scored_results)} root causes with priority assignments")
+    if priority_updates:
+        priority_schema = StructType([
+            StructField("root_cause_id", StringType(), False),
+            StructField("priority", StringType(), False),
+            StructField("blast_radius", DoubleType(), False),
+        ])
+        priority_df = spark.createDataFrame(priority_updates, schema=priority_schema)
+        priority_df.createOrReplaceTempView("_priority_updates")
+
+        rc_table = cfg.get_table_path("glasswing_root_causes")
+        spark.sql(f"""
+            MERGE INTO {rc_table} AS target
+            USING _priority_updates AS source
+            ON target.id = source.root_cause_id
+            WHEN MATCHED THEN UPDATE SET
+                target.priority = source.priority,
+                target.blast_radius = source.blast_radius,
+                target.status = 'scored',
+                target.updated_at = current_timestamp()
+        """)
+
+        print(f"Updated {len(scored_results)} root causes with priority assignments")
 
 # COMMAND ----------
 
@@ -430,71 +481,81 @@ print(f"Updated {len(scored_results)} root causes with priority assignments")
 
 # COMMAND ----------
 
-# Feed top P1/P2 findings to Detection Confluence
-confluence_signals = []
-for result in scored_results:
-    if result["priority"] in ("P1", "P2"):
-        confluence_signals.append({
-            "id": str(uuid.uuid4()),
-            "lens": "glasswing_mythos",
-            "signal_type": "vulnerability_reachable",
-            "entity_type": "codebase",
-            "entity_id": result["root_cause_id"],
-            "confidence": result["blast_radius"],
-            "severity": result["severity"],
-            "title": f"[Glasswing {result['priority']}] {result['title'][:150]}",
-            "metadata": json.dumps({
-                "blast_radius": result["blast_radius"],
-                "priority": result["priority"],
-                "vuln_class": result["vuln_class"],
-                "host_count": result["total_host_count"],
-                "chain_complexity": result["chain_complexity"],
-            }),
-            "source": "glasswing_blast_radius",
-            "created_at": now,
-        })
+with mon.time("detection_confluence_feed"):
+    # Feed top P1/P2 findings to Detection Confluence
+    confluence_signals = []
+    for result in scored_results:
+        if result["priority"] in ("P1", "P2"):
+            confluence_signals.append({
+                "id": str(uuid.uuid4()),
+                "lens": "glasswing_mythos",
+                "signal_type": "vulnerability_reachable",
+                "entity_type": "codebase",
+                "entity_id": result["root_cause_id"],
+                "confidence": result["blast_radius"],
+                "severity": result["severity"],
+                "title": f"[Glasswing {result['priority']}] {result['title'][:150]}",
+                "metadata": json.dumps({
+                    "blast_radius": result["blast_radius"],
+                    "priority": result["priority"],
+                    "vuln_class": result["vuln_class"],
+                    "host_count": result["total_host_count"],
+                    "chain_complexity": result["chain_complexity"],
+                }),
+                "source": "glasswing_blast_radius",
+                "created_at": now,
+            })
 
-if confluence_signals:
-    try:
-        signal_schema = StructType([
-            StructField("id", StringType(), False),
-            StructField("lens", StringType(), False),
-            StructField("signal_type", StringType(), False),
-            StructField("entity_type", StringType(), True),
-            StructField("entity_id", StringType(), False),
-            StructField("confidence", DoubleType(), False),
-            StructField("severity", StringType(), True),
-            StructField("title", StringType(), True),
-            StructField("metadata", StringType(), True),
-            StructField("source", StringType(), True),
-            StructField("created_at", TimestampType(), False),
-        ])
-        signals_df = spark.createDataFrame(confluence_signals, schema=signal_schema)
-        signals_df.write.mode("append").saveAsTable("detection_confluence_signals")
-        print(f"Fed {len(confluence_signals)} signals to Detection Confluence (lens=glasswing_mythos)")
-    except Exception as e:
-        print(f"Detection Confluence table not available, skipping: {e}")
+    if confluence_signals:
+        try:
+            signal_schema = StructType([
+                StructField("id", StringType(), False),
+                StructField("lens", StringType(), False),
+                StructField("signal_type", StringType(), False),
+                StructField("entity_type", StringType(), True),
+                StructField("entity_id", StringType(), False),
+                StructField("confidence", DoubleType(), False),
+                StructField("severity", StringType(), True),
+                StructField("title", StringType(), True),
+                StructField("metadata", StringType(), True),
+                StructField("source", StringType(), True),
+                StructField("created_at", TimestampType(), False),
+            ])
+            signals_df = spark.createDataFrame(confluence_signals, schema=signal_schema)
+            safe_append(
+                signals_df, "detection_confluence_signals",
+                catalog=cfg.catalog, schema=cfg.schema,
+                deduplicate_on=["id"],
+            )
+            print(f"Fed {len(confluence_signals)} signals to Detection Confluence (lens=glasswing_mythos)")
+        except Exception as e:
+            mon.log_warning(f"Detection Confluence table not available, skipping: {e}")
+            print(f"Detection Confluence table not available, skipping: {e}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Update Agent Status
+# MAGIC ## Update Agent Status and Exit
 
 # COMMAND ----------
 
-spark.sql(f"""
-    MERGE INTO agent_status AS target
-    USING (SELECT
-        'glasswing_blast_radius' as agent_id,
-        current_timestamp() as last_heartbeat,
-        'running' as status,
-        {reachable_count} as events_processed,
-        {priority_counts['P1'] + priority_counts['P2']} as alerts_generated
-    ) AS source
-    ON target.agent_id = source.agent_id
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-""")
+# Update agent status via safe_merge
+agent_status_df = spark.createDataFrame([{
+    "agent_id": "glasswing_blast_radius",
+    "last_heartbeat": now,
+    "status": "running",
+    "events_processed": reachable_count,
+    "alerts_generated": priority_counts["P1"] + priority_counts["P2"],
+}])
+
+safe_merge(
+    spark,
+    agent_status_df,
+    "agent_status",
+    merge_keys=["agent_id"],
+    catalog=cfg.catalog,
+    schema=cfg.schema,
+)
 
 result = {
     "status": "completed",
@@ -507,6 +568,9 @@ result = {
     ),
     "max_blast_radius": scored_results[0]["blast_radius"] if scored_results else 0,
     "top_finding": scored_results[0]["title"] if scored_results else None,
+    "timings": mon.get_summary().get("timings", {}),
 }
+
+mon.log_complete(rows_processed=len(scored_results))
 print(json.dumps(result, indent=2))
 dbutils.notebook.exit(json.dumps(result))

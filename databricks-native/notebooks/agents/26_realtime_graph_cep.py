@@ -1,26 +1,32 @@
 # Databricks notebook source
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # Agent 26 - Real-time Graph CEP Agent
-# MAGIC Detects multi-step temporal patterns using graph-based Complex Event Processing.
-# MAGIC Maintains in-memory graph of entity relationships and detects attack patterns
-# MAGIC spanning multiple events and entities.
+# MAGIC # Agent 26 - Real-time Graph CEP
+# MAGIC Builds entity relationship graph from 1-hour event window.
+# MAGIC Detects multi-hop lateral movement and temporal attack sequences.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
-
-# COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+from pyspark.sql import functions as F
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Configuration
+
+# COMMAND ----------
+
+LOOKBACK_HOURS = 1
+TEMPORAL_WINDOW_MINUTES = 30
+ATTACK_PHASES = ["reconnaissance", "exploitation", "persistence"]
+events_table = cfg.get_table_path("security_events")
+graph_detections_table = cfg.get_table_path("graph_cep_detections")
+alerts_table = cfg.get_table_path("alerts")
 
 # COMMAND ----------
 
@@ -29,129 +35,155 @@ from datetime import datetime
 
 # COMMAND ----------
 
-entity_graph = spark.sql("""
-    SELECT
-        source_ip as entity_a,
-        dest_ip as entity_b,
-        'network' as edge_type,
-        COUNT(*) as weight,
-        MIN(timestamp) as first_seen,
-        MAX(timestamp) as last_seen,
-        COLLECT_SET(event_type) as event_types,
-        COLLECT_SET(username) as usernames
-    FROM events
-    WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR
-    GROUP BY source_ip, dest_ip
-    HAVING COUNT(*) >= 3
-""")
+mon.time("build_graph")
+cutoff_time = datetime.utcnow() - timedelta(hours=LOOKBACK_HOURS)
 
-print(f"Graph edges: {entity_graph.count()}")
+events_df = (
+    spark.read.table(events_table)
+    .filter(F.col("event_time") >= F.lit(cutoff_time))
+    .filter(F.col("src_entity").isNotNull() & F.col("dst_entity").isNotNull())
+    .select("event_id", "event_time", "src_entity", "dst_entity",
+            "event_type", "mitre_tactic", "severity")
+    .cache()
+)
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Multi-Hop Pattern Detection
-
-# COMMAND ----------
-
-# Detect lateral movement chains (A -> B -> C -> D)
-lateral_chains = spark.sql("""
-    WITH hop1 AS (
-        SELECT source_ip as origin, dest_ip as hop1_target, MIN(timestamp) as t1
-        FROM events
-        WHERE event_type IN ('authentication', 'network')
-          AND action IN ('login_success', 'rdp_connection', 'smb_connect')
-          AND timestamp > current_timestamp() - INTERVAL 1 HOUR
-        GROUP BY source_ip, dest_ip
-    ),
-    hop2 AS (
-        SELECT h1.origin, h1.hop1_target, e.dest_ip as hop2_target,
-               h1.t1, MIN(e.timestamp) as t2
-        FROM hop1 h1
-        JOIN events e ON e.source_ip = h1.hop1_target
-        WHERE e.event_type IN ('authentication', 'network')
-          AND e.action IN ('login_success', 'rdp_connection', 'smb_connect')
-          AND e.timestamp > h1.t1
-          AND e.timestamp < h1.t1 + INTERVAL 30 MINUTES
-          AND e.dest_ip != h1.origin
-        GROUP BY h1.origin, h1.hop1_target, e.dest_ip, h1.t1
-    ),
-    hop3 AS (
-        SELECT h2.origin, h2.hop1_target, h2.hop2_target, e.dest_ip as hop3_target,
-               h2.t1, h2.t2, MIN(e.timestamp) as t3
-        FROM hop2 h2
-        JOIN events e ON e.source_ip = h2.hop2_target
-        WHERE e.event_type IN ('authentication', 'network')
-          AND e.action IN ('login_success', 'rdp_connection', 'smb_connect')
-          AND e.timestamp > h2.t2
-          AND e.timestamp < h2.t2 + INTERVAL 30 MINUTES
-          AND e.dest_ip NOT IN (h2.origin, h2.hop1_target)
-        GROUP BY h2.origin, h2.hop1_target, h2.hop2_target, e.dest_ip, h2.t1, h2.t2
-    )
-    SELECT origin, hop1_target, hop2_target, hop3_target, t1, t2, t3,
-           UNIX_TIMESTAMP(t3) - UNIX_TIMESTAMP(t1) as chain_duration_seconds
-    FROM hop3
-    WHERE UNIX_TIMESTAMP(t3) - UNIX_TIMESTAMP(t1) < 3600
-    ORDER BY chain_duration_seconds ASC
-""")
-
-chain_count = lateral_chains.count()
-if chain_count > 0:
-    print(f"ALERT: {chain_count} lateral movement chains detected!")
-
-    for chain in lateral_chains.collect():
-        spark.sql(f"""
-            INSERT INTO alerts (id, title, description, severity, status,
-                source_ip, dest_ip, mitre_tactic, mitre_technique,
-                confidence_score, risk_score, created_at)
-            VALUES (
-                'gcep-{datetime.utcnow().strftime("%Y%m%d%H%M%S")}-{chain.origin[:8]}',
-                'Multi-Hop Lateral Movement Detected',
-                'Chain: {chain.origin} -> {chain.hop1_target} -> {chain.hop2_target} -> {chain.hop3_target} in {chain.chain_duration_seconds}s',
-                'critical', 'new', '{chain.origin}', '{chain.hop3_target}',
-                'lateral-movement', 'T1021',
-                0.92, 90, current_timestamp()
-            )
-        """)
+edges_df = events_df.select(
+    F.col("src_entity").alias("src"), F.col("dst_entity").alias("dst"),
+    F.col("event_time"), F.col("event_type"), F.col("mitre_tactic"), F.col("event_id"),
+)
+event_count = events_df.count()
+edge_count = edges_df.count()
+mon.log_event("graph_built", {"events": event_count, "edges": edge_count})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Temporal Sequence Detection
+# MAGIC ## Detect Multi-Hop Lateral Movement (A->B->C->D)
 
 # COMMAND ----------
 
-# Detect recon -> exploit -> persist sequences
-attack_sequences = spark.sql("""
-    WITH user_timeline AS (
-        SELECT username, event_type, action, timestamp,
-               LAG(event_type, 1) OVER (PARTITION BY username ORDER BY timestamp) as prev_type,
-               LAG(event_type, 2) OVER (PARTITION BY username ORDER BY timestamp) as prev2_type,
-               LAG(action, 1) OVER (PARTITION BY username ORDER BY timestamp) as prev_action,
-               LAG(action, 2) OVER (PARTITION BY username ORDER BY timestamp) as prev2_action
-        FROM events
-        WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR
-          AND username IS NOT NULL AND username != ''
-    )
-    SELECT username, event_type, action, timestamp,
-           prev_type, prev2_type, prev_action, prev2_action
-    FROM user_timeline
-    WHERE prev2_type IN ('network', 'dns') AND prev2_action LIKE '%scan%'
-      AND prev_type IN ('process', 'authentication') AND prev_action LIKE '%exploit%'
-      AND event_type IN ('file', 'registry') AND action LIKE '%persist%'
-""")
+mon.time("lateral_movement_detection")
+hop1 = edges_df.alias("h1")
+hop2 = edges_df.alias("h2")
+hop3 = edges_df.alias("h3")
 
-seq_count = attack_sequences.count()
-print(f"Attack sequences detected: {seq_count}")
+two_hop = (
+    hop1.join(hop2, (F.col("h1.dst") == F.col("h2.src"))
+              & (F.col("h2.event_time") > F.col("h1.event_time")))
+    .select(
+        F.col("h1.src").alias("origin"), F.col("h1.dst").alias("hop1_node"),
+        F.col("h2.dst").alias("hop2_node"), F.col("h1.event_time").alias("t1"),
+        F.col("h2.event_time").alias("t2"),
+        F.col("h1.event_id").alias("eid_1"), F.col("h2.event_id").alias("eid_2"))
+)
+
+three_hop = (
+    two_hop.join(hop3, (F.col("hop2_node") == F.col("h3.src"))
+                 & (F.col("h3.event_time") > F.col("t2")))
+    .select("origin", "hop1_node", "hop2_node",
+            F.col("h3.dst").alias("hop3_node"), "t1", "t2",
+            F.col("h3.event_time").alias("t3"),
+            F.array("eid_1", "eid_2", F.col("h3.event_id")).alias("event_chain"))
+    .filter(F.col("origin") != F.col("hop3_node"))
+)
+
+lateral_chains = three_hop.withColumn(
+    "chain_path", F.concat_ws(" -> ", "origin", "hop1_node", "hop2_node", "hop3_node")
+).withColumn("detection_type", F.lit("multi_hop_lateral_movement"))
+lateral_count = lateral_chains.count()
+mon.log_event("lateral_chains_detected", {"count": lateral_count})
 
 # COMMAND ----------
 
-spark.sql("""
-    MERGE INTO agent_status AS t
-    USING (SELECT 'realtime-graph-cep' as agent_id, current_timestamp() as last_run, 'active' as status) AS s
-    ON t.agent_id = s.agent_id
-    WHEN MATCHED THEN UPDATE SET last_run = s.last_run, status = s.status
-    WHEN NOT MATCHED THEN INSERT (agent_id, last_run, status) VALUES (s.agent_id, s.last_run, s.status)
-""")
+# MAGIC %md
+# MAGIC ## Detect Temporal Sequences (Recon -> Exploit -> Persist within 30min)
 
-print(f"Graph CEP complete. Chains: {chain_count}, Sequences: {seq_count}")
+# COMMAND ----------
+
+mon.time("temporal_sequence_detection")
+phase_events = (
+    events_df.filter(F.col("mitre_tactic").isin(ATTACK_PHASES))
+    .select("src_entity", "event_time", "mitre_tactic", "event_id")
+)
+recon_df = phase_events.filter(F.col("mitre_tactic") == "reconnaissance").alias("recon")
+exploit_df = phase_events.filter(F.col("mitre_tactic") == "exploitation").alias("exploit")
+persist_df = phase_events.filter(F.col("mitre_tactic") == "persistence").alias("persist")
+tw = F.expr(f"INTERVAL {TEMPORAL_WINDOW_MINUTES} MINUTES")
+
+temporal_sequences = (
+    recon_df.join(exploit_df,
+        (F.col("recon.src_entity") == F.col("exploit.src_entity"))
+        & (F.col("exploit.event_time") > F.col("recon.event_time"))
+        & (F.col("exploit.event_time") <= F.col("recon.event_time") + tw))
+    .join(persist_df,
+        (F.col("recon.src_entity") == F.col("persist.src_entity"))
+        & (F.col("persist.event_time") > F.col("exploit.event_time"))
+        & (F.col("persist.event_time") <= F.col("recon.event_time") + tw))
+    .select(
+        F.col("recon.src_entity").alias("entity"),
+        F.col("recon.event_time").alias("recon_time"),
+        F.col("exploit.event_time").alias("exploit_time"),
+        F.col("persist.event_time").alias("persist_time"),
+        F.array(F.col("recon.event_id"), F.col("exploit.event_id"),
+                F.col("persist.event_id")).alias("event_chain"),
+        F.lit("temporal_attack_sequence").alias("detection_type"))
+)
+sequence_count = temporal_sequences.count()
+mon.log_event("temporal_sequences_detected", {"count": sequence_count})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Store Detections and Generate Alerts
+
+# COMMAND ----------
+
+mon.time("store_detections")
+run_timestamp = datetime.utcnow()
+
+lateral_det = lateral_chains.select(
+    F.lit("lateral_movement").alias("detection_type"),
+    F.col("chain_path").alias("description"),
+    F.col("origin").alias("primary_entity"), "event_chain",
+    F.col("t1").alias("first_seen"), F.col("t3").alias("last_seen"),
+    F.lit("critical").alias("severity"), F.lit(run_timestamp).alias("detected_at"))
+
+temporal_det = temporal_sequences.select(
+    F.lit("temporal_sequence").alias("detection_type"),
+    F.concat_ws(" | ", F.lit("recon->exploit->persist"), F.col("entity")).alias("description"),
+    F.col("entity").alias("primary_entity"), "event_chain",
+    F.col("recon_time").alias("first_seen"), F.col("persist_time").alias("last_seen"),
+    F.lit("high").alias("severity"), F.lit(run_timestamp).alias("detected_at"))
+
+all_detections = lateral_det.unionByName(temporal_det)
+detection_total = all_detections.count()
+
+if detection_total > 0:
+    all_detections.write.mode("append").saveAsTable(graph_detections_table)
+    alerts_df = all_detections.select(
+        F.expr("uuid()").alias("alert_id"), F.col("detection_type").alias("source"),
+        F.col("description").alias("title"), "primary_entity", "severity",
+        F.col("detected_at").alias("created_at"), F.lit("open").alias("status"),
+        F.col("event_chain").alias("related_events"))
+    alerts_df.write.mode("append").saveAsTable(alerts_table)
+mon.log_event("detections_stored", {"total": detection_total})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Finalize
+
+# COMMAND ----------
+
+result = {
+    "agent": "26_realtime_graph_cep",
+    "status": "success",
+    "events_processed": event_count,
+    "edges_built": edge_count,
+    "lateral_chains_detected": lateral_count,
+    "temporal_sequences_detected": sequence_count,
+    "total_detections": detection_total,
+    "timestamp": run_timestamp.isoformat(),
+}
+mon.log_complete(result)
+dbutils.notebook.exit(json.dumps(result))

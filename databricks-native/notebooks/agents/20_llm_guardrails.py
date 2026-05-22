@@ -1,115 +1,202 @@
 # Databricks notebook source
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # Agent 20 - LLM Guardrails Agent
-# MAGIC Enforces PII redaction, prompt injection detection, and safety controls
-# MAGIC on all LLM interactions within the SOC platform.
+# MAGIC # Agent 20 - LLM Guardrails
+# MAGIC Scans recent LLM interactions (30min window) for PII exposure,
+# MAGIC prompt injection attempts, and token budget violations.
+# MAGIC Records violations and generates alerts for high-severity issues.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
-
-# COMMAND ----------
-
-import mlflow.deployments
 import json
 import re
-from datetime import datetime
-
-client = mlflow.deployments.get_deploy_client("databricks")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## PII Detection Patterns
+from datetime import datetime, timezone, timedelta
+from pyspark.sql import functions as F
 
 # COMMAND ----------
+
+LLM_INTERACTIONS_TABLE = cfg.get_table_path("llm_interactions")
+GUARDRAIL_VIOLATIONS_TABLE = cfg.get_table_path("guardrail_violations")
+ALERTS_TABLE = cfg.get_table_path("alerts")
+SCAN_WINDOW_MINUTES = 30
+TOKEN_BUDGET_LIMIT = cfg.get("token_budget_limit", 50000)
 
 PII_PATTERNS = {
-    "ssn": r'\b\d{3}-\d{2}-\d{4}\b',
-    "credit_card": r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b',
-    "email": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-    "phone": r'\b(?:\+?1[-.]?)?\(?[0-9]{3}\)?[-.]?[0-9]{3}[-.]?[0-9]{4}\b',
-    "api_key": r'\b(?:sk|pk|api|key|token)[-_][a-zA-Z0-9]{20,}\b',
+    "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
+    "credit_card": r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b",
+    "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
 }
 
 INJECTION_PATTERNS = [
-    r'ignore (?:previous|above|all) instructions',
-    r'you are now',
-    r'new instructions:',
-    r'system prompt:',
-    r'disregard (?:the|your)',
-    r'pretend (?:you are|to be)',
-    r'override (?:safety|rules|constraints)',
+    r"(?i)ignore\s+(all\s+)?previous\s+instructions",
+    r"(?i)you\s+are\s+now\s+(a|an)\s+",
+    r"(?i)system\s*prompt\s*[:=]",
+    r"(?i)override\s+(system|safety)\s+(prompt|instructions)",
+    r"(?i)disregard\s+(your|all)\s+(rules|instructions|guidelines)",
+    r"(?i)\[system\]",
+    r"(?i)bypass\s+(content|safety)\s+(filter|policy)",
 ]
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Scan LLM Interactions
-
-# COMMAND ----------
-
-recent_interactions = spark.sql("""
-    SELECT li.*
-    FROM llm_interactions li
-    LEFT JOIN guardrail_scans gs ON li.id = gs.interaction_id
-    WHERE gs.interaction_id IS NULL
-      AND li.created_at > current_timestamp() - INTERVAL 30 MINUTES
-    ORDER BY li.created_at DESC
-    LIMIT 100
-""").collect()
-
-print(f"Scanning {len(recent_interactions)} LLM interactions")
+mon.log_event("agent_start", {"agent": "llm_guardrails", "window_minutes": SCAN_WINDOW_MINUTES})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Execute Guardrail Checks
+# MAGIC ## Fetch Recent Interactions
 
 # COMMAND ----------
 
-scan_results = []
+cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=SCAN_WINDOW_MINUTES)
 
-for interaction in recent_interactions:
-    text = (interaction.prompt or "") + " " + (interaction.response or "")
-    violations = []
+with mon.time("fetch_interactions"):
+    interactions_df = (
+        spark.read.table(LLM_INTERACTIONS_TABLE)
+        .filter(F.col("timestamp") >= cutoff_time.isoformat())
+        .filter(F.col("guardrail_scanned").isNull() | (F.col("guardrail_scanned") == False))
+    )
+    interactions = interactions_df.collect()
+interaction_count = len(interactions)
+mon.log_event("interactions_fetched", {"count": interaction_count})
 
-    # PII scan
+if interaction_count == 0:
+    mon.log_complete({"status": "no_work", "interactions_scanned": 0})
+    dbutils.notebook.exit(json.dumps({"status": "no_work", "interactions_scanned": 0}))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Scanning Functions
+
+# COMMAND ----------
+
+def scan_pii(text):
+    """Scan text for PII patterns."""
+    findings = []
     for pii_type, pattern in PII_PATTERNS.items():
         matches = re.findall(pattern, text)
         if matches:
-            violations.append({"type": "pii_exposure", "subtype": pii_type, "count": len(matches)})
+            findings.append({"pii_type": pii_type, "match_count": len(matches)})
+    return findings
 
-    # Injection scan
+
+def scan_injection(text):
+    """Scan text for prompt injection patterns."""
+    findings = []
     for pattern in INJECTION_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
-            violations.append({"type": "prompt_injection", "pattern": pattern})
+        matches = re.findall(pattern, text)
+        if matches:
+            findings.append({"pattern": pattern, "matched_text": matches[0][:100]})
+    return findings
 
-    # Token budget check
-    token_count = len(text.split())
-    if token_count > 4000:
-        violations.append({"type": "token_budget_exceeded", "tokens": token_count})
 
-    scan_results.append({
-        "interaction_id": interaction.id,
-        "violations_found": len(violations),
-        "violations_detail": json.dumps(violations),
-        "is_blocked": len([v for v in violations if v["type"] == "prompt_injection"]) > 0,
-        "pii_detected": any(v["type"] == "pii_exposure" for v in violations),
-        "scanned_at": datetime.utcnow().isoformat(),
-        "agent_name": "llm-guardrails",
-    })
+def check_token_budget(interaction):
+    """Check if interaction exceeds token budget."""
+    total_tokens = interaction.get("total_tokens", 0) or 0
+    if total_tokens <= TOKEN_BUDGET_LIMIT:
+        return None
+    return {"total_tokens": total_tokens, "budget_limit": TOKEN_BUDGET_LIMIT, "overage": total_tokens - TOKEN_BUDGET_LIMIT}
 
-blocked_count = sum(1 for r in scan_results if r["is_blocked"])
-pii_count = sum(1 for r in scan_results if r["pii_detected"])
+# COMMAND ----------
 
-if scan_results:
-    spark.createDataFrame(scan_results).write.mode("append").saveAsTable("guardrail_scans")
+# MAGIC %md
+# MAGIC ## Process Interactions
 
-print(f"Scanned {len(scan_results)} interactions. Blocked: {blocked_count}, PII detected: {pii_count}")
+# COMMAND ----------
+
+violations = []
+alerts = []
+
+with mon.time("scan_interactions"):
+    for interaction in interactions:
+        interaction_id = interaction["interaction_id"]
+        user_input = interaction.get("user_input", "") or ""
+        model_output = interaction.get("model_output", "") or ""
+
+        # PII scan on model output (flagging exposure, not input)
+        for finding in scan_pii(model_output):
+            severity = "critical" if finding["pii_type"] in ("ssn", "credit_card") else "medium"
+            violations.append({
+                "violation_id": f"PII-{interaction_id}-{finding['pii_type']}",
+                "interaction_id": interaction_id, "violation_type": "pii_exposure",
+                "severity": severity, "details": json.dumps(finding),
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        # Prompt injection scan on user input
+        for finding in scan_injection(user_input):
+            violations.append({
+                "violation_id": f"INJ-{interaction_id}-{len(violations)}",
+                "interaction_id": interaction_id, "violation_type": "prompt_injection",
+                "severity": "high", "details": json.dumps({"matched_text": finding["matched_text"]}),
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        # Token budget check
+        budget_violation = check_token_budget(interaction)
+        if budget_violation:
+            violations.append({
+                "violation_id": f"TOK-{interaction_id}",
+                "interaction_id": interaction_id, "violation_type": "token_budget_exceeded",
+                "severity": "medium", "details": json.dumps(budget_violation),
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+# Generate alerts for high-severity violations
+for v in violations:
+    if v["severity"] in ("critical", "high"):
+        alerts.append({
+            "alert_id": f"GR-{v['violation_id']}", "alert_type": f"guardrail_{v['violation_type']}",
+            "severity": v["severity"], "source_agent": "llm_guardrails",
+            "interaction_id": v["interaction_id"], "violation_type": v["violation_type"],
+            "summary": f"LLM guardrail violation: {v['violation_type']} ({v['severity']})",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+mon.log_event("scan_complete", {"violations_found": len(violations), "alerts_generated": len(alerts)})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Write Results
+
+# COMMAND ----------
+
+with mon.time("write_results"):
+    if violations:
+        spark.createDataFrame(violations).write.mode("append").saveAsTable(GUARDRAIL_VIOLATIONS_TABLE)
+    if alerts:
+        spark.createDataFrame(alerts).write.mode("append").saveAsTable(ALERTS_TABLE)
+
+    # Mark interactions as scanned via MERGE
+    scanned_df = spark.createDataFrame(
+        [{"interaction_id": iid, "guardrail_scanned": True} for iid in [r["interaction_id"] for r in interactions]]
+    )
+    scanned_df.createOrReplaceTempView("scanned_updates")
+    spark.sql(f"""
+        MERGE INTO {LLM_INTERACTIONS_TABLE} AS target
+        USING scanned_updates AS source
+        ON target.interaction_id = source.interaction_id
+        WHEN MATCHED THEN UPDATE SET target.guardrail_scanned = source.guardrail_scanned
+    """)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Completion
+
+# COMMAND ----------
+
+summary = {
+    "status": "complete", "interactions_scanned": interaction_count,
+    "violations_found": len(violations), "alerts_generated": len(alerts),
+    "by_type": {
+        "pii_exposure": sum(1 for v in violations if v["violation_type"] == "pii_exposure"),
+        "prompt_injection": sum(1 for v in violations if v["violation_type"] == "prompt_injection"),
+        "token_budget_exceeded": sum(1 for v in violations if v["violation_type"] == "token_budget_exceeded"),
+    },
+}
+
+mon.log_complete(summary)
+dbutils.notebook.exit(json.dumps(summary))

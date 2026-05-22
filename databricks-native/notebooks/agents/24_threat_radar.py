@@ -1,176 +1,194 @@
 # Databricks notebook source
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # Agent 24 - Threat Radar Agent
-# MAGIC Fetches and analyzes external threat intelligence feeds.
-# MAGIC Correlates external threats with internal telemetry to produce
-# MAGIC actionable intelligence and early warning indicators.
+# MAGIC # Agent 24 - Threat Radar
+# MAGIC Fetches latest IOCs from threat feeds, correlates against recent events (1h window),
+# MAGIC generates alerts for high-confidence correlations, and produces a threat landscape summary.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
-
-# COMMAND ----------
-
-import mlflow.deployments
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+from pyspark.sql import functions as F
+from functools import reduce
 
-client = mlflow.deployments.get_deploy_client("databricks")
+CORRELATION_WINDOW_HOURS = 1
+HIGH_CONFIDENCE_THRESHOLD = 0.75
+MAX_IOCS_PER_BATCH = 5000
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Fetch Latest Threat Feeds
-
-# COMMAND ----------
-
-active_feeds = spark.sql("""
-    SELECT id, feed_name, feed_url, feed_type, last_fetched,
-           update_frequency_minutes
-    FROM threat_feeds
-    WHERE enabled = true
-      AND (last_fetched IS NULL OR
-           last_fetched < current_timestamp() - make_interval(0,0,0,0,0,update_frequency_minutes,0))
-    ORDER BY last_fetched ASC NULLS FIRST
-    LIMIT 10
-""").collect()
-
-print(f"Fetching {len(active_feeds)} threat feeds")
+events_table = cfg.get_table_path("security_events")
+threat_feeds_table = cfg.get_table_path("threat_feed_iocs")
+correlations_table = cfg.get_table_path("threat_radar_correlations")
+alerts_table = cfg.get_table_path("soc_alerts")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Process Feed Data
+# MAGIC ## Fetch Active IOCs from Threat Feeds
 
 # COMMAND ----------
 
-new_indicators = spark.sql("""
-    SELECT i.*, tf.feed_name
-    FROM ioc_entries i
-    JOIN threat_feeds tf ON i.source = tf.feed_name
-    WHERE i.created_at > current_timestamp() - INTERVAL 1 HOUR
-      AND i.correlated = false
-    ORDER BY i.confidence DESC
-    LIMIT 100
-""").collect()
+mon.time("fetch_iocs")
+window_start = datetime.utcnow() - timedelta(hours=CORRELATION_WINDOW_HOURS)
 
-print(f"Found {len(new_indicators)} new uncorrelated indicators")
+iocs_df = (
+    spark.read.table(threat_feeds_table)
+    .filter(F.col("is_active") == True)
+    .filter(F.col("last_seen") >= F.lit(window_start))
+    .select("ioc_value", "ioc_type", "confidence", "source_feed", "threat_category")
+    .limit(MAX_IOCS_PER_BATCH)
+)
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Correlate with Internal Telemetry
-
-# COMMAND ----------
-
-correlation_hits = []
-
-for indicator in new_indicators:
-    if indicator.indicator_type == "ipv4":
-        matches = spark.sql(f"""
-            SELECT 'event' as match_type, id, timestamp, event_type, username
-            FROM events
-            WHERE (source_ip = '{indicator.value}' OR dest_ip = '{indicator.value}')
-              AND timestamp > current_timestamp() - INTERVAL 7 DAYS
-            LIMIT 10
-        """).collect()
-    elif indicator.indicator_type == "domain":
-        matches = spark.sql(f"""
-            SELECT 'dns_query' as match_type, id, timestamp, event_type, username
-            FROM events
-            WHERE action LIKE '%{indicator.value}%'
-              AND timestamp > current_timestamp() - INTERVAL 7 DAYS
-            LIMIT 10
-        """).collect()
-    else:
-        matches = []
-
-    if matches:
-        correlation_hits.append({
-            "ioc_id": indicator.id,
-            "ioc_value": indicator.value,
-            "ioc_type": indicator.indicator_type,
-            "feed_name": indicator.feed_name,
-            "match_count": len(matches),
-            "match_details": json.dumps([{"type": m.match_type, "id": m.id, "user": m.username} for m in matches[:5]]),
-            "correlated_at": datetime.utcnow().isoformat(),
-            "agent_name": "threat-radar",
-        })
-
-        # Generate alert for confirmed IOC matches
-        spark.sql(f"""
-            INSERT INTO alerts (id, title, description, severity, status,
-                source_ip, mitre_tactic, confidence_score, risk_score, created_at)
-            VALUES (
-                'tr-{indicator.id[:12]}',
-                'Threat Intel Match: {indicator.indicator_type} from {indicator.feed_name}',
-                'IOC {indicator.value} found in internal telemetry. {len(matches)} matches in last 7 days.',
-                'high', 'new', 'command-and-control',
-                {indicator.confidence / 100.0}, {min(95, indicator.confidence)}, current_timestamp()
-            )
-        """)
-
-print(f"Found {len(correlation_hits)} IOC correlations with internal data")
+ip_iocs_df = iocs_df.filter(F.col("ioc_type") == "ip")
+domain_iocs_df = iocs_df.filter(F.col("ioc_type") == "domain")
+ioc_counts = {"total": iocs_df.count(), "ip": ip_iocs_df.count(), "domain": domain_iocs_df.count()}
+mon.log_event("iocs_fetched", ioc_counts)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Threat Landscape Analysis (LLM)
+# MAGIC ## Load Recent Security Events
 
 # COMMAND ----------
 
-if new_indicators:
-    indicator_summary = {}
-    for ind in new_indicators[:50]:
-        t = ind.threat_type or "unknown"
-        indicator_summary[t] = indicator_summary.get(t, 0) + 1
+mon.time("load_events")
+events_df = spark.read.table(events_table).filter(F.col("event_time") >= F.lit(window_start))
+network_events_df = events_df.filter(F.col("event_type").isin("network_connection", "firewall"))
+dns_http_events_df = events_df.filter(F.col("event_type").isin("dns_query", "http_request"))
+mon.log_event("events_loaded", {"network": network_events_df.count(), "dns_http": dns_http_events_df.count()})
 
-    response = client.predict(
-        endpoint="databricks-meta-llama-3-1-70b-instruct",
-        inputs={
-            "messages": [
-                {"role": "system", "content": "You are a threat intelligence analyst. Summarize the current threat landscape based on incoming feed data."},
-                {"role": "user", "content": f"""Analyze today's threat feed intake:
-New indicators: {len(new_indicators)}
-By threat type: {json.dumps(indicator_summary)}
-Internal correlations: {len(correlation_hits)}
-Top feeds: {list(set(i.feed_name for i in new_indicators[:20]))}
+# COMMAND ----------
 
-Provide: 1) Current threat level (1-10), 2) Top 3 active threats, 3) Recommended defensive actions"""}
-            ],
-            "max_tokens": 400,
-            "temperature": 0.3
-        }
+# MAGIC %md
+# MAGIC ## Correlate IP IOCs Against Network Events
+
+# COMMAND ----------
+
+mon.time("correlate_ips")
+ip_values = [row.ioc_value for row in ip_iocs_df.select("ioc_value").collect()]
+
+ip_correlations_df = None
+if ip_values:
+    safe_ip_filter = qb().field("source_ip").is_in(ip_values)
+    ip_correlations_df = (
+        network_events_df
+        .filter(F.col("source_ip").isin(ip_values) | F.col("dest_ip").isin(ip_values))
+        .join(ip_iocs_df,
+              (F.col("source_ip") == ip_iocs_df["ioc_value"]) |
+              (F.col("dest_ip") == ip_iocs_df["ioc_value"]), "inner")
+        .select(
+            F.col("event_id"), F.col("event_time"), F.col("source_ip"), F.col("dest_ip"),
+            ip_iocs_df["ioc_value"].alias("matched_ioc"), F.lit("ip").alias("ioc_type"),
+            ip_iocs_df["confidence"], ip_iocs_df["source_feed"], ip_iocs_df["threat_category"],
+        )
     )
-
-    landscape = {
-        "analysis_date": datetime.utcnow().isoformat(),
-        "new_indicators": len(new_indicators),
-        "correlations_found": len(correlation_hits),
-        "landscape_summary": response.choices[0].message.content,
-        "agent_name": "threat-radar",
-    }
-    spark.createDataFrame([landscape]).write.mode("append").saveAsTable("threat_landscape_reports")
+mon.log_event("ip_correlation_complete", {"ip_ioc_count": len(ip_values)})
 
 # COMMAND ----------
 
-if correlation_hits:
-    spark.createDataFrame(correlation_hits).write.mode("append").saveAsTable("ioc_correlations")
+# MAGIC %md
+# MAGIC ## Correlate Domain IOCs Against DNS/HTTP Events
 
-    # Mark IOCs as correlated
-    for hit in correlation_hits:
-        spark.sql(f"UPDATE ioc_entries SET correlated = true WHERE id = '{hit['ioc_id']}'")
+# COMMAND ----------
 
-spark.sql("""
-    MERGE INTO agent_status AS t
-    USING (SELECT 'threat-radar' as agent_id, current_timestamp() as last_run, 'active' as status) AS s
-    ON t.agent_id = s.agent_id
-    WHEN MATCHED THEN UPDATE SET last_run = s.last_run, status = s.status
-    WHEN NOT MATCHED THEN INSERT (agent_id, last_run, status) VALUES (s.agent_id, s.last_run, s.status)
-""")
+mon.time("correlate_domains")
+domain_values = [row.ioc_value for row in domain_iocs_df.select("ioc_value").collect()]
+
+domain_correlations_df = None
+if domain_values:
+    safe_domain_filter = qb().field("query_domain").is_in(domain_values)
+    domain_correlations_df = (
+        dns_http_events_df
+        .filter(F.col("query_domain").isin(domain_values) | F.col("request_host").isin(domain_values))
+        .join(domain_iocs_df,
+              (F.col("query_domain") == domain_iocs_df["ioc_value"]) |
+              (F.col("request_host") == domain_iocs_df["ioc_value"]), "inner")
+        .select(
+            F.col("event_id"), F.col("event_time"), F.col("source_ip"),
+            F.lit(None).cast("string").alias("dest_ip"),
+            domain_iocs_df["ioc_value"].alias("matched_ioc"), F.lit("domain").alias("ioc_type"),
+            domain_iocs_df["confidence"], domain_iocs_df["source_feed"],
+            domain_iocs_df["threat_category"],
+        )
+    )
+mon.log_event("domain_correlation_complete", {"domain_ioc_count": len(domain_values)})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Store Correlations and Generate Alerts
+
+# COMMAND ----------
+
+mon.time("store_correlations")
+correlation_frames = [df for df in [ip_correlations_df, domain_correlations_df] if df is not None]
+total_correlations = 0
+high_confidence_count = 0
+
+if correlation_frames:
+    all_correlations_df = (
+        reduce(lambda a, b: a.unionByName(b), correlation_frames)
+        .withColumn("correlation_id", F.expr("uuid()"))
+        .withColumn("detected_at", F.current_timestamp())
+    )
+    all_correlations_df.write.mode("append").saveAsTable(correlations_table)
+
+    total_correlations = all_correlations_df.count()
+    high_confidence_df = all_correlations_df.filter(F.col("confidence") >= HIGH_CONFIDENCE_THRESHOLD)
+    high_confidence_count = high_confidence_df.count()
+
+    if high_confidence_count > 0:
+        alerts_df = high_confidence_df.select(
+            F.expr("uuid()").alias("alert_id"),
+            F.lit("threat_radar").alias("source_agent"),
+            F.lit("ioc_correlation").alias("alert_type"),
+            F.col("matched_ioc"), F.col("ioc_type"), F.col("threat_category"),
+            F.col("confidence"), F.col("event_id").alias("source_event_id"),
+            F.current_timestamp().alias("created_at"), F.lit("new").alias("status"),
+        )
+        alerts_df.write.mode("append").saveAsTable(alerts_table)
+
+mon.log_event("correlations_stored", {
+    "total": total_correlations, "high_confidence_alerts": high_confidence_count,
+})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Generate Threat Landscape Summary via LLM
+
+# COMMAND ----------
+
+mon.time("llm_summary")
+summary_prompt = f"""Analyze these threat radar results and return JSON:
+- IOCs evaluated: {ioc_counts['total']} (IPs: {ioc_counts['ip']}, Domains: {ioc_counts['domain']})
+- Correlations: {total_correlations}, High-confidence alerts: {high_confidence_count}
+- Window: {CORRELATION_WINDOW_HOURS}h
+Return: overall_risk_level (low/medium/high/critical), summary (2-3 sentences), top_threat_categories, recommended_actions (up to 3).
+"""
+landscape_summary = llm.extract_json(summary_prompt)
+mon.log_event("landscape_summary_generated", {"risk_level": landscape_summary.get("overall_risk_level", "unknown")})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Finalize
+
+# COMMAND ----------
+
+result = {
+    "agent": "24_threat_radar",
+    "status": "success",
+    "iocs_evaluated": ioc_counts,
+    "correlations_found": total_correlations,
+    "high_confidence_alerts": high_confidence_count,
+    "landscape_summary": landscape_summary,
+    "window_hours": CORRELATION_WINDOW_HOURS,
+    "timestamp": datetime.utcnow().isoformat(),
+}
+
+mon.log_complete(result)
+dbutils.notebook.exit(json.dumps(result))

@@ -1,117 +1,215 @@
 # Databricks notebook source
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 21 - Model Poisoning Guard
-# MAGIC Detects training-data poisoning, model drift, and adversarial attacks
-# MAGIC against ML models deployed in the SOC pipeline.
+# MAGIC Monitors ML model predictions for distribution drift and potential poisoning.
+# MAGIC Compares recent (24h) distributions against 7-day baseline via z-score analysis.
+# MAGIC Checks training data integrity via label hash comparison.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
-
-# COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.ml.stat import Summarizer
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+from pyspark.sql import functions as F
+
+# COMMAND ----------
+
+DRIFT_THRESHOLD_SIGMA = 2.0
+BASELINE_WINDOW_DAYS = 7
+RECENT_WINDOW_HOURS = 24
+
+notebook_start = datetime.utcnow()
+mon.time("model_poisoning_guard_total")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Monitor Model Predictions for Drift
+# MAGIC ## Load Prediction Data
 
 # COMMAND ----------
 
-recent_predictions = spark.sql("""
-    SELECT model_name, prediction, confidence, features_hash, predicted_at
-    FROM ml_predictions
-    WHERE predicted_at > current_timestamp() - INTERVAL 1 HOUR
-""")
+predictions_path = cfg.get_table_path("model_predictions")
+baseline_cutoff = datetime.utcnow() - timedelta(days=BASELINE_WINDOW_DAYS)
+recent_cutoff = datetime.utcnow() - timedelta(hours=RECENT_WINDOW_HOURS)
 
-baseline_stats = spark.sql("""
-    SELECT model_name,
-           AVG(confidence) as baseline_confidence,
-           STDDEV(confidence) as baseline_stddev,
-           COUNT(*) as baseline_count
-    FROM ml_predictions
-    WHERE predicted_at BETWEEN current_timestamp() - INTERVAL 7 DAYS
-                           AND current_timestamp() - INTERVAL 1 HOUR
-    GROUP BY model_name
-""")
+mon.time("load_predictions")
+predictions_df = spark.read.table(predictions_path)
 
-# Detect statistical drift
-drift_report = recent_predictions.groupBy("model_name").agg(
-    F.avg("confidence").alias("current_confidence"),
-    F.stddev("confidence").alias("current_stddev"),
-    F.count("*").alias("current_count"),
-).join(baseline_stats, "model_name", "left")
+baseline_df = predictions_df.filter(
+    (F.col("prediction_ts") >= F.lit(baseline_cutoff)) &
+    (F.col("prediction_ts") < F.lit(recent_cutoff))
+)
+recent_df = predictions_df.filter(F.col("prediction_ts") >= F.lit(recent_cutoff))
 
-drift_alerts = drift_report.filter(
-    F.abs(F.col("current_confidence") - F.col("baseline_confidence")) > 2 * F.col("baseline_stddev")
-).collect()
-
-if drift_alerts:
-    print(f"DRIFT DETECTED in {len(drift_alerts)} models!")
-    for alert in drift_alerts:
-        spark.sql(f"""
-            INSERT INTO alerts (id, title, description, severity, status, mitre_tactic, confidence_score, risk_score, created_at)
-            VALUES (
-                'mpg-{datetime.utcnow().strftime("%Y%m%d%H%M%S")}',
-                'ML Model Drift Detected: {alert.model_name}',
-                'Model confidence shifted from {alert.baseline_confidence:.3f} to {alert.current_confidence:.3f} (>{2*alert.baseline_stddev:.3f} deviation)',
-                'high', 'new', 'defense-evasion', 0.85, 75, current_timestamp()
-            )
-        """)
+mon.log_event("predictions_loaded", {
+    "baseline_count": baseline_df.count(),
+    "recent_count": recent_df.count()
+})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Check Training Data Integrity
+# MAGIC ## Compute Statistics and Drift Z-Scores
 
 # COMMAND ----------
 
-training_integrity = spark.sql("""
-    SELECT td.dataset_name,
-           COUNT(*) as total_samples,
-           SUM(CASE WHEN td.label_hash != td.expected_hash THEN 1 ELSE 0 END) as tampered_samples,
-           MAX(td.modified_at) as last_modified
-    FROM training_datasets td
-    WHERE td.last_verified < current_timestamp() - INTERVAL 1 HOUR
-    GROUP BY td.dataset_name
-    HAVING SUM(CASE WHEN td.label_hash != td.expected_hash THEN 1 ELSE 0 END) > 0
-""").collect()
+mon.time("compute_stats")
 
-if training_integrity:
-    for dataset in training_integrity:
-        print(f"POISONING ALERT: {dataset.dataset_name} has {dataset.tampered_samples} tampered samples")
+baseline_stats = baseline_df.groupBy("model_id").agg(
+    F.mean("confidence_score").alias("baseline_mean"),
+    F.stddev("confidence_score").alias("baseline_stddev"),
+    F.count("*").alias("baseline_count"),
+    F.mean("prediction_value").alias("baseline_pred_mean"),
+    F.stddev("prediction_value").alias("baseline_pred_stddev")
+)
+
+recent_stats = recent_df.groupBy("model_id").agg(
+    F.mean("confidence_score").alias("recent_mean"),
+    F.count("*").alias("recent_count"),
+    F.mean("prediction_value").alias("recent_pred_mean")
+)
+
+drift_df = baseline_stats.join(recent_stats, on="model_id", how="inner")
+
+drift_analysis = drift_df.withColumn(
+    "confidence_z_score",
+    F.when(F.col("baseline_stddev") > 0,
+           F.abs(F.col("recent_mean") - F.col("baseline_mean")) / F.col("baseline_stddev")
+    ).otherwise(F.lit(0.0))
+).withColumn(
+    "prediction_z_score",
+    F.when(F.col("baseline_pred_stddev") > 0,
+           F.abs(F.col("recent_pred_mean") - F.col("baseline_pred_mean")) / F.col("baseline_pred_stddev")
+    ).otherwise(F.lit(0.0))
+).withColumn(
+    "drift_detected",
+    (F.col("confidence_z_score") > DRIFT_THRESHOLD_SIGMA) |
+    (F.col("prediction_z_score") > DRIFT_THRESHOLD_SIGMA)
+).withColumn(
+    "max_z_score",
+    F.greatest(F.col("confidence_z_score"), F.col("prediction_z_score"))
+)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Write Guard Report
+# MAGIC ## Training Data Integrity Check
 
 # COMMAND ----------
 
-report = {
-    "check_time": datetime.utcnow().isoformat(),
-    "models_monitored": drift_report.count() if drift_report else 0,
-    "drift_alerts": len(drift_alerts) if drift_alerts else 0,
-    "poisoned_datasets": len(training_integrity) if training_integrity else 0,
-    "agent_name": "model-poisoning-guard",
+mon.time("integrity_check")
+
+training_meta_df = spark.read.table(cfg.get_table_path("model_training_metadata"))
+current_hashes = training_meta_df.select("model_id", "label_distribution_hash", "feature_hash")
+
+stored_hashes = spark.read.table(cfg.get_table_path("model_integrity_baseline")).select(
+    "model_id",
+    F.col("label_distribution_hash").alias("expected_label_hash"),
+    F.col("feature_hash").alias("expected_feature_hash")
+)
+
+integrity_df = current_hashes.join(stored_hashes, on="model_id", how="inner").withColumn(
+    "label_hash_mismatch",
+    F.col("label_distribution_hash") != F.col("expected_label_hash")
+).withColumn(
+    "feature_hash_mismatch",
+    F.col("feature_hash") != F.col("expected_feature_hash")
+).withColumn(
+    "integrity_compromised",
+    F.col("label_hash_mismatch") | F.col("feature_hash_mismatch")
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Generate Alerts with LLM Analysis
+
+# COMMAND ----------
+
+mon.time("generate_alerts")
+
+drifted_models = drift_analysis.filter(F.col("drift_detected") == True)
+compromised_models = integrity_df.filter(F.col("integrity_compromised") == True)
+alerts = []
+
+for row in drifted_models.collect():
+    prompt = (
+        f"Analyze ML model drift and assess poisoning risk. "
+        f"Model: {row['model_id']}, Confidence Z-Score: {row['confidence_z_score']:.3f}, "
+        f"Prediction Z-Score: {row['prediction_z_score']:.3f}, "
+        f"Baseline mean: {row['baseline_mean']:.4f}, Recent mean: {row['recent_mean']:.4f}. "
+        f"Respond JSON: {{\"risk_level\": \"high|medium|low\", \"assessment\": \"...\", "
+        f"\"recommended_action\": \"...\"}}"
+    )
+    analysis = llm.extract_json(prompt)
+    alerts.append({
+        "model_id": row["model_id"],
+        "alert_type": "prediction_drift",
+        "confidence_z_score": float(row["confidence_z_score"]),
+        "prediction_z_score": float(row["prediction_z_score"]),
+        "risk_level": analysis.get("risk_level", "medium"),
+        "assessment": analysis.get("assessment", ""),
+        "recommended_action": analysis.get("recommended_action", ""),
+        "detected_at": datetime.utcnow().isoformat()
+    })
+
+for row in compromised_models.collect():
+    alerts.append({
+        "model_id": row["model_id"],
+        "alert_type": "integrity_violation",
+        "confidence_z_score": 0.0,
+        "prediction_z_score": 0.0,
+        "risk_level": "high",
+        "assessment": "Training data hash mismatch - possible data poisoning",
+        "recommended_action": "Quarantine model and audit training pipeline",
+        "detected_at": datetime.utcnow().isoformat()
+    })
+
+mon.log_event("alerts_generated", {"count": len(alerts)})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Write Results
+
+# COMMAND ----------
+
+mon.time("write_results")
+results_path = cfg.get_table_path("model_integrity_checks")
+
+if alerts:
+    alerts_df = spark.createDataFrame(alerts)
+    alerts_df = alerts_df.withColumn("check_run_ts", F.lit(notebook_start))
+    alerts_df.write.mode("append").saveAsTable(results_path)
+
+drift_summary = drift_analysis.withColumn("check_run_ts", F.lit(notebook_start))
+drift_summary.write.mode("append").saveAsTable(results_path + "_drift_history")
+
+mon.log_event("results_written", {
+    "alerts_stored": len(alerts),
+    "models_checked": drift_analysis.count()
+})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Finalize
+
+# COMMAND ----------
+
+mon.log_complete()
+
+result = {
+    "status": "success",
+    "agent": "21_model_poisoning_guard",
+    "models_analyzed": drift_analysis.count(),
+    "drift_detected_count": drifted_models.count(),
+    "integrity_violations": compromised_models.count(),
+    "alerts_generated": len(alerts),
+    "execution_time_sec": (datetime.utcnow() - notebook_start).total_seconds()
 }
 
-spark.createDataFrame([report]).write.mode("append").saveAsTable("model_guard_reports")
-
-spark.sql("""
-    MERGE INTO agent_status AS t
-    USING (SELECT 'model-poisoning-guard' as agent_id, current_timestamp() as last_run, 'active' as status) AS s
-    ON t.agent_id = s.agent_id
-    WHEN MATCHED THEN UPDATE SET last_run = s.last_run, status = s.status
-    WHEN NOT MATCHED THEN INSERT (agent_id, last_run, status) VALUES (s.agent_id, s.last_run, s.status)
-""")
+dbutils.notebook.exit(json.dumps(result))

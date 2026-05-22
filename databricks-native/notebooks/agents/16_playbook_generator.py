@@ -1,103 +1,198 @@
 # Databricks notebook source
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 16 - Playbook Generator
-# MAGIC Generates SOAR playbooks from natural language descriptions and incident patterns.
-# MAGIC Uses Foundation Models to create structured response procedures.
+# MAGIC Queries alerts grouped by MITRE ATT&CK technique that lack automated playbooks.
+# MAGIC Uses LLM to generate structured SOAR playbooks with steps, conditions, actions,
+# MAGIC and escalation paths. Stores results in `generated_playbooks` table.
+# MAGIC Cap: 10 playbooks per run.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
-
-# COMMAND ----------
-
-import mlflow.deployments
 import json
 from datetime import datetime
-
-client = mlflow.deployments.get_deploy_client("databricks")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Identify Incidents Without Playbooks
-
-# COMMAND ----------
-
-unmatched_incidents = spark.sql("""
-    SELECT a.mitre_tactic, a.mitre_technique,
-           COUNT(*) as occurrence_count,
-           AVG(a.risk_score) as avg_risk
-    FROM alerts a
-    LEFT JOIN playbooks p ON a.mitre_technique = p.mitre_technique
-    WHERE p.id IS NULL
-      AND a.created_at > current_timestamp() - INTERVAL 7 DAYS
-      AND a.mitre_technique IS NOT NULL
-    GROUP BY a.mitre_tactic, a.mitre_technique
-    HAVING COUNT(*) >= 3
-    ORDER BY avg_risk DESC
-    LIMIT 5
-""").collect()
-
-print(f"Found {len(unmatched_incidents)} techniques without playbooks")
+from pyspark.sql import functions as F
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType, IntegerType
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Generate Playbooks
+# MAGIC ## Configuration
 
 # COMMAND ----------
+
+PLAYBOOKS_TABLE = cfg.get_table_path("generated_playbooks")
+ALERTS_TABLE = cfg.get_table_path("alerts")
+MAX_PLAYBOOKS_PER_RUN = 10
+
+result = {
+    "agent": "16_playbook_generator",
+    "run_ts": datetime.utcnow().isoformat(),
+    "playbooks_generated": 0,
+    "techniques_processed": [],
+    "errors": []
+}
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Identify Techniques Lacking Playbooks
+
+# COMMAND ----------
+
+mon.time("query_techniques")
+
+# Get alerts grouped by MITRE technique
+alerts_df = spark.read.table(ALERTS_TABLE)
+
+technique_counts = (
+    alerts_df
+    .filter(F.col("mitre_technique").isNotNull())
+    .groupBy("mitre_technique", "mitre_tactic")
+    .agg(
+        F.count("*").alias("alert_count"),
+        F.max("severity").alias("max_severity"),
+        F.collect_set("alert_type").alias("alert_types")
+    )
+    .orderBy(F.desc("alert_count"))
+)
+
+# Filter out techniques that already have playbooks
+existing_playbooks_df = spark.read.table(PLAYBOOKS_TABLE)
+existing_techniques = (
+    existing_playbooks_df
+    .select("mitre_technique")
+    .distinct()
+)
+
+techniques_needing_playbooks = (
+    technique_counts
+    .join(existing_techniques, on="mitre_technique", how="left_anti")
+    .limit(MAX_PLAYBOOKS_PER_RUN)
+)
+
+techniques_list = techniques_needing_playbooks.collect()
+mon.log_event("techniques_identified", count=len(techniques_list))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Generate Playbooks via LLM
+
+# COMMAND ----------
+
+mon.time("generate_playbooks")
 
 generated_playbooks = []
 
-for incident in unmatched_incidents:
-    response = client.predict(
-        endpoint="databricks-meta-llama-3-1-70b-instruct",
-        inputs={
-            "messages": [
-                {"role": "system", "content": "You are a SOAR playbook engineer. Generate structured incident response playbooks in JSON format with steps, conditions, and automated actions."},
-                {"role": "user", "content": f"""Generate a response playbook for:
-Tactic: {incident.mitre_tactic}
-Technique: {incident.mitre_technique}
-Occurrences (7 days): {incident.occurrence_count}
-Average Risk Score: {incident.avg_risk:.0f}
+for row in techniques_list:
+    technique = row["mitre_technique"]
+    tactic = row["mitre_tactic"]
+    alert_count = row["alert_count"]
+    max_severity = row["max_severity"]
+    alert_types = row["alert_types"]
 
-Output JSON with: name, description, severity_threshold, steps (array of {{action, type: auto|manual|approval, description, timeout_minutes}}), escalation_criteria, success_metrics"""}
-            ],
-            "max_tokens": 1000,
-            "temperature": 0.3
-        }
-    )
+    prompt = f"""Generate a structured SOAR playbook for the following MITRE ATT&CK technique.
+
+Technique: {technique}
+Tactic: {tactic}
+Associated alert types: {json.dumps(alert_types)}
+Alert frequency: {alert_count} alerts observed
+Maximum severity seen: {max_severity}
+
+Return a JSON object with:
+{{
+  "playbook_name": "descriptive name",
+  "description": "brief description of what this playbook handles",
+  "steps": [
+    {{
+      "order": 1,
+      "action": "action description",
+      "type": "enrich|contain|investigate|notify",
+      "automated": true/false,
+      "timeout_minutes": 5
+    }}
+  ],
+  "conditions": [
+    {{
+      "field": "field to evaluate",
+      "operator": "equals|contains|greater_than",
+      "value": "threshold value",
+      "branch_to_step": 3
+    }}
+  ],
+  "escalation": {{
+    "timeout_minutes": 30,
+    "escalate_to": "tier2|tier3|management",
+    "criteria": "when to escalate"
+  }},
+  "actions": {{
+    "containment": ["list of containment actions"],
+    "eradication": ["list of eradication actions"],
+    "recovery": ["list of recovery actions"]
+  }}
+}}"""
 
     try:
-        content = response.choices[0].message.content
-        playbook = json.loads(content[content.find("{"):content.rfind("}")+1])
-        playbook["mitre_tactic"] = incident.mitre_tactic
-        playbook["mitre_technique"] = incident.mitre_technique
-        playbook["created_at"] = datetime.utcnow().isoformat()
-        playbook["agent_name"] = "playbook-generator"
-        generated_playbooks.append(playbook)
+        playbook_data = llm.extract_json(prompt)
+
+        playbook_record = {
+            "playbook_id": f"PB-{technique.replace('.', '-')}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            "mitre_technique": technique,
+            "mitre_tactic": tactic,
+            "playbook_name": playbook_data.get("playbook_name", ""),
+            "description": playbook_data.get("description", ""),
+            "steps_json": json.dumps(playbook_data.get("steps", [])),
+            "conditions_json": json.dumps(playbook_data.get("conditions", [])),
+            "escalation_json": json.dumps(playbook_data.get("escalation", {})),
+            "actions_json": json.dumps(playbook_data.get("actions", {})),
+            "source_alert_count": alert_count,
+            "max_severity_observed": max_severity,
+            "generated_at": datetime.utcnow().isoformat(),
+            "status": "draft",
+            "version": 1
+        }
+
+        generated_playbooks.append(playbook_record)
+        result["techniques_processed"].append(technique)
+        mon.log_event("playbook_generated", technique=technique)
+
     except Exception as e:
-        print(f"Error generating playbook for {incident.mitre_technique}: {e}")
+        error_msg = f"Failed to generate playbook for {technique}: {str(e)}"
+        result["errors"].append(error_msg)
+        mon.log_event("playbook_generation_error", technique=technique, error=str(e))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Write Generated Playbooks to Table
+
+# COMMAND ----------
+
+mon.time("write_playbooks")
 
 if generated_playbooks:
-    # Flatten for Delta storage
-    flat_playbooks = [{
-        "name": p.get("name", ""),
-        "description": p.get("description", ""),
-        "mitre_tactic": p["mitre_tactic"],
-        "mitre_technique": p["mitre_technique"],
-        "steps_json": json.dumps(p.get("steps", [])),
-        "severity_threshold": p.get("severity_threshold", "high"),
-        "created_at": p["created_at"],
-        "agent_name": p["agent_name"],
-    } for p in generated_playbooks]
+    playbooks_df = spark.createDataFrame(generated_playbooks)
+    playbooks_df.write.mode("append").saveAsTable(PLAYBOOKS_TABLE)
+    result["playbooks_generated"] = len(generated_playbooks)
+    mon.log_event("playbooks_written", count=len(generated_playbooks))
+else:
+    mon.log_event("no_playbooks_needed")
 
-    spark.createDataFrame(flat_playbooks).write.mode("append").saveAsTable("playbooks")
+# COMMAND ----------
 
-print(f"Generated {len(generated_playbooks)} new playbooks")
+# MAGIC %md
+# MAGIC ## Finalize
+
+# COMMAND ----------
+
+mon.log_complete(
+    agent="16_playbook_generator",
+    playbooks_generated=result["playbooks_generated"],
+    errors=len(result["errors"])
+)
+
+dbutils.notebook.exit(json.dumps(result))

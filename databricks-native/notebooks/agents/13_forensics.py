@@ -1,205 +1,219 @@
 # Databricks notebook source
+# MAGIC %run ../_shared/bootstrap
+
+# COMMAND ----------
+
 # MAGIC %md
-# MAGIC # Agent 13 - Forensics Agent
-# MAGIC Preserves digital evidence, reconstructs detailed timelines,
-# MAGIC maintains chain of custody, and generates forensic reports
-# MAGIC suitable for legal proceedings.
+# MAGIC # Agent 13 - Digital Forensics
+# MAGIC Collects evidence for open cases, computes SHA256 hashes for chain-of-custody,
+# MAGIC reconstructs event timelines, and generates forensic reports via LLM.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
-
-# COMMAND ----------
-
-import mlflow.deployments
 import json
 import hashlib
 from datetime import datetime
-
-client = mlflow.deployments.get_deploy_client("databricks")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Identify Cases Requiring Forensics
-
-# COMMAND ----------
-
-forensic_cases = spark.sql("""
-    SELECT c.*, COUNT(DISTINCT e.id) as evidence_count
-    FROM cases c
-    JOIN case_alerts ca ON c.id = ca.case_id
-    JOIN alerts a ON ca.alert_id = a.id
-    LEFT JOIN events e ON a.source_event_id = e.id
-    WHERE c.severity IN ('critical', 'high')
-      AND c.status IN ('investigating', 'escalated')
-      AND c.id NOT IN (SELECT case_id FROM forensic_reports WHERE created_at > current_timestamp() - INTERVAL 4 HOURS)
-    GROUP BY c.id, c.title, c.description, c.status, c.priority,
-             c.severity, c.assigned_to, c.created_at, c.updated_at
-    ORDER BY c.severity DESC, c.created_at ASC
-    LIMIT 5
-""").collect()
-
-print(f"Found {len(forensic_cases)} cases requiring forensic analysis")
+from pyspark.sql import functions as F
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Evidence Collection and Preservation
+# MAGIC ## Identify Open Cases Requiring Forensics
 
 # COMMAND ----------
 
-def collect_evidence(case_id):
-    """Collect all digital evidence for a case with integrity hashes."""
-    evidence_items = []
+mon.time("forensics_init")
 
-    # Network evidence
-    network = spark.sql(f"""
-        SELECT * FROM network_flows nf
-        WHERE (nf.source_ip IN (
-            SELECT DISTINCT source_ip FROM alerts a
-            JOIN case_alerts ca ON a.id = ca.alert_id WHERE ca.case_id = '{case_id}'
-        ) OR nf.dest_ip IN (
-            SELECT DISTINCT dest_ip FROM alerts a
-            JOIN case_alerts ca ON a.id = ca.alert_id WHERE ca.case_id = '{case_id}'
-        ))
-        AND nf.timestamp > (SELECT MIN(a.created_at) - INTERVAL 1 HOUR FROM alerts a
-                            JOIN case_alerts ca ON a.id = ca.alert_id WHERE ca.case_id = '{case_id}')
-        ORDER BY nf.timestamp
-    """).collect()
+cases_table = cfg.get_table_path("cases")
+events_table = cfg.get_table_path("events")
+network_flows_table = cfg.get_table_path("network_flows")
+evidence_table = cfg.get_table_path("forensic_evidence")
+reports_table = cfg.get_table_path("forensic_reports")
 
-    for flow in network:
-        content = json.dumps(flow.asDict(), default=str)
-        evidence_items.append({
-            "type": "network_flow",
-            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
-            "timestamp": str(flow.timestamp),
-            "summary": f"{flow.source_ip} -> {flow.dest_ip} ({flow.protocol})",
-        })
+open_cases = (
+    spark.read.table(cases_table)
+    .filter(F.col("status").isin("investigating", "escalated"))
+    .filter(F.col("severity").isin("critical", "high"))
+    .orderBy(F.col("severity").desc(), F.col("created_at").asc())
+    .limit(5)
+    .collect()
+)
 
-    # Log evidence
-    logs = spark.sql(f"""
-        SELECT * FROM events e
-        WHERE e.source_ip IN (
-            SELECT DISTINCT source_ip FROM alerts a
-            JOIN case_alerts ca ON a.id = ca.alert_id WHERE ca.case_id = '{case_id}'
-        )
-        AND e.timestamp > (SELECT MIN(a.created_at) - INTERVAL 2 HOURS FROM alerts a
-                          JOIN case_alerts ca ON a.id = ca.alert_id WHERE ca.case_id = '{case_id}')
-        ORDER BY e.timestamp
-        LIMIT 500
-    """).collect()
-
-    for log in logs:
-        content = json.dumps(log.asDict(), default=str)
-        evidence_items.append({
-            "type": "event_log",
-            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
-            "timestamp": str(log.timestamp),
-            "summary": f"{log.event_type}: {log.action} by {log.username}",
-        })
-
-    return evidence_items
+mon.log_event("cases_identified", {"count": len(open_cases)})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Timeline Reconstruction
+# MAGIC ## Evidence Collection Functions
 
 # COMMAND ----------
 
-def build_forensic_timeline(case_id):
-    """Build detailed forensic timeline with sub-second precision."""
-    timeline = spark.sql(f"""
-        SELECT timestamp, event_type, source_ip, dest_ip, username,
-               action, outcome, severity, raw_log
-        FROM events
-        WHERE id IN (
-            SELECT DISTINCT e.id FROM events e
-            JOIN alerts a ON e.id = a.source_event_id
-            JOIN case_alerts ca ON a.id = ca.alert_id
-            WHERE ca.case_id = '{case_id}'
-        )
-        OR (source_ip IN (
-            SELECT DISTINCT source_ip FROM alerts a
-            JOIN case_alerts ca ON a.id = ca.alert_id WHERE ca.case_id = '{case_id}'
-        ) AND timestamp BETWEEN
-            (SELECT MIN(created_at) - INTERVAL 2 HOURS FROM alerts a JOIN case_alerts ca ON a.id = ca.alert_id WHERE ca.case_id = '{case_id}')
-            AND
-            (SELECT MAX(created_at) + INTERVAL 1 HOUR FROM alerts a JOIN case_alerts ca ON a.id = ca.alert_id WHERE ca.case_id = '{case_id}')
-        )
-        ORDER BY timestamp ASC
-        LIMIT 1000
-    """).collect()
+def collect_case_evidence(source_ips):
+    """Collect related events and network flows for a case."""
+    seven_days_ago = F.date_sub(F.current_timestamp(), 7)
+    related_events = (
+        spark.read.table(events_table)
+        .filter(F.col("source_ip").isin(source_ips))
+        .filter(F.col("timestamp") >= seven_days_ago)
+        .orderBy("timestamp").limit(500)
+    )
+    network_evidence = (
+        spark.read.table(network_flows_table)
+        .filter(F.col("source_ip").isin(source_ips) | F.col("dest_ip").isin(source_ips))
+        .filter(F.col("timestamp") >= seven_days_ago)
+        .orderBy("timestamp").limit(200)
+    )
+    return related_events, network_evidence
 
-    return [{"ts": str(e.timestamp), "type": e.event_type, "src": e.source_ip,
-             "dst": e.dest_ip, "user": e.username, "action": e.action,
-             "outcome": e.outcome, "severity": e.severity} for e in timeline]
+
+def compute_evidence_hash(evidence_rows):
+    """Compute SHA256 hashes for chain-of-custody integrity."""
+    return [
+        {"event_id": row.get("event_id", "unknown"),
+         "sha256": hashlib.sha256(json.dumps(row.asDict(), default=str, sort_keys=True).encode()).hexdigest()}
+        for row in evidence_rows
+    ]
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Generate Forensic Report
+# MAGIC ## Process Each Case
 
 # COMMAND ----------
 
-for case_row in forensic_cases:
+all_evidence_records = []
+all_report_records = []
+
+for case in open_cases:
+    mon.time(f"case_{case.case_id}")
+
     try:
-        evidence = collect_evidence(case_row.id)
-        timeline = build_forensic_timeline(case_row.id)
-
-        prompt = f"""Generate a forensic investigation report for this security incident.
-
-Case: {case_row.title}
-Severity: {case_row.severity}
-Evidence Items Collected: {len(evidence)}
-Timeline Events: {len(timeline)}
-
-Timeline (first 30 events):
-{json.dumps(timeline[:30], indent=1)}
-
-Produce a forensic report with:
-1. Incident Summary
-2. Detailed Timeline Reconstruction
-3. Evidence Chain of Custody (reference hashes)
-4. Root Cause Analysis
-5. Scope of Compromise
-6. Containment Verification
-7. Recommendations for Remediation
-8. Legal Considerations"""
-
-        response = client.predict(
-            endpoint="databricks-meta-llama-3-1-70b-instruct",
-            inputs={
-                "messages": [
-                    {"role": "system", "content": "You are a digital forensics specialist. Produce detailed, evidence-based forensic reports suitable for legal proceedings. Maintain objectivity and reference specific evidence."},
-                    {"role": "user", "content": prompt}
-                ],
-                "max_tokens": 2500,
-                "temperature": 0.1
-            }
+        # Get source IPs associated with case alerts
+        case_alerts = (
+            spark.read.table(cfg.get_table_path("alerts"))
+            .filter(F.col("case_id") == case.case_id)
+            .select("source_ip")
+            .distinct()
+            .collect()
         )
+        source_ips = [row.source_ip for row in case_alerts if row.source_ip]
 
-        report = {
-            "case_id": case_row.id,
-            "report": response.choices[0].message.content,
-            "evidence_count": len(evidence),
-            "timeline_events": len(timeline),
-            "evidence_hashes": json.dumps([e["content_hash"] for e in evidence[:50]]),
-            "created_at": datetime.utcnow().isoformat(),
-            "agent_name": "forensics",
-        }
+        if not source_ips:
+            mon.log_event("case_skipped_no_ips", {"case_id": case.case_id})
+            continue
 
-        report_df = spark.createDataFrame([report])
-        report_df.write.mode("append").saveAsTable("forensic_reports")
+        # Collect evidence
+        events_df, flows_df = collect_case_evidence(source_ips)
+        event_rows = events_df.collect()
+        flow_rows = flows_df.collect()
+
+        # Compute chain-of-custody hashes
+        event_hashes = compute_evidence_hash(event_rows)
+        flow_hashes = compute_evidence_hash(flow_rows)
+        all_hashes = event_hashes + flow_hashes
+
+        # Build master evidence hash
+        combined = "".join(h["sha256"] for h in all_hashes)
+        master_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
+
+        # Store evidence metadata
+        all_evidence_records.append({
+            "case_id": case.case_id,
+            "collection_timestamp": datetime.utcnow(),
+            "event_count": len(event_rows),
+            "flow_count": len(flow_rows),
+            "evidence_hashes": json.dumps(all_hashes[:50]),
+            "master_hash": master_hash,
+            "source_ips": json.dumps(source_ips),
+            "chain_of_custody_valid": True,
+        })
+
+        mon.log_event("evidence_collected", {"case_id": case.case_id, "events": len(event_rows), "flows": len(flow_rows)})
 
     except Exception as e:
-        print(f"Error processing case {case_row.id}: {e}")
+        mon.log_error("evidence_collection_failed", {"case_id": case.case_id, "error": str(e)})
 
-print("Forensics agent complete")
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Reconstruct Timelines and Generate Forensic Reports
+
+# COMMAND ----------
+
+mon.time("report_generation")
+
+for case in open_cases:
+    matching = [r for r in all_evidence_records if r["case_id"] == case.case_id]
+    if not matching:
+        continue
+    evidence_rec = matching[0]
+
+    timeline_events = (
+        spark.read.table(events_table)
+        .filter(F.col("source_ip").isin(json.loads(evidence_rec["source_ips"])))
+        .filter(F.col("timestamp") >= F.date_sub(F.current_timestamp(), 7))
+        .orderBy("timestamp")
+        .select("timestamp", "event_type", "source_ip", "destination_ip", "severity", "action")
+        .limit(30).collect()
+    )
+    timeline_text = "\n".join(
+        f"[{r.timestamp}] {r.event_type} | {r.source_ip}->{r.destination_ip} | {r.action} ({r.severity})"
+        for r in timeline_events
+    )
+
+    prompt = (
+        f"Generate a forensic report in JSON.\nCase: {case.title} (severity: {case.severity})\n"
+        f"Evidence: {evidence_rec['event_count']} events, {evidence_rec['flow_count']} flows\n"
+        f"Master hash: {evidence_rec['master_hash']}\nTimeline:\n{timeline_text}\n\n"
+        f"Return JSON: incident_summary, root_cause_analysis, attack_timeline (array), "
+        f"scope_of_compromise, containment_recommendations (array), remediation_steps (array), "
+        f"legal_notes, confidence_level (high/medium/low)."
+    )
+    try:
+        report_json = llm.extract_json(prompt)
+        all_report_records.append({
+            "case_id": case.case_id,
+            "report_timestamp": datetime.utcnow(),
+            "report_content": json.dumps(report_json),
+            "evidence_master_hash": evidence_rec["master_hash"],
+            "event_count": evidence_rec["event_count"],
+            "flow_count": evidence_rec["flow_count"],
+            "confidence_level": report_json.get("confidence_level", "medium"),
+            "status": "complete",
+        })
+        mon.log_event("report_generated", {"case_id": case.case_id})
+    except Exception as e:
+        mon.log_error("report_generation_failed", {"case_id": case.case_id, "error": str(e)})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Persist Results and Exit
+
+# COMMAND ----------
+
+mon.time("persist_results")
+
+if all_evidence_records:
+    evidence_df = spark.createDataFrame(all_evidence_records)
+    evidence_df.write.format("delta").mode("append").saveAsTable(evidence_table)
+
+if all_report_records:
+    reports_df = spark.createDataFrame(all_report_records)
+    reports_df.write.format("delta").mode("append").saveAsTable(reports_table)
+
+mon.log_complete("forensics_agent", {
+    "cases_processed": len(open_cases),
+    "evidence_records": len(all_evidence_records),
+    "reports_generated": len(all_report_records),
+})
+
+result = {
+    "agent": "13_forensics",
+    "cases_processed": len(open_cases),
+    "evidence_collected": len(all_evidence_records),
+    "reports_generated": len(all_report_records),
+    "status": "complete" if all_report_records else "no_cases",
+}
+
+dbutils.notebook.exit(json.dumps(result))

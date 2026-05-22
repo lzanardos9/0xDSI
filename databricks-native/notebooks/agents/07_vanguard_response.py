@@ -1,208 +1,316 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Agent 07 - Vanguard (Automated Response)
-# MAGIC Executes containment playbooks with human-in-the-loop approval gates.
-# MAGIC Supports automated actions for high-confidence detections and manual approval
-# MAGIC for medium-confidence. Uses Foundation Models for response decision reasoning.
+# MAGIC Evaluates pending response actions, uses LLM to decide between auto-execute,
+# MAGIC require-approval, or reject based on confidence thresholds. Generates audit records.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
+# MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
 
-import mlflow.deployments
 import json
-from datetime import datetime
-
-client = mlflow.deployments.get_deploy_client("databricks")
-
-AUTO_EXECUTE_THRESHOLD = 0.90
-APPROVAL_THRESHOLD = 0.70
+from datetime import datetime, timezone
+from pyspark.sql import functions as F
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType, FloatType
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Pending Response Actions
+# MAGIC ## Configuration and Thresholds
 
 # COMMAND ----------
 
-pending_responses = spark.sql(f"""
-    SELECT ra.*, a.title as alert_title, a.severity, a.risk_score,
-           a.mitre_tactic, a.confidence_score
-    FROM response_actions ra
-    JOIN alerts a ON ra.alert_id = a.id
-    WHERE ra.status = 'pending'
-      AND ra.created_at > current_timestamp() - INTERVAL 2 HOURS
-    ORDER BY a.risk_score DESC
-    LIMIT 30
-""").collect()
+AGENT_NAME = "vanguard_response"
+AGENT_VERSION = "1.0.0"
+BATCH_SIZE = 30
 
-print(f"Found {len(pending_responses)} pending response actions")
+# Confidence thresholds for automated decision-making
+THRESHOLD_AUTO_EXECUTE = 0.90
+THRESHOLD_APPROVAL_REQUIRED = 0.70
+# Below 0.70 => reject
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Response Playbook Library
+response_actions_table = cfg.get_table_path("response_actions")
+audit_log_table = cfg.get_table_path("response_audit_log")
+cases_table = cfg.get_table_path("cases")
 
 # COMMAND ----------
 
-PLAYBOOKS = {
-    "isolate_host": {
-        "name": "Isolate Host",
-        "severity_min": "high",
-        "actions": ["disable_network", "kill_processes", "snapshot_memory"],
-        "requires_approval": True,
-        "auto_threshold": 0.95,
-    },
-    "block_ip": {
-        "name": "Block IP Address",
-        "severity_min": "medium",
-        "actions": ["add_to_blocklist", "update_firewall", "notify_team"],
-        "requires_approval": False,
-        "auto_threshold": 0.85,
-    },
-    "disable_account": {
-        "name": "Disable User Account",
-        "severity_min": "high",
-        "actions": ["disable_login", "revoke_tokens", "force_mfa_reset"],
-        "requires_approval": True,
-        "auto_threshold": 0.92,
-    },
-    "quarantine_file": {
-        "name": "Quarantine Malicious File",
-        "severity_min": "medium",
-        "actions": ["move_to_quarantine", "hash_and_log", "scan_similar"],
-        "requires_approval": False,
-        "auto_threshold": 0.80,
-    },
-    "escalate_to_ir": {
-        "name": "Escalate to Incident Response",
-        "severity_min": "critical",
-        "actions": ["create_ir_ticket", "page_on_call", "preserve_evidence"],
-        "requires_approval": True,
-        "auto_threshold": 0.98,
-    },
-}
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## LLM Response Reasoning
-
-# COMMAND ----------
-
-def get_response_decision(action_row):
-    """Use Foundation Model to reason about appropriate response."""
-
-    prompt = f"""Analyze this security alert and recommend a response action.
-
-Alert: {action_row.alert_title}
-Severity: {action_row.severity}
-Risk Score: {action_row.risk_score}/100
-Confidence: {action_row.confidence_score}
-MITRE Tactic: {action_row.mitre_tactic}
-Proposed Action: {action_row.action_type}
-
-Available playbooks: {json.dumps(list(PLAYBOOKS.keys()))}
-
-Decide:
-1. Should this execute automatically, require approval, or be rejected?
-2. Which playbook best fits?
-3. What's your confidence in this decision (0-1)?
-4. Brief reasoning (1-2 sentences).
-
-Respond in JSON: {{"decision": "auto_execute|require_approval|reject", "playbook": "...", "confidence": 0.X, "reasoning": "..."}}"""
-
-    response = client.predict(
-        endpoint="databricks-meta-llama-3-1-70b-instruct",
-        inputs={
-            "messages": [
-                {"role": "system", "content": "You are Vanguard, an automated response agent. You make containment decisions based on alert severity, confidence scores, and threat context. Err on the side of caution for high-impact actions."},
-                {"role": "user", "content": prompt}
-            ],
-            "max_tokens": 300,
-            "temperature": 0.1
-        }
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {audit_log_table} (
+        audit_id STRING,
+        action_id STRING,
+        case_id STRING,
+        decision STRING,
+        confidence_score FLOAT,
+        reasoning STRING,
+        action_type STRING,
+        decided_by STRING,
+        decided_at TIMESTAMP,
+        execution_status STRING
     )
-
-    try:
-        content = response.choices[0].message.content
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        return json.loads(content[start:end])
-    except:
-        return {"decision": "require_approval", "playbook": "escalate_to_ir", "confidence": 0.5, "reasoning": "Parse error, defaulting to manual review"}
+""")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Execute Response Pipeline
+# MAGIC ## Retrieve Pending Response Actions
 
 # COMMAND ----------
 
-response_results = []
+def get_pending_actions():
+    """Query for response actions awaiting evaluation."""
+    with mon.time("query_pending_actions"):
+        actions_df = (
+            qb()
+            .table(response_actions_table)
+            .where("status = 'pending'")
+            .order_by("priority DESC, created_at ASC")
+            .limit(BATCH_SIZE)
+            .execute()
+        )
+        count = actions_df.count()
+        mon.log_event("pending_actions_retrieved", {"count": count})
+        return actions_df
 
-for action in pending_responses:
-    try:
-        decision = get_response_decision(action)
+# COMMAND ----------
 
-        if decision["decision"] == "auto_execute" and decision["confidence"] >= AUTO_EXECUTE_THRESHOLD:
-            status = "executed"
-            executed_at = datetime.utcnow().isoformat()
-        elif decision["decision"] == "reject":
-            status = "rejected"
-            executed_at = None
+# MAGIC %md
+# MAGIC ## Gather Context for Decision
+
+# COMMAND ----------
+
+def get_action_context(action_data):
+    """Gather additional context for the response action."""
+    with mon.time("gather_action_context"):
+        case_id = action_data.get("case_id")
+        if not case_id:
+            return {"case": None}
+
+        case_df = (
+            qb()
+            .table(cases_table)
+            .where("case_id = :case_id", case_id=case_id)
+            .execute()
+        )
+
+        case_rows = case_df.collect()
+        case_info = case_rows[0].asDict() if case_rows else None
+
+        return {"case": case_info}
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## LLM Decision Engine
+
+# COMMAND ----------
+
+def build_decision_prompt(action_data, context):
+    """Construct the LLM prompt for response action evaluation."""
+    case_info = context.get("case") or {}
+
+    prompt = f"""You are an automated SOC response engine evaluating whether a proposed
+response action should be executed automatically, require human approval, or be rejected.
+
+Proposed Response Action:
+- Action ID: {action_data.get('action_id', 'N/A')}
+- Action Type: {action_data.get('action_type', 'N/A')}
+- Target: {action_data.get('target', 'N/A')}
+- Description: {action_data.get('description', 'N/A')}
+- Priority: {action_data.get('priority', 'N/A')}
+- Proposed By: {action_data.get('proposed_by', 'N/A')}
+
+Associated Case:
+- Case ID: {case_info.get('case_id', 'N/A')}
+- Severity: {case_info.get('severity', 'N/A')}
+- Title: {case_info.get('title', 'N/A')}
+
+Evaluate the action considering:
+1. Potential for business disruption
+2. Reversibility of the action
+3. Severity and certainty of the threat
+4. Scope of impact (single host vs. network-wide)
+
+Respond with JSON:
+{{
+    "decision": "auto_execute" | "require_approval" | "reject",
+    "confidence_score": 0.0 to 1.0,
+    "reasoning": "Explanation of the decision",
+    "risk_assessment": "low" | "medium" | "high" | "critical",
+    "reversible": true | false,
+    "estimated_impact": "Description of expected impact"
+}}"""
+    return prompt
+
+# COMMAND ----------
+
+def evaluate_action(action_data, context):
+    """Use LLM to evaluate whether a response action should proceed."""
+    with mon.time("llm_decision_evaluation"):
+        prompt = build_decision_prompt(action_data, context)
+        result = llm.extract_json(prompt)
+
+        if not result or "decision" not in result:
+            mon.log_event("llm_evaluation_failed", {"action_id": action_data.get("action_id")})
+            return None
+
+        # Enforce threshold-based override of LLM decision
+        confidence = float(result.get("confidence_score", 0.0))
+        if confidence >= THRESHOLD_AUTO_EXECUTE:
+            final_decision = "auto_execute"
+        elif confidence >= THRESHOLD_APPROVAL_REQUIRED:
+            final_decision = "require_approval"
         else:
-            status = "awaiting_approval"
-            executed_at = None
+            final_decision = "reject"
 
-        result = {
-            "response_id": action.id,
-            "alert_id": action.alert_id,
-            "decision": decision["decision"],
-            "playbook": decision["playbook"],
-            "confidence": decision["confidence"],
-            "reasoning": decision["reasoning"],
-            "status": status,
-            "executed_at": executed_at,
-            "agent_name": "vanguard",
-            "decided_at": datetime.utcnow().isoformat(),
+        result["decision"] = final_decision
+        result["confidence_score"] = confidence
+
+        mon.log_event("action_evaluated", {
+            "action_id": action_data.get("action_id"),
+            "decision": final_decision,
+            "confidence": confidence
+        })
+        return result
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Apply Decision and Update Records
+
+# COMMAND ----------
+
+def apply_decision(action_id, decision_data):
+    """Update the response action status based on the decision."""
+    with mon.time("apply_decision"):
+        decision = decision_data["decision"]
+
+        status_map = {
+            "auto_execute": "approved_auto",
+            "require_approval": "pending_approval",
+            "reject": "rejected"
         }
-        response_results.append(result)
+        new_status = status_map.get(decision, "pending_review")
 
-        # Update the response action status
-        spark.sql(f"""
-            UPDATE response_actions
-            SET status = '{status}', updated_at = current_timestamp()
-            WHERE id = '{action.id}'
-        """)
+        update_df = (
+            spark.read.table(response_actions_table)
+            .filter(F.col("action_id") == action_id)
+            .withColumn("status", F.lit(new_status))
+            .withColumn("evaluated_at", F.lit(datetime.now(timezone.utc)))
+            .withColumn("evaluated_by", F.lit(AGENT_NAME))
+        )
+
+        update_df.write.mode("overwrite").option(
+            "replaceWhere", f"action_id = '{action_id}'"
+        ).saveAsTable(response_actions_table)
+
+        mon.log_event("action_status_updated", {
+            "action_id": action_id,
+            "new_status": new_status
+        })
+        return new_status
+
+# COMMAND ----------
+
+def store_audit_record(action_data, decision_data):
+    """Create an audit log entry for the decision."""
+    with mon.time("store_audit_record"):
+        now = datetime.now(timezone.utc)
+        audit_id = f"AUD-{action_data['action_id']}-{now.strftime('%Y%m%d%H%M%S')}"
+
+        audit_row = [(
+            audit_id,
+            action_data.get("action_id", ""),
+            action_data.get("case_id", ""),
+            decision_data["decision"],
+            float(decision_data["confidence_score"]),
+            decision_data.get("reasoning", ""),
+            action_data.get("action_type", ""),
+            AGENT_NAME,
+            now,
+            "recorded"
+        )]
+
+        schema = StructType([
+            StructField("audit_id", StringType(), False),
+            StructField("action_id", StringType(), False),
+            StructField("case_id", StringType(), True),
+            StructField("decision", StringType(), True),
+            StructField("confidence_score", FloatType(), True),
+            StructField("reasoning", StringType(), True),
+            StructField("action_type", StringType(), True),
+            StructField("decided_by", StringType(), True),
+            StructField("decided_at", TimestampType(), True),
+            StructField("execution_status", StringType(), True),
+        ])
+
+        audit_df = spark.createDataFrame(audit_row, schema)
+        audit_df.write.mode("append").saveAsTable(audit_log_table)
+
+        mon.log_event("audit_record_stored", {"audit_id": audit_id})
+        return audit_id
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Main Execution
+
+# COMMAND ----------
+
+def run():
+    """Main execution loop for the Vanguard Response agent."""
+    results = {
+        "agent": AGENT_NAME,
+        "version": AGENT_VERSION,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "actions_evaluated": 0,
+        "decisions": {"auto_execute": 0, "require_approval": 0, "reject": 0},
+        "errors": []
+    }
+
+    try:
+        pending_actions = get_pending_actions()
+        action_list = pending_actions.collect()
+        results["total_pending"] = len(action_list)
+
+        for action_row in action_list:
+            action_data = action_row.asDict()
+            action_id = action_data.get("action_id", "unknown")
+
+            try:
+                with mon.time(f"evaluate_action_{action_id}"):
+                    context = get_action_context(action_data)
+                    decision_data = evaluate_action(action_data, context)
+
+                    if decision_data is None:
+                        results["errors"].append(f"Evaluation failed for {action_id}")
+                        continue
+
+                    apply_decision(action_id, decision_data)
+                    store_audit_record(action_data, decision_data)
+
+                    decision = decision_data["decision"]
+                    results["decisions"][decision] = results["decisions"].get(decision, 0) + 1
+                    results["actions_evaluated"] += 1
+
+            except Exception as action_err:
+                mon.log_error(f"Error evaluating action {action_id}", exception=action_err)
+                results["errors"].append(f"{action_id}: {str(action_err)}")
+
+        results["completed_at"] = datetime.now(timezone.utc).isoformat()
+        results["status"] = "success"
+        mon.log_complete(results)
 
     except Exception as e:
-        print(f"Error processing response {action.id}: {e}")
+        results["status"] = "failed"
+        results["error"] = str(e)
+        mon.log_error("Vanguard Response agent failed", exception=e)
 
-auto_count = sum(1 for r in response_results if r["status"] == "executed")
-approval_count = sum(1 for r in response_results if r["status"] == "awaiting_approval")
-reject_count = sum(1 for r in response_results if r["status"] == "rejected")
-
-print(f"Results: {auto_count} auto-executed, {approval_count} awaiting approval, {reject_count} rejected")
+    return results
 
 # COMMAND ----------
 
-if response_results:
-    results_df = spark.createDataFrame(response_results)
-    results_df.write.mode("append").saveAsTable("response_decisions")
-
-    spark.sql("""
-        MERGE INTO agent_status AS t
-        USING (SELECT 'vanguard' as agent_id, current_timestamp() as last_run, 'active' as status) AS s
-        ON t.agent_id = s.agent_id
-        WHEN MATCHED THEN UPDATE SET last_run = s.last_run, status = s.status
-        WHEN NOT MATCHED THEN INSERT (agent_id, last_run, status) VALUES (s.agent_id, s.last_run, s.status)
-    """)
+result = run()
+dbutils.notebook.exit(json.dumps(result, default=str))

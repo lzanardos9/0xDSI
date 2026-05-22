@@ -1,206 +1,170 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 05 - Sage (Enrichment Agent)
+# MAGIC # Agent 05: Sage (Deep Enrichment)
+# MAGIC
 # MAGIC Enriches alerts with threat intel cross-referencing, asset context, geo-IP,
-# MAGIC and behavioral baselines. Uses Foundation Model APIs for intelligent summarization.
+# MAGIC network flow analysis, and LLM-powered intelligent summarization.
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Configuration
+# MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
+dbutils.widgets.text("batch_size", "30", "Max alerts per run")
+dbutils.widgets.text("lookback_hours", "1", "Alert window")
 
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
+batch_size = int(dbutils.widgets.get("batch_size"))
+lookback_hours = int(dbutils.widgets.get("lookback_hours"))
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Sage Enrichment Pipeline
-
-# COMMAND ----------
-
-from pyspark.sql import functions as F
-from pyspark.sql.types import StringType, StructType, StructField, FloatType
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
 import json
 
-# Get unenriched alerts
-unenriched = spark.sql("""
-    SELECT a.*
-    FROM alerts a
-    LEFT JOIN alert_enrichments ae ON a.id = ae.alert_id
-    WHERE ae.alert_id IS NULL
-    AND a.created_at > current_timestamp() - INTERVAL 1 HOUR
-    ORDER BY a.risk_score DESC
-    LIMIT 50
+# COMMAND ----------
+
+alerts_table = cfg.get_table_path("alerts")
+ioc_table = cfg.get_table_path("ioc_entries")
+assets_table = cfg.get_table_path("asset_registry")
+events_table = cfg.get_table_path("events")
+enrichments_table = cfg.get_table_path("sage_enrichments")
+
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {enrichments_table} (
+        id STRING, alert_id STRING, threat_intel_summary STRING,
+        asset_criticality STRING, geo_context STRING,
+        network_flow_summary STRING, llm_narrative STRING,
+        risk_adjustment INT, agent_name STRING, enriched_at TIMESTAMP
+    ) USING DELTA
+    TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
-print(f"Found {unenriched.count()} unenriched alerts")
+# Fetch unenriched alerts
+alerts = spark.sql(f"""
+    SELECT a.* FROM {alerts_table} a
+    LEFT JOIN {enrichments_table} e ON a.id = e.alert_id
+    WHERE a.status IN ('new', 'in_progress')
+      AND a.created_at > current_timestamp() - INTERVAL {lookback_hours} HOURS
+      AND e.alert_id IS NULL
+    ORDER BY CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END
+    LIMIT {batch_size}
+""").collect()
+
+mon.log_event("alerts_fetched", {"count": len(alerts)})
+
+if not alerts:
+    mon.log_complete(details={"status": "idle"})
+    dbutils.notebook.exit('{"status": "idle"}')
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Threat Intel Cross-Reference
+# MAGIC ## Enrichment Pipeline
 
 # COMMAND ----------
 
-def enrich_with_threat_intel(alert_row):
-    """Cross-reference alert IOCs against threat feed database."""
-    ioc_matches = spark.sql(f"""
-        SELECT ti.indicator_type, ti.value, ti.threat_type, ti.confidence,
-               ti.source, ti.tags, ti.last_seen
-        FROM ioc_entries ti
-        WHERE ti.value IN ('{alert_row.source_ip}', '{alert_row.dest_ip}')
-           OR ti.value LIKE '%{alert_row.source_ip}%'
-        ORDER BY ti.confidence DESC
-        LIMIT 10
-    """).collect()
-    return ioc_matches
+results = []
+
+with mon.time("sage_enrichment"):
+    for alert in alerts:
+        try:
+            source_ip = getattr(alert, "source_ip", None)
+            dest_ip = getattr(alert, "dest_ip", None)
+            hostname = getattr(alert, "hostname", None)
+
+            # Threat Intel lookup (safe)
+            ips_to_check = [ip for ip in [source_ip, dest_ip] if ip]
+            ti_summary = "No matches"
+            if ips_to_check:
+                ti_query = qb().select("value, threat_type, confidence").from_table(ioc_table).where_in("value", ips_to_check).build()
+                ti_rows = spark.sql(ti_query).collect()
+                if ti_rows:
+                    ti_summary = "; ".join(f"{r.value}={r.threat_type}(conf:{r.confidence})" for r in ti_rows[:5])
+
+            # Asset lookup
+            asset_crit = "unknown"
+            if source_ip:
+                asset_query = qb().select("criticality, owner, department").from_table(assets_table).where_eq("ip_address", source_ip).limit(1).build()
+                try:
+                    asset_rows = spark.sql(asset_query).collect()
+                    if asset_rows:
+                        asset_crit = asset_rows[0].criticality or "medium"
+                except Exception:
+                    pass
+
+            # Network flow context
+            flow_summary = "No recent flows"
+            if source_ip:
+                flow_query = (
+                    qb().select("COUNT(*) as cnt, COUNT(DISTINCT dest_ip) as dests")
+                    .from_table(events_table)
+                    .where_eq("source_ip", source_ip)
+                    .where_raw("timestamp > current_timestamp() - INTERVAL 1 HOUR")
+                    .build()
+                )
+                try:
+                    flow = spark.sql(flow_query).collect()[0]
+                    flow_summary = f"{flow.cnt} events to {flow.dests} destinations in last hour"
+                except Exception:
+                    pass
+
+            # LLM narrative
+            prompt = f"""Summarize this security context for an analyst:
+Alert: {alert.title} ({alert.severity})
+Threat Intel: {ti_summary}
+Asset: {asset_crit} criticality
+Network: {flow_summary}
+
+Provide a 2-sentence actionable summary."""
+
+            narrative = ""
+            try:
+                resp = llm.chat(prompt)
+                narrative = resp.content[:500] if resp else ""
+            except Exception:
+                narrative = "LLM unavailable"
+
+            results.append({
+                "alert_id": alert.id,
+                "threat_intel_summary": ti_summary[:500],
+                "asset_criticality": asset_crit,
+                "geo_context": "",
+                "network_flow_summary": flow_summary,
+                "llm_narrative": narrative,
+                "risk_adjustment": 10 if ti_summary != "No matches" else 0,
+            })
+
+        except Exception as e:
+            mon.log_event("sage_error", {"alert_id": alert.id, "error": str(e)[:200]})
+            results.append({
+                "alert_id": alert.id, "threat_intel_summary": "", "asset_criticality": "unknown",
+                "geo_context": "", "network_flow_summary": "", "llm_narrative": f"Error: {str(e)[:100]}",
+                "risk_adjustment": 0,
+            })
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Asset Context Enrichment
+# MAGIC ## Persist
 
 # COMMAND ----------
 
-def enrich_with_asset_context(alert_row):
-    """Pull asset registry info for involved IPs/hosts."""
-    assets = spark.sql(f"""
-        SELECT asset_id, asset_name, asset_type, criticality, owner,
-               department, location, os_type, last_seen
-        FROM assets
-        WHERE ip_address IN ('{alert_row.source_ip}', '{alert_row.dest_ip}')
-           OR hostname = '{alert_row.hostname}'
-        LIMIT 5
-    """).collect()
-    return assets
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Geo-IP and Network Context
-
-# COMMAND ----------
-
-def enrich_with_network_context(alert_row):
-    """Get network topology and geo-IP context."""
-    network = spark.sql(f"""
-        SELECT source_ip, dest_ip, protocol, bytes_sent, bytes_received,
-               source_country, dest_country, source_asn, dest_asn
-        FROM network_flows
-        WHERE (source_ip = '{alert_row.source_ip}' OR dest_ip = '{alert_row.dest_ip}')
-          AND timestamp > current_timestamp() - INTERVAL 1 HOUR
-        ORDER BY timestamp DESC
-        LIMIT 20
-    """).collect()
-    return network
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Foundation Model Summarization
-
-# COMMAND ----------
-
-import mlflow.deployments
-
-client = mlflow.deployments.get_deploy_client("databricks")
-
-def generate_enrichment_summary(alert, ti_matches, assets, network):
-    """Use Foundation Model to create human-readable enrichment summary."""
-
-    context = {
-        "alert": {
-            "title": alert.title,
-            "severity": alert.severity,
-            "source_ip": alert.source_ip,
-            "dest_ip": alert.dest_ip,
-            "mitre_tactic": alert.mitre_tactic,
-            "mitre_technique": alert.mitre_technique,
-        },
-        "threat_intel_matches": len(ti_matches),
-        "ti_sources": [m.source for m in ti_matches[:5]],
-        "asset_criticality": [a.criticality for a in assets],
-        "network_countries": list(set([n.source_country for n in network] + [n.dest_country for n in network])),
-    }
-
-    response = client.predict(
-        endpoint="databricks-meta-llama-3-1-70b-instruct",
-        inputs={
-            "messages": [
-                {"role": "system", "content": "You are Sage, a security enrichment analyst. Provide concise enrichment summaries for SOC analysts. Include risk assessment, key findings, and recommended next steps."},
-                {"role": "user", "content": f"Enrich this alert with context:\n{json.dumps(context, indent=2)}"}
-            ],
-            "max_tokens": 500,
-            "temperature": 0.3
-        }
+if results:
+    schema = StructType([
+        StructField("alert_id", StringType()), StructField("threat_intel_summary", StringType()),
+        StructField("asset_criticality", StringType()), StructField("geo_context", StringType()),
+        StructField("network_flow_summary", StringType()), StructField("llm_narrative", StringType()),
+        StructField("risk_adjustment", IntegerType()),
+    ])
+    df = (
+        spark.createDataFrame(results, schema=schema)
+        .withColumn("id", expr("uuid()"))
+        .withColumn("agent_name", lit("sage_enrichment"))
+        .withColumn("enriched_at", current_timestamp())
     )
+    df.write.mode("append").saveAsTable(enrichments_table)
 
-    return response.choices[0].message.content
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Execute Enrichment Pipeline
-
-# COMMAND ----------
-
-from datetime import datetime
-
-enrichment_results = []
-
-for row in unenriched.collect():
-    try:
-        ti_matches = enrich_with_threat_intel(row)
-        assets = enrich_with_asset_context(row)
-        network = enrich_with_network_context(row)
-
-        summary = generate_enrichment_summary(row, ti_matches, assets, network)
-
-        enrichment = {
-            "alert_id": row.id,
-            "enriched_at": datetime.utcnow().isoformat(),
-            "threat_intel_hits": len(ti_matches),
-            "asset_criticality": max([a.criticality for a in assets], default="unknown"),
-            "geo_context": json.dumps(list(set([n.source_country for n in network]))),
-            "network_flows_count": len(network),
-            "llm_summary": summary,
-            "enrichment_score": min(100, len(ti_matches) * 20 + len(assets) * 15 + len(network) * 2),
-            "agent_name": "sage",
-        }
-        enrichment_results.append(enrichment)
-
-    except Exception as e:
-        print(f"Error enriching alert {row.id}: {e}")
-
-print(f"Enriched {len(enrichment_results)} alerts")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Write Enrichments to Delta
-
-# COMMAND ----------
-
-if enrichment_results:
-    enrichment_df = spark.createDataFrame(enrichment_results)
-    enrichment_df.write.mode("append").saveAsTable("alert_enrichments")
-
-    # Update agent status
-    spark.sql("""
-        MERGE INTO agent_status AS t
-        USING (SELECT 'sage' as agent_id, current_timestamp() as last_run, 'active' as status) AS s
-        ON t.agent_id = s.agent_id
-        WHEN MATCHED THEN UPDATE SET last_run = s.last_run, status = s.status
-        WHEN NOT MATCHED THEN INSERT (agent_id, last_run, status) VALUES (s.agent_id, s.last_run, s.status)
-    """)
-
-print("Sage enrichment pipeline complete")
+mon.log_complete(details={"enriched": len(results)})
+dbutils.notebook.exit(json.dumps({"status": "completed", "enriched": len(results)}))
