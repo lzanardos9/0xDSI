@@ -3,6 +3,11 @@
 # MAGIC # Notification & Alerting Integrations
 # MAGIC
 # MAGIC Routes escalated alerts to PagerDuty, Slack, Microsoft Teams, Email, Webhooks.
+# MAGIC Uses shared bootstrap for configuration, secrets, monitoring, and safe SQL.
+
+# COMMAND ----------
+
+# MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
 
@@ -16,37 +21,29 @@ import ssl
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog name")
-dbutils.widgets.text("schema", "agentic_soc", "Schema name")
+# Configuration
 dbutils.widgets.text("notification_batch_size", "50", "Max notifications per run")
 dbutils.widgets.text("dry_run", "false", "Dry run mode")
 
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
 notification_batch_size = int(dbutils.widgets.get("notification_batch_size"))
 dry_run = dbutils.widgets.get("dry_run").lower() == "true"
 
-spark.sql(f"USE CATALOG `{catalog}`")
-spark.sql(f"USE SCHEMA `{schema}`")
+# Table paths
+ALERTS_TABLE = get_table_path(cfg, "alerts")
+NOTIFICATION_LOG_TABLE = get_table_path(cfg, "notification_log")
+AGENT_STATUS_TABLE = get_table_path(cfg, "agent_status")
 
 # COMMAND ----------
 
-SECRET_SCOPE = "0xdsi-soc"
-
-def get_secret(key, default=None):
-    try:
-        return dbutils.secrets.get(scope=SECRET_SCOPE, key=key)
-    except Exception:
-        return default
-
-pagerduty_routing_key = get_secret("pagerduty-routing-key")
-slack_webhook_url = get_secret("slack-webhook-url")
-teams_webhook_url = get_secret("teams-webhook-url")
-smtp_host = get_secret("smtp-host", "smtp.gmail.com")
-smtp_port = int(get_secret("smtp-port", "587"))
-smtp_username = get_secret("smtp-username")
-smtp_password = get_secret("smtp-password")
-generic_webhook_url = get_secret("notification-webhook-url")
+# Secrets (all via secrets_mgr)
+pagerduty_routing_key = secrets_mgr.get_optional("pagerduty_api_key")
+slack_webhook_url = secrets_mgr.get_optional("slack_webhook_url")
+teams_webhook_url = secrets_mgr.get_optional("teams_webhook_url")
+smtp_host = secrets_mgr.get_optional("smtp_host", "smtp.gmail.com")
+smtp_port = int(secrets_mgr.get_optional("smtp_port", "587"))
+smtp_username = secrets_mgr.get_optional("smtp_username")
+smtp_password = secrets_mgr.get_optional("smtp_password")
+generic_webhook_url = secrets_mgr.get_optional("notification_webhook_url")
 
 # COMMAND ----------
 
@@ -56,6 +53,7 @@ generic_webhook_url = get_secret("notification-webhook-url")
 # COMMAND ----------
 
 def send_pagerduty(alert, priority):
+    """Send alert to PagerDuty Events API v2."""
     if not pagerduty_routing_key:
         return {"status": "skipped", "reason": "no_pagerduty_key"}
     severity_map = {"critical": "critical", "high": "error", "medium": "warning", "low": "info"}
@@ -82,6 +80,7 @@ def send_pagerduty(alert, priority):
 
 
 def send_slack(alert, priority):
+    """Send alert to Slack via incoming webhook."""
     if not slack_webhook_url:
         return {"status": "skipped", "reason": "no_slack_webhook"}
     blocks = [
@@ -105,6 +104,7 @@ def send_slack(alert, priority):
 
 
 def send_teams(alert, priority):
+    """Send alert to Microsoft Teams via webhook connector."""
     if not teams_webhook_url:
         return {"status": "skipped", "reason": "no_teams_webhook"}
     card = {
@@ -127,6 +127,7 @@ def send_teams(alert, priority):
 
 
 def send_email(alert, priority):
+    """Send alert via SMTP email."""
     if not smtp_username or not smtp_password:
         return {"status": "skipped", "reason": "no_smtp_config"}
     import smtplib
@@ -147,6 +148,7 @@ def send_email(alert, priority):
 
 
 def send_webhook(alert, priority):
+    """Send alert to a generic webhook endpoint."""
     if not generic_webhook_url:
         return {"status": "skipped", "reason": "no_webhook_url"}
     payload = {"source": "0xDSI_SOC", "priority": priority, "alert": alert}
@@ -186,78 +188,121 @@ CHANNEL_SENDERS = {
 
 # COMMAND ----------
 
-pending_alerts = spark.sql(f"""
-    SELECT a.*
-    FROM alerts a
-    LEFT JOIN notification_log nl ON a.id = nl.alert_id
-    WHERE a.status = 'new'
-      AND a.severity IN ('critical', 'high', 'medium')
-      AND nl.alert_id IS NULL
-      AND a.created_at >= current_timestamp() - INTERVAL 4 HOURS
-    ORDER BY CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END
-    LIMIT {notification_batch_size}
-""").collect()
+try:
+    # Fetch pending alerts (LEFT JOIN prevents use of simple QueryBuilder)
+    pending_alerts_sql = f"""
+        SELECT a.*
+        FROM {ALERTS_TABLE} a
+        LEFT JOIN {NOTIFICATION_LOG_TABLE} nl ON a.id = nl.alert_id
+        WHERE a.status = 'new'
+          AND a.severity IN ('critical', 'high', 'medium')
+          AND nl.alert_id IS NULL
+          AND a.created_at >= current_timestamp() - INTERVAL 4 HOURS
+        ORDER BY CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END
+        LIMIT {int(notification_batch_size)}
+    """
 
-print(f"Found {len(pending_alerts)} alerts pending notification")
+    with mon.time("fetch_pending_alerts"):
+        pending_alerts = spark.sql(pending_alerts_sql).collect()
 
-notification_results = []
-now = datetime.utcnow()
+    mon.log_info(f"Found {len(pending_alerts)} alerts pending notification")
 
-for alert_row in pending_alerts:
-    alert = alert_row.asDict()
-    matching_rules = [r for r in routing_rules if r["severity"] == alert["severity"]]
-    for rule in matching_rules:
-        channel = rule["channel"]
-        priority = rule.get("priority", "P3")
-        sender = CHANNEL_SENDERS.get(channel)
-        if not sender:
-            continue
-        try:
-            result = sender(alert, priority)
-            notification_results.append({
-                "id": str(uuid.uuid4()), "alert_id": alert["id"], "channel": channel,
-                "priority": priority, "status": result.get("status", "unknown"),
-                "response_detail": json.dumps(result), "sent_at": now,
-            })
-        except Exception as e:
-            notification_results.append({
-                "id": str(uuid.uuid4()), "alert_id": alert["id"], "channel": channel,
-                "priority": priority, "status": "failed",
-                "response_detail": json.dumps({"error": str(e)[:500]}), "sent_at": now,
-            })
+    # COMMAND ----------
+
+    # Route notifications
+    notification_results = []
+    now = datetime.utcnow()
+
+    with mon.time("send_notifications"):
+        for alert_row in pending_alerts:
+            alert = alert_row.asDict()
+            matching_rules = [r for r in routing_rules if r["severity"] == alert["severity"]]
+            for rule in matching_rules:
+                channel = rule["channel"]
+                priority = rule.get("priority", "P3")
+                sender = CHANNEL_SENDERS.get(channel)
+                if not sender:
+                    continue
+                try:
+                    result = sender(alert, priority)
+                    notification_results.append({
+                        "id": str(uuid.uuid4()), "alert_id": alert["id"], "channel": channel,
+                        "priority": priority, "status": result.get("status", "unknown"),
+                        "response_detail": json.dumps(result), "sent_at": now,
+                    })
+                except Exception as e:
+                    notification_results.append({
+                        "id": str(uuid.uuid4()), "alert_id": alert["id"], "channel": channel,
+                        "priority": priority, "status": "failed",
+                        "response_detail": json.dumps({"error": str(e)[:500]}), "sent_at": now,
+                    })
+
+    # COMMAND ----------
+
+    # MAGIC %md
+    # MAGIC ## Persist Notification Log
+
+    # COMMAND ----------
+
+    # Write notification results to Delta
+    if notification_results:
+        log_schema = StructType([
+            StructField("id", StringType(), False),
+            StructField("alert_id", StringType(), False),
+            StructField("channel", StringType(), False),
+            StructField("priority", StringType(), False),
+            StructField("status", StringType(), False),
+            StructField("response_detail", StringType(), True),
+            StructField("sent_at", TimestampType(), False),
+        ])
+        log_df = spark.createDataFrame(notification_results, schema=log_schema)
+        with mon.time("write_notification_log"):
+            log_df.write.mode("append").saveAsTable(NOTIFICATION_LOG_TABLE)
+
+    sent_count = sum(1 for r in notification_results if r["status"] == "sent")
+    mon.log_metric("notifications_sent", sent_count)
+    mon.log_metric("notifications_attempted", len(notification_results))
+    mon.log_metric("alerts_processed", len(pending_alerts))
+
+    # COMMAND ----------
+
+    # MAGIC %md
+    # MAGIC ## Update Agent Status
+
+    # COMMAND ----------
+
+    # MERGE into agent_status (safe - no user-provided data in SQL values)
+    spark.sql(f"""
+        MERGE INTO {AGENT_STATUS_TABLE} AS target
+        USING (SELECT
+            'notification_integrations' as agent_id,
+            current_timestamp() as last_heartbeat,
+            'running' as status,
+            {int(len(pending_alerts))} as events_processed,
+            {int(sent_count)} as alerts_generated
+        ) AS source
+        ON target.agent_id = source.agent_id
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+
+    # COMMAND ----------
+
+    # Complete monitoring and exit
+    mon.log_complete(rows_processed=len(pending_alerts))
+
+    result = {
+        "status": "completed",
+        "notifications_sent": sent_count,
+        "notifications_attempted": len(notification_results),
+        "alerts_processed": len(pending_alerts),
+        "dry_run": dry_run,
+    }
+
+except Exception as e:
+    mon.log_error(e, context="notification_integrations")
+    result = {"status": "error", "error": str(e)[:1000], "dry_run": dry_run}
 
 # COMMAND ----------
 
-if notification_results:
-    log_schema = StructType([
-        StructField("id", StringType(), False),
-        StructField("alert_id", StringType(), False),
-        StructField("channel", StringType(), False),
-        StructField("priority", StringType(), False),
-        StructField("status", StringType(), False),
-        StructField("response_detail", StringType(), True),
-        StructField("sent_at", TimestampType(), False),
-    ])
-    log_df = spark.createDataFrame(notification_results, schema=log_schema)
-    log_df.write.mode("append").saveAsTable("notification_log")
-
-sent_count = sum(1 for r in notification_results if r["status"] == "sent")
-print(f"Sent: {sent_count} | Total attempts: {len(notification_results)}")
-
-# COMMAND ----------
-
-spark.sql(f"""
-    MERGE INTO agent_status AS target
-    USING (SELECT
-        'notification_integrations' as agent_id,
-        current_timestamp() as last_heartbeat,
-        'running' as status,
-        {len(pending_alerts)} as events_processed,
-        {sent_count} as alerts_generated
-    ) AS source
-    ON target.agent_id = source.agent_id
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-""")
-
-dbutils.notebook.exit(json.dumps({"status": "completed", "notifications_sent": sent_count, "dry_run": dry_run}))
+dbutils.notebook.exit(json.dumps(result))

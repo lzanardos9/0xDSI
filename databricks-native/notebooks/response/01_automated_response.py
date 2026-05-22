@@ -2,48 +2,40 @@
 # MAGIC %md
 # MAGIC # Agent 15: Automated Response Engine
 # MAGIC Executes response actions for high-confidence alerts with human-in-the-loop approval.
+# MAGIC
+# MAGIC **Inputs:** Alerts table (new, high/critical severity without existing response actions)
+# MAGIC **Outputs:** Response actions, approval requests, alert status updates
+# MAGIC **Pattern:** Bootstrap + monitoring + MERGE-based updates (no raw f-string SQL)
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-dbutils.widgets.text("auto_respond_threshold", "0.9", "Auto-respond confidence threshold")
+# MAGIC %run ../_shared/bootstrap
 
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
+# COMMAND ----------
+
+import json
+from pyspark.sql.functions import (
+    col, current_timestamp, expr, lit, when
+)
+from pyspark.sql.types import (
+    StructType, StructField, StringType
+)
+
+# COMMAND ----------
+
+# Widget for auto-response confidence threshold (catalog/schema handled by bootstrap)
+dbutils.widgets.text("auto_respond_threshold", "0.9", "Auto-respond confidence threshold")
 threshold = float(dbutils.widgets.get("auto_respond_threshold"))
 
-spark.sql(f"USE CATALOG `{catalog}`")
-spark.sql(f"USE SCHEMA `{schema}`")
-
-# COMMAND ----------
-
-from pyspark.sql.functions import *
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Find Alerts Requiring Response
-
-# COMMAND ----------
-
-pending_alerts = spark.sql(f"""
-    SELECT a.*
-    FROM alerts a
-    LEFT JOIN response_actions ra ON a.id = ra.alert_id
-    WHERE a.status = 'new'
-    AND a.severity IN ('critical', 'high')
-    AND ra.id IS NULL
-    ORDER BY a.confidence_score DESC
-    LIMIT 50
-""")
-
-print(f"Alerts pending response: {pending_alerts.count()}")
+# Table paths
+ALERTS_TABLE = get_table_path(cfg, "alerts")
+RESPONSE_ACTIONS_TABLE = get_table_path(cfg, "response_actions")
+RESPONSE_APPROVALS_TABLE = get_table_path(cfg, "response_approvals")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Determine Response Actions
+# MAGIC ## Response Mapping
 
 # COMMAND ----------
 
@@ -58,89 +50,163 @@ response_mapping = {
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Create Response Actions
+# MAGIC ## Main Execution
 
 # COMMAND ----------
 
-alerts_collected = pending_alerts.collect()
-auto_responses = []
-approval_needed = []
+try:
+    # ---- Fetch pending alerts ----
+    with mon.time("fetch_pending_alerts"):
+        pending_alerts = spark.sql(f"""
+            SELECT a.*
+            FROM {ALERTS_TABLE} a
+            LEFT JOIN {RESPONSE_ACTIONS_TABLE} ra ON a.id = ra.alert_id
+            WHERE a.status = 'new'
+            AND a.severity IN ('critical', 'high')
+            AND ra.id IS NULL
+            ORDER BY a.confidence_score DESC
+            LIMIT 50
+        """)
+        pending_count = pending_alerts.count()
+        mon.log_metric("pending_alerts", pending_count)
 
-for alert in alerts_collected:
-    alert_source = alert.source or ""
+    print(f"Alerts pending response: {pending_count}")
 
-    action_config = None
-    for pattern, config in response_mapping.items():
-        if pattern in alert.title.lower() or pattern in (alert.description or "").lower():
-            action_config = config
-            break
+    # ---- Determine response actions ----
+    with mon.time("determine_responses"):
+        alerts_collected = pending_alerts.collect()
+        auto_responses = []
+        approval_needed = []
 
-    if not action_config:
-        action_config = {"action_type": "investigate", "description": "Assign to analyst for investigation"}
+        for alert in alerts_collected:
+            action_config = None
+            for pattern, config in response_mapping.items():
+                if pattern in alert.title.lower() or pattern in (alert.description or "").lower():
+                    action_config = config
+                    break
 
-    if alert.confidence_score and alert.confidence_score >= threshold:
-        auto_responses.append({
-            "alert_id": alert.id,
-            "action_type": action_config["action_type"],
-            "description": action_config["description"],
-            "auto_approved": True
-        })
-    else:
-        approval_needed.append({
-            "alert_id": alert.id,
-            "action_type": action_config["action_type"],
-            "description": action_config["description"],
-            "auto_approved": False
-        })
+            if not action_config:
+                action_config = {"action_type": "investigate", "description": "Assign to analyst for investigation"}
 
-print(f"Auto-responses (confidence >= {threshold}): {len(auto_responses)}")
-print(f"Requiring approval: {len(approval_needed)}")
+            if alert.confidence_score and alert.confidence_score >= threshold:
+                auto_responses.append({
+                    "alert_id": alert.id,
+                    "action_type": action_config["action_type"],
+                    "description": action_config["description"],
+                    "auto_approved": True,
+                })
+            else:
+                approval_needed.append({
+                    "alert_id": alert.id,
+                    "action_type": action_config["action_type"],
+                    "description": action_config["description"],
+                    "auto_approved": False,
+                })
+
+        mon.log_metric("auto_responses", len(auto_responses))
+        mon.log_metric("approval_needed", len(approval_needed))
+
+    print(f"Auto-responses (confidence >= {threshold}): {len(auto_responses)}")
+    print(f"Requiring approval: {len(approval_needed)}")
+
+    # ---- Execute responses and create approvals ----
+    with mon.time("execute_responses"):
+        all_actions = auto_responses + approval_needed
+
+        if all_actions:
+            # Build actions DataFrame with explicit schema
+            actions_schema = StructType([
+                StructField("alert_id", StringType(), False),
+                StructField("name", StringType(), False),
+                StructField("action_type", StringType(), False),
+                StructField("status", StringType(), False),
+                StructField("triggered_by", StringType(), False),
+            ])
+
+            action_data = [
+                (
+                    a["alert_id"],
+                    a["description"],
+                    a["action_type"],
+                    "executed" if a["auto_approved"] else "pending_approval",
+                    "automated_response_engine",
+                )
+                for a in all_actions
+            ]
+
+            actions_df = spark.createDataFrame(action_data, schema=actions_schema)
+            actions_df = (
+                actions_df
+                .withColumn("id", expr("uuid()"))
+                .withColumn("created_at", current_timestamp())
+                .withColumn("executed_at", when(col("status") == "executed", current_timestamp()))
+            )
+            actions_df.write.mode("append").saveAsTable(RESPONSE_ACTIONS_TABLE)
+            mon.log_metric("actions_written", len(all_actions))
+
+            # Create approval requests for actions requiring human review
+            if approval_needed:
+                approvals_schema = StructType([
+                    StructField("action_id", StringType(), False),
+                    StructField("status", StringType(), False),
+                ])
+                approval_data = [("placeholder", "pending") for _ in approval_needed]
+                approvals_df = spark.createDataFrame(approval_data, schema=approvals_schema)
+                approvals_df = (
+                    approvals_df
+                    .withColumn("id", expr("uuid()"))
+                    .withColumn("requested_at", current_timestamp())
+                )
+                approvals_df.write.mode("append").saveAsTable(RESPONSE_APPROVALS_TABLE)
+
+            # Update alert statuses via MERGE (safe -- no SQL injection)
+            alert_ids_to_update = [a["alert_id"] for a in all_actions]
+            update_schema = StructType([
+                StructField("alert_id", StringType(), False),
+            ])
+            update_data = [(aid,) for aid in alert_ids_to_update]
+            update_df = spark.createDataFrame(update_data, schema=update_schema)
+            update_df.createOrReplaceTempView("_tmp_alert_ids_to_update")
+
+            spark.sql(f"""
+                MERGE INTO {ALERTS_TABLE} AS target
+                USING _tmp_alert_ids_to_update AS source
+                ON target.id = source.alert_id
+                WHEN MATCHED THEN UPDATE SET
+                    target.status = 'in_progress'
+            """)
+
+            mon.log_metric("alerts_updated", len(alert_ids_to_update))
+            mon.log_info(f"Updated {len(alert_ids_to_update)} alerts to in_progress via MERGE")
+        else:
+            mon.log_info("No actions to execute this cycle")
+
+    # ---- Summary ----
+    total_actions = len(auto_responses) + len(approval_needed)
+    mon.log_complete(rows_processed=total_actions)
+
+    result = {
+        "status": "success",
+        "pending_alerts": pending_count,
+        "auto_responses": len(auto_responses),
+        "approval_needed": len(approval_needed),
+        "total_actions": total_actions,
+        "threshold": threshold,
+    }
+
+except Exception as e:
+    mon.log_error(e, context="automated_response_engine")
+    result = {
+        "status": "error",
+        "error": str(e),
+        "error_type": type(e).__name__,
+    }
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Execute Auto-Responses & Create Approval Requests
+# MAGIC ## Exit
 
 # COMMAND ----------
 
-from pyspark.sql import Row
-
-all_actions = auto_responses + approval_needed
-
-if all_actions:
-    action_rows = [Row(
-        alert_id=a["alert_id"],
-        name=a["description"],
-        action_type=a["action_type"],
-        status="executed" if a["auto_approved"] else "pending_approval",
-        triggered_by="automated_response_engine"
-    ) for a in all_actions]
-
-    actions_df = spark.createDataFrame(action_rows)
-    actions_df = (actions_df
-        .withColumn("id", expr("uuid()"))
-        .withColumn("created_at", current_timestamp())
-        .withColumn("executed_at", when(col("status") == "executed", current_timestamp()))
-    )
-    actions_df.write.mode("append").saveAsTable("response_actions")
-
-    if approval_needed:
-        approval_rows = [Row(
-            action_id="placeholder",
-            status="pending"
-        ) for a in approval_needed]
-
-        approvals_df = spark.createDataFrame(approval_rows)
-        approvals_df = (approvals_df
-            .withColumn("id", expr("uuid()"))
-            .withColumn("requested_at", current_timestamp())
-        )
-        approvals_df.write.mode("append").saveAsTable("response_approvals")
-
-    spark.sql(f"""
-        UPDATE alerts
-        SET status = 'in_progress'
-        WHERE id IN ({','.join([f"'{a['alert_id']}'" for a in all_actions])})
-    """)
-
-print("Automated response cycle complete")
+dbutils.notebook.exit(json.dumps(result))
