@@ -1,142 +1,201 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 20: Threat Scoring ML Model Training
-# MAGIC Trains a gradient-boosted model to score threat likelihood on events.
-# MAGIC Registered in Unity Catalog Model Registry for serving.
+# MAGIC # Threat Scoring Model Training
+# MAGIC
+# MAGIC Trains a Gradient Boosted Tree classifier to score security threats.
+# MAGIC Uses pipeline with StringIndexer, OneHotEncoder, VectorAssembler, and GBTClassifier.
+# MAGIC Tracks experiments via MLflow and registers production models.
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-dbutils.widgets.text("training_days", "30", "Training Lookback Days")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-training_days = int(dbutils.widgets.get("training_days"))
-
-spark.sql(f"USE CATALOG `{catalog}`")
-spark.sql(f"USE SCHEMA `{schema}`")
+# MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
+
+import json
+from datetime import datetime
 
 import mlflow
-from pyspark.sql.functions import *
-from pyspark.ml.feature import VectorAssembler, StringIndexer, OneHotEncoder
+import mlflow.spark
+from pyspark.ml import Pipeline
 from pyspark.ml.classification import GBTClassifier
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
-from pyspark.ml import Pipeline
-
-mlflow.set_registry_uri("databricks-uc")
-experiment_name = f"/Users/{spark.sql('SELECT current_user()').collect()[0][0]}/0xdsi_threat_scoring"
-mlflow.set_experiment(experiment_name)
+from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Build Training Dataset
+dbutils.widgets.text("training_days", "90", "Training Window (days)")
+training_days = int(dbutils.widgets.get("training_days"))
 
 # COMMAND ----------
 
-training_data = spark.sql(f"""
-    SELECT
-        e.event_type,
-        e.source,
-        e.severity,
-        e.action,
-        e.outcome,
-        HOUR(e.timestamp) as hour_of_day,
-        DAYOFWEEK(e.timestamp) as day_of_week,
-        CASE WHEN e.enrichments['ioc_match'] = 'true' THEN 1 ELSE 0 END as ioc_match,
-        CASE WHEN e.enrichments['asset_criticality'] = 'critical' THEN 1 ELSE 0 END as critical_asset,
-        CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END as is_threat
-    FROM events e
-    LEFT JOIN alerts a ON array_contains(a.event_ids, e.id) AND a.false_positive = false
-    WHERE e.timestamp > current_timestamp() - INTERVAL {training_days} DAYS
-    AND e.event_type IS NOT NULL
-""")
+try:
+    result = {"notebook": "01_threat_scoring_model", "status": "success", "started_at": datetime.utcnow().isoformat()}
 
-print(f"Training samples: {training_data.count()}")
-print(f"Threat ratio: {training_data.filter(col('is_threat') == 1).count() / max(training_data.count(), 1):.4f}")
+    # --- Load Training Data ---
+    with mon.time("load_training_data"):
+        training_query = f"""
+        SELECT
+            event_type,
+            source_ip_category,
+            destination_port_category,
+            hour_of_day,
+            day_of_week,
+            bytes_transferred_bucket,
+            session_duration_bucket,
+            failed_attempts_last_hour,
+            distinct_targets_last_hour,
+            geo_velocity_flag,
+            user_risk_tier,
+            is_threat_label
+        FROM {cfg.get_table_path("enriched_security_events")}
+        WHERE event_date >= date_sub(current_date(), {training_days})
+          AND is_threat_label IS NOT NULL
+        """
+        raw_df = spark.sql(training_query)
+        record_count = raw_df.count()
+        mon.log_event("training_data_loaded", {"records": record_count, "training_days": training_days})
 
-# COMMAND ----------
+    # --- Build Pipeline ---
+    with mon.time("build_pipeline"):
+        categorical_cols = [
+            "event_type",
+            "source_ip_category",
+            "destination_port_category",
+            "user_risk_tier",
+        ]
+        numeric_cols = [
+            "hour_of_day",
+            "day_of_week",
+            "bytes_transferred_bucket",
+            "session_duration_bucket",
+            "failed_attempts_last_hour",
+            "distinct_targets_last_hour",
+            "geo_velocity_flag",
+        ]
 
-# MAGIC %md
-# MAGIC ## Feature Engineering & Model Training
+        indexers = [
+            StringIndexer(inputCol=col, outputCol=f"{col}_idx", handleInvalid="keep")
+            for col in categorical_cols
+        ]
+        encoders = [
+            OneHotEncoder(inputCol=f"{col}_idx", outputCol=f"{col}_vec")
+            for col in categorical_cols
+        ]
 
-# COMMAND ----------
+        assembler_inputs = [f"{col}_vec" for col in categorical_cols] + numeric_cols
+        assembler = VectorAssembler(inputCols=assembler_inputs, outputCol="features", handleInvalid="skip")
 
-categorical_cols = ["event_type", "source", "severity", "action", "outcome"]
-numeric_cols = ["hour_of_day", "day_of_week", "ioc_match", "critical_asset"]
+        gbt = GBTClassifier(
+            labelCol="is_threat_label",
+            featuresCol="features",
+            maxIter=100,
+            maxDepth=5,
+            stepSize=0.1,
+            subsamplingRate=0.8,
+        )
 
-indexers = [StringIndexer(inputCol=c, outputCol=f"{c}_idx", handleInvalid="keep")
-            for c in categorical_cols]
-encoders = [OneHotEncoder(inputCol=f"{c}_idx", outputCol=f"{c}_vec")
-            for c in categorical_cols]
+        pipeline = Pipeline(stages=indexers + encoders + [assembler, gbt])
 
-feature_cols = [f"{c}_vec" for c in categorical_cols] + numeric_cols
-assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
+    # --- Train/Test Split ---
+    with mon.time("train_test_split"):
+        train_df, test_df = raw_df.randomSplit([0.8, 0.2], seed=42)
+        train_count = train_df.count()
+        test_count = test_df.count()
+        mon.log_event("data_split", {"train": train_count, "test": test_count})
 
-gbt = GBTClassifier(
-    featuresCol="features",
-    labelCol="is_threat",
-    maxDepth=6,
-    maxIter=50,
-    seed=42
-)
+    # --- Model Training with MLflow ---
+    with mon.time("model_training"):
+        mlflow.set_experiment("/Shared/security/threat_scoring_model")
 
-pipeline = Pipeline(stages=indexers + encoders + [assembler, gbt])
+        with mlflow.start_run(run_name=f"gbt_threat_scoring_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}") as run:
+            mlflow.log_param("training_days", training_days)
+            mlflow.log_param("training_records", train_count)
+            mlflow.log_param("test_records", test_count)
+            mlflow.log_param("max_iter", 100)
+            mlflow.log_param("max_depth", 5)
+            mlflow.log_param("step_size", 0.1)
+            mlflow.log_param("subsampling_rate", 0.8)
 
-# COMMAND ----------
+            model = pipeline.fit(train_df)
 
-# MAGIC %md
-# MAGIC ## Train and Evaluate
+    # --- Evaluation ---
+    with mon.time("model_evaluation"):
+        predictions = model.transform(test_df)
 
-# COMMAND ----------
+        evaluator_auc = BinaryClassificationEvaluator(
+            labelCol="is_threat_label",
+            rawPredictionCol="rawPrediction",
+            metricName="areaUnderROC",
+        )
+        evaluator_pr = BinaryClassificationEvaluator(
+            labelCol="is_threat_label",
+            rawPredictionCol="rawPrediction",
+            metricName="areaUnderPR",
+        )
 
-train_df, test_df = training_data.randomSplit([0.8, 0.2], seed=42)
+        auc = evaluator_auc.evaluate(predictions)
+        auc_pr = evaluator_pr.evaluate(predictions)
 
-with mlflow.start_run(run_name="threat_scoring_gbt"):
-    model = pipeline.fit(train_df)
-    predictions = model.transform(test_df)
+        mlflow.log_metric("auc_roc", auc)
+        mlflow.log_metric("auc_pr", auc_pr)
 
-    evaluator = BinaryClassificationEvaluator(
-        labelCol="is_threat",
-        rawPredictionCol="rawPrediction",
-        metricName="areaUnderROC"
-    )
-    auc = evaluator.evaluate(predictions)
+        mon.log_event("model_evaluated", {"auc_roc": auc, "auc_pr": auc_pr})
 
-    mlflow.log_param("training_days", training_days)
-    mlflow.log_param("training_samples", training_data.count())
-    mlflow.log_param("max_depth", 6)
-    mlflow.log_param("max_iter", 50)
-    mlflow.log_metric("auc_roc", auc)
+    # --- Register Model ---
+    with mon.time("model_registration"):
+        mlflow.spark.log_model(
+            model,
+            "threat_scoring_model",
+            registered_model_name="security_threat_scoring_gbt",
+        )
 
-    mlflow.spark.log_model(
-        model,
-        artifact_path="threat_scoring_model",
-        registered_model_name=f"{catalog}.{schema}.threat_scoring_model"
-    )
+        run_id = run.info.run_id
+        mon.log_event("model_registered", {"run_id": run_id, "auc_roc": auc})
 
-    print(f"Model AUC-ROC: {auc:.4f}")
-    print(f"Model registered: {catalog}.{schema}.threat_scoring_model")
+    # --- Score Recent Events ---
+    with mon.time("score_recent_events"):
+        scoring_query = f"""
+        SELECT *
+        FROM {cfg.get_table_path("enriched_security_events")}
+        WHERE event_date >= date_sub(current_date(), 1)
+          AND is_threat_label IS NULL
+        """
+        recent_df = spark.sql(scoring_query)
+        scored_df = model.transform(recent_df)
 
-# COMMAND ----------
+        scored_output = scored_df.select(
+            "event_id", "event_type", "source_ip_category",
+            "prediction", "probability"
+        )
+        scored_output.write.mode("overwrite").saveAsTable(
+            cfg.get_table_path("threat_scores_latest")
+        )
+        scored_count = scored_output.count()
+        mon.log_event("scoring_complete", {"scored_records": scored_count})
 
-# MAGIC %md
-# MAGIC ## Score Recent Events
+    # --- Finalize ---
+    result.update({
+        "auc_roc": auc,
+        "auc_pr": auc_pr,
+        "training_records": train_count,
+        "test_records": test_count,
+        "scored_records": scored_count,
+        "mlflow_run_id": run_id,
+        "completed_at": datetime.utcnow().isoformat(),
+    })
+    mon.log_complete(result)
 
-# COMMAND ----------
+except Exception as e:
+    result = {
+        "notebook": "01_threat_scoring_model",
+        "status": "error",
+        "error": str(e),
+        "error_type": type(e).__name__,
+        "failed_at": datetime.utcnow().isoformat(),
+    }
+    mon.log_error(e, context={"training_days": training_days})
+    raise
 
-recent_events = spark.sql("""
-    SELECT * FROM events
-    WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR
-    AND event_type IS NOT NULL
-""")
-
-if recent_events.count() > 0:
-    scored = model.transform(recent_events)
-    high_threat = scored.filter(col("prediction") == 1.0)
-    print(f"High-threat events in last hour: {high_threat.count()}")
-else:
-    print("No recent events to score")
+finally:
+    dbutils.notebook.exit(json.dumps(result))

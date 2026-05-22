@@ -1,355 +1,433 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # ML - User & Entity Behavior Analytics (UEBA) Baseline
+# MAGIC # UEBA Behavioral Baseline & Anomaly Detection
 # MAGIC
-# MAGIC Builds behavioral baselines for users and entities using Kolmogorov-Smirnov
-# MAGIC (KS) two-sample testing for statistically rigorous anomaly detection.
+# MAGIC Builds per-user behavioral distributions and detects anomalies using a dual-gate approach:
+# MAGIC 1. Kolmogorov-Smirnov two-sample test against historical baselines
+# MAGIC 2. KMeans clustering with outlier detection
 # MAGIC
-# MAGIC **False Positive Reduction Strategy:**
-# MAGIC - Replace hardcoded ratio thresholds with KS p-value significance
-# MAGIC - Per-user adaptive baselines that account for natural variance
-# MAGIC - Dual-gate: anomaly must be both cluster-outlier AND KS-significant
-# MAGIC - Bonferroni correction for multi-feature testing
+# MAGIC Applies Bonferroni correction and composite confidence scoring.
+# MAGIC Persists detected anomalies via DataFrame write (no raw SQL INSERT).
 
 # COMMAND ----------
 
-dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
-dbutils.widgets.text("schema", "agentic_soc", "Schema")
-dbutils.widgets.text("baseline_days", "30", "Days of history for baseline")
-dbutils.widgets.text("ks_alpha", "0.01", "KS test significance level (lower = fewer FP)")
-dbutils.widgets.text("min_samples", "20", "Minimum samples for KS validity")
-
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-baseline_days = int(dbutils.widgets.get("baseline_days"))
-ks_alpha = float(dbutils.widgets.get("ks_alpha"))
-min_samples = int(dbutils.widgets.get("min_samples"))
-
-spark.sql(f"USE CATALOG {catalog}")
-spark.sql(f"USE SCHEMA {schema}")
+# MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
 
-from pyspark.sql import functions as F
-from pyspark.sql.types import *
-from pyspark.ml.feature import VectorAssembler, StandardScaler
-from pyspark.ml.clustering import KMeans
-from pyspark.ml import Pipeline
-from datetime import datetime
-import numpy as np
-from scipy import stats
 import json
+from datetime import datetime
+from typing import Dict, List, Tuple
+
+import numpy as np
+import mlflow
+from scipy import stats
+from pyspark.ml import Pipeline
+from pyspark.ml.clustering import KMeans
+from pyspark.ml.feature import StandardScaler, VectorAssembler
+from pyspark.sql import Row
+from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    DoubleType,
+    FloatType,
+    StringType,
+    StructField,
+    StructType,
+    TimestampType,
+)
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Build Per-User Behavioral Distributions
-# MAGIC
-# MAGIC Instead of single aggregate values, we collect *distributions* of daily behavior
-# MAGIC per user over the baseline window. This enables KS testing against recent activity.
+dbutils.widgets.text("baseline_days", "60", "Baseline Window (days)")
+dbutils.widgets.text("detection_days", "1", "Detection Window (days)")
+dbutils.widgets.text("ks_alpha", "0.05", "KS Test Significance Level")
+dbutils.widgets.text("cluster_outlier_percentile", "95", "Cluster Outlier Percentile")
+
+baseline_days = int(dbutils.widgets.get("baseline_days"))
+detection_days = int(dbutils.widgets.get("detection_days"))
+ks_alpha = float(dbutils.widgets.get("ks_alpha"))
+cluster_outlier_percentile = int(dbutils.widgets.get("cluster_outlier_percentile"))
 
 # COMMAND ----------
 
-user_daily_profiles = spark.sql(f"""
-    SELECT
-        username,
-        DATE(timestamp) as activity_date,
-        DAYOFWEEK(timestamp) as day_of_week,
-        COUNT(*) as daily_events,
-        COUNT(DISTINCT source_ip) as daily_unique_ips,
-        COUNT(DISTINCT dest_ip) as daily_unique_dests,
-        COUNT(DISTINCT event_type) as daily_event_types,
-        AVG(HOUR(timestamp)) as avg_hour,
-        SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) as daily_failures,
-        SUM(CASE WHEN severity IN ('high', 'critical') THEN 1 ELSE 0 END) as daily_high_sev,
-        SUM(CASE WHEN HOUR(timestamp) < 6 OR HOUR(timestamp) > 22 THEN 1 ELSE 0 END) as daily_offhours,
-        COUNT(DISTINCT CASE WHEN event_type = 'authentication' THEN dest_ip END) as daily_auth_targets
-    FROM events
-    WHERE timestamp > current_timestamp() - INTERVAL {baseline_days} DAYS
-      AND username IS NOT NULL AND username != ''
-    GROUP BY username, DATE(timestamp), DAYOFWEEK(timestamp)
-""")
+# --- Statistical Functions ---
 
-users_with_baseline = user_daily_profiles.groupBy("username").agg(
-    F.count("*").alias("baseline_days_active")
-).filter(F.col("baseline_days_active") >= min_samples)
-
-print(f"Users with sufficient baseline data (>={min_samples} days): {users_with_baseline.count()}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Kolmogorov-Smirnov Anomaly Detection Engine
-# MAGIC
-# MAGIC For each user, we compare their recent behavior distribution (last 4 hours)
-# MAGIC against their historical baseline distribution using the KS two-sample test.
-# MAGIC
-# MAGIC The KS test answers: "Do these two samples come from the same distribution?"
-# MAGIC - p < alpha: Reject null hypothesis -> behavior has genuinely shifted
-# MAGIC - p >= alpha: Cannot reject -> behavior is within normal variance
-# MAGIC
-# MAGIC This eliminates false positives from:
-# MAGIC - Naturally bursty users (their bursts appear in their baseline distribution)
-# MAGIC - Periodic patterns (Monday spikes match historical Monday distribution)
-# MAGIC - Seasonal variance (distribution shape stays consistent even if mean shifts)
-
-# COMMAND ----------
-
-def ks_anomaly_score(baseline_values, recent_values, alpha=0.01):
+def ks_anomaly_score(baseline_sample: np.ndarray, current_sample: np.ndarray) -> Tuple[float, float]:
     """
-    Perform KS two-sample test and return anomaly assessment.
+    Compute KS two-sample test statistic and p-value.
+    Returns (ks_statistic, p_value).
     """
-    if len(baseline_values) < 5 or len(recent_values) < 2:
-        return {"ks_statistic": 0, "p_value": 1.0, "is_anomalous": False,
-                "confidence": 0, "effect_size": 0}
-
-    ks_stat, p_value = stats.ks_2samp(baseline_values, recent_values)
-    n_eff = (len(baseline_values) * len(recent_values)) / (len(baseline_values) + len(recent_values))
-    effect_size = ks_stat * np.sqrt(n_eff)
-
-    return {
-        "ks_statistic": float(ks_stat),
-        "p_value": float(p_value),
-        "is_anomalous": p_value < alpha,
-        "confidence": float(1 - p_value),
-        "effect_size": float(effect_size),
-    }
+    if len(baseline_sample) < 5 or len(current_sample) < 3:
+        return (0.0, 1.0)
+    statistic, p_value = stats.ks_2samp(baseline_sample, current_sample)
+    return (float(statistic), float(p_value))
 
 
-def multi_feature_ks_test(baseline_df, recent_df, features, alpha=0.01):
+def multi_feature_ks_test(
+    baseline_features: Dict[str, np.ndarray],
+    current_features: Dict[str, np.ndarray],
+    alpha: float = 0.05,
+) -> Dict[str, dict]:
     """
-    Run KS test across multiple behavioral features for a single user.
-    Uses Bonferroni-corrected alpha to control family-wise error rate.
+    Run KS test across multiple features with Bonferroni correction.
+    Returns dict of feature -> {statistic, p_value, is_anomalous, corrected_alpha}.
     """
-    n_features = len(features)
-    corrected_alpha = alpha / n_features
+    n_features = len(baseline_features)
+    corrected_alpha = alpha / n_features if n_features > 0 else alpha
 
     results = {}
-    anomalous_features = []
+    for feature_name in baseline_features:
+        if feature_name not in current_features:
+            continue
+        ks_stat, p_val = ks_anomaly_score(
+            baseline_features[feature_name],
+            current_features[feature_name],
+        )
+        results[feature_name] = {
+            "statistic": ks_stat,
+            "p_value": p_val,
+            "is_anomalous": p_val < corrected_alpha,
+            "corrected_alpha": corrected_alpha,
+        }
+    return results
 
-    for feature in features:
-        baseline_vals = np.array([row[feature] for row in baseline_df if row[feature] is not None])
-        recent_vals = np.array([row[feature] for row in recent_df if row[feature] is not None])
 
-        result = ks_anomaly_score(baseline_vals, recent_vals, corrected_alpha)
-        results[feature] = result
+def compute_composite_confidence(ks_results: Dict[str, dict], cluster_distance_percentile: float) -> float:
+    """
+    Compute composite confidence score from KS test results and cluster distance.
+    Combines statistical significance with cluster outlier status.
+    """
+    if not ks_results:
+        return 0.0
 
-        if result["is_anomalous"]:
-            anomalous_features.append(feature)
+    anomalous_features = sum(1 for r in ks_results.values() if r["is_anomalous"])
+    total_features = len(ks_results)
+    ks_confidence = anomalous_features / total_features if total_features > 0 else 0.0
 
-    composite_confidence = 0
-    if anomalous_features:
-        confidences = [results[f]["confidence"] for f in anomalous_features]
-        composite_confidence = 1 - np.prod([1 - c for c in confidences])
+    # Average KS statistic for anomalous features (higher = more divergent)
+    anomalous_stats = [r["statistic"] for r in ks_results.values() if r["is_anomalous"]]
+    avg_ks_stat = np.mean(anomalous_stats) if anomalous_stats else 0.0
 
-    return {
-        "feature_results": results,
-        "anomalous_features": anomalous_features,
-        "anomalous_count": len(anomalous_features),
-        "total_features": n_features,
-        "composite_confidence": float(composite_confidence),
-        "is_anomalous": len(anomalous_features) >= 2,
-    }
+    # Cluster distance contribution (normalized to 0-1)
+    cluster_confidence = min(cluster_distance_percentile / 100.0, 1.0)
+
+    # Composite: weighted combination
+    composite = 0.4 * ks_confidence + 0.3 * avg_ks_stat + 0.3 * cluster_confidence
+    return float(min(composite, 1.0))
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Run KS Tests Per User Against Recent Activity
+try:
+    result = {"notebook": "03_ueba_behavioral_baseline", "status": "success", "started_at": datetime.utcnow().isoformat()}
 
-# COMMAND ----------
+    # --- Build Behavioral Baselines ---
+    with mon.time("build_baselines"):
+        baseline_query = f"""
+        SELECT
+            username,
+            CAST(hour(event_timestamp) AS DOUBLE) AS event_hour,
+            CAST(COUNT(*) OVER (PARTITION BY username, date(event_timestamp)) AS DOUBLE) AS daily_event_count,
+            CAST(bytes_transferred AS DOUBLE) AS bytes_transferred,
+            CAST(session_duration_seconds AS DOUBLE) AS session_duration,
+            CAST(failed_attempts_last_hour AS DOUBLE) AS failed_attempts,
+            CAST(distinct_targets_last_hour AS DOUBLE) AS distinct_targets
+        FROM {cfg.get_table_path("enriched_security_events")}
+        WHERE event_date >= date_sub(current_date(), {baseline_days + detection_days})
+          AND event_date < date_sub(current_date(), {detection_days})
+          AND username IS NOT NULL
+        """
+        baseline_df = spark.sql(baseline_query)
+        baseline_pandas = baseline_df.toPandas()
 
-BEHAVIORAL_FEATURES = [
-    "daily_events", "daily_unique_ips", "daily_unique_dests",
-    "daily_failures", "daily_high_sev", "daily_offhours", "daily_auth_targets"
-]
+        # Build per-user distribution dictionaries
+        feature_columns = [
+            "event_hour", "daily_event_count", "bytes_transferred",
+            "session_duration", "failed_attempts", "distinct_targets",
+        ]
 
-recent_activity = spark.sql("""
-    SELECT
-        username,
-        DATE(timestamp) as activity_date,
-        COUNT(*) as daily_events,
-        COUNT(DISTINCT source_ip) as daily_unique_ips,
-        COUNT(DISTINCT dest_ip) as daily_unique_dests,
-        SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) as daily_failures,
-        SUM(CASE WHEN severity IN ('high', 'critical') THEN 1 ELSE 0 END) as daily_high_sev,
-        SUM(CASE WHEN HOUR(timestamp) < 6 OR HOUR(timestamp) > 22 THEN 1 ELSE 0 END) as daily_offhours,
-        COUNT(DISTINCT CASE WHEN event_type = 'authentication' THEN dest_ip END) as daily_auth_targets
-    FROM events
-    WHERE timestamp > current_timestamp() - INTERVAL 4 HOURS
-      AND username IS NOT NULL
-    GROUP BY username, DATE(timestamp)
-""")
+        user_baselines = {}
+        for username, group in baseline_pandas.groupby("username"):
+            user_baselines[username] = {
+                col: group[col].dropna().values for col in feature_columns
+            }
 
-qualified_users = users_with_baseline.select("username").collect()
-qualified_set = {row.username for row in qualified_users}
+        baseline_user_count = len(user_baselines)
+        mon.log_event("baselines_built", {"user_count": baseline_user_count, "baseline_days": baseline_days})
 
-anomaly_detections = []
+    # --- Load Detection Window Data ---
+    with mon.time("load_detection_window"):
+        detection_query = f"""
+        SELECT
+            username,
+            CAST(hour(event_timestamp) AS DOUBLE) AS event_hour,
+            CAST(COUNT(*) OVER (PARTITION BY username, date(event_timestamp)) AS DOUBLE) AS daily_event_count,
+            CAST(bytes_transferred AS DOUBLE) AS bytes_transferred,
+            CAST(session_duration_seconds AS DOUBLE) AS session_duration,
+            CAST(failed_attempts_last_hour AS DOUBLE) AS failed_attempts,
+            CAST(distinct_targets_last_hour AS DOUBLE) AS distinct_targets
+        FROM {cfg.get_table_path("enriched_security_events")}
+        WHERE event_date >= date_sub(current_date(), {detection_days})
+          AND username IS NOT NULL
+        """
+        detection_df = spark.sql(detection_query)
+        detection_pandas = detection_df.toPandas()
 
-for user_row in recent_activity.collect():
-    username = user_row.username
-    if username not in qualified_set:
-        continue
+        detection_users = {}
+        for username, group in detection_pandas.groupby("username"):
+            detection_users[username] = {
+                col: group[col].dropna().values for col in feature_columns
+            }
 
-    baseline_data = (
-        user_daily_profiles
-        .filter(F.col("username") == username)
-        .select(*BEHAVIORAL_FEATURES)
-        .collect()
-    )
+        mon.log_event("detection_window_loaded", {"user_count": len(detection_users)})
 
-    recent_data = [user_row]
+    # --- KS Two-Sample Testing ---
+    with mon.time("ks_testing"):
+        ks_anomalies = []
 
-    if len(baseline_data) < min_samples:
-        continue
+        for username, current_features in detection_users.items():
+            if username not in user_baselines:
+                continue
 
-    ks_result = multi_feature_ks_test(
-        baseline_data, recent_data, BEHAVIORAL_FEATURES, ks_alpha
-    )
+            baseline_features = user_baselines[username]
+            ks_results = multi_feature_ks_test(baseline_features, current_features, alpha=ks_alpha)
 
-    if ks_result["is_anomalous"]:
-        anomaly_detections.append({
-            "username": username,
-            "anomalous_features": ks_result["anomalous_features"],
-            "composite_confidence": ks_result["composite_confidence"],
-            "feature_details": {
-                f: {
-                    "ks_stat": ks_result["feature_results"][f]["ks_statistic"],
-                    "p_value": ks_result["feature_results"][f]["p_value"],
-                }
-                for f in ks_result["anomalous_features"]
-            },
-            "recent_events": user_row.daily_events,
-            "recent_failures": user_row.daily_failures,
+            # Check if user passes KS gate
+            anomalous_count = sum(1 for r in ks_results.values() if r["is_anomalous"])
+            if anomalous_count >= 2:  # At least 2 features anomalous
+                ks_anomalies.append({
+                    "username": username,
+                    "ks_results": ks_results,
+                    "anomalous_feature_count": anomalous_count,
+                })
+
+        mon.log_event("ks_testing_complete", {
+            "users_tested": len(detection_users),
+            "ks_anomalies_found": len(ks_anomalies),
         })
 
-print(f"KS-validated anomalies: {len(anomaly_detections)} (from {recent_activity.count()} active users)")
+    # --- KMeans Clustering for Outlier Detection ---
+    with mon.time("clustering"):
+        mlflow.set_experiment("/Shared/security/ueba_behavioral_baseline")
 
-# COMMAND ----------
+        with mlflow.start_run(run_name=f"ueba_baseline_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}") as run:
+            mlflow.log_param("baseline_days", baseline_days)
+            mlflow.log_param("detection_days", detection_days)
+            mlflow.log_param("ks_alpha", ks_alpha)
+            mlflow.log_param("cluster_outlier_percentile", cluster_outlier_percentile)
 
-# MAGIC %md
-# MAGIC ## Cluster-Based Validation (Dual-Gate)
-# MAGIC
-# MAGIC A user must be BOTH KS-anomalous AND cluster-outlier to generate an alert.
+            # Build user-level aggregate features for clustering
+            user_agg_query = f"""
+            SELECT
+                username,
+                CAST(COUNT(*) AS DOUBLE) AS total_events,
+                CAST(COUNT(DISTINCT source_ip) AS DOUBLE) AS distinct_ips,
+                CAST(AVG(bytes_transferred) AS DOUBLE) AS avg_bytes,
+                CAST(STDDEV(bytes_transferred) AS DOUBLE) AS stddev_bytes,
+                CAST(AVG(session_duration_seconds) AS DOUBLE) AS avg_session_duration,
+                CAST(SUM(CASE WHEN hour(event_timestamp) BETWEEN 0 AND 5 THEN 1 ELSE 0 END) AS DOUBLE) AS off_hours_count,
+                CAST(SUM(CASE WHEN event_type = 'authentication_failure' THEN 1 ELSE 0 END) AS DOUBLE) AS failed_auths
+            FROM {cfg.get_table_path("enriched_security_events")}
+            WHERE event_date >= date_sub(current_date(), {detection_days})
+              AND username IS NOT NULL
+            GROUP BY username
+            """
+            user_agg_df = spark.sql(user_agg_query).na.fill(0.0)
 
-# COMMAND ----------
+            cluster_feature_cols = [
+                "total_events", "distinct_ips", "avg_bytes", "stddev_bytes",
+                "avg_session_duration", "off_hours_count", "failed_auths",
+            ]
 
-user_profiles = spark.sql(f"""
-    SELECT username,
-           COUNT(*) as total_events,
-           COUNT(DISTINCT DATE(timestamp)) as active_days,
-           COUNT(DISTINCT source_ip) as unique_source_ips,
-           COUNT(DISTINCT dest_ip) as unique_dest_ips,
-           COUNT(DISTINCT event_type) as unique_event_types,
-           AVG(HOUR(timestamp)) as avg_active_hour,
-           STDDEV(HOUR(timestamp)) as hour_stddev,
-           SUM(CASE WHEN outcome = 'failure' THEN 1 ELSE 0 END) / COUNT(*) as failure_rate,
-           SUM(CASE WHEN severity IN ('high', 'critical') THEN 1 ELSE 0 END) as high_sev_count,
-           COUNT(DISTINCT CASE WHEN event_type = 'authentication' THEN dest_ip END) as auth_targets,
-           MAX(UNIX_TIMESTAMP(timestamp)) - MIN(UNIX_TIMESTAMP(timestamp)) as session_span_seconds
-    FROM events
-    WHERE timestamp > current_timestamp() - INTERVAL {baseline_days} DAYS
-      AND username IS NOT NULL AND username != ''
-    GROUP BY username
-    HAVING COUNT(*) >= {min_samples}
-""")
-
-assembler = VectorAssembler(
-    inputCols=["total_events", "unique_source_ips", "unique_dest_ips",
-               "unique_event_types", "avg_active_hour", "failure_rate",
-               "high_sev_count", "auth_targets"],
-    outputCol="raw_features"
-)
-
-scaler = StandardScaler(inputCol="raw_features", outputCol="features", withStd=True, withMean=True)
-kmeans = KMeans(k=5, seed=42, featuresCol="features", predictionCol="behavior_cluster")
-
-pipeline = Pipeline(stages=[assembler, scaler, kmeans])
-model = pipeline.fit(user_profiles)
-clustered_users = model.transform(user_profiles)
-
-cluster_sizes = clustered_users.groupBy("behavior_cluster").count().collect()
-smallest_cluster = min(cluster_sizes, key=lambda x: x["count"])
-anomaly_cluster_id = smallest_cluster["cluster"]
-
-outlier_users = set(
-    row.username for row in
-    clustered_users.filter(F.col("behavior_cluster") == anomaly_cluster_id).select("username").collect()
-)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Apply Dual-Gate: KS Significant AND Cluster Outlier
-
-# COMMAND ----------
-
-dual_gate_anomalies = [
-    det for det in anomaly_detections
-    if det["username"] in outlier_users
-]
-
-ks_only = len(anomaly_detections)
-dual_gate = len(dual_gate_anomalies)
-fp_reduction = (1 - dual_gate / max(ks_only, 1)) * 100
-
-print(f"KS-only anomalies: {ks_only}")
-print(f"Dual-gate anomalies (KS + cluster): {dual_gate}")
-print(f"False positive reduction from dual-gate: {fp_reduction:.1f}%")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Persist Validated Anomalies
-
-# COMMAND ----------
-
-import uuid
-
-if dual_gate_anomalies:
-    for det in dual_gate_anomalies:
-        risk_level = "critical" if det["composite_confidence"] > 0.95 else \
-                     "high" if det["composite_confidence"] > 0.8 else "medium"
-
-        feature_summary = ", ".join(
-            f"{f} (KS={det['feature_details'][f]['ks_stat']:.3f}, p={det['feature_details'][f]['p_value']:.4f})"
-            for f in det["anomalous_features"]
-        )
-
-        spark.sql(f"""
-            INSERT INTO user_behavior_anomalies
-            (username, anomaly_type, risk_level, detected_at, details)
-            VALUES (
-                '{det["username"]}',
-                'ks_validated_behavioral_deviation',
-                '{risk_level}',
-                current_timestamp(),
-                'KS dual-gate anomaly. Confidence: {det["composite_confidence"]:.3f}. Features: {feature_summary}'
+            assembler = VectorAssembler(
+                inputCols=cluster_feature_cols,
+                outputCol="raw_features",
+                handleInvalid="skip",
             )
-        """)
+            scaler = StandardScaler(
+                inputCol="raw_features",
+                outputCol="scaled_features",
+                withStd=True,
+                withMean=True,
+            )
+            kmeans = KMeans(
+                featuresCol="scaled_features",
+                predictionCol="cluster",
+                k=5,
+                seed=42,
+                maxIter=50,
+            )
 
-    print(f"Persisted {len(dual_gate_anomalies)} KS-validated anomalies")
+            cluster_pipeline = Pipeline(stages=[assembler, scaler, kmeans])
+            cluster_model = cluster_pipeline.fit(user_agg_df)
+            clustered_df = cluster_model.transform(user_agg_df)
 
-# COMMAND ----------
+            # Compute distances to cluster centers
+            kmeans_model = cluster_model.stages[-1]
+            centers = kmeans_model.clusterCenters()
 
-# MAGIC %md
-# MAGIC ## Save Baseline Model & KS Calibration Metadata
+            mlflow.log_metric("num_clusters", len(centers))
+            mlflow.log_metric("ks_anomalies_pre_filter", len(ks_anomalies))
 
-# COMMAND ----------
+    # --- Compute Cluster Distances and Apply Dual Gate ---
+    with mon.time("dual_gate_detection"):
+        # Collect clustered data for distance computation
+        clustered_pandas = clustered_df.select("username", "cluster", "scaled_features").toPandas()
 
-import mlflow
+        # Compute distance from each user to their assigned cluster center
+        user_distances = {}
+        for _, row in clustered_pandas.iterrows():
+            cluster_id = row["cluster"]
+            features = row["scaled_features"].toArray()
+            center = centers[cluster_id]
+            distance = float(np.linalg.norm(features - center))
+            user_distances[row["username"]] = distance
 
-with mlflow.start_run(run_name="ueba_ks_baseline"):
-    mlflow.spark.log_model(model, "ueba_behavior_model")
-    mlflow.log_metric("users_profiled", user_profiles.count())
-    mlflow.log_metric("ks_anomalies_detected", ks_only)
-    mlflow.log_metric("dual_gate_anomalies", dual_gate)
-    mlflow.log_metric("fp_reduction_pct", fp_reduction)
-    mlflow.log_param("baseline_days", baseline_days)
-    mlflow.log_param("ks_alpha", ks_alpha)
-    mlflow.log_param("bonferroni_corrected_alpha", ks_alpha / len(BEHAVIORAL_FEATURES))
-    mlflow.log_param("clusters", 5)
-    mlflow.log_param("min_samples", min_samples)
-    mlflow.log_param("dual_gate_enabled", True)
+        # Determine outlier threshold
+        all_distances = list(user_distances.values())
+        if all_distances:
+            outlier_threshold = float(np.percentile(all_distances, cluster_outlier_percentile))
+        else:
+            outlier_threshold = float("inf")
 
-print(f"UEBA KS baseline complete. Users: {user_profiles.count()}, "
-      f"Anomalies: {dual_gate} (reduced from {ks_only} via dual-gate)")
+        # Apply dual gate: KS anomalous AND cluster outlier
+        confirmed_anomalies = []
+        for anomaly in ks_anomalies:
+            username = anomaly["username"]
+            distance = user_distances.get(username, 0.0)
+            distance_percentile = (
+                float(np.searchsorted(np.sort(all_distances), distance) / len(all_distances) * 100)
+                if all_distances else 0.0
+            )
+
+            is_cluster_outlier = distance > outlier_threshold
+
+            if is_cluster_outlier:
+                # Both gates passed - confirmed anomaly
+                composite_confidence = compute_composite_confidence(
+                    anomaly["ks_results"], distance_percentile
+                )
+
+                # Determine anomaly type based on which features are anomalous
+                anomalous_features = [
+                    f for f, r in anomaly["ks_results"].items() if r["is_anomalous"]
+                ]
+                if "failed_attempts" in anomalous_features or "distinct_targets" in anomalous_features:
+                    anomaly_type = "lateral_movement_pattern"
+                elif "event_hour" in anomalous_features and "daily_event_count" in anomalous_features:
+                    anomaly_type = "temporal_anomaly"
+                elif "bytes_transferred" in anomalous_features:
+                    anomaly_type = "data_exfiltration_pattern"
+                else:
+                    anomaly_type = "behavioral_deviation"
+
+                # Determine risk level from composite confidence
+                if composite_confidence >= 0.8:
+                    risk_level = "critical"
+                elif composite_confidence >= 0.6:
+                    risk_level = "high"
+                elif composite_confidence >= 0.4:
+                    risk_level = "medium"
+                else:
+                    risk_level = "low"
+
+                confirmed_anomalies.append({
+                    "username": username,
+                    "anomaly_type": anomaly_type,
+                    "risk_level": risk_level,
+                    "composite_confidence": composite_confidence,
+                    "cluster_distance": distance,
+                    "cluster_distance_percentile": distance_percentile,
+                    "anomalous_features": ",".join(anomalous_features),
+                    "anomalous_feature_count": anomaly["anomalous_feature_count"],
+                    "detected_at": datetime.utcnow(),
+                })
+
+        mlflow.log_metric("confirmed_anomalies", len(confirmed_anomalies))
+        mlflow.log_metric("outlier_threshold", outlier_threshold)
+
+        mon.log_event("dual_gate_complete", {
+            "ks_candidates": len(ks_anomalies),
+            "confirmed_anomalies": len(confirmed_anomalies),
+            "outlier_threshold": outlier_threshold,
+        })
+
+    # --- Persist Anomalies via DataFrame Write (safe - no raw SQL INSERT) ---
+    with mon.time("persist_anomalies"):
+        anomalies_table = cfg.get_table_path("user_behavior_anomalies")
+
+        if confirmed_anomalies:
+            # Build details JSON for each anomaly
+            anomaly_rows = []
+            for det in confirmed_anomalies:
+                details_json = json.dumps({
+                    "composite_confidence": det["composite_confidence"],
+                    "cluster_distance": det["cluster_distance"],
+                    "cluster_distance_percentile": det["cluster_distance_percentile"],
+                    "anomalous_features": det["anomalous_features"],
+                    "anomalous_feature_count": det["anomalous_feature_count"],
+                    "detection_method": "dual_gate_ks_cluster",
+                    "baseline_days": baseline_days,
+                    "detection_days": detection_days,
+                })
+                anomaly_rows.append(Row(
+                    username=det["username"],
+                    anomaly_type=det["anomaly_type"],
+                    risk_level=det["risk_level"],
+                    detected_at=det["detected_at"],
+                    details=details_json,
+                ))
+
+            anomaly_schema = StructType([
+                StructField("username", StringType(), False),
+                StructField("anomaly_type", StringType(), False),
+                StructField("risk_level", StringType(), False),
+                StructField("detected_at", TimestampType(), False),
+                StructField("details", StringType(), True),
+            ])
+
+            anomalies_df = spark.createDataFrame(anomaly_rows, schema=anomaly_schema)
+            anomalies_df.write.mode("append").saveAsTable(anomalies_table)
+
+            mon.log_event("anomalies_persisted", {"count": len(confirmed_anomalies)})
+        else:
+            mon.log_event("no_anomalies_detected", {})
+
+    # --- Log MLflow Model Artifact ---
+    with mon.time("log_cluster_model"):
+        mlflow.spark.log_model(
+            cluster_model,
+            "ueba_cluster_model",
+            registered_model_name="security_ueba_clustering",
+        )
+        run_id = run.info.run_id
+
+    # --- Finalize ---
+    result.update({
+        "baseline_days": baseline_days,
+        "detection_days": detection_days,
+        "baseline_users": baseline_user_count,
+        "detection_users": len(detection_users),
+        "ks_anomalies": len(ks_anomalies),
+        "confirmed_anomalies": len(confirmed_anomalies),
+        "outlier_threshold": outlier_threshold,
+        "mlflow_run_id": run_id,
+        "completed_at": datetime.utcnow().isoformat(),
+    })
+    mon.log_complete(result)
+
+except Exception as e:
+    result = {
+        "notebook": "03_ueba_behavioral_baseline",
+        "status": "error",
+        "error": str(e),
+        "error_type": type(e).__name__,
+        "failed_at": datetime.utcnow().isoformat(),
+    }
+    mon.log_error(e, context={
+        "baseline_days": baseline_days,
+        "detection_days": detection_days,
+    })
+    raise
+
+finally:
+    dbutils.notebook.exit(json.dumps(result))
