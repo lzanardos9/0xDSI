@@ -1779,6 +1779,236 @@ print("Phase 1 tables created: Entity Spine (3), Knowledge Store (2), UEO (2)")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Phase 2: CET Drift, Bytecode Analysis, Delta Replay Tables
+
+# COMMAND ----------
+
+# CET Per-Entity Drift
+spark.sql("""
+CREATE TABLE IF NOT EXISTS entity_drift_scores (
+    drift_id STRING NOT NULL,
+    entity_id STRING NOT NULL,
+    entity_type STRING,
+    entity_name STRING,
+    rate_drift DOUBLE DEFAULT 0.0,
+    diversity_drift DOUBLE DEFAULT 0.0,
+    temporal_drift DOUBLE DEFAULT 0.0,
+    centrality_drift DOUBLE DEFAULT 0.0,
+    pivot_potential DOUBLE DEFAULT 0.0,
+    destination_novelty DOUBLE DEFAULT 0.0,
+    composite_drift_score DOUBLE NOT NULL,
+    drift_rank INT,
+    baseline_event_count BIGINT,
+    recent_event_count BIGINT,
+    baseline_unique_dests INT,
+    recent_unique_dests INT,
+    new_destinations ARRAY<STRING>,
+    trajectory STRING,
+    days_trending INT DEFAULT 1,
+    is_signal_emitted BOOLEAN DEFAULT false,
+    signal_emitted_at TIMESTAMP,
+    scored_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.enableChangeDataFeed' = 'true',
+    'delta.autoOptimize.optimizeWrite' = 'true'
+)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS entity_drift_history (
+    entity_id STRING NOT NULL,
+    scored_at TIMESTAMP NOT NULL,
+    composite_drift_score DOUBLE NOT NULL,
+    rate_drift DOUBLE,
+    diversity_drift DOUBLE,
+    temporal_drift DOUBLE,
+    centrality_drift DOUBLE,
+    pivot_potential DOUBLE,
+    destination_novelty DOUBLE,
+    trajectory STRING
+)
+USING DELTA
+PARTITIONED BY (scored_at)
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+# Bytecode / Semantics Analysis
+spark.sql("""
+CREATE TABLE IF NOT EXISTS bytecode_analysis (
+    analysis_id STRING NOT NULL,
+    artifact_id STRING,
+    event_id STRING,
+    hostname STRING,
+    process_name STRING,
+    process_path STRING,
+    user_id STRING,
+    service_name STRING,
+    file_hash_sha256 STRING,
+    file_name STRING,
+    file_size BIGINT,
+    is_signed BOOLEAN DEFAULT false,
+    signer STRING,
+    behavioral_score DOUBLE NOT NULL,
+    category STRING NOT NULL,
+    verdict STRING NOT NULL,
+    reflective_loading_score DOUBLE DEFAULT 0.0,
+    encryption_anomaly_score DOUBLE DEFAULT 0.0,
+    serialization_score DOUBLE DEFAULT 0.0,
+    network_primitive_score DOUBLE DEFAULT 0.0,
+    persistence_score DOUBLE DEFAULT 0.0,
+    privilege_escalation_score DOUBLE DEFAULT 0.0,
+    evasion_score DOUBLE DEFAULT 0.0,
+    data_access_score DOUBLE DEFAULT 0.0,
+    injection_score DOUBLE DEFAULT 0.0,
+    matched_patterns ARRAY<STRING>,
+    api_sequence_anomalies ARRAY<STRING>,
+    deviation_from_baseline DOUBLE DEFAULT 0.0,
+    baseline_exists BOOLEAN DEFAULT false,
+    mitre_techniques ARRAY<STRING>,
+    entity_id STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.enableChangeDataFeed' = 'true',
+    'delta.autoOptimize.optimizeWrite' = 'true'
+)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS code_behavioral_features (
+    feature_id STRING NOT NULL,
+    event_id STRING NOT NULL,
+    hostname STRING,
+    process_name STRING,
+    api_calls ARRAY<STRING>,
+    api_call_count INT,
+    unique_apis INT,
+    syscalls ARRAY<STRING>,
+    loaded_libraries ARRAY<STRING>,
+    network_calls INT DEFAULT 0,
+    file_operations INT DEFAULT 0,
+    registry_operations INT DEFAULT 0,
+    crypto_operations INT DEFAULT 0,
+    process_operations INT DEFAULT 0,
+    memory_operations INT DEFAULT 0,
+    entropy_score DOUBLE DEFAULT 0.0,
+    api_diversity_ratio DOUBLE DEFAULT 0.0,
+    suspicious_api_ratio DOUBLE DEFAULT 0.0,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS code_behavioral_baselines (
+    baseline_id STRING NOT NULL,
+    service_name STRING NOT NULL,
+    hostname STRING,
+    expected_apis ARRAY<STRING>,
+    expected_api_count_avg DOUBLE,
+    expected_api_count_stddev DOUBLE,
+    expected_network_calls_avg DOUBLE,
+    expected_file_ops_avg DOUBLE,
+    expected_entropy_avg DOUBLE,
+    api_count_upper_bound DOUBLE,
+    network_upper_bound DOUBLE,
+    entropy_upper_bound DOUBLE,
+    sample_count BIGINT,
+    last_updated TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+# Delta Replay Engine
+spark.sql("""
+CREATE TABLE IF NOT EXISTS replay_packs (
+    pack_id STRING NOT NULL,
+    mode STRING NOT NULL,
+    replay_start TIMESTAMP NOT NULL,
+    replay_end TIMESTAMP NOT NULL,
+    target_timestamp TIMESTAMP,
+    entity_id STRING,
+    entity_name STRING,
+    rule_id STRING,
+    case_id STRING,
+    event_count BIGINT DEFAULT 0,
+    alert_count INT DEFAULT 0,
+    entity_count INT DEFAULT 0,
+    ueo_count INT DEFAULT 0,
+    edge_count INT DEFAULT 0,
+    ks_entries_count INT DEFAULT 0,
+    events_version BIGINT,
+    alerts_version BIGINT,
+    spine_version BIGINT,
+    ueo_version BIGINT,
+    findings STRING,
+    timeline_summary STRING,
+    initiated_by STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS detection_evaluations (
+    eval_id STRING NOT NULL,
+    pack_id STRING,
+    rule_id STRING NOT NULL,
+    rule_name STRING,
+    total_events_tested BIGINT,
+    would_have_fired INT DEFAULT 0,
+    actually_fired INT DEFAULT 0,
+    true_positives INT DEFAULT 0,
+    false_positives INT DEFAULT 0,
+    false_negatives INT DEFAULT 0,
+    true_negatives INT DEFAULT 0,
+    precision DOUBLE,
+    recall DOUBLE,
+    f1_score DOUBLE,
+    original_threshold DOUBLE,
+    tested_threshold DOUBLE,
+    predicted_daily_alerts INT,
+    predicted_fp_rate DOUBLE,
+    evaluation_window_hours INT,
+    evaluated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS learning_data (
+    sample_id STRING NOT NULL,
+    pack_id STRING,
+    event_ids ARRAY<STRING>,
+    alert_id STRING,
+    ueo_id STRING,
+    entity_id STRING,
+    feature_snapshot STRING,
+    confluence_score DOUBLE,
+    signal_classes ARRAY<STRING>,
+    label STRING NOT NULL,
+    label_source STRING,
+    analyst_id STRING,
+    label_confidence DOUBLE DEFAULT 1.0,
+    mitre_technique STRING,
+    severity STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+print("Phase 2 tables created: CET Drift (2), Bytecode (3), Delta Replay (3)")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Setup Complete
 # MAGIC All tables have been created in Unity Catalog.
 

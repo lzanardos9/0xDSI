@@ -1265,6 +1265,27 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
 
+        - task_key: entity_drift_step
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/05_entity_drift_cet.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              baseline_days: "30"
+              recent_hours: "24"
+              drift_threshold: "0.6"
+
+        - task_key: bytecode_analysis_step
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/06_bytecode_semantics.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "10"
+              anomaly_threshold: "0.7"
+
         # Stage 2: UEO Assembly (depends on ALL detection lenses)
         - task_key: ueo_assembly
           environment_key: default
@@ -1274,6 +1295,8 @@ resources:
             - task_key: formula_scoring
             - task_key: graph_correlation_step
             - task_key: negative_correlation_step
+            - task_key: entity_drift_step
+            - task_key: bytecode_analysis_step
           notebook_task:
             notebook_path: ../notebooks/correlation/09_unified_evidence_object.py
             base_parameters:
@@ -1431,6 +1454,71 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # PHASE 2: CET DRIFT, BYTECODE SEMANTICS, DELTA REPLAY
+    # ─────────────────────────────────────────────────────
+    entity_drift_cet:
+      name: "[0xDSI] Detection 05 - Entity Drift CET"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: compute_drift
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/05_entity_drift_cet.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              baseline_days: "30"
+              recent_hours: "24"
+              drift_threshold: "0.6"
+
+    bytecode_semantics:
+      name: "[0xDSI] Detection 06 - Bytecode Semantics Wiver"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: analyze_code
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/06_bytecode_semantics.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "10"
+              anomaly_threshold: "0.7"
+
+    delta_replay_daily:
+      name: "[0xDSI] Ops 05 - Delta Replay (Learning Data - Daily)"
+      schedule:
+        quartz_cron_expression: "0 0 4 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: generate_learning
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ops/05_delta_replay_engine.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "learning"
+              hours_before: "24"
+              hours_after: "0"
 
     # ─────────────────────────────────────────────────────
     # LLM USAGE INTERCEPTOR
