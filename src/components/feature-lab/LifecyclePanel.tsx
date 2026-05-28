@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, Circle, Loader2, Rocket, ShieldCheck, TestTube, FileText, Link2, Copy } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { callFunction } from '../../lib/llmGateway';
 
 interface LifecyclePanelProps {
   creationId: string;
@@ -22,23 +23,23 @@ export default function LifecyclePanel({ creationId, initialStatus, shareToken, 
   const [promoting, setPromoting] = useState<string | null>(null);
   const [copiedShare, setCopiedShare] = useState(false);
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
   const stageIndex = STAGES.findIndex(s => s.id === status);
 
   const promote = async (stage: string) => {
     setPromoting(stage);
     try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/feature-lab`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${supabaseAnonKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'promote', id: creationId, stage, notes }),
+      const { data, error } = await callFunction('feature-lab', {
+        action: 'promote',
+        id: creationId,
+        stage,
+        notes,
       });
-      const data = await res.json();
-      if (data.creation) {
-        setStatus(data.creation.status);
-        setNotes('');
+      if (!error && data) {
+        const creationData = (data as Record<string, any>).creation;
+        if (creationData) {
+          setStatus(creationData.status);
+          setNotes('');
+        }
       }
     } finally {
       setPromoting(null);

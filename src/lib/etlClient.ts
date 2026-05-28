@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { callFunction } from './llmGateway';
 
 export class ETLClient {
   private static instance: ETLClient;
@@ -15,27 +16,18 @@ export class ETLClient {
 
   async ingestEvent(sourceId: string, sourceType: string, rawData: any, sourceIp?: string) {
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/etl-ingest`;
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({
-          source_id: sourceId,
-          source_type: sourceType,
-          raw_data: rawData,
-          source_ip: sourceIp
-        })
+      const { data, error } = await callFunction('etl-ingest', {
+        source_id: sourceId,
+        source_type: sourceType,
+        raw_data: rawData,
+        source_ip: sourceIp
       });
 
-      if (!response.ok) {
-        throw new Error(`Ingestion failed: ${response.statusText}`);
+      if (error) {
+        throw new Error(`Ingestion failed: ${error}`);
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error('ETL ingestion error:', error);
       throw error;
@@ -44,22 +36,13 @@ export class ETLClient {
 
   async processEvents() {
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/etl-orchestrator`;
+      const { data, error } = await callFunction('etl-orchestrator', {});
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({})
-      });
-
-      if (!response.ok) {
-        throw new Error(`Processing failed: ${response.statusText}`);
+      if (error) {
+        throw new Error(`Processing failed: ${error}`);
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error('ETL processing error:', error);
       throw error;

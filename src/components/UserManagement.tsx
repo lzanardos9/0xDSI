@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { callFunction } from '../lib/llmGateway';
 import { Users, Plus, CreditCard as Edit, Trash2, Shield, Lock, Unlock, Clock, Search, Filter, X, Check, AlertTriangle, Eye, EyeOff, UserCog, History, Award, Network, KeyRound } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import UserActivityLineage from './UserActivityLineage';
@@ -147,20 +148,19 @@ const UserManagement = () => {
   };
 
   const setUserPassword = async (email: string, password: string, fullName: string, userId: string) => {
-    const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`;
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password, full_name: fullName, user_id: userId, username: userId }),
+    const { data, error } = await callFunction('create-user', {
+      email,
+      password,
+      full_name: fullName,
+      user_id: userId,
+      username: userId
     });
-    const result = await response.json();
-    if (!response.ok) {
-      console.error('Password set failed:', result.error);
+
+    if (error) {
+      console.error('Password set failed:', error);
     }
-    return result;
+
+    return data || { error };
   };
 
   const handleSetPassword = async () => {

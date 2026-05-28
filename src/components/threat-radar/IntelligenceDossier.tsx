@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { callFunction } from '../../lib/llmGateway';
 import {
   BookOpen, Brain, Cpu, Target, ExternalLink, CheckCircle2, XCircle, Loader2, AlertTriangle, Flame,
   ShieldAlert, Sparkles, Send, Code2, Database,
@@ -45,12 +46,8 @@ export default function IntelligenceDossier({
   const runProbe = async () => {
     setProbing(true);
     try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/threat-radar-probe`;
-      await fetch(url, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: item.id }),
-      });
+      const { error } = await callFunction('threat-radar-probe', { item_id: item.id });
+      if (error) throw new Error(error);
       await load();
       onRefresh();
     } finally { setProbing(false); }
@@ -59,12 +56,8 @@ export default function IntelligenceDossier({
   const runAnalyze = async () => {
     setReAnalyzing(true);
     try {
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/threat-radar-analyze`;
-      await fetch(url, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: item.id }),
-      });
+      const { error } = await callFunction('threat-radar-analyze', { item_id: item.id });
+      if (error) throw new Error(error);
       await load();
       onRefresh();
     } finally { setReAnalyzing(false); }

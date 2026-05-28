@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { FileText, Shield, Building2, Upload, ClipboardPaste, X, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, ArrowRight, Copy, RotateCcw, FileSearch, AlertCircle, Star, Bookmark, Network, Scale, FileWarning, Bug, ClipboardCheck, Lock, Database, Loader2, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { callFunction } from '../lib/llmGateway';
 
 interface Finding {
   title: string;
@@ -103,15 +104,15 @@ export default function DocumentAnalysis() {
       setInterval(() => setProgress(p => p < 92 ? p + Math.random() * 8 : p), 400),
     ];
     try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-document`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
-        body: JSON.stringify({ documentText: documentText.trim(), documentName: documentName || 'Untitled Document', documentType: docType }),
+      const { data, error } = await callFunction('analyze-document', {
+        documentText: documentText.trim(),
+        documentName: documentName || 'Untitled Document',
+        documentType: docType,
       });
-      if (!res.ok) throw new Error(`Analysis failed (${res.status})`);
-      const data: AnalysisResult = await res.json();
+      if (error) throw new Error(error);
+      const result = data as AnalysisResult;
       setProgress(100);
-      setTimeout(() => setResult(data), 300);
+      setTimeout(() => setResult(result), 300);
     } catch (err: any) {
       setError(err.message || 'Analysis failed');
     } finally {

@@ -34,8 +34,7 @@ interface Message {
   ruleSaved?: boolean;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+import { callFunction } from '../lib/llmGateway';
 
 const CISOAssistant = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -187,28 +186,17 @@ const CISOAssistant = () => {
         content: m.content,
       }));
 
-      const response = await fetch(
-        `${SUPABASE_URL}/functions/v1/ai-assistant`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            question: userMessage,
-            conversationHistory,
-          }),
-        }
-      );
+      const { data, error } = await callFunction('ai-assistant', {
+        question: userMessage,
+        conversationHistory,
+      });
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `API returned ${response.status}`);
+      if (error || !data) {
+        throw new Error(error || 'No response from AI service');
       }
 
-      const data = await response.json();
-      return { answer: data.answer, queriesUsed: data.queries_used };
+      const result = data as { answer: string; queries_used?: string[] };
+      return { answer: result.answer, queriesUsed: result.queries_used };
     } catch (error) {
       console.error('AI Assistant error:', error);
       return { answer: 'I encountered an issue connecting to the AI service. Please try again in a moment.' };
@@ -222,28 +210,17 @@ const CISOAssistant = () => {
         content: m.content,
       }));
 
-      const response = await fetch(
-        `${SUPABASE_URL}/functions/v1/generate-correlation-rule`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userRequest,
-            conversationHistory,
-          }),
-        }
-      );
+      const { data, error } = await callFunction('generate-correlation-rule', {
+        userRequest,
+        conversationHistory,
+      });
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `API returned ${response.status}`);
+      if (error || !data) {
+        throw new Error(error || 'No response');
       }
 
-      const data = await response.json();
-      return { rule: data.rule, saved: data.saved };
+      const result = data as { rule: AIGeneratedRule; saved: boolean };
+      return { rule: result.rule, saved: result.saved };
     } catch (error) {
       console.error('Rule generation error:', error);
       return { rule: null, saved: false, error: error instanceof Error ? error.message : 'Unknown error' };

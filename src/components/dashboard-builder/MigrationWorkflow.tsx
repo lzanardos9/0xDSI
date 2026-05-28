@@ -9,6 +9,7 @@ import { SOURCE_TOOL_META } from '../../lib/dashboardSchema';
 import { parseDashboard, detectSourceTool } from '../../lib/parsers';
 import type { ParseResult } from '../../lib/parsers';
 import { supabase } from '../../lib/supabase';
+import { callFunction } from '../../lib/llmGateway';
 import DatabricksExportPanel from './DatabricksExportPanel';
 
 interface MigrationWorkflowProps {
@@ -50,9 +51,6 @@ export default function MigrationWorkflow({ onComplete, onBack }: MigrationWorkf
   const [screenshotFileName, setScreenshotFileName] = useState('');
   const [analyzingProgress, setAnalyzingProgress] = useState(0);
   const [analysisError, setAnalysisError] = useState<string>('');
-
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   const handleFileRead = useCallback((file: File) => {
     setFileName(file.name);
@@ -129,25 +127,17 @@ export default function MigrationWorkflow({ onComplete, onBack }: MigrationWorkf
       const ext = screenshotFileName.split('.').pop()?.toLowerCase() || 'png';
       const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
 
-      const response = await fetch(`${supabaseUrl}/functions/v1/migrate-dashboard`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'analyze_screenshot',
-          image_base64: screenshotBase64,
-          mime_type: mimeType,
-          filename: screenshotFileName,
-        }),
+      const { data, error } = await callFunction('migrate-dashboard', {
+        action: 'analyze_screenshot',
+        image_base64: screenshotBase64,
+        mime_type: mimeType,
+        filename: screenshotFileName,
       });
 
       clearInterval(progressTimer);
-      const data = await response.json();
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Screenshot analysis failed');
+      if (error || !data?.success) {
+        throw new Error(error || data?.error || 'Screenshot analysis failed');
       }
 
       setAnalyzingProgress(95);
@@ -201,28 +191,22 @@ export default function MigrationWorkflow({ onComplete, onBack }: MigrationWorkf
         return;
       }
 
-      const response = await fetch(`${supabaseUrl}/functions/v1/migrate-dashboard`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'translate',
-          widgets: widgetsToTranslate.map(w => ({
-            id: w.id,
-            title: w.title,
-            widgetType: w.widgetType,
-            chartType: w.chartType,
-            dataSource: w.dataSource,
-          })),
-          sourceTool: dashboard.metadata.sourceTool,
-          dashboardName: dashboard.metadata.name,
-        }),
+      const { data, error } = await callFunction('migrate-dashboard', {
+        action: 'translate',
+        widgets: widgetsToTranslate.map(w => ({
+          id: w.id,
+          title: w.title,
+          widgetType: w.widgetType,
+          chartType: w.chartType,
+          dataSource: w.dataSource,
+        })),
+        sourceTool: dashboard.metadata.sourceTool,
+        dashboardName: dashboard.metadata.name,
       });
 
+      if (error) throw new Error(error);
+
       setTranslationProgress(60);
-      const data = await response.json();
 
       if (data.translations) {
         const translationMap = new Map(data.translations.map((t: any) => [t.id, t]));

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { callFunction } from '../../lib/llmGateway';
 import {
   Activity,
   AlertTriangle,
@@ -398,23 +399,15 @@ const ConciliationEngine: React.FC<ConciliationEngineProps> = (props) => {
   const callAgent = useCallback(async (agentId: string, phase: string, prevContext: string): Promise<AgentMessage | null> => {
     if (abortRef.current) return null;
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mirofish-simulate`;
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          scenario: buildScenarioPrompt(props),
-          phase,
-          agentId,
-          previousContext: prevContext,
-        }),
+      const { data, error } = await callFunction('mirofish-simulate', {
+        scenario: buildScenarioPrompt(props),
+        phase,
+        agentId,
+        previousContext: prevContext,
       });
 
-      if (!res.ok) throw new Error(`API ${res.status}`);
-      const data = await res.json();
+      if (error) throw new Error(`API Error: ${error}`);
+
       return {
         agentId: data.agentId,
         agentName: data.agentName,

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Wand2, Code, Play, CheckCircle, AlertTriangle, ChevronRight, ChevronDown, Layers, Network, Database, Radio, Cloud, Terminal, Lock, Cpu, HardDrive, Globe, Server, Zap, FileText, RefreshCw, Sparkles, ArrowRight, Copy, Clipboard, Shield, Activity, BarChart3, Percent, AlertOctagon, Gauge, Bug, Package, Download, Wrench, Search, Upload, X, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { callFunction } from '../../lib/llmGateway';
 
 // Extended acquisition methods (comprehensive)
 const ACQUISITION_METHODS = [
@@ -588,31 +589,22 @@ export default function ConnectorVibeBuilder() {
     const schema = NORMALIZATION_SCHEMAS.find(s => s.id === normSchema);
 
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          connectorName,
-          vendor,
-          description,
-          acquisitionMethod: acq?.name || selectedAcquisition,
-          transportProtocol: trans?.name || selectedTransport,
-          logFormat,
-          sampleLog,
-          normalizationSchema: schema?.name || 'OCSF v1.3.0',
-          customContract: normSchema === 'custom' ? customContract : undefined,
-          kernelLevel: acq?.category === 'kernel',
-          dataQuality: { dqSchemaValidation, dqFieldPresence, dqTimestampDrift, dqSchemaEvolution, dqVolumeAnomaly, dqDuplicateDetection },
-          sampling: samplingEnabled ? { rate: samplingRate, discardAfterGraph: samplingDiscardAfterGraph, sparkStreaming: samplingSparkStreaming } : null,
-        }),
+      const { data, error } = await callFunction('generate-connector', {
+        connectorName,
+        vendor,
+        description,
+        acquisitionMethod: acq?.name || selectedAcquisition,
+        transportProtocol: trans?.name || selectedTransport,
+        logFormat,
+        sampleLog,
+        normalizationSchema: schema?.name || 'OCSF v1.3.0',
+        customContract: normSchema === 'custom' ? customContract : undefined,
+        kernelLevel: acq?.category === 'kernel',
+        dataQuality: { dqSchemaValidation, dqFieldPresence, dqTimestampDrift, dqSchemaEvolution, dqVolumeAnomaly, dqDuplicateDetection },
+        sampling: samplingEnabled ? { rate: samplingRate, discardAfterGraph: samplingDiscardAfterGraph, sparkStreaming: samplingSparkStreaming } : null,
       });
 
-      const data = await response.json();
-      if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+      if (error) throw new Error(error);
 
       setGeneratedCode(data.connectorCode || '');
       setParserCode(data.parserCode || '');
@@ -788,26 +780,18 @@ function PasteParseStep({ sampleLog, setSampleLog, onAutoDetect, onNext }: {
     setAnalyzing(true);
     setFileAnalysis('');
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
       const fileDescriptions = uploadedFiles.map(f => `--- FILE: ${f.name} (${f.type}, ${f.size} bytes) ---\n${f.content.slice(0, 3000)}`).join('\n\n');
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          connectorName: 'File Analysis',
-          vendor: 'auto-detect',
-          description: `Analyze these uploaded files and determine: 1) What type of data this is, 2) The vendor/product that generates it, 3) Recommended acquisition method, 4) Whether it needs a UDF for unstructured processing. Files:\n\n${fileDescriptions}`,
-          acquisitionMethod: 'File Upload',
-          transportProtocol: 'HTTPS',
-          logFormat: 'auto-detect',
-          sampleLog: uploadedFiles[0]?.content.slice(0, 5000) || '',
-          normalizationSchema: 'file-analysis',
-        }),
+      const { data, error } = await callFunction('generate-connector', {
+        connectorName: 'File Analysis',
+        vendor: 'auto-detect',
+        description: `Analyze these uploaded files and determine: 1) What type of data this is, 2) The vendor/product that generates it, 3) Recommended acquisition method, 4) Whether it needs a UDF for unstructured processing. Files:\n\n${fileDescriptions}`,
+        acquisitionMethod: 'File Upload',
+        transportProtocol: 'HTTPS',
+        logFormat: 'auto-detect',
+        sampleLog: uploadedFiles[0]?.content.slice(0, 5000) || '',
+        normalizationSchema: 'file-analysis',
       });
-      const data = await response.json();
+      if (error) throw new Error(error);
       if (data.connectorCode) {
         setFileAnalysis(data.connectorCode);
         if (data.metadata?.vendor) onAutoDetect(data.metadata.connectorName || '', data.metadata.vendor, data.metadata.format || 'auto-detected');
@@ -1160,25 +1144,17 @@ function ConfigureStep({ connectorName, setConnectorName, vendor, setVendor, des
   async function proposeContract() {
     setProposingContract(true);
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          connectorName: connectorName || 'custom',
-          vendor: vendor || 'unknown',
-          description: 'Generate a data contract/schema proposal',
-          acquisitionMethod: 'REST API',
-          transportProtocol: 'HTTPS',
-          logFormat,
-          sampleLog,
-          normalizationSchema: 'custom-contract-proposal',
-        }),
+      const { data, error } = await callFunction('generate-connector', {
+        connectorName: connectorName || 'custom',
+        vendor: vendor || 'unknown',
+        description: 'Generate a data contract/schema proposal',
+        acquisitionMethod: 'REST API',
+        transportProtocol: 'HTTPS',
+        logFormat,
+        sampleLog,
+        normalizationSchema: 'custom-contract-proposal',
       });
-      const data = await response.json();
+      if (error) throw new Error(error);
       if (data.connectorCode) setCustomContract(data.connectorCode);
     } catch { /* ignore */ }
     setProposingContract(false);
@@ -1360,25 +1336,17 @@ def extract_pcap_content(binary_data):
     setAnalyzingUnstructured(true);
     try {
       const selectedType = UNSTRUCTURED_DATA_TYPES.find(t => t.id === unstructuredType);
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-connector`;
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          connectorName: connectorName || 'Unstructured Data Processor',
-          vendor: vendor || 'custom',
-          description: `Generate a UDF (User-Defined Function) to parse, extract metadata AND content from unstructured data type: ${selectedType?.name || unstructuredType}. The UDF must extract: 1) All metadata (timestamps, authors, dimensions, encoding, etc), 2) Content understanding (text extraction, object detection in images, speech-to-text for audio, disassembly for binaries), 3) Security-relevant indicators (embedded macros, suspicious strings, IOCs, anomalies). Return a complete Spark UDF or Python function.`,
-          acquisitionMethod: 'File Upload / Stream',
-          transportProtocol: 'Binary Stream',
-          logFormat: `Unstructured: ${selectedType?.name || 'Binary'}`,
-          sampleLog: unstructuredSample,
-          normalizationSchema: 'unstructured-udf-generation',
-        }),
+      const { data, error } = await callFunction('generate-connector', {
+        connectorName: connectorName || 'Unstructured Data Processor',
+        vendor: vendor || 'custom',
+        description: `Generate a UDF (User-Defined Function) to parse, extract metadata AND content from unstructured data type: ${selectedType?.name || unstructuredType}. The UDF must extract: 1) All metadata (timestamps, authors, dimensions, encoding, etc), 2) Content understanding (text extraction, object detection in images, speech-to-text for audio, disassembly for binaries), 3) Security-relevant indicators (embedded macros, suspicious strings, IOCs, anomalies). Return a complete Spark UDF or Python function.`,
+        acquisitionMethod: 'File Upload / Stream',
+        transportProtocol: 'Binary Stream',
+        logFormat: `Unstructured: ${selectedType?.name || 'Binary'}`,
+        sampleLog: unstructuredSample,
+        normalizationSchema: 'unstructured-udf-generation',
       });
-      const data = await response.json();
+      if (error) throw new Error(error);
       if (data.connectorCode) {
         setUnstructuredAnalysis(data.connectorCode);
       } else {

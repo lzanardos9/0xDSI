@@ -21,6 +21,9 @@ from databricks.sdk import WorkspaceClient
 CATALOG = os.environ.get("UNITY_CATALOG", "soc_platform")
 SCHEMA = os.environ.get("UNITY_SCHEMA", "agentic_soc")
 WAREHOUSE_ID = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
+LLM_ENDPOINT = os.environ.get("LLM_ENDPOINT", "databricks-meta-llama-3-1-70b-instruct")
+LLM_FALLBACK_ENDPOINT = os.environ.get("LLM_FALLBACK_ENDPOINT", "databricks-meta-llama-3-1-8b-instruct")
+EMBEDDING_ENDPOINT = os.environ.get("EMBEDDING_ENDPOINT", "databricks-bge-large-en")
 
 _connection = None
 
@@ -851,19 +854,23 @@ async def auth_session(request: Request):
 async def ai_assistant(request: Request):
     """AI assistant endpoint using Databricks Foundation Models."""
     body = await request.json()
-    prompt = body.get("prompt", "")
+    question = body.get("question", body.get("prompt", ""))
+    conversation_history = body.get("conversationHistory", [])
     w = WorkspaceClient()
     try:
+        messages = [{"role": "system", "content": "You are a CISO-level SOC analyst assistant for the 0xDSI Agentic SOC platform. Provide concise, actionable security guidance."}]
+        for msg in conversation_history[-6:]:
+            messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+        messages.append({"role": "user", "content": question})
+
         response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-1-70b-instruct",
-            messages=[
-                {"role": "system", "content": "You are a SOC analyst assistant."},
-                {"role": "user", "content": prompt}
-            ],
+            name=LLM_ENDPOINT,
+            messages=messages,
             max_tokens=2048,
             temperature=0.3
         )
-        return {"response": response.choices[0].message.content}
+        answer = response.choices[0].message.content
+        return {"answer": answer, "response": answer, "queries_used": []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -877,7 +884,7 @@ async def agent_chat(request: Request):
     w = WorkspaceClient()
     try:
         response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-1-70b-instruct",
+            name=LLM_ENDPOINT,
             messages=[
                 {"role": "system", "content": f"You are the {agent_id} for the 0xDSI SOC platform."},
                 {"role": "user", "content": message}
@@ -901,19 +908,29 @@ async def correlation_engine(request: Request):
 async def generate_correlation_rule(request: Request):
     """Generates a correlation rule using Databricks Foundation Models."""
     body = await request.json()
-    description = body.get("description", "")
+    description = body.get("description", body.get("userRequest", ""))
+    conversation_history = body.get("conversationHistory", [])
     w = WorkspaceClient()
     try:
+        messages = [
+            {"role": "system", "content": "Generate a correlation rule in JSON format with fields: name, rule_type, severity, conditions, window_seconds, threshold, mitre_tactic, mitre_technique. Return valid JSON only."}
+        ]
+        for msg in conversation_history[-4:]:
+            messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+        messages.append({"role": "user", "content": f"Create a correlation rule for: {description}"})
+
         response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-1-70b-instruct",
-            messages=[
-                {"role": "system", "content": "Generate a correlation rule in JSON format with fields: name, rule_type, severity, conditions, window_seconds, threshold, mitre_tactic, mitre_technique."},
-                {"role": "user", "content": f"Create a correlation rule for: {description}"}
-            ],
+            name=LLM_ENDPOINT,
+            messages=messages,
             max_tokens=1024,
             temperature=0.2
         )
-        return {"rule": response.choices[0].message.content}
+        rule_text = response.choices[0].message.content
+        try:
+            rule = json.loads(rule_text)
+        except json.JSONDecodeError:
+            rule = {"name": "Generated Rule", "raw": rule_text}
+        return {"rule": rule, "saved": False}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -942,7 +959,7 @@ async def analyze_document(request: Request):
     w = WorkspaceClient()
     try:
         response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-1-70b-instruct",
+            name=LLM_ENDPOINT,
             messages=[
                 {"role": "system", "content": "Analyze this document for security relevance. Extract IOCs, threat indicators, and key findings. Return JSON."},
                 {"role": "user", "content": content[:4000]}
@@ -994,7 +1011,7 @@ async def threat_radar_analyze(request: Request):
     try:
         items = query(f"SELECT * FROM {fqn('threat_radar_items')} ORDER BY last_updated DESC LIMIT 20")
         response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-1-70b-instruct",
+            name=LLM_ENDPOINT,
             messages=[
                 {"role": "system", "content": "Analyze these threat radar items and provide a brief intelligence summary with recommendations."},
                 {"role": "user", "content": json.dumps(items[:5])}
@@ -1003,6 +1020,111 @@ async def threat_radar_analyze(request: Request):
             temperature=0.3
         )
         return {"items": items, "analysis": response.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Aliases: frontend calls these with hyphens (edge function naming convention)
+@app.post("/api/threat-radar-probe")
+async def threat_radar_probe(request: Request):
+    """Probe a specific threat radar item for deeper intelligence."""
+    body = await request.json()
+    item_id = body.get("item_id", "")
+    w = WorkspaceClient()
+    try:
+        items = query(f"SELECT * FROM {fqn('threat_radar_items')} WHERE id = :id", {"id": item_id})
+        item = items[0] if items else {}
+        response = w.serving_endpoints.query(
+            name=LLM_ENDPOINT,
+            messages=[
+                {"role": "system", "content": "Provide a detailed intelligence dossier for this threat radar item. Include TTPs, IOCs, affected sectors, and recommended mitigations."},
+                {"role": "user", "content": json.dumps(item)}
+            ],
+            max_tokens=2048,
+            temperature=0.2
+        )
+        return {"item": item, "dossier": response.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/threat-radar-analyze")
+async def threat_radar_analyze_alias(request: Request):
+    """Alias for threat-radar/analyze with hyphenated naming."""
+    return await threat_radar_analyze(request)
+
+
+@app.post("/api/threat-radar-fetch")
+async def threat_radar_fetch_post(request: Request):
+    """POST version of threat radar fetch for callFunction compatibility."""
+    try:
+        items = query(f"SELECT * FROM {fqn('threat_radar_items')} ORDER BY last_updated DESC LIMIT 50")
+        sources = query(f"SELECT * FROM {fqn('threat_radar_sources')} WHERE enabled = true")
+        return {"items": items, "sources": sources}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/geopolitical-risk-fetch")
+async def geopolitical_risk_fetch(request: Request):
+    """Geopolitical risk data (POST alias for callFunction)."""
+    try:
+        events = query(f"SELECT * FROM {fqn('geopolitical_events')} ORDER BY event_date DESC LIMIT 20")
+        scores = query(f"SELECT * FROM {fqn('geopolitical_risk_scores')} ORDER BY assessed_at DESC LIMIT 30")
+        return {"events": events, "risk_scores": scores}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/feature-lab")
+async def feature_lab_alias(request: Request):
+    """Feature Lab execution (alias with Edge Function naming)."""
+    body = await request.json()
+    feature_id = body.get("feature_id", "")
+    action = body.get("action", "run")
+    try:
+        if action == "promote" or action == "lifecycle":
+            stage = body.get("stage", "")
+            execute_write(f"""
+                UPDATE {fqn('feature_lab_features')}
+                SET lifecycle_stage = :stage
+                WHERE id = :id
+            """, {"stage": stage, "id": feature_id})
+            return {"status": "promoted", "feature_id": feature_id, "stage": stage}
+        features = query(f"SELECT * FROM {fqn('feature_lab_features')} WHERE id = :id", {"id": feature_id})
+        return {"feature": features[0] if features else None, "status": "executed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/generate-connector")
+async def generate_connector(request: Request):
+    """Generate a data connector using Databricks Foundation Models."""
+    body = await request.json()
+    connector_type = body.get("connector_type", body.get("type", "generic"))
+    description = body.get("description", body.get("prompt", ""))
+    sample_data = body.get("sample_data", "")
+    w = WorkspaceClient()
+    try:
+        prompt_text = f"Generate a data connector configuration for: {connector_type}.\nDescription: {description}"
+        if sample_data:
+            prompt_text += f"\nSample data format:\n{sample_data[:2000]}"
+
+        response = w.serving_endpoints.query(
+            name=LLM_ENDPOINT,
+            messages=[
+                {"role": "system", "content": "Generate a complete data connector in JSON with fields: name, type, config (connection settings), schema_mapping, transforms, validation_rules. Return valid JSON."},
+                {"role": "user", "content": prompt_text}
+            ],
+            max_tokens=2048,
+            temperature=0.2
+        )
+        result_text = response.choices[0].message.content
+        try:
+            connector = json.loads(result_text)
+        except json.JSONDecodeError:
+            connector = {"raw": result_text, "type": connector_type}
+        return {"connector": connector, "status": "generated"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1997,7 +2119,7 @@ Question: {question}
 Respond as JSON: {{"queries": ["query_key1", "query_key2"], "custom_sql": null_or_string}}"""
 
         plan_response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-1-70b-instruct",
+            name=LLM_ENDPOINT,
             messages=[
                 {"role": "system", "content": "You are a security data query planner for Databricks Genie. Select relevant queries or generate SQL for the security data lake."},
                 {"role": "user", "content": planning_prompt}
@@ -2063,7 +2185,7 @@ Data Retrieved:
 Provide a clear, actionable answer. Include specific numbers, IPs, or entities when available. If the data suggests immediate action is needed, say so explicitly."""
 
         synthesis_response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-1-70b-instruct",
+            name=LLM_ENDPOINT,
             messages=[
                 {"role": "system", "content": "You are the CISO Security Advisor for 0xDSI. You have access to the full security data lake via Databricks Genie. Provide expert-level security analysis and recommendations. Be concise and actionable."},
                 {"role": "user", "content": synthesis_prompt}
@@ -2120,7 +2242,7 @@ async def genie_executive_briefing(request: Request):
 
         # Generate briefing
         response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-1-70b-instruct",
+            name=LLM_ENDPOINT,
             messages=[
                 {"role": "system", "content": "You are the CISO Assistant. Generate a concise executive security briefing."},
                 {"role": "user", "content": f"Generate executive briefing.\nMetrics: {json.dumps(metrics)}\n7-day trend: {json.dumps(trend, default=str)[:2000]}"}

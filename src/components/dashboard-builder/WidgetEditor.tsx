@@ -4,13 +4,12 @@ import {
 } from 'lucide-react';
 import type { UniversalWidget, ChartType } from '../../lib/dashboardSchema';
 import { supabase } from '../../lib/supabase';
+import { callFunction } from '../../lib/llmGateway';
 
 interface WidgetEditorProps {
   widget: UniversalWidget;
   onSave: (updated: UniversalWidget) => void;
   onClose: () => void;
-  supabaseUrl: string;
-  supabaseKey: string;
 }
 
 const CHART_TYPES: Array<{ value: ChartType; label: string }> = [
@@ -27,7 +26,7 @@ const CHART_TYPES: Array<{ value: ChartType; label: string }> = [
   { value: 'radar', label: 'Radar' },
 ];
 
-export default function WidgetEditor({ widget, onSave, onClose, supabaseUrl, supabaseKey }: WidgetEditorProps) {
+export default function WidgetEditor({ widget, onSave, onClose }: WidgetEditorProps) {
   const [title, setTitle] = useState(widget.title);
   const [chartType, setChartType] = useState<ChartType>(widget.chartType || 'bar');
   const [sql, setSql] = useState(widget.dataSource.translatedSQL || widget.dataSource.originalQuery || '');
@@ -46,20 +45,13 @@ export default function WidgetEditor({ widget, onSave, onClose, supabaseUrl, sup
     if (!aiPrompt.trim()) return;
     setGenerating(true);
     try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/migrate-dashboard`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'generate_widget_query',
-          description: aiPrompt,
-          widgetType: widget.widgetType,
-          chartType,
-        }),
+      const { data, error } = await callFunction('migrate-dashboard', {
+        action: 'generate_widget_query',
+        description: aiPrompt,
+        widgetType: widget.widgetType,
+        chartType,
       });
-      const data = await res.json();
+      if (error) throw new Error(error);
       if (data.sql) {
         setSql(data.sql);
       }

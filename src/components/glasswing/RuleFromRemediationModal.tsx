@@ -5,6 +5,7 @@ import {
   Radar, Fingerprint
 } from 'lucide-react';
 import CorrelationRuleGraph from '../CorrelationRuleGraph';
+import { callFunction } from '../../lib/llmGateway';
 
 interface Vulnerability {
   id: string;
@@ -91,35 +92,15 @@ export default function RuleFromRemediationModal({ vulnerability, onClose }: Pro
     setPhase('generating');
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
       const userRequest = buildPromptFromVuln(vulnerability);
 
-      const response = await fetch(
-        `${supabaseUrl}/functions/v1/generate-correlation-rule`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userRequest,
-            conversationHistory: [],
-          }),
-        }
-      );
+      const { data, error } = await callFunction('generate-correlation-rule', {
+        userRequest,
+        conversationHistory: [],
+      });
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
+      if (error) {
+        throw new Error(error);
       }
 
       setPhase('graph');

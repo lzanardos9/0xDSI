@@ -6,6 +6,7 @@ import {
   Network, Tag,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { callFunction } from "../lib/llmGateway";
 
 // --- Attack Graph types ---
 type GraphNode = {
@@ -544,22 +545,17 @@ Provide a precise, technically grounded answer. Reference specific entities, IPs
     }));
 
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-assistant`;
-      const resp = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ question: incidentContext, conversationHistory }),
+      const { data, error } = await callFunction("ai-assistant", {
+        question: incidentContext,
+        conversationHistory,
       });
 
       let answer: string;
-      if (resp.ok) {
-        const json = await resp.json();
-        answer = json.answer || "I could not generate a response. Try rephrasing your question.";
+      if (error) {
+        answer = `I could not reach the AI backend. ${error}`;
       } else {
-        answer = `I could not reach the AI backend (${resp.status}). Please verify the LLM integration.`;
+        const json = data as Record<string, unknown>;
+        answer = (json.answer as string) || "I could not generate a response. Try rephrasing your question.";
       }
 
       let i = 0;

@@ -6,6 +6,7 @@ import {
   ShieldAlert, ShieldCheck, Lock, Unlock, Server,
   Network, CircleDot, ChevronDown, Minus, Play, BarChart3
 } from 'lucide-react';
+import { callFunction } from '../lib/llmGateway';
 import PSOEnginePanels from './PSOEnginePanels';
 import { PSO_TEMPLATES } from '../lib/psoTemplateData';
 import ConciliationEngine from './financial-threat/ConciliationEngine';
@@ -858,21 +859,15 @@ export default function ThreatSimulator() {
     context?: Record<string, unknown>,
     signal?: AbortSignal
   ): Promise<Record<string, unknown>> => {
-    const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/simulate-threat`;
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      signal,
-      headers: {
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ ...basePayload, step: stepNum, context }),
+    const { data, error } = await callFunction('simulate-threat', {
+      ...basePayload,
+      step: stepNum,
+      context,
     });
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => '');
-      throw new Error(`Step ${stepNum} failed (${response.status}): ${errBody || response.statusText}`);
+    if (error) {
+      throw new Error(`Step ${stepNum} failed: ${error}`);
     }
-    const result = await response.json();
+    const result = data as Record<string, unknown>;
     return result.data || result;
   }, []);
 

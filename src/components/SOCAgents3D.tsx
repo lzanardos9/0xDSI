@@ -8,6 +8,7 @@ import {
   buildThoughtBubble, updateThoughtBubble, buildVRSeat, animateVRSeat,
 } from '../lib/soc3dHelpers';
 import { supabase } from '../lib/supabase';
+import { callFunction } from '../lib/llmGateway';
 import {
   EnergyBeam, FloorPulse, FloatingLabel, HologramParts,
   spawnEnergyBeam, updateEnergyBeam, disposeBeam,
@@ -132,18 +133,15 @@ export default function SOCAgents3D() {
     addFeedItem(`You -> ${agentName}: ${text.trim()}`, '#94a3b8', 'medium');
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const history = (chatHistory[agentId] || []).slice(-6);
 
-      const res = await fetch(`${supabaseUrl}/functions/v1/agent-chat`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentType, message: text.trim(), conversationHistory: history }),
+      const { data, error } = await callFunction('agent-chat', {
+        agentType,
+        message: text.trim(),
+        conversationHistory: history,
       });
 
-      const data = await res.json();
-      const answer = data.answer || data.error || 'Comms down. Try again.';
+      const answer = error ? (error || 'Comms down. Try again.') : (data as Record<string, string>)?.answer || (data as Record<string, string>)?.error || 'Comms down. Try again.';
 
       const assistantMsg: ChatMessage = { role: 'assistant', content: answer, agent: agentName };
       setChatHistory(prev => ({ ...prev, [agentId]: [...(prev[agentId] || []), userMsg, assistantMsg] }));

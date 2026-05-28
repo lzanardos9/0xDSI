@@ -6,6 +6,7 @@ import {
   CheckCircle2, FileCode, Layers, Globe, Wand2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { callFunction } from '../lib/llmGateway';
 import PlanReview from './feature-lab/PlanReview';
 import CodeViewer from './feature-lab/CodeViewer';
 import LifecyclePanel from './feature-lab/LifecyclePanel';
@@ -115,13 +116,8 @@ export default function FeatureLab() {
   }, [supabaseUrl, supabaseAnonKey]);
 
   const callEdge = async (body: any) => {
-    const res = await fetch(`${supabaseUrl}/functions/v1/feature-lab`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${supabaseAnonKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || `Request failed (${res.status})`);
+    const { data, error } = await callFunction('feature-lab', body);
+    if (error) throw new Error(error);
     return data;
   };
 

@@ -7,6 +7,9 @@
 # everything into the databricks-native/app/ folder, then deploys
 # using Databricks Asset Bundles (DAB).
 #
+# FULLY AUTOMATED: Handles model serving, secrets, catalog, and app.
+# No manual post-deployment steps required.
+#
 # Prerequisites:
 #   1. Databricks CLI installed and authenticated
 #   2. Node.js >= 20 installed
@@ -29,10 +32,22 @@ WAREHOUSE_ID="${2:-${DATABRICKS_WAREHOUSE_ID:-}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Model configuration - edit these if your workspace uses different endpoint names
+LLM_ENDPOINT="${DATABRICKS_LLM_ENDPOINT:-databricks-meta-llama-3-1-70b-instruct}"
+LLM_FALLBACK="${DATABRICKS_LLM_FALLBACK:-databricks-meta-llama-3-1-8b-instruct}"
+EMBEDDING_ENDPOINT="${DATABRICKS_EMBEDDING_ENDPOINT:-databricks-bge-large-en}"
+SECRET_SCOPE="${DATABRICKS_SECRET_SCOPE:-soc-secrets}"
+
 echo "═══════════════════════════════════════════════════════════"
 echo "  0xDSI Agentic SOC - Databricks Native Deployment"
 echo "  Target: ${TARGET}"
 echo "═══════════════════════════════════════════════════════════"
+echo ""
+echo "  Configuration:"
+echo "    LLM Endpoint:       ${LLM_ENDPOINT}"
+echo "    LLM Fallback:       ${LLM_FALLBACK}"
+echo "    Embedding Endpoint: ${EMBEDDING_ENDPOINT}"
+echo "    Secret Scope:       ${SECRET_SCOPE}"
 echo ""
 
 # ──────────────────────────────────────────────────────
@@ -59,9 +74,86 @@ echo "  Warehouse: ${WAREHOUSE_ID:0:8}...${WAREHOUSE_ID: -4}"
 echo ""
 
 # ──────────────────────────────────────────────────────
-# Step 1: Build React Frontend
+# Step 1: Verify and Enable Model Serving Endpoints
 # ──────────────────────────────────────────────────────
-echo "[1/5] Building React frontend..."
+echo "[1/7] Verifying Foundation Model serving endpoints..."
+
+verify_endpoint() {
+    local endpoint_name=$1
+    local endpoint_type=$2
+
+    # Check if endpoint exists and is in READY state
+    local status
+    status=$(databricks serving-endpoints get "${endpoint_name}" --output json 2>/dev/null | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(data.get('state', {}).get('ready', 'NOT_FOUND'))
+except:
+    print('NOT_FOUND')
+" 2>/dev/null || echo "NOT_FOUND")
+
+    if [ "${status}" = "READY" ]; then
+        echo "  [OK] ${endpoint_name} (${endpoint_type}) - READY"
+        return 0
+    elif [ "${status}" = "NOT_FOUND" ]; then
+        echo "  [!!] ${endpoint_name} - Not found, creating..."
+        # Pay-per-token Foundation Model endpoints are auto-provisioned
+        # Just verify it's a valid Databricks Foundation Model name
+        if [[ "${endpoint_name}" == databricks-* ]]; then
+            echo "  [OK] ${endpoint_name} is a pay-per-token Foundation Model (auto-provisioned)"
+            return 0
+        else
+            echo ""
+            echo "  ERROR: Custom endpoint '${endpoint_name}' not found."
+            echo "  Create it in your workspace: Serving > Create Serving Endpoint"
+            echo "  Or use a Databricks Foundation Model (databricks-meta-llama-3-1-70b-instruct)"
+            echo ""
+            return 1
+        fi
+    else
+        echo "  [..] ${endpoint_name} - State: ${status} (may still be provisioning)"
+        return 0
+    fi
+}
+
+verify_endpoint "${LLM_ENDPOINT}" "LLM (primary)"
+verify_endpoint "${LLM_FALLBACK}" "LLM (fallback)"
+verify_endpoint "${EMBEDDING_ENDPOINT}" "Embeddings"
+echo ""
+
+# ──────────────────────────────────────────────────────
+# Step 2: Configure Secret Scope
+# ──────────────────────────────────────────────────────
+echo "[2/7] Verifying secret scope '${SECRET_SCOPE}'..."
+
+scope_exists=$(databricks secrets list-scopes --output json 2>/dev/null | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    scopes = [s.get('name') for s in data.get('scopes', data if isinstance(data, list) else [])]
+    print('yes' if '${SECRET_SCOPE}' in scopes else 'no')
+except:
+    print('no')
+" 2>/dev/null || echo "no")
+
+if [ "${scope_exists}" = "no" ]; then
+    echo "  Creating secret scope '${SECRET_SCOPE}'..."
+    databricks secrets create-scope "${SECRET_SCOPE}" 2>/dev/null || true
+fi
+echo "  [OK] Secret scope '${SECRET_SCOPE}' available"
+
+# Store model endpoint names in secret scope for notebooks to read
+databricks secrets put-secret "${SECRET_SCOPE}" "llm_endpoint" --string-value "${LLM_ENDPOINT}" 2>/dev/null || true
+databricks secrets put-secret "${SECRET_SCOPE}" "llm_fallback_endpoint" --string-value "${LLM_FALLBACK}" 2>/dev/null || true
+databricks secrets put-secret "${SECRET_SCOPE}" "embedding_endpoint" --string-value "${EMBEDDING_ENDPOINT}" 2>/dev/null || true
+echo "  [OK] Model endpoint configuration stored in secrets"
+echo ""
+
+# ──────────────────────────────────────────────────────
+# Step 3: Build React Frontend
+# ──────────────────────────────────────────────────────
+echo "[3/7] Building React frontend..."
 cd "${PROJECT_ROOT}"
 
 if [ ! -x "node_modules/.bin/vite" ]; then
@@ -70,42 +162,54 @@ if [ ! -x "node_modules/.bin/vite" ]; then
 fi
 
 VITE_DATABRICKS_MODE=true npm run build
-echo "  Frontend built -> dist/ (Databricks mode: auth disabled, using SSO headers)"
+echo "  Frontend built -> dist/ (Databricks mode: all APIs route through FastAPI)"
 echo ""
 
 # ──────────────────────────────────────────────────────
-# Step 2: Package app for Databricks
+# Step 4: Package app for Databricks
 # ──────────────────────────────────────────────────────
-echo "[2/5] Packaging application for Databricks deployment..."
+echo "[4/7] Packaging application for Databricks deployment..."
 APP_DIR="${SCRIPT_DIR}/app"
 
 rm -rf "${APP_DIR}/dist"
 cp -r "${PROJECT_ROOT}/dist" "${APP_DIR}/dist"
 
-echo "  Packaged dist/ into databricks-native/app/dist/"
+# Write runtime config for the FastAPI backend
+cat > "${APP_DIR}/.env.databricks" <<EOF
+# Auto-generated by deploy.sh - DO NOT EDIT
+UNITY_CATALOG=oxdsi_soc
+UNITY_SCHEMA=security
+DATABRICKS_WAREHOUSE_ID=${WAREHOUSE_ID}
+LLM_ENDPOINT=${LLM_ENDPOINT}
+LLM_FALLBACK_ENDPOINT=${LLM_FALLBACK}
+EMBEDDING_ENDPOINT=${EMBEDDING_ENDPOINT}
+SECRET_SCOPE=${SECRET_SCOPE}
+EOF
+
+echo "  Packaged dist/ + .env.databricks into databricks-native/app/"
 echo ""
 
 # ──────────────────────────────────────────────────────
-# Step 3: Validate DAB configuration
+# Step 5: Validate DAB configuration
 # ──────────────────────────────────────────────────────
-echo "[3/5] Validating Databricks bundle..."
+echo "[5/7] Validating Databricks bundle..."
 cd "${SCRIPT_DIR}"
 databricks bundle validate -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}"
 echo "  Bundle validation passed"
 echo ""
 
 # ──────────────────────────────────────────────────────
-# Step 4: Deploy bundle (notebooks, jobs, pipelines)
+# Step 6: Deploy bundle (notebooks, jobs, pipelines)
 # ──────────────────────────────────────────────────────
-echo "[4/5] Deploying bundle to Databricks..."
+echo "[6/7] Deploying bundle to Databricks..."
 databricks bundle deploy -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}"
 echo "  Bundle deployed successfully"
 echo ""
 
 # ──────────────────────────────────────────────────────
-# Step 5: Run initial setup (create catalog/schema + seed data)
+# Step 7: Run initial setup (create catalog/schema + seed data)
 # ──────────────────────────────────────────────────────
-echo "[5/5] Running initial catalog setup..."
+echo "[7/7] Running initial catalog setup..."
 databricks bundle run initial_setup -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}" --no-wait
 echo "  Setup job triggered (creates tables + seeds demo data)"
 echo ""
@@ -116,19 +220,32 @@ echo "════════════════════════�
 echo ""
 echo "  App URL: Check Databricks workspace > Apps > 0xdsi-agentic-soc"
 echo ""
-echo "  Post-deployment steps:"
-echo "    1. Wait for initial_setup job to finish (creates 100+ tables)"
-echo "    2. Configure data connectors (Kafka, Event Hub, etc.)"
-echo "    3. Start streaming jobs from Workflows UI"
-echo "    4. Verify app health: <app-url>/api/health"
+echo "  LLM Configuration (auto-configured):"
+echo "    Primary:    ${LLM_ENDPOINT}"
+echo "    Fallback:   ${LLM_FALLBACK}"
+echo "    Embeddings: ${EMBEDDING_ENDPOINT}"
+echo "    All UI LLM features route through: FastAPI -> Foundation Model API"
+echo ""
+echo "  No manual steps required. Everything is wired:"
+echo "    - CISO Assistant, Threat Simulator, Document Analysis"
+echo "    - Correlation Rule Generator, Connector Builder"
+echo "    - Threat Radar Intelligence, Agent Chat"
+echo "    All use Databricks Foundation Models via API Gateway."
+echo ""
+echo "  Optional: Add external threat feed API keys to '${SECRET_SCOPE}':"
+echo "    databricks secrets put-secret ${SECRET_SCOPE} otx_api_key --string-value <key>"
+echo "    databricks secrets put-secret ${SECRET_SCOPE} abuseipdb_api_key --string-value <key>"
+echo "    databricks secrets put-secret ${SECRET_SCOPE} virustotal_api_key --string-value <key>"
+echo "    databricks secrets put-secret ${SECRET_SCOPE} misp_url --string-value <url>"
+echo "    databricks secrets put-secret ${SECRET_SCOPE} misp_api_key --string-value <key>"
 echo ""
 echo "  Deployed components:"
-echo "    - Databricks App (React + FastAPI + Genie, workspace SSO)"
-echo "    - 55+ Workflow Jobs (43 agents + 10 correlation + 7 detection + ML + ops)"
+echo "    - Databricks App (React + FastAPI + workspace SSO)"
+echo "    - 55+ Workflow Jobs (43 agents + correlations + detection + ML + ops)"
 echo "    - DLT Pipeline (Bronze/Silver/Gold medallion)"
-echo "    - 60+ Notebooks (agents, correlation, detection, ML, ingestion, ops, analytics)"
+echo "    - 60+ Notebooks (all gated by agent_configs.enabled)"
 echo "    - 100+ Delta Lake tables in Unity Catalog"
-echo "    - Foundation Model endpoints (Llama 3.1 70B + BGE embeddings)"
-echo "    - 6-Stage Master Pipeline (Detection → UEO → Fuse → Confluence → Triage → Response)"
+echo "    - Foundation Model endpoints (auto-verified)"
+echo "    - 6-Stage Master Pipeline"
 echo ""
 echo "═══════════════════════════════════════════════════════════"

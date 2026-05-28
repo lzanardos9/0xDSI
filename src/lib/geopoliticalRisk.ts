@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { callFunction } from './llmGateway';
 
 export interface GeopoliticalEvent {
   id: string;
@@ -105,14 +106,7 @@ export async function fetchCyberGeoCorrelations(): Promise<CyberGeoCorrelation[]
 }
 
 export async function refreshFeeds(): Promise<{ ok: boolean; total_ingested: number }> {
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/geopolitical-risk-fetch`;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!resp.ok) throw new Error(`Refresh failed: ${resp.status}`);
-  return resp.json();
+  const { data, error } = await callFunction('geopolitical-risk-fetch', {});
+  if (error) throw new Error(`Refresh failed: ${error}`);
+  return data;
 }
