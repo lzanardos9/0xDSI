@@ -1317,55 +1317,6 @@ resources:
               schema: ${var.schema}
               auto_respond_threshold: "0.9"
 
-        # Stage 5: UI Sync (depends on Response completing)
-        - task_key: supabase_sync
-          environment_key: default
-          depends_on:
-            - task_key: automated_response_step
-          notebook_task:
-            notebook_path: ../notebooks/ingestion/08_supabase_ui_sync.py
-            base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.schema}
-              sync_tier: "critical"
-              lookback_minutes: "10"
-
-    # ─────────────────────────────────────────────────────
-    # SUPABASE UI SYNC (Standalone - for continuous sync)
-    # ─────────────────────────────────────────────────────
-    supabase_ui_sync:
-      name: "[0xDSI] Supabase UI Sync (Continuous)"
-      schedule:
-        quartz_cron_expression: "0 */1 * * * ?"
-        timezone_id: "UTC"
-      environments:
-        - environment_key: default
-          spec:
-            client: "1"
-      tasks:
-        - task_key: sync_critical
-          environment_key: default
-          notebook_task:
-            notebook_path: ../notebooks/ingestion/08_supabase_ui_sync.py
-            base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.schema}
-              sync_tier: "critical"
-              lookback_minutes: "2"
-              batch_size: "500"
-        - task_key: sync_reference
-          environment_key: default
-          depends_on:
-            - task_key: sync_critical
-          notebook_task:
-            notebook_path: ../notebooks/ingestion/08_supabase_ui_sync.py
-            base_parameters:
-              catalog: ${var.catalog}
-              schema: ${var.schema}
-              sync_tier: "reference"
-              lookback_minutes: "60"
-              batch_size: "200"
-
     # ─────────────────────────────────────────────────────
     # LLM USAGE INTERCEPTOR
     # ─────────────────────────────────────────────────────

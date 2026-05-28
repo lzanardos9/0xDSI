@@ -193,21 +193,35 @@ databricks secrets put-secret soc-secrets virustotal_api_key --string-value "you
 
 ---
 
-## Layer 5: UI Bridge (Databricks → Supabase)
+## Layer 5: UI Data Access (Databricks SQL Statement API)
 
-**New Notebook:** `ingestion/08_supabase_ui_sync.py`
+**Mechanism:** The Databricks App frontend reads directly from Unity Catalog
+via the SQL Statement API. No external sync, no Supabase dependency.
 
-**What it does:** Reads Delta tables and pushes rows to Supabase via PostgREST API.
-This makes detection results visible in the React UI without switching the frontend
-data source.
+**Existing Client:** `databricks-native/app/frontend/src/lib/databricksClient.ts`
+
+**Architecture:**
+```
+┌─────────────────────┐     ┌────────────────────────────┐     ┌─────────────────┐
+│  React UI (App)     │────▶│  Databricks SQL Statement  │────▶│  Delta Tables   │
+│  (served by         │     │  API (/api/2.0/sql/        │     │  (Unity Catalog)│
+│   Databricks Apps)  │     │   statements)              │     │                 │
+└─────────────────────┘     └────────────────────────────┘     └─────────────────┘
+```
+
+**How it works:**
+1. The frontend sends SQL queries to the workspace's SQL Statement API
+2. Queries run against a SQL Warehouse (serverless recommended for low-latency)
+3. Results come back as JSON — no middleware, no sync, no eventual consistency
+4. The Lakebase serving layer (`07_lakebase_sync.py`) provides Z-ORDER optimized
+   Delta tables for sub-second point lookups
 
 **To activate:**
-```
-databricks secrets put-secret soc-secrets supabase_url --string-value "https://xxx.supabase.co"
-databricks secrets put-secret soc-secrets supabase_service_role_key --string-value "eyJ..."
-```
+- Deploy the Databricks App (`databricks-native/app/`)
+- Attach a SQL Warehouse (serverless or pro)
+- The app authenticates via workspace token (automatic in Databricks Apps)
 
-**Sync frequency:** Every 1 minute for critical tables (alerts, cases, events).
+**Latency:** ~200ms for simple queries against Lakebase tables. No sync delay.
 
 ---
 
@@ -216,11 +230,11 @@ databricks secrets put-secret soc-secrets supabase_service_role_key --string-val
 | Step | Action | Time |
 |------|--------|------|
 | 1 | Run `initial_setup` job (creates tables, seeds reference data) | 5 min |
-| 2 | Configure secrets (broker + Supabase credentials) | 10 min |
+| 2 | Configure secrets (broker credentials in `soc-secrets` scope) | 10 min |
 | 3 | Start `kafka_ingestion` job (or `autoloader` for file-based) | 2 min |
 | 4 | Verify events flowing: `SELECT COUNT(*) FROM events WHERE ingested_at > now() - INTERVAL 5 MINUTES` | 1 min |
-| 5 | Start `soc_core_pipeline` (detection → confluence → triage → response → sync) | 2 min |
-| 6 | Start `supabase_ui_sync` for continuous UI updates | 1 min |
+| 5 | Start `soc_core_pipeline` (detection → confluence → triage → response) | 2 min |
+| 6 | Deploy Databricks App with SQL Warehouse attached | 3 min |
 | 7 | Verify UI shows real data in alerts/cases/events panels | 2 min |
 
 **Total time to first real detection: ~25 minutes** (includes KS baseline cold-start warm-up)
@@ -248,11 +262,12 @@ databricks secrets put-secret soc-secrets supabase_service_role_key --string-val
 
 | Artifact | Location | Purpose |
 |----------|----------|---------|
-| React UI | Deployed web app (Supabase hosting or Vercel) | Analyst interface |
-| Supabase DB | Managed PostgreSQL | UI data store + auth |
-| Secret Scope | Databricks workspace | API keys, broker creds |
 | Kafka/EventHub | Cloud-managed (Confluent/Azure/AWS) | Event bus |
+| Secret Scope | Databricks workspace | API keys, broker creds |
 | Landing Volume | Unity Catalog Volume | File-based ingestion |
+| External Scanners | Your SAST/DAST tools | Feed SARIF to Glasswing |
+
+Everything else (UI, data, compute, auth) lives inside the Databricks workspace.
 
 ---
 
