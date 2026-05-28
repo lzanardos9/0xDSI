@@ -89,31 +89,73 @@ try:
 
     # COMMAND ----------
 
-    def generate_embeddings(texts: list, batch_size: int = 64) -> list:
-        """Generate embeddings for a list of texts using the configured endpoint."""
+    EMBEDDING_DIM = 1024
+    MAX_RETRIES = 3
+    RETRY_BACKOFF = [2, 5, 10]  # seconds
+
+    def generate_embeddings(texts: list, batch_size: int = 64) -> tuple:
+        """
+        Generate embeddings for a list of texts using the configured endpoint.
+        Returns (embeddings, valid_indices) - only includes successfully embedded items.
+        Failed items are excluded from clustering rather than polluted with fake vectors.
+        """
+        import time
         client = mlflow.deployments.get_deploy_client("databricks")
         all_embeddings = []
+        valid_indices = []
+        consecutive_failures = 0
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
-            try:
-                response = client.predict(
-                    endpoint=embedding_model,
-                    inputs={"input": batch}
-                )
-                batch_embeddings = [item["embedding"] for item in response["data"]]
-                all_embeddings.extend(batch_embeddings)
-            except Exception as e:
-                mon.log_warning(f"Embedding API error at batch {i // batch_size}", details=str(e))
-                # Fallback: generate deterministic pseudo-embeddings for resilience
-                for text in batch:
-                    seed = hash(text) % (2**32)
-                    rng = np.random.RandomState(seed)
-                    vec = rng.randn(1024).astype(np.float32)
-                    vec = vec / np.linalg.norm(vec)
-                    all_embeddings.append(vec.tolist())
+            batch_start_idx = i
+            success = False
 
-        return all_embeddings
+            # Circuit breaker: if 3 consecutive batch failures, abort remaining
+            if consecutive_failures >= 3:
+                mon.log_warning(
+                    f"Circuit breaker triggered after {consecutive_failures} consecutive failures. "
+                    f"Skipping remaining {len(texts) - i} texts."
+                )
+                break
+
+            for retry in range(MAX_RETRIES):
+                try:
+                    response = client.predict(
+                        endpoint=embedding_model,
+                        inputs={"input": batch}
+                    )
+                    batch_embeddings = [item["embedding"] for item in response["data"]]
+                    all_embeddings.extend(batch_embeddings)
+                    for j in range(len(batch)):
+                        valid_indices.append(batch_start_idx + j)
+                    consecutive_failures = 0
+                    success = True
+                    break
+                except Exception as e:
+                    if retry < MAX_RETRIES - 1:
+                        wait_time = RETRY_BACKOFF[retry]
+                        mon.log_warning(
+                            f"Embedding batch {i // batch_size} retry {retry + 1}/{MAX_RETRIES}",
+                            details=f"{type(e).__name__}: {str(e)[:200]}. Retrying in {wait_time}s"
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        mon.log_warning(
+                            f"Embedding batch {i // batch_size} FAILED after {MAX_RETRIES} retries",
+                            details=f"{type(e).__name__}: {str(e)[:200]}. Skipping {len(batch)} items."
+                        )
+                        consecutive_failures += 1
+
+        skipped = len(texts) - len(valid_indices)
+        if skipped > 0:
+            mon.log_event("embeddings_partial", {
+                "total_texts": len(texts),
+                "embedded": len(valid_indices),
+                "skipped": skipped,
+                "skip_rate": round(skipped / len(texts) * 100, 1),
+            })
+
+        return all_embeddings, valid_indices
 
 
     # Build embedding input: combine title, vuln_class, description, and file_path
@@ -128,8 +170,21 @@ try:
 
     print(f"Generating embeddings for {len(embedding_texts)} findings...")
     with mon.time("generate_embeddings"):
-        embeddings = generate_embeddings(embedding_texts)
-    print(f"Generated {len(embeddings)} embedding vectors (dim={len(embeddings[0]) if embeddings else 0})")
+        embeddings, valid_indices = generate_embeddings(embedding_texts)
+
+    if len(embeddings) == 0:
+        mon.log_warning("No embeddings generated - all batches failed")
+        result = {"status": "embedding_failure", "findings_processed": 0, "root_causes_created": 0}
+        dbutils.notebook.exit(json.dumps(result))
+
+    # Filter findings_list to only those with successful embeddings
+    if len(valid_indices) < len(findings_list):
+        findings_list = [findings_list[i] for i in valid_indices]
+        findings_count = len(findings_list)
+        print(f"Proceeding with {findings_count} successfully embedded findings "
+              f"(skipped {len(embedding_texts) - findings_count} due to embedding failures)")
+    else:
+        print(f"Generated {len(embeddings)} embedding vectors (dim={len(embeddings[0])})")
 
     # COMMAND ----------
 
