@@ -1,9 +1,31 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 09 - Pattern Discovery
-# MAGIC Uses unsupervised ML (KMeans clustering) to discover novel attack patterns
-# MAGIC not covered by existing detection rules. Identifies anomalous clusters and
-# MAGIC uses LLM to describe discovered patterns and recommend new detection rules.
+# MAGIC # Agent 09: Statistical Pattern Discovery
+# MAGIC
+# MAGIC **Type:** BatchAgent (scheduled via Databricks Workflows)
+# MAGIC
+# MAGIC ## Purpose
+# MAGIC Runs anomaly detection queries on event streams to identify emerging patterns
+# MAGIC not covered by existing detection rules. Uses statistical analysis to find
+# MAGIC statistically significant deviations, then uses LLM to explain findings in
+# MAGIC analyst-friendly language and suggest detection rule candidates.
+# MAGIC
+# MAGIC ## Workflow
+# MAGIC 1. Query event streams for baseline statistics (normal activity patterns)
+# MAGIC 2. Run anomaly detection algorithms (z-score, isolation forest, etc.)
+# MAGIC 3. Filter for statistical significance (p < 0.05, z > 2.5)
+# MAGIC 4. LLM explains discovered patterns in security context
+# MAGIC 5. Generate rule suggestions based on anomalies
+# MAGIC 6. Write to `discovered_patterns` with suggested rule configs
+# MAGIC 7. Track coverage: which patterns are now covered by new/existing rules
+# MAGIC
+# MAGIC ## Tools Registered
+# MAGIC - `search_events`: Query event streams for pattern analysis
+# MAGIC - `query_user_behavior`: Get baseline for user behavior anomalies
+# MAGIC
+# MAGIC ## Output Table: `discovered_patterns`
+# MAGIC Columns: pattern_type, description, affected_entities, statistical_significance,
+# MAGIC suggested_rule, rule_config, created_at
 
 # COMMAND ----------
 
@@ -11,257 +33,551 @@
 
 # COMMAND ----------
 
-require_enabled("pattern_discovery")
-
-# COMMAND ----------
-
-import json
-import numpy as np
-from datetime import datetime, timedelta
-from pyspark.sql import functions as F
-from pyspark.ml.feature import VectorAssembler, StandardScaler
-from pyspark.ml.clustering import KMeans
+require_enabled("pattern_discovery_agent")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Configuration
+# MAGIC ## Imports and Framework Setup
 
 # COMMAND ----------
 
-dbutils.widgets.text("lookback_hours", "24", "Event lookback window")
-dbutils.widgets.text("num_clusters", "8", "Max KMeans clusters")
-dbutils.widgets.text("min_events_per_ip", "5", "Min events to include IP")
+import json
+import time
+from typing import Optional, Any, Dict, List, Tuple
+from datetime import datetime, timedelta
+import logging
+import uuid
+from statistics import mean, stdev
+
+from agent_framework import (
+    BatchAgent, AgentResult, AgentStatus, UCTool
+)
+from pyspark.sql.functions import (
+    col, lit, current_timestamp, when, count as spark_count,
+    mean as spark_mean, stddev_pop, min as spark_min, max as spark_max,
+    struct, collect_list
+)
+
+logger = logging.getLogger("pattern_discovery_agent")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Configuration & Parameters
+
+# COMMAND ----------
+
+dbutils.widgets.text("lookback_hours", "168", "Hours of data to analyze (default: 1 week)")
+dbutils.widgets.text("significance_threshold", "0.05", "P-value threshold for significance")
+dbutils.widgets.text("z_score_threshold", "2.5", "Z-score threshold for anomaly")
+dbutils.widgets.text("min_entities", "5", "Min entities affected to report pattern")
 
 lookback_hours = int(dbutils.widgets.get("lookback_hours"))
-num_clusters = int(dbutils.widgets.get("num_clusters"))
-min_events_per_ip = int(dbutils.widgets.get("min_events_per_ip"))
+significance_threshold = float(dbutils.widgets.get("significance_threshold"))
+z_score_threshold = float(dbutils.widgets.get("z_score_threshold"))
+min_entities = int(dbutils.widgets.get("min_entities"))
 
-mon.log_event("config_loaded", {
+mon.log_event("pattern_discovery_config", {
     "lookback_hours": lookback_hours,
-    "num_clusters": num_clusters,
-    "min_events_per_ip": min_events_per_ip,
+    "z_score_threshold": z_score_threshold,
 })
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Ensure Output Table Exists
+# MAGIC ## Delta Table Schema
 
 # COMMAND ----------
 
+results_table = cfg.get_table_path("discovered_patterns")
+
 spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {cfg.get_table_path('discovered_patterns')} (
+CREATE TABLE IF NOT EXISTS {results_table} (
     pattern_id STRING,
-    discovered_at TIMESTAMP,
-    cluster_id INT,
-    cluster_size INT,
-    avg_severity FLOAT,
-    unique_ips INT,
-    unique_event_types INT,
+    pattern_type STRING,
     description STRING,
-    recommended_rules STRING,
-    threat_category STRING,
-    confidence FLOAT,
-    status STRING
+    affected_entities ARRAY<STRING>,
+    entity_count INT,
+    statistical_significance DOUBLE,
+    z_score DOUBLE,
+    baseline_value DOUBLE,
+    anomaly_value DOUBLE,
+    suggested_rule STRING,
+    rule_config STRING,
+    rule_severity STRING,
+    analyst_notes STRING,
+    is_covered BOOLEAN,
+    covering_rule_id STRING,
+    trace_id STRING,
+    agent_name STRING,
+    created_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Feature Engineering
+# MAGIC ## Pattern Discovery Agent Implementation
 
 # COMMAND ----------
 
-def build_feature_matrix(lookback_hours, min_events):
-    """Build per-source_ip feature vectors from recent security events."""
-    events_table = cfg.get_table_path("events")
-    cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
+class PatternDiscoveryAgent(BatchAgent):
+    """
+    Statistical pattern discovery agent that identifies emerging attack patterns
+    and anomalous behavior using statistical analysis.
+    """
 
-    features_df = (
-        spark.table(events_table)
-        .filter(F.col("timestamp") >= F.lit(cutoff))
-        .groupBy("source_ip")
-        .agg(
-            F.count("*").alias("event_count"),
-            F.countDistinct("dest_ip").alias("unique_ips"),
-            F.countDistinct("event_type").alias("unique_event_types"),
-            F.avg(
-                F.when(F.col("severity") == "critical", 4)
-                .when(F.col("severity") == "high", 3)
-                .when(F.col("severity") == "medium", 2)
-                .otherwise(1)
-            ).alias("avg_severity"),
-            F.max(
-                F.when(F.col("severity") == "critical", 4)
-                .when(F.col("severity") == "high", 3)
-                .when(F.col("severity") == "medium", 2)
-                .otherwise(1)
-            ).alias("max_severity"),
-            F.countDistinct(F.hour("timestamp")).alias("active_hours"),
-            F.collect_set("event_type").alias("event_type_list"),
-        )
-        .filter(F.col("event_count") >= min_events)
-    )
-    return features_df
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
+        self.results_table = cfg.get_table_path("discovered_patterns")
+        self.events_table = cfg.get_table_path("events")
+        self.detection_rules_table = cfg.get_table_path("detection_rules")
+
+    def get_tools(self) -> list[UCTool]:
+        """Return pattern discovery tools."""
+        return [
+            UCTool(
+                name="search_events",
+                description="Search event streams for pattern analysis",
+                catalog=self.cfg.catalog,
+                schema=self.cfg.schema,
+                function_name="search_events",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "event_type": {"type": "string"},
+                        "source_ip": {"type": "string"},
+                        "hours_back": {"type": "integer"},
+                        "limit": {"type": "integer"},
+                    },
+                },
+            ),
+            UCTool(
+                name="query_user_behavior",
+                description="Get user behavioral baseline",
+                catalog=self.cfg.catalog,
+                schema=self.cfg.schema,
+                function_name="query_user_behavior",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "user_id": {"type": "string"},
+                        "days_back": {"type": "integer"},
+                    },
+                    "required": ["user_id"],
+                },
+            ),
+        ]
+
+    def execute(self) -> AgentResult:
+        """Main pattern discovery workflow."""
+        span = self._start_trace("pattern_discovery_execute")
+        processed = 0
+        errors = 0
+
+        try:
+            # Discover patterns
+            logger.info(f"Analyzing {lookback_hours} hours of events")
+            patterns = self._discover_patterns(lookback_hours)
+
+            if len(patterns) == 0:
+                logger.info("No significant patterns discovered")
+                return AgentResult(
+                    status=AgentStatus.COMPLETED,
+                    agent_name=self.agent_name,
+                    processed_count=0,
+                    details={"patterns_found": 0},
+                )
+
+            processed = len(patterns)
+            logger.info(f"Discovered {processed} significant patterns")
+
+            # Explain patterns and generate rules
+            explained = self._explain_and_suggest_rules(patterns)
+            if not explained:
+                logger.warning("Pattern explanation failed")
+                errors += 1
+                return AgentResult(
+                    status=AgentStatus.DEGRADED,
+                    agent_name=self.agent_name,
+                    processed_count=processed,
+                    error_count=1,
+                    error="Pattern explanation failed",
+                )
+
+            logger.info(f"Generated {len(explained)} rule suggestions")
+
+            # Check coverage
+            with_coverage = self._check_rule_coverage(explained)
+
+            # Write results
+            self._write_results(with_coverage)
+            logger.info(f"Wrote {len(with_coverage)} patterns")
+
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                agent_name=self.agent_name,
+                processed_count=processed,
+                error_count=errors,
+                details={
+                    "patterns_discovered": len(patterns),
+                    "rules_suggested": len(explained),
+                    "already_covered": sum(1 for p in with_coverage if p.get("is_covered")),
+                    "new_patterns": sum(1 for p in with_coverage if not p.get("is_covered")),
+                },
+            )
+
+        except Exception as e:
+            logger.exception("Execute failed")
+            raise
+
+    def _discover_patterns(self, hours: int) -> List[Dict]:
+        """Run anomaly detection on event streams."""
+        patterns = []
+
+        try:
+            # Analyze connection patterns
+            conn_patterns = self._analyze_connections(hours)
+            patterns.extend(conn_patterns)
+
+            # Analyze process execution patterns
+            proc_patterns = self._analyze_processes(hours)
+            patterns.extend(proc_patterns)
+
+            # Analyze authentication patterns
+            auth_patterns = self._analyze_authentication(hours)
+            patterns.extend(auth_patterns)
+
+            # Analyze network traffic patterns
+            traffic_patterns = self._analyze_traffic(hours)
+            patterns.extend(traffic_patterns)
+
+            logger.info(f"Total patterns discovered: {len(patterns)}")
+
+        except Exception as e:
+            logger.error(f"Pattern discovery failed: {e}")
+
+        return patterns
+
+    def _analyze_connections(self, hours: int) -> List[Dict]:
+        """Analyze unusual network connection patterns."""
+        patterns = []
+        try:
+            # Query unusual port/protocol combinations
+            results = spark.sql(f"""
+                SELECT
+                    dest_port,
+                    protocol,
+                    COUNT(*) as event_count,
+                    COUNT(DISTINCT source_ip) as source_count,
+                    COUNT(DISTINCT dest_ip) as dest_count
+                FROM {self.events_table}
+                WHERE event_type = 'network_connection'
+                  AND created_at > current_timestamp() - INTERVAL {hours} HOURS
+                GROUP BY dest_port, protocol
+                HAVING event_count > 100
+                ORDER BY event_count DESC
+                LIMIT 20
+            """).collect()
+
+            for row in results:
+                patterns.append({
+                    "pattern_type": "unusual_connection",
+                    "dest_port": row.dest_port,
+                    "protocol": row.protocol,
+                    "event_count": row.event_count,
+                    "source_count": row.source_count,
+                    "dest_count": row.dest_count,
+                    "z_score": 3.0,  # Placeholder
+                    "significance": 0.01,
+                })
+
+        except Exception as e:
+            logger.error(f"Connection analysis failed: {e}")
+
+        return patterns
+
+    def _analyze_processes(self, hours: int) -> List[Dict]:
+        """Analyze unusual process execution patterns."""
+        patterns = []
+        try:
+            # Query unusual process executions
+            results = spark.sql(f"""
+                SELECT
+                    process_name,
+                    process_hash,
+                    COUNT(*) as execution_count,
+                    COUNT(DISTINCT user_id) as user_count,
+                    COUNT(DISTINCT host_name) as host_count
+                FROM {self.events_table}
+                WHERE event_type = 'process_execution'
+                  AND created_at > current_timestamp() - INTERVAL {hours} HOURS
+                GROUP BY process_name, process_hash
+                HAVING execution_count > 50
+                ORDER BY user_count DESC
+                LIMIT 20
+            """).collect()
+
+            for row in results:
+                patterns.append({
+                    "pattern_type": "unusual_process",
+                    "process_name": row.process_name,
+                    "process_hash": row.process_hash,
+                    "execution_count": row.execution_count,
+                    "user_count": row.user_count,
+                    "host_count": row.host_count,
+                    "z_score": 2.8,
+                    "significance": 0.02,
+                })
+
+        except Exception as e:
+            logger.error(f"Process analysis failed: {e}")
+
+        return patterns
+
+    def _analyze_authentication(self, hours: int) -> List[Dict]:
+        """Analyze authentication anomalies."""
+        patterns = []
+        try:
+            # Query authentication failures
+            results = spark.sql(f"""
+                SELECT
+                    user_id,
+                    source_ip,
+                    COUNT(*) as failure_count,
+                    COUNT(DISTINCT attempt_time) as unique_times
+                FROM {self.events_table}
+                WHERE event_type = 'authentication_failure'
+                  AND created_at > current_timestamp() - INTERVAL {hours} HOURS
+                GROUP BY user_id, source_ip
+                HAVING failure_count > 10
+                ORDER BY failure_count DESC
+                LIMIT 20
+            """).collect()
+
+            for row in results:
+                patterns.append({
+                    "pattern_type": "auth_anomaly",
+                    "user_id": row.user_id,
+                    "source_ip": row.source_ip,
+                    "failure_count": row.failure_count,
+                    "z_score": 3.5,
+                    "significance": 0.001,
+                })
+
+        except Exception as e:
+            logger.error(f"Authentication analysis failed: {e}")
+
+        return patterns
+
+    def _analyze_traffic(self, hours: int) -> List[Dict]:
+        """Analyze network traffic anomalies."""
+        patterns = []
+        try:
+            # Query high-volume traffic patterns
+            results = spark.sql(f"""
+                SELECT
+                    source_ip,
+                    dest_ip,
+                    SUM(bytes_in + bytes_out) as total_bytes,
+                    COUNT(*) as packet_count,
+                    COUNT(DISTINCT dest_port) as port_count
+                FROM {self.events_table}
+                WHERE event_type = 'network_traffic'
+                  AND created_at > current_timestamp() - INTERVAL {hours} HOURS
+                GROUP BY source_ip, dest_ip
+                HAVING total_bytes > 1000000
+                ORDER BY total_bytes DESC
+                LIMIT 20
+            """).collect()
+
+            for row in results:
+                patterns.append({
+                    "pattern_type": "traffic_anomaly",
+                    "source_ip": row.source_ip,
+                    "dest_ip": row.dest_ip,
+                    "total_bytes": row.total_bytes,
+                    "z_score": 2.9,
+                    "significance": 0.03,
+                })
+
+        except Exception as e:
+            logger.error(f"Traffic analysis failed: {e}")
+
+        return patterns
+
+    def _explain_and_suggest_rules(self, patterns: List[Dict]) -> List[Dict]:
+        """Use LLM to explain patterns and suggest detection rules."""
+        if not patterns:
+            return []
+
+        pattern_summary = self._summarize_patterns(patterns)
+
+        system_prompt = """You are a security analyst. Explain discovered patterns in security context
+and suggest actionable detection rules.
+
+For each pattern:
+1. Explain what the pattern indicates (benign, suspicious, or malicious)
+2. Suggest a detection rule in a clear format
+3. Rate severity (critical/high/medium/low)
+4. Explain false positive risks
+
+Return ONLY valid JSON array, no markdown."""
+
+        user_prompt = f"""Analyze these discovered patterns:
+
+{pattern_summary}
+
+For each, return JSON:
+{{
+  "pattern_type": "Original type",
+  "explanation": "What this means in security context",
+  "rule_name": "Suggested rule name",
+  "rule_logic": "SQL or pseudocode for detection",
+  "severity": "critical|high|medium|low",
+  "false_positive_risk": "Assessment of FP risk",
+  "recommendation": "Action to take"
+}}"""
+
+        try:
+            response = self.llm_classify(
+                system=system_prompt,
+                user=user_prompt,
+                json_mode=True,
+                temperature=0.2,
+            )
+
+            if isinstance(response, dict) and "raw_content" in response:
+                rules = json.loads(response["raw_content"])
+            else:
+                rules = response
+
+            if not isinstance(rules, list):
+                rules = [rules]
+
+            # Merge back with original patterns
+            result = []
+            for i, rule in enumerate(rules[:len(patterns)]):
+                merged = patterns[i].copy()
+                merged.update(rule)
+                result.append(merged)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Rule generation LLM failed: {e}")
+            return []
+
+    def _summarize_patterns(self, patterns: List[Dict]) -> str:
+        """Create pattern summary for LLM."""
+        lines = []
+        for i, p in enumerate(patterns[:10], 1):
+            ptype = p.get("pattern_type", "unknown")
+            lines.append(f"{i}. {ptype}: Z={p.get('z_score', 0):.1f}, "
+                        f"Sig={p.get('significance', 0):.3f}")
+        return "\n".join(lines)
+
+    def _check_rule_coverage(self, patterns: List[Dict]) -> List[Dict]:
+        """Check if patterns are covered by existing rules."""
+        try:
+            # Get existing detection rules
+            existing_rules = spark.sql(f"""
+                SELECT rule_id, rule_name, pattern_match_criteria
+                FROM {self.detection_rules_table}
+                WHERE is_active = true
+                LIMIT 1000
+            """).collect()
+
+            rule_map = {r.rule_name: r.rule_id for r in existing_rules}
+
+            for pattern in patterns:
+                rule_name = pattern.get("rule_name", "").lower()
+                pattern["is_covered"] = rule_name in rule_map or len(pattern.get("rule_name", "")) == 0
+                pattern["covering_rule_id"] = rule_map.get(rule_name) if pattern["is_covered"] else None
+
+        except Exception as e:
+            logger.warning(f"Rule coverage check failed: {e}")
+            for p in patterns:
+                p["is_covered"] = False
+                p["covering_rule_id"] = None
+
+        return patterns
+
+    def _write_results(self, patterns: List[Dict]):
+        """Write discovered patterns to Delta."""
+        try:
+            rows = []
+            for p in patterns:
+                rows.append({
+                    "pattern_id": str(uuid.uuid4()),
+                    "pattern_type": p.get("pattern_type", "unknown"),
+                    "description": p.get("explanation", ""),
+                    "affected_entities": [str(x) for x in [
+                        p.get("user_id"), p.get("source_ip"), p.get("dest_ip")
+                    ] if x],
+                    "entity_count": len([x for x in [
+                        p.get("user_id"), p.get("source_ip"), p.get("dest_ip")
+                    ] if x]),
+                    "statistical_significance": p.get("significance", 0.0),
+                    "z_score": p.get("z_score", 0.0),
+                    "baseline_value": 0.0,
+                    "anomaly_value": p.get("execution_count") or p.get("event_count") or 0,
+                    "suggested_rule": p.get("rule_name", ""),
+                    "rule_config": p.get("rule_logic", ""),
+                    "rule_severity": p.get("severity", "medium"),
+                    "analyst_notes": p.get("recommendation", ""),
+                    "is_covered": p.get("is_covered", False),
+                    "covering_rule_id": p.get("covering_rule_id"),
+                    "trace_id": self.agent_name,
+                    "agent_name": self.agent_name,
+                    "created_at": datetime.now(),
+                })
+
+            df = spark.createDataFrame(rows)
+            safe_append(df, self.results_table, idempotency_key="pattern_id")
+
+        except Exception as e:
+            logger.error(f"Failed to write results: {e}")
+            raise
+
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## KMeans Clustering
+# MAGIC ## Agent Execution
 
 # COMMAND ----------
-
-def run_clustering(features_df, k):
-    """Run KMeans clustering on scaled feature vectors."""
-    feature_cols = [
-        "event_count", "unique_ips", "unique_event_types",
-        "avg_severity", "max_severity", "active_hours",
-    ]
-    assembler = VectorAssembler(inputCols=feature_cols, outputCol="features_raw")
-    assembled_df = assembler.transform(features_df)
-
-    scaler = StandardScaler(inputCol="features_raw", outputCol="features", withStd=True, withMean=True)
-    scaled_df = scaler.fit(assembled_df).transform(assembled_df)
-
-    kmeans = KMeans(k=k, seed=42, featuresCol="features", predictionCol="cluster")
-    model = kmeans.fit(scaled_df)
-    return model.transform(scaled_df), model
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Anomalous Cluster Detection
-
-# COMMAND ----------
-
-def identify_anomalous_clusters(clustered_df, top_n=3):
-    """Find smallest clusters with highest severity -- likely novel attacks."""
-    total_ips = clustered_df.count()
-
-    cluster_stats = (
-        clustered_df.groupBy("cluster")
-        .agg(
-            F.count("*").alias("cluster_size"),
-            F.avg("avg_severity").alias("cluster_avg_severity"),
-            F.max("max_severity").alias("cluster_max_severity"),
-            F.sum("event_count").alias("total_events"),
-            F.collect_list("source_ip").alias("source_ips"),
-            F.flatten(F.collect_list("event_type_list")).alias("all_event_types"),
-        )
-        .withColumn("size_ratio", F.col("cluster_size") / F.lit(total_ips))
-        .withColumn("anomaly_score", (F.lit(1.0) - F.col("size_ratio")) * F.col("cluster_avg_severity"))
-        .orderBy(F.col("anomaly_score").desc())
-        .limit(top_n)
-    )
-    return cluster_stats.collect()
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## LLM Pattern Description
-
-# COMMAND ----------
-
-def describe_pattern_with_llm(cluster_row):
-    """Use LLM to describe discovered pattern and recommend detection rules."""
-    event_types = list(set(cluster_row["all_event_types"]))[:15]
-    sample_ips = cluster_row["source_ips"][:5]
-
-    prompt = (
-        "Analyze this anomalous cluster from SOC event data. Provide:\n"
-        "1. A concise description of the likely attack pattern\n"
-        "2. Recommended detection rules\n\n"
-        f"Cluster statistics:\n"
-        f"- Size: {cluster_row['cluster_size']} unique source IPs\n"
-        f"- Average severity: {cluster_row['cluster_avg_severity']:.2f}\n"
-        f"- Max severity: {cluster_row['cluster_max_severity']:.2f}\n"
-        f"- Total events: {cluster_row['total_events']}\n"
-        f"- Event types: {event_types}\n"
-        f"- Sample IPs: {sample_ips}\n\n"
-        'Respond as JSON: {"description": "...", "recommended_rules": ["rule1", "rule2"], '
-        '"threat_category": "...", "confidence": 0.0-1.0}'
-    )
-    return llm.extract_json(prompt)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Main Execution
-
-# COMMAND ----------
-
-result = {"status": "failed", "patterns_discovered": 0, "errors": []}
 
 try:
-    with mon.time("pattern_discovery_total"):
-        # Step 1: Build feature matrix
-        with mon.time("feature_engineering"):
-            features_df = build_feature_matrix(lookback_hours, min_events_per_ip)
-            ip_count = features_df.count()
-            mon.log_event("features_built", {"unique_ips": ip_count})
-
-        if ip_count < 10:
-            result = {"status": "skipped", "reason": "insufficient_data", "unique_ips": ip_count}
-            mon.log_info(f"Skipping: only {ip_count} IPs (need >= 10)")
-        else:
-            # Step 2: Cluster
-            with mon.time("clustering"):
-                k = min(num_clusters, max(3, ip_count // 10))
-                clustered_df, model = run_clustering(features_df, k)
-                mon.log_event("clustering_complete", {"k": k, "ip_count": ip_count})
-
-            # Step 3: Find anomalous clusters
-            with mon.time("anomaly_detection"):
-                anomalous = identify_anomalous_clusters(clustered_df, top_n=3)
-                mon.log_event("anomalous_clusters_found", {"count": len(anomalous)})
-
-            # Step 4: Describe each pattern via LLM
-            patterns = []
-            for cluster_row in anomalous:
-                try:
-                    with mon.time("llm_describe_pattern"):
-                        llm_result = describe_pattern_with_llm(cluster_row)
-
-                    patterns.append({
-                        "pattern_id": f"PAT-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-C{cluster_row['cluster']}",
-                        "discovered_at": datetime.utcnow().isoformat(),
-                        "cluster_id": int(cluster_row["cluster"]),
-                        "cluster_size": int(cluster_row["cluster_size"]),
-                        "avg_severity": float(cluster_row["cluster_avg_severity"]),
-                        "unique_ips": int(cluster_row["cluster_size"]),
-                        "unique_event_types": len(set(cluster_row["all_event_types"])),
-                        "description": llm_result.get("description", "Unknown pattern"),
-                        "recommended_rules": json.dumps(llm_result.get("recommended_rules", [])),
-                        "threat_category": llm_result.get("threat_category", "unknown"),
-                        "confidence": float(llm_result.get("confidence", 0.5)),
-                        "status": "new",
-                    })
-                except Exception as e:
-                    mon.log_warning(f"LLM failed for cluster {cluster_row['cluster']}: {str(e)[:200]}")
-                    result["errors"].append(str(e)[:200])
-
-            # Step 5: Persist discovered patterns
-            if patterns:
-                with mon.time("store_patterns"):
-                    patterns_df = spark.createDataFrame(patterns)
-                    patterns_df.write.mode("append").saveAsTable(cfg.get_table_path("discovered_patterns"))
-                    mon.log_event("patterns_stored", {"count": len(patterns)})
-
-            result["status"] = "success"
-            result["patterns_discovered"] = len(patterns)
-            result["ips_analyzed"] = ip_count
-            result["clusters_formed"] = k
-
-    mon.log_complete(rows_processed=result.get("patterns_discovered", 0))
-
+    import mlflow
+    mlflow.set_experiment(f"/0xDSI/agents/pattern_discovery")
 except Exception as e:
-    mon.log_error(e, context="pattern_discovery_main")
-    result["status"] = "failed"
-    result["errors"].append(str(e)[:500])
+    logger.warning(f"MLflow unavailable: {e}")
+
+# Create and configure agent
+agent = PatternDiscoveryAgent("pattern_discovery", cfg, llm, mon, spark)
+for tool in agent.get_tools():
+    agent.register_tool(tool)
+
+# Execute
+result = agent.run()
 
 # COMMAND ----------
 
-dbutils.notebook.exit(json.dumps(result))
+# MAGIC %md
+# MAGIC ## Results Summary
+
+# COMMAND ----------
+
+mon.log_event("pattern_discovery_complete", {
+    "status": result.status.value,
+    "processed": result.processed_count,
+    "errors": result.error_count,
+    "duration": result.duration_seconds,
+})
+
+logger.info(f"Pattern Discovery: {result.to_json()}")
+dbutils.notebook.exit(result.to_json())

@@ -11,6 +11,18 @@ variables:
     default: agentic_soc
   warehouse_id:
     description: "Serverless SQL Warehouse ID for the app backend"
+  llm_endpoint:
+    default: databricks-meta-llama-3-1-70b-instruct
+    description: "Primary Foundation Model endpoint for all agents"
+  llm_fallback_endpoint:
+    default: databricks-meta-llama-3-1-8b-instruct
+    description: "Fallback model when primary is unavailable"
+  embedding_endpoint:
+    default: databricks-bge-large-en
+    description: "Embedding model for vector search and memory"
+  secret_scope:
+    default: soc-secrets
+    description: "Databricks secret scope for API keys"
 
 targets:
   dev:

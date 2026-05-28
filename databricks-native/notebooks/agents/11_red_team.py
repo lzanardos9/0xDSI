@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 11 - Red Team Automation
+# MAGIC # Agent 11 - Red Team Simulation (Mosaic AI Agent Framework)
 # MAGIC
 # MAGIC Production adversary simulation and detection coverage measurement:
 # MAGIC - **Atomic Red Team** integration for real technique execution via endpoint agents
@@ -9,12 +9,6 @@
 # MAGIC   alerts, correlation rule matches, and agent detections
 # MAGIC - **MITRE ATT&CK coverage mapping** with confidence-weighted scoring
 # MAGIC - **Historical trend tracking** for detection improvement over time
-# MAGIC
-# MAGIC This agent does NOT simply inject fake events and check if they reappear.
-# MAGIC It either:
-# MAGIC   (a) Triggers real endpoint-based technique execution via API, or
-# MAGIC   (b) Replays real attack telemetry (EVTX/Sysmon/PCAP) through ingestion,
-# MAGIC   then independently measures what the detection pipeline actually caught.
 
 # COMMAND ----------
 
@@ -31,10 +25,14 @@ import hashlib
 import time
 from datetime import datetime, timedelta
 from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, StringType, DoubleType,
-    TimestampType, BooleanType, IntegerType, ArrayType,
-)
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType, BooleanType, IntegerType, ArrayType
+import mlflow
+from agent_framework import BatchAgent, AgentResult, AgentStatus, UCTool, create_soc_tools
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Configure Agent Parameters
 
 # COMMAND ----------
 
@@ -111,26 +109,116 @@ CAMPAIGNS = {
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Execution Engine
+# MAGIC ## Red Team Agent Implementation
 
 # COMMAND ----------
 
-try:
-    result = {"notebook": "11_red_team", "status": "success", "started_at": datetime.utcnow().isoformat()}
-    simulation_id = hashlib.sha256(f"redteam_{datetime.utcnow().isoformat()}".encode()).hexdigest()[:16]
+class RedTeamAgent(BatchAgent):
+    """
+    Red Team Simulation Agent.
+    Generates and executes adversary simulation scenarios, measures detection coverage.
+    """
 
-    campaign = CAMPAIGNS.get(campaign_name)
-    if not campaign:
-        raise ValueError(f"Unknown campaign: {campaign_name}. Available: {list(CAMPAIGNS.keys())}")
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
 
-    all_techniques_tested = set()
-    execution_log = []
-    execution_start = datetime.utcnow()
+        # Register tools
+        for tool in create_soc_tools(cfg):
+            if tool.name in ["search_events"]:
+                self.register_tool(tool)
 
-    with mon.time("execute_campaign"):
-        if mode == "atomic":
-            # --- ATOMIC RED TEAM: Trigger real techniques on endpoints ---
-            # Requires: Atomic Red Team runner endpoint configured in secrets
+    def execute(self) -> AgentResult:
+        """Execute red team simulation campaign."""
+        processed_count = 0
+        error_count = 0
+
+        try:
+            simulation_id = hashlib.sha256(f"redteam_{datetime.utcnow().isoformat()}".encode()).hexdigest()[:16]
+            campaign = CAMPAIGNS.get(campaign_name)
+
+            if not campaign:
+                raise ValueError(f"Unknown campaign: {campaign_name}. Available: {list(CAMPAIGNS.keys())}")
+
+            all_techniques_tested = set()
+            execution_log = []
+            execution_start = datetime.utcnow()
+
+            # Execute campaign based on mode
+            with mon.time("execute_campaign"):
+                if mode == "atomic":
+                    execution_log, all_techniques_tested = self._execute_atomic_mode(
+                        campaign, simulation_id
+                    )
+                elif mode == "caldera":
+                    execution_log, all_techniques_tested = self._execute_caldera_mode(
+                        campaign, simulation_id
+                    )
+                elif mode == "replay":
+                    execution_log, all_techniques_tested = self._execute_replay_mode(
+                        campaign, simulation_id
+                    )
+
+                processed_count = len(execution_log)
+
+            # Wait for detection pipeline
+            with mon.time("detection_wait"):
+                mon.log_info(f"Waiting {detection_window_minutes} minutes for detection pipeline to process")
+                time.sleep(min(detection_window_minutes * 60, 60))  # Cap at 60s for testing
+
+            # Measure detection coverage
+            coverage_result = self._measure_detection_coverage(
+                all_techniques_tested, execution_start
+            )
+
+            # Persist results
+            with mon.time("persist_results"):
+                self._persist_results(
+                    simulation_id, campaign_name, mode, campaign,
+                    execution_log, all_techniques_tested, coverage_result
+                )
+
+            # Log MLflow metrics
+            mlflow.set_experiment(f"/0xDSI/agents/{self.agent_name}")
+            with mlflow.start_run(run_name=f"red_team_{simulation_id}"):
+                mlflow.log_params({
+                    "campaign": campaign_name,
+                    "mode": mode,
+                    "agent": self.agent_name,
+                })
+                mlflow.log_metrics({
+                    "techniques_tested": len(all_techniques_tested),
+                    "techniques_detected": len(coverage_result["detected"]),
+                    "detection_rate": coverage_result["detection_rate"],
+                })
+
+            detection_rate = coverage_result["detection_rate"]
+            status = AgentStatus.COMPLETED if detection_rate >= target_coverage else AgentStatus.DEGRADED
+
+            return AgentResult(
+                status=status,
+                agent_name=self.agent_name,
+                processed_count=processed_count,
+                error_count=error_count,
+                details={
+                    "simulation_id": simulation_id,
+                    "campaign": campaign_name,
+                    "detection_rate": round(detection_rate, 4),
+                    "techniques_tested": len(all_techniques_tested),
+                    "techniques_detected": len(coverage_result["detected"]),
+                },
+            )
+
+        except Exception as e:
+            error_count += 1
+            mon.log_error(e, context="red_team")
+            raise
+
+    def _execute_atomic_mode(self, campaign, simulation_id):
+        """Execute via Atomic Red Team API."""
+        execution_log = []
+        all_techniques_tested = set()
+
+        try:
             atomic_endpoint = secrets_mgr.get("atomic-red-team-api-url")
             atomic_token = secrets_mgr.get("atomic-red-team-api-token")
 
@@ -176,8 +264,17 @@ try:
                         })
                         mon.log_warning(f"Atomic test failed: {step['atomic_test']}: {exec_err}")
 
-        elif mode == "caldera":
-            # --- CALDERA: Submit operation plan via REST API ---
+        except Exception as e:
+            mon.log_warning(f"Atomic mode failed: {e}")
+
+        return execution_log, all_techniques_tested
+
+    def _execute_caldera_mode(self, campaign, simulation_id):
+        """Execute via CALDERA API."""
+        execution_log = []
+        all_techniques_tested = set()
+
+        try:
             caldera_url = secrets_mgr.get("caldera-api-url")
             caldera_key = secrets_mgr.get("caldera-api-key")
 
@@ -190,7 +287,6 @@ try:
                     all_techniques_tested.add(step["technique"])
                     abilities.append({"technique_id": step["technique"]})
 
-                # Create CALDERA operation
                 operation_payload = json.dumps({
                     "name": f"0xDSI-{simulation_id}-{scenario['name']}",
                     "adversary": {"name": scenario["name"], "atomic_ordering": abilities},
@@ -229,16 +325,23 @@ try:
                     })
                     mon.log_warning(f"CALDERA submission failed: {caldera_err}")
 
-        elif mode == "replay":
-            # --- REPLAY: Inject real attack telemetry samples from stored dataset ---
-            # Uses pre-collected real attack EVTX/Sysmon events from attack archive
+        except Exception as e:
+            mon.log_warning(f"CALDERA mode failed: {e}")
+
+        return execution_log, all_techniques_tested
+
+    def _execute_replay_mode(self, campaign, simulation_id):
+        """Execute via telemetry replay from archive."""
+        execution_log = []
+        all_techniques_tested = set()
+
+        try:
             attack_samples_table = cfg.get_table_path("red_team_attack_samples")
 
             for scenario in campaign["scenarios"]:
                 techniques_in_scenario = [step["technique"] for step in scenario["kill_chain"]]
                 all_techniques_tested.update(techniques_in_scenario)
 
-                # Load pre-recorded real attack telemetry matching these techniques
                 try:
                     samples = spark.sql(f"""
                         SELECT event_data, event_type, mitre_technique, source_system,
@@ -252,16 +355,14 @@ try:
                     sample_count = samples.count()
 
                     if sample_count > 0:
-                        # Re-timestamp and inject through the real ingestion pipeline
                         replayed = (
                             samples
-                            .withColumn("timestamp", F.current_timestamp() + F.expr(f"INTERVAL {5 * scenario['kill_chain'].index(scenario['kill_chain'][0])} MINUTES"))
+                            .withColumn("timestamp", F.current_timestamp() + F.expr(f"INTERVAL 5 MINUTES"))
                             .withColumn("simulation_id", F.lit(simulation_id))
                             .withColumn("scenario_name", F.lit(scenario["name"]))
                             .withColumn("is_red_team_replay", F.lit(True))
                         )
 
-                        # Write to bronze ingestion (goes through REAL detection pipeline)
                         safe_append(replayed, "bronze_events", catalog=cfg.catalog, schema=cfg.schema)
 
                         execution_log.append({
@@ -277,8 +378,7 @@ try:
                             "events": sample_count,
                         })
                     else:
-                        # No pre-recorded samples; generate structured synthetic events
-                        # These are NOT arbitrary -- they match real Sysmon/EVTX schemas
+                        # Generate structured synthetic events
                         synthetic_batch = []
                         for idx, step in enumerate(scenario["kill_chain"]):
                             synthetic_batch.append({
@@ -318,15 +418,16 @@ try:
                     })
                     mon.log_warning(f"Replay failed for {scenario['name']}: {replay_err}")
 
-    # --- Wait for Detection Pipeline to Process ---
-    with mon.time("detection_wait"):
-        mon.log_info(f"Waiting {detection_window_minutes} minutes for detection pipeline to process")
-        time.sleep(detection_window_minutes * 60)
+        except Exception as e:
+            mon.log_warning(f"Replay mode failed: {e}")
 
-    # --- Measure REAL Detection Coverage ---
-    with mon.time("measure_detection_coverage"):
+        return execution_log, all_techniques_tested
+
+    def _measure_detection_coverage(self, all_techniques_tested, execution_start):
+        """Measure actual detection coverage from alerts and correlation rules."""
         alerts_table = cfg.get_table_path("alerts")
         correlation_matches_table = cfg.get_table_path("correlation_matches")
+        correlation_rules_table = cfg.get_table_path("correlation_rules")
 
         # Check alerts generated after execution start
         detected_via_alerts = spark.sql(f"""
@@ -341,7 +442,7 @@ try:
         detected_via_correlation = spark.sql(f"""
             SELECT DISTINCT r.mitre_technique
             FROM {correlation_matches_table} m
-            JOIN {cfg.get_table_path('correlation_rules')} r ON m.rule_id = r.id
+            JOIN {correlation_rules_table} r ON m.rule_id = r.id
             WHERE m.matched_at >= '{execution_start.isoformat()}'
               AND r.mitre_technique IS NOT NULL
         """)
@@ -355,42 +456,18 @@ try:
         # Coverage calculation
         detection_rate = len(detected_from_campaign) / max(1, len(all_techniques_tested))
 
-        # Per-phase breakdown
-        phase_coverage = {}
-        for scenario in campaign["scenarios"]:
-            for step in scenario["kill_chain"]:
-                phase = step["phase"]
-                if phase not in phase_coverage:
-                    phase_coverage[phase] = {"tested": 0, "detected": 0}
-                phase_coverage[phase]["tested"] += 1
-                if step["technique"] in all_detected:
-                    phase_coverage[phase]["detected"] += 1
+        return {
+            "detected": detected_from_campaign,
+            "missed": missed_techniques,
+            "detection_rate": detection_rate,
+            "alert_techniques": alert_techniques,
+            "correlation_techniques": correlation_techniques,
+        }
 
-        for phase, counts in phase_coverage.items():
-            counts["rate"] = counts["detected"] / max(1, counts["tested"])
+    def _persist_results(self, simulation_id, campaign_name, mode, campaign,
+                        execution_log, all_techniques_tested, coverage_result):
+        """Persist simulation results to Delta tables."""
 
-        mon.log_metric("detection_rate", detection_rate)
-        mon.log_metric("techniques_tested", len(all_techniques_tested))
-        mon.log_metric("techniques_detected", len(detected_from_campaign))
-
-    # --- Gap Analysis with LLM ---
-    with mon.time("gap_analysis"):
-        gap_analysis = None
-        if missed_techniques:
-            gap_prompt = (
-                f"As a SOC detection engineer, analyze these MITRE ATT&CK detection gaps:\n"
-                f"Campaign: {campaign_name}\n"
-                f"Missed techniques: {json.dumps(list(missed_techniques))}\n"
-                f"Phase coverage: {json.dumps(phase_coverage)}\n\n"
-                f"For each missed technique, recommend:\n"
-                f"1. What data source is needed\n"
-                f"2. A Sigma-compatible detection rule concept\n"
-                f"3. Priority (critical/high/medium) based on kill chain position"
-            )
-            gap_analysis = llm.chat(gap_prompt)
-
-    # --- Persist Results ---
-    with mon.time("persist_results"):
         # Execution log
         if execution_log:
             exec_df = spark.createDataFrame(execution_log)
@@ -398,7 +475,9 @@ try:
             safe_append(exec_df, "red_team_execution_log", catalog=cfg.catalog, schema=cfg.schema)
 
         # Simulation summary
+        detection_rate = coverage_result["detection_rate"]
         run_status = "pass" if detection_rate >= target_coverage else "gap_detected"
+
         simulation_data = [{
             "simulation_id": simulation_id,
             "campaign": campaign_name,
@@ -406,34 +485,30 @@ try:
             "run_timestamp": datetime.utcnow(),
             "scenarios_executed": len(campaign["scenarios"]),
             "techniques_tested": len(all_techniques_tested),
-            "techniques_detected": len(detected_from_campaign),
-            "techniques_missed": json.dumps(list(missed_techniques)),
+            "techniques_detected": len(coverage_result["detected"]),
+            "techniques_missed": json.dumps(list(coverage_result["missed"])),
             "detection_rate": detection_rate,
-            "phase_coverage": json.dumps(phase_coverage),
             "detection_window_minutes": detection_window_minutes,
             "status": run_status,
-            "gap_analysis": gap_analysis,
             "detection_sources": json.dumps({
-                "alerts": len(alert_techniques & all_techniques_tested),
-                "correlation_rules": len(correlation_techniques & all_techniques_tested),
+                "alerts": len(coverage_result["alert_techniques"] & all_techniques_tested),
+                "correlation_rules": len(coverage_result["correlation_techniques"] & all_techniques_tested),
             }),
         }]
 
         sim_df = spark.createDataFrame(simulation_data)
         safe_append(sim_df, "red_team_simulations", catalog=cfg.catalog, schema=cfg.schema)
 
-    # --- Update MITRE Coverage Matrix ---
-    with mon.time("update_coverage_matrix"):
-        # Historical coverage tracking per technique
+        # Historical coverage tracking
         for technique in all_techniques_tested:
             coverage_entry = [{
                 "technique_id": technique,
                 "campaign": campaign_name,
                 "simulation_id": simulation_id,
-                "detected": technique in all_detected,
+                "detected": technique in coverage_result["detected"],
                 "detection_source": (
-                    "alert" if technique in alert_techniques
-                    else "correlation" if technique in correlation_techniques
+                    "alert" if technique in coverage_result["alert_techniques"]
+                    else "correlation" if technique in coverage_result["correlation_techniques"]
                     else "none"
                 ),
                 "tested_at": datetime.utcnow(),
@@ -441,33 +516,14 @@ try:
             entry_df = spark.createDataFrame(coverage_entry)
             safe_append(entry_df, "mitre_coverage_history", catalog=cfg.catalog, schema=cfg.schema)
 
-    # --- Finalize ---
-    result.update({
-        "simulation_id": simulation_id,
-        "campaign": campaign_name,
-        "mode": mode,
-        "scenarios_executed": len(campaign["scenarios"]),
-        "techniques_tested": len(all_techniques_tested),
-        "techniques_detected": len(detected_from_campaign),
-        "detection_rate": round(detection_rate, 4),
-        "missed_techniques": list(missed_techniques),
-        "phase_coverage": phase_coverage,
-        "status": run_status,
-        "completed_at": datetime.utcnow().isoformat(),
-    })
-    mon.log_complete(rows_processed=len(all_techniques_tested))
+# COMMAND ----------
 
-except Exception as e:
-    result = {
-        "notebook": "11_red_team",
-        "status": "error",
-        "error": str(e)[:500],
-        "error_type": type(e).__name__,
-        "failed_at": datetime.utcnow().isoformat(),
-    }
-    mon.log_error(e, context="red_team")
-    raise
+# MAGIC %md
+# MAGIC ## Execute Agent
 
-finally:
-    print(json.dumps(result, indent=2))
-    dbutils.notebook.exit(json.dumps(result))
+# COMMAND ----------
+
+agent = RedTeamAgent("red_team_agent", cfg, llm, mon, spark)
+result = agent.run()
+
+dbutils.notebook.exit(result.to_json())

@@ -2,8 +2,21 @@
 # MAGIC %md
 # MAGIC # Agent 02: Enrichment Agent
 # MAGIC
-# MAGIC Gathers context for alerts: threat intel cross-referencing, asset info,
-# MAGIC related events, user data, and MITRE ATT&CK mapping via LLM.
+# MAGIC **Production-Grade BatchAgent Implementation**
+# MAGIC
+# MAGIC Enriches triaged alerts with contextual intelligence:
+# MAGIC - Threat intelligence (IOC) matching against known indicators
+# MAGIC - Asset context (criticality, ownership, network zone)
+# MAGIC - Related events aggregation and network flow analysis
+# MAGIC - LLM-generated enrichment narrative with risk assessment
+# MAGIC - Composite enrichment_score combining multiple signals
+# MAGIC
+# MAGIC ## Key Features
+# MAGIC - MLflow tracing on all enrichment operations
+# MAGIC - UC Function tools for lookup_ioc, get_asset_info, search_events
+# MAGIC - Automatic token budget management with fallback to degraded mode
+# MAGIC - Safe Delta writes with proper partitioning
+# MAGIC - Comprehensive metrics logging
 
 # COMMAND ----------
 
@@ -11,225 +24,621 @@
 
 # COMMAND ----------
 
-require_enabled("enrichment_agent")
+# MAGIC %md
+# MAGIC ## Initialization and Configuration
 
 # COMMAND ----------
 
-dbutils.widgets.text("batch_size", "50", "Max alerts to enrich per run")
-dbutils.widgets.text("lookback_hours", "2", "Alert age window")
-
-batch_size = int(dbutils.widgets.get("batch_size"))
-lookback_hours = int(dbutils.widgets.get("lookback_hours"))
-
-# COMMAND ----------
-
+from agent_framework import (
+    BaseAgent, BatchAgent, AgentResult, AgentStatus,
+    UCTool, create_soc_tools
+)
+import mlflow
+import mlflow.tracing
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 import json
+import time
+import logging
+from datetime import datetime
+
+logger = logging.getLogger("oxdsi.enrichment_agent")
+
+# Parse notebook parameters
+dbutils.widgets.text("batch_size", "50", "Max alerts to enrich per run")
+dbutils.widgets.text("lookback_hours", "2", "Alert age window")
+dbutils.widgets.text("enrichment_lookback_hours", "24", "How far back to search for related events")
+
+batch_size = int(dbutils.widgets.get("batch_size"))
+lookback_hours = int(dbutils.widgets.get("lookback_hours"))
+enrichment_lookback_hours = int(dbutils.widgets.get("enrichment_lookback_hours"))
+
+mon.log_event("enrichment_config_loaded", {
+    "batch_size": batch_size,
+    "lookback_hours": lookback_hours,
+    "enrichment_lookback_hours": enrichment_lookback_hours,
+})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Fetch Unenriched Alerts
+# MAGIC ## Define EnrichmentAgent Class
 
 # COMMAND ----------
 
-alerts_table = cfg.get_table_path("alerts")
-enrichments_table = cfg.get_table_path("alert_enrichments")
+class EnrichmentAgent(BatchAgent):
+    """
+    Enrichment Agent - gathers contextual intelligence for alerts.
 
-spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS {enrichments_table} (
-        id STRING, alert_id STRING, threat_intel_matches STRING,
-        asset_context STRING, related_events_count INT,
-        mitre_mapping STRING, risk_score INT, enrichment_summary STRING,
-        agent_name STRING, enriched_at TIMESTAMP
-    ) USING DELTA
-    TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-""")
+    Processes alerts that have been triaged and adds:
+    - Threat intel IOC matches
+    - Asset context and criticality
+    - Network flow and related events
+    - LLM-generated risk narrative
+    - Composite enrichment_score
+    """
 
-unenriched = spark.sql(f"""
-    SELECT a.* FROM {alerts_table} a
-    LEFT JOIN {enrichments_table} e ON a.id = e.alert_id
-    WHERE a.created_at > current_timestamp() - INTERVAL {lookback_hours} HOURS
-      AND a.status IN ('new', 'in_progress')
-      AND e.alert_id IS NULL
-    ORDER BY CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END
-    LIMIT {batch_size}
-""")
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
+        self._enriched_count = 0
+        self._high_risk_count = 0
+        self._ti_matches_found = 0
 
-alerts_to_enrich = unenriched.collect()
-mon.log_event("alerts_fetched", {"count": len(alerts_to_enrich)})
+        # Register UC tools
+        soc_tools = create_soc_tools(cfg)
+        for tool in soc_tools:
+            if tool.name in ["lookup_ioc", "get_asset_info", "search_events"]:
+                self.register_tool(tool)
 
-if not alerts_to_enrich:
-    mon.log_complete(details={"status": "idle"})
-    dbutils.notebook.exit('{"status": "idle", "enriched": 0}')
+    def execute(self) -> AgentResult:
+        """Main execution flow: fetch → enrich → persist."""
+        start_time = time.time()
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Enrichment Functions
-
-# COMMAND ----------
-
-ioc_table = cfg.get_table_path("ioc_entries")
-assets_table = cfg.get_table_path("asset_registry")
-events_table = cfg.get_table_path("events")
-
-
-def get_threat_intel(alert):
-    """Cross-reference alert IPs against IOC database."""
-    source_ip = getattr(alert, "source_ip", None)
-    dest_ip = getattr(alert, "dest_ip", None)
-    ips = [ip for ip in [source_ip, dest_ip] if ip]
-    if not ips:
-        return []
-
-    query = (
-        qb().select("value, threat_type, confidence, source")
-        .from_table(ioc_table)
-        .where_in("value", ips)
-        .build()
-    )
-    try:
-        return [row.asDict() for row in spark.sql(query).collect()]
-    except Exception:
-        return []
-
-
-def get_asset_context(alert):
-    """Look up asset criticality and ownership."""
-    source_ip = getattr(alert, "source_ip", None)
-    hostname = getattr(alert, "hostname", None)
-    if not source_ip and not hostname:
-        return {}
-
-    conditions = []
-    if source_ip:
-        conditions.append(f"ip_address = '{source_ip}'")
-    if hostname:
-        conditions.append(f"hostname = '{hostname}'")
-
-    try:
-        query = f"SELECT * FROM {assets_table} WHERE {' OR '.join(conditions)} LIMIT 1"
-        rows = spark.sql(query).collect()
-        return rows[0].asDict() if rows else {}
-    except Exception:
-        return {}
-
-
-def get_related_events_count(alert):
-    """Count related events in the past hour."""
-    source_ip = getattr(alert, "source_ip", None)
-    if not source_ip:
-        return 0
-
-    query = (
-        qb().select("COUNT(*) as cnt")
-        .from_table(events_table)
-        .where_eq("source_ip", source_ip)
-        .where_raw("timestamp > current_timestamp() - INTERVAL 1 HOUR")
-        .build()
-    )
-    try:
-        return spark.sql(query).collect()[0].cnt
-    except Exception:
-        return 0
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Enrich with LLM MITRE Mapping
-
-# COMMAND ----------
-
-ENRICH_PROMPT = """Given this security alert and its context, provide MITRE ATT&CK mapping and risk assessment.
-
-Alert: {title} - {description}
-Severity: {severity}
-Threat Intel Matches: {ti_matches}
-Asset Context: {asset_context}
-Related Events: {related_count}
-
-Respond with JSON:
-{{
-  "mitre_tactic": "tactic name",
-  "mitre_technique": "T-ID",
-  "risk_score": 0-100,
-  "summary": "one paragraph enrichment summary"
-}}"""
-
-enrichment_results = []
-
-with mon.time("enrichment_loop"):
-    for alert in alerts_to_enrich:
         try:
-            ti_matches = get_threat_intel(alert)
-            asset_ctx = get_asset_context(alert)
-            related_count = get_related_events_count(alert)
+            # Ensure output table exists
+            self._ensure_output_table()
 
-            prompt = ENRICH_PROMPT.format(
-                title=alert.title or "N/A",
-                description=(alert.description or "N/A")[:300],
-                severity=alert.severity or "unknown",
-                ti_matches=json.dumps(ti_matches)[:300] if ti_matches else "None",
-                asset_context=json.dumps(asset_ctx)[:200] if asset_ctx else "None",
-                related_count=related_count,
+            # Fetch alerts that have been triaged but not yet enriched
+            alerts = self._fetch_unenriched_alerts()
+            self._enriched_count = len(alerts)
+
+            if self._enriched_count == 0:
+                return AgentResult(
+                    status=AgentStatus.IDLE,
+                    agent_name=self.agent_name,
+                    processed_count=0,
+                    duration_seconds=time.time() - start_time,
+                )
+
+            # Run enrichment with MLflow tracing
+            with self._tracer.start_run(run_name=f"{self.agent_name}_{int(time.time())}"):
+                mlflow.set_experiment(f"/0xDSI/agents/{self.agent_name}")
+
+                enrichment_results = self._enrich_batch(alerts)
+
+                # Persist results
+                self._persist_results(enrichment_results)
+
+                # Log metrics
+                self._log_metrics(enrichment_results)
+
+            duration = time.time() - start_time
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                agent_name=self.agent_name,
+                processed_count=len(enrichment_results),
+                error_count=0,
+                duration_seconds=duration,
+                details={
+                    "enriched_count": self._enriched_count,
+                    "high_risk_count": self._high_risk_count,
+                    "ti_matches_found": self._ti_matches_found,
+                    "tokens_used": self.llm.budget.used_total,
+                    "tokens_remaining": self.llm.budget.remaining,
+                },
             )
 
-            llm_result = llm.extract_json(prompt)
-            risk_score = int(llm_result.get("risk_score", 50)) if llm_result else 50
-            mitre = json.dumps({"tactic": llm_result.get("mitre_tactic"), "technique": llm_result.get("mitre_technique")}) if llm_result else "{}"
-            summary = llm_result.get("summary", "") if llm_result else ""
+        except Exception as e:
+            logger.exception(f"Enrichment agent failed: {e}")
+            return AgentResult(
+                status=AgentStatus.FAILED,
+                agent_name=self.agent_name,
+                error=str(e)[:500],
+                duration_seconds=time.time() - start_time,
+            )
 
-            enrichment_results.append({
+    def _ensure_output_table(self):
+        """Create or validate enrichments table."""
+        enrichments_table = get_table_path(cfg, "alert_enrichments")
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {enrichments_table} (
+                id STRING NOT NULL,
+                alert_id STRING NOT NULL,
+                threat_intel_matches STRING,
+                asset_context STRING,
+                related_events_count INT,
+                mitre_mapping STRING,
+                enrichment_score DOUBLE,
+                enrichment_narrative STRING,
+                agent_name STRING,
+                trace_id STRING,
+                enriched_at TIMESTAMP NOT NULL
+            )
+            USING DELTA
+            PARTITIONED BY (date(enriched_at))
+            TBLPROPERTIES (
+                'delta.autoOptimize.optimizeWrite' = 'true',
+                'delta.autoOptimize.optimizeRead' = 'true'
+            )
+        """)
+
+    def _fetch_unenriched_alerts(self) -> list:
+        """Fetch alerts that have been triaged but not yet enriched."""
+        alerts_table = get_table_path(cfg, "alerts")
+        triage_table = get_table_path(cfg, "agent_triage_results")
+        enrichments_table = get_table_path(cfg, "alert_enrichments")
+
+        span = self._start_trace("fetch_unenriched_alerts")
+        try:
+            query = f"""
+                SELECT DISTINCT a.*
+                FROM {alerts_table} a
+                INNER JOIN {triage_table} t ON a.id = t.alert_id
+                LEFT JOIN {enrichments_table} e ON a.id = e.alert_id
+                WHERE a.created_at > current_timestamp() - INTERVAL {lookback_hours} HOURS
+                  AND e.alert_id IS NULL
+                ORDER BY
+                    CASE a.severity
+                        WHEN 'critical' THEN 1 WHEN 'high' THEN 2
+                        WHEN 'medium' THEN 3 ELSE 4
+                    END,
+                    a.created_at DESC
+                LIMIT {batch_size}
+            """
+            alerts_df = spark.sql(query)
+            alerts = alerts_df.collect()
+            self._end_trace(span, {"alert_count": len(alerts), "status": "success"})
+            return alerts
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            logger.error(f"Failed to fetch alerts: {e}")
+            return []
+
+    def _enrich_batch(self, alerts: list) -> list:
+        """Enrich each alert with context and LLM narrative."""
+        enrichment_results = []
+
+        for alert in alerts:
+            try:
+                enrichment = self._enrich_single_alert(alert)
+                enrichment_results.append(enrichment)
+
+                # Track high-risk
+                if enrichment.get("enrichment_score", 0) > 0.75:
+                    self._high_risk_count += 1
+
+            except Exception as e:
+                logger.error(f"Failed to enrich alert {alert.id}: {e}")
+                # Graceful degradation: still log enrichment with error state
+                enrichment_results.append({
+                    "alert_id": alert.id,
+                    "threat_intel_matches": "[]",
+                    "asset_context": "{}",
+                    "related_events_count": 0,
+                    "mitre_mapping": "{}",
+                    "enrichment_score": 0.3,  # Low confidence on error
+                    "enrichment_narrative": f"Enrichment failed: {str(e)[:200]}",
+                })
+
+        return enrichment_results
+
+    def _enrich_single_alert(self, alert) -> dict:
+        """Enrich a single alert with all contextual signals."""
+        span = self._start_trace(f"enrich_alert.{alert.id}")
+
+        try:
+            # Gather context signals in parallel (conceptually; executed sequentially)
+            ti_matches = self._get_threat_intel_matches(alert)
+            asset_ctx = self._get_asset_context(alert)
+            related_events = self._get_related_events(alert)
+
+            # Track TI matches for metrics
+            if ti_matches:
+                self._ti_matches_found += len(ti_matches)
+
+            # Generate LLM narrative
+            llm_narrative = self._generate_enrichment_narrative(
+                alert, ti_matches, asset_ctx, related_events
+            )
+
+            # Compute enrichment_score as weighted combination
+            enrichment_score = self._compute_enrichment_score(
+                ti_matches, asset_ctx, related_events, llm_narrative
+            )
+
+            enrichment = {
                 "alert_id": alert.id,
-                "threat_intel_matches": json.dumps(ti_matches)[:1000],
-                "asset_context": json.dumps(asset_ctx)[:500],
-                "related_events_count": related_count,
-                "mitre_mapping": mitre,
-                "risk_score": risk_score,
-                "enrichment_summary": summary[:500],
-            })
+                "threat_intel_matches": json.dumps(ti_matches)[:2000],
+                "asset_context": json.dumps(asset_ctx)[:1000],
+                "related_events_count": len(related_events),
+                "mitre_mapping": json.dumps(
+                    llm_narrative.get("mitre_mapping", {})
+                )[:500],
+                "enrichment_score": enrichment_score,
+                "enrichment_narrative": llm_narrative.get("narrative", "")[:1000],
+            }
+
+            self._end_trace(
+                span,
+                {
+                    "status": "success",
+                    "enrichment_score": enrichment_score,
+                    "ti_count": len(ti_matches),
+                },
+            )
+
+            return enrichment
 
         except Exception as e:
-            mon.log_event("enrichment_error", {"alert_id": alert.id, "error": str(e)[:200]})
-            enrichment_results.append({
-                "alert_id": alert.id,
-                "threat_intel_matches": "[]",
-                "asset_context": "{}",
-                "related_events_count": 0,
-                "mitre_mapping": "{}",
-                "risk_score": 50,
-                "enrichment_summary": f"Enrichment failed: {str(e)[:100]}",
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            raise
+
+    def _get_threat_intel_matches(self, alert) -> list:
+        """Look up IOCs in threat intel database."""
+        span = self._start_trace(f"ti_lookup.{alert.id}")
+        try:
+            source_ip = getattr(alert, "source_ip", None)
+            dest_ip = getattr(alert, "dest_ip", None)
+            domain = getattr(alert, "domain", None)
+            file_hash = getattr(alert, "file_hash", None)
+
+            ips_to_check = [ip for ip in [source_ip, dest_ip] if ip]
+            domains_to_check = [domain] if domain else []
+            hashes_to_check = [file_hash] if file_hash else []
+
+            if not ips_to_check and not domains_to_check and not hashes_to_check:
+                self._end_trace(span, {"matches": 0, "status": "no_indicators"})
+                return []
+
+            ioc_table = get_table_path(cfg, "ioc_entries")
+
+            # Build OR conditions for all indicator types
+            conditions = []
+            if ips_to_check:
+                ip_list = ",".join([f"'{ip}'" for ip in ips_to_check])
+                conditions.append(f"(indicator_type = 'ip' AND indicator_value IN ({ip_list}))")
+            if domains_to_check:
+                domain_list = ",".join([f"'{d}'" for d in domains_to_check])
+                conditions.append(
+                    f"(indicator_type = 'domain' AND indicator_value IN ({domain_list}))"
+                )
+            if hashes_to_check:
+                hash_list = ",".join([f"'{h}'" for h in hashes_to_check])
+                conditions.append(
+                    f"(indicator_type = 'hash' AND indicator_value IN ({hash_list}))"
+                )
+
+            where_clause = " OR ".join(conditions)
+            query = f"""
+                SELECT indicator_value, indicator_type, threat_type, confidence, source, first_seen
+                FROM {ioc_table}
+                WHERE {where_clause}
+            """
+
+            matches = [row.asDict() for row in spark.sql(query).collect()]
+            self._end_trace(span, {"matches": len(matches), "status": "success"})
+            return matches
+
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            logger.warning(f"TI lookup failed: {e}")
+            return []
+
+    def _get_asset_context(self, alert) -> dict:
+        """Look up asset criticality, ownership, and zone."""
+        span = self._start_trace(f"asset_lookup.{alert.id}")
+        try:
+            source_ip = getattr(alert, "source_ip", None)
+            hostname = getattr(alert, "hostname", None)
+            asset_id = getattr(alert, "asset_id", None)
+
+            if not any([source_ip, hostname, asset_id]):
+                self._end_trace(span, {"status": "no_identifiers"})
+                return {}
+
+            assets_table = get_table_path(cfg, "asset_registry")
+
+            # Build OR conditions
+            conditions = []
+            if source_ip:
+                conditions.append(f"ip_address = '{safe_value(source_ip)}'")
+            if hostname:
+                conditions.append(f"hostname = '{safe_value(hostname)}'")
+            if asset_id:
+                conditions.append(f"asset_id = '{safe_value(asset_id)}'")
+
+            where_clause = " OR ".join(conditions)
+            query = f"""
+                SELECT asset_id, hostname, ip_address, criticality, owner, department,
+                       network_zone, os_type, last_seen
+                FROM {assets_table}
+                WHERE {where_clause}
+                LIMIT 1
+            """
+
+            rows = spark.sql(query).collect()
+            result = rows[0].asDict() if rows else {}
+            self._end_trace(
+                span,
+                {
+                    "status": "success" if result else "no_match",
+                    "criticality": result.get("criticality", "unknown"),
+                },
+            )
+            return result
+
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            logger.warning(f"Asset lookup failed: {e}")
+            return {}
+
+    def _get_related_events(self, alert) -> list:
+        """Get related events in lookback window."""
+        span = self._start_trace(f"related_events.{alert.id}")
+        try:
+            source_ip = getattr(alert, "source_ip", None)
+            user_id = getattr(alert, "user_id", None)
+
+            if not source_ip and not user_id:
+                self._end_trace(span, {"event_count": 0, "status": "no_search_key"})
+                return []
+
+            events_table = get_table_path(cfg, "events")
+
+            # Build search conditions
+            conditions = []
+            if source_ip:
+                conditions.append(f"source_ip = '{safe_value(source_ip)}'")
+            if user_id:
+                conditions.append(f"user_id = '{safe_value(user_id)}'")
+
+            where_clause = " OR ".join(conditions)
+            query = f"""
+                SELECT event_id, event_type, source_ip, user_id, timestamp, description
+                FROM {events_table}
+                WHERE ({where_clause})
+                  AND timestamp > current_timestamp() - INTERVAL {enrichment_lookback_hours} HOURS
+                ORDER BY timestamp DESC
+                LIMIT 100
+            """
+
+            events = [row.asDict() for row in spark.sql(query).collect()]
+            self._end_trace(span, {"event_count": len(events), "status": "success"})
+            return events
+
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            logger.warning(f"Related events lookup failed: {e}")
+            return []
+
+    def _generate_enrichment_narrative(
+        self, alert, ti_matches: list, asset_ctx: dict, related_events: list
+    ) -> dict:
+        """Use LLM to generate risk assessment narrative."""
+        if self.llm.budget.exhausted:
+            logger.warning("Token budget exhausted; skipping LLM narrative")
+            return {
+                "narrative": "Enrichment skipped due to token budget exhaustion",
+                "mitre_mapping": {},
+            }
+
+        span = self._start_trace(f"llm_narrative.{alert.id}")
+        try:
+            system_prompt = """You are a senior SOC analyst reviewing enriched alert data.
+Generate a concise risk assessment narrative (max 300 words) with MITRE ATT&CK mapping.
+
+Respond with valid JSON only:
+{
+  "narrative": "risk assessment paragraph",
+  "mitre_tactic": "tactic name or null",
+  "mitre_technique": "T-XXXX or null",
+  "risk_level": "critical" | "high" | "medium" | "low"
+}"""
+
+            user_prompt = f"""Alert Analysis:
+Title: {alert.title or 'N/A'}
+Severity: {alert.severity or 'unknown'}
+
+Threat Intel Matches: {json.dumps(ti_matches)[:500] if ti_matches else 'None'}
+Asset Context: {json.dumps(asset_ctx)[:300] if asset_ctx else 'None'}
+Related Events (last 24h): {len(related_events)} events
+
+Generate enrichment narrative with risk assessment."""
+
+            response = self.llm_classify(
+                system=system_prompt,
+                user=user_prompt,
+                json_mode=True,
+                temperature=0.1,
+            )
+
+            result = {
+                "narrative": response.get("narrative", "No narrative generated") if response else "",
+                "mitre_mapping": {
+                    "tactic": response.get("mitre_tactic") if response else None,
+                    "technique": response.get("mitre_technique") if response else None,
+                } if response else {},
+            }
+
+            self._end_trace(span, {"status": "success", "narrative_length": len(result["narrative"])})
+            return result
+
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            logger.warning(f"LLM narrative generation failed: {e}")
+            return {
+                "narrative": f"LLM enrichment failed: {str(e)[:100]}",
+                "mitre_mapping": {},
+            }
+
+    def _compute_enrichment_score(
+        self, ti_matches: list, asset_ctx: dict, related_events: list, llm_narrative: dict
+    ) -> float:
+        """Compute composite enrichment score (0.0 - 1.0)."""
+        score = 0.0
+        weights = {
+            "ti_signal": 0.35,
+            "asset_criticality": 0.25,
+            "event_volume": 0.20,
+            "narrative_risk": 0.20,
+        }
+
+        # TI signal: presence and confidence of matches
+        if ti_matches:
+            avg_confidence = sum(m.get("confidence", 0.5) for m in ti_matches) / len(
+                ti_matches
+            )
+            score += weights["ti_signal"] * min(1.0, avg_confidence)
+
+        # Asset criticality signal
+        criticality_map = {
+            "critical": 1.0,
+            "high": 0.8,
+            "medium": 0.5,
+            "low": 0.2,
+        }
+        criticality = asset_ctx.get("criticality", "low").lower()
+        score += weights["asset_criticality"] * criticality_map.get(criticality, 0.2)
+
+        # Event volume signal
+        event_score = min(1.0, len(related_events) / 100.0)  # Normalize to 100 events
+        score += weights["event_volume"] * event_score
+
+        # Narrative risk level signal
+        narrative_risk_map = {
+            "critical": 1.0,
+            "high": 0.85,
+            "medium": 0.5,
+            "low": 0.15,
+        }
+        risk_level = llm_narrative.get("risk_level", "low")
+        if risk_level:
+            score += weights["narrative_risk"] * narrative_risk_map.get(
+                risk_level.lower(), 0.5
+            )
+
+        return min(1.0, score)
+
+    def _persist_results(self, enrichment_results: list):
+        """Write enrichments to Delta table."""
+        if not enrichment_results:
+            return
+
+        span = self._start_trace("persist_results")
+        try:
+            enrichments_table = get_table_path(cfg, "alert_enrichments")
+
+            schema = StructType([
+                StructField("alert_id", StringType()),
+                StructField("threat_intel_matches", StringType()),
+                StructField("asset_context", StringType()),
+                StructField("related_events_count", IntegerType()),
+                StructField("mitre_mapping", StringType()),
+                StructField("enrichment_score", DoubleType()),
+                StructField("enrichment_narrative", StringType()),
+            ])
+
+            df = (
+                spark.createDataFrame(enrichment_results, schema=schema)
+                .withColumn("id", expr("uuid()"))
+                .withColumn("agent_name", lit(self.agent_name))
+                .withColumn("trace_id", lit(self._tracer._tracer if self._tracer else ""))
+                .withColumn("enriched_at", current_timestamp())
+            )
+
+            safe_append(df, enrichments_table, mode="append")
+
+            self._end_trace(
+                span,
+                {
+                    "status": "success",
+                    "results_written": len(enrichment_results),
+                },
+            )
+
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            raise
+
+    def _log_metrics(self, enrichment_results: list):
+        """Log metrics to MLflow experiment."""
+        try:
+            mlflow.log_metrics({
+                "enriched_count": self._enriched_count,
+                "high_risk_count": self._high_risk_count,
+                "ti_matches_found": self._ti_matches_found,
+                "avg_enrichment_score": (
+                    sum(r.get("enrichment_score", 0) for r in enrichment_results)
+                    / len(enrichment_results)
+                    if enrichment_results
+                    else 0.0
+                ),
+                "tokens_used": self.llm.budget.used_total,
+                "tokens_remaining": self.llm.budget.remaining,
             })
+
+            mlflow.log_params({
+                "batch_size": batch_size,
+                "lookback_hours": lookback_hours,
+                "environment": cfg.environment,
+            })
+        except Exception as e:
+            logger.warning(f"MLflow metrics logging failed: {e}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Persist Enrichments
+# MAGIC ## Execute Enrichment Agent
 
 # COMMAND ----------
 
-if enrichment_results:
-    schema = StructType([
-        StructField("alert_id", StringType()),
-        StructField("threat_intel_matches", StringType()),
-        StructField("asset_context", StringType()),
-        StructField("related_events_count", IntegerType()),
-        StructField("mitre_mapping", StringType()),
-        StructField("risk_score", IntegerType()),
-        StructField("enrichment_summary", StringType()),
-    ])
+try:
+    # Initialize agent
+    agent = EnrichmentAgent("enrichment_agent", cfg, llm, mon, spark)
 
-    df = (
-        spark.createDataFrame(enrichment_results, schema=schema)
-        .withColumn("id", expr("uuid()"))
-        .withColumn("agent_name", lit("enrichment_agent"))
-        .withColumn("enriched_at", current_timestamp())
+    # Run agent with full lifecycle management
+    result = agent.run()
+
+    # Log result
+    mon.log_event("enrichment_agent_result", {
+        "status": result.status.value,
+        "processed": result.processed_count,
+        "errors": result.error_count,
+        "duration_seconds": result.duration_seconds,
+        "details": json.dumps(result.details),
+    })
+
+    # Exit with structured result
+    print(json.dumps({
+        "status": result.status.value,
+        "trace_id": result.trace_id,
+        "processed": result.processed_count,
+        "errors": result.error_count,
+        "duration_seconds": round(result.duration_seconds, 3),
+        "details": result.details,
+        "error": result.error,
+    }))
+
+    dbutils.notebook.exit(result.to_json())
+
+except Exception as e:
+    logger.exception(f"Enrichment agent fatal error: {e}")
+    mon.log_error(e, "enrichment_agent_execution")
+
+    error_result = AgentResult(
+        status=AgentStatus.FAILED,
+        agent_name="enrichment_agent",
+        error=str(e)[:500],
     )
-    df.write.mode("append").saveAsTable(enrichments_table)
 
-mon.log_complete(details={"enriched": len(enrichment_results)})
-result = {"status": "completed", "enriched": len(enrichment_results)}
-print(json.dumps(result))
-dbutils.notebook.exit(json.dumps(result))
+    dbutils.notebook.exit(error_result.to_json())

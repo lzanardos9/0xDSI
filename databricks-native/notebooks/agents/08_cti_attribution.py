@@ -1,8 +1,29 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 08 - CTI Attribution
-# MAGIC Maps unattributed threat campaigns to known threat actors using LLM analysis
-# MAGIC of TTPs, IOCs, and target profiles. Produces Diamond Model assessments.
+# MAGIC # Agent 08: Cyber Threat Intelligence & Attribution
+# MAGIC
+# MAGIC **Type:** BatchAgent (scheduled via Databricks Workflows)
+# MAGIC
+# MAGIC ## Purpose
+# MAGIC Correlates Indicators of Compromise (IOCs) across multiple threat intel feeds,
+# MAGIC performs campaign attribution by mapping IOCs to threat actor groups,
+# MAGIC and analyzes TTP (Tactics, Techniques, Procedures) overlap for confidence scoring.
+# MAGIC
+# MAGIC ## Workflow
+# MAGIC 1. Fetch recent IOCs from multiple threat intel sources and observed events
+# MAGIC 2. Cross-correlate IOCs: find which feed(s) report each indicator
+# MAGIC 3. LLM analyzes IOC patterns and known threat actor TTPs for attribution
+# MAGIC 4. Score attribution confidence based on TTP match quality
+# MAGIC 5. Write results to `cti_attribution_results` with campaign tracking
+# MAGIC 6. Log metrics to MLflow experiment tracking
+# MAGIC
+# MAGIC ## Tools Registered
+# MAGIC - `lookup_ioc`: Query threat intel feeds for IOC context
+# MAGIC - `search_events`: Find events matching IOCs in our environment
+# MAGIC
+# MAGIC ## Output Table: `cti_attribution_results`
+# MAGIC Columns: campaign_name, threat_actor, threat_actor_aliases, confidence,
+# MAGIC ttp_overlap, ioc_matches, evidence_summary, created_at
 
 # COMMAND ----------
 
@@ -10,351 +31,398 @@
 
 # COMMAND ----------
 
-require_enabled("cti_attribution")
-
-# COMMAND ----------
-
-import json
-from datetime import datetime, timezone
-from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, TimestampType, FloatType
+require_enabled("cti_attribution_agent")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Configuration and Table Setup
+# MAGIC ## Imports and Framework Setup
 
 # COMMAND ----------
 
-AGENT_NAME = "cti_attribution"
-AGENT_VERSION = "1.0.0"
-BATCH_SIZE = 15
+import json
+import time
+from typing import Optional, Any, Dict, List
+from datetime import datetime, timedelta
+import logging
+import uuid
 
-threat_campaigns_table = cfg.get_table_path("threat_campaigns")
-threat_actors_table = cfg.get_table_path("threat_actors")
-iocs_table = cfg.get_table_path("iocs")
-attribution_results_table = cfg.get_table_path("attribution_results")
+from agent_framework import (
+    BatchAgent, AgentResult, AgentStatus, UCTool
+)
+from pyspark.sql.functions import (
+    col, lit, current_timestamp, when, count as spark_count,
+    struct, collect_list
+)
+
+logger = logging.getLogger("cti_attribution_agent")
 
 # COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Configuration & Parameters
+
+# COMMAND ----------
+
+dbutils.widgets.text("lookback_days", "7", "Days back to analyze IOCs")
+dbutils.widgets.text("min_confidence", "0.6", "Min attribution confidence")
+dbutils.widgets.text("max_actors", "10", "Max threat actors to identify")
+
+lookback_days = int(dbutils.widgets.get("lookback_days"))
+min_confidence = float(dbutils.widgets.get("min_confidence"))
+max_actors = int(dbutils.widgets.get("max_actors"))
+
+mon.log_event("cti_attribution_config", {
+    "lookback_days": lookback_days,
+    "min_confidence": min_confidence,
+})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Delta Table Schema
+
+# COMMAND ----------
+
+results_table = cfg.get_table_path("cti_attribution_results")
 
 spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS {attribution_results_table} (
-        attribution_id STRING,
-        campaign_id STRING,
-        attributed_actor STRING,
-        confidence_score FLOAT,
-        diamond_adversary STRING,
-        diamond_capability STRING,
-        diamond_infrastructure STRING,
-        diamond_victim STRING,
-        ttp_overlap_json STRING,
-        reasoning STRING,
-        attributed_by STRING,
-        attributed_at TIMESTAMP,
-        status STRING
-    )
+CREATE TABLE IF NOT EXISTS {results_table} (
+    attribution_id STRING,
+    campaign_name STRING,
+    threat_actor STRING,
+    threat_actor_aliases ARRAY<STRING>,
+    confidence DOUBLE,
+    ttp_overlap ARRAY<STRING>,
+    ioc_matches INT,
+    ioc_types MAP<STRING, INT>,
+    evidence_summary STRING,
+    first_observed TIMESTAMP,
+    last_observed TIMESTAMP,
+    trace_id STRING,
+    agent_name STRING,
+    created_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Retrieve Unattributed Campaigns
+# MAGIC ## CTI Attribution Agent Implementation
 
 # COMMAND ----------
 
-def get_unattributed_campaigns():
-    """Query campaigns lacking threat actor attribution."""
-    with mon.time("query_unattributed_campaigns"):
-        campaigns_df = (
-            qb()
-            .table(threat_campaigns_table)
-            .where("attributed_actor IS NULL OR attributed_actor = ''")
-            .where("status = 'active'")
-            .order_by("first_seen DESC")
-            .limit(BATCH_SIZE)
-            .execute()
-        )
-        count = campaigns_df.count()
-        mon.log_event("unattributed_campaigns_retrieved", {"count": count})
-        return campaigns_df
+class CTIAttributionAgent(BatchAgent):
+    """
+    Cyber Threat Intelligence agent that performs IOC correlation and
+    threat actor attribution with confidence scoring.
+    """
 
-# COMMAND ----------
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
+        self.results_table = cfg.get_table_path("cti_attribution_results")
+        self.threat_intel_table = cfg.get_table_path("threat_intel_iocs")
+        self.events_table = cfg.get_table_path("events")
 
-# MAGIC %md
-# MAGIC ## Gather Intelligence for Attribution
+    def get_tools(self) -> list[UCTool]:
+        """Return CTI specific tools."""
+        return [
+            UCTool(
+                name="lookup_ioc",
+                description="Look up IOC in threat intel feeds",
+                catalog=self.cfg.catalog,
+                schema=self.cfg.schema,
+                function_name="lookup_ioc",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "indicator": {"type": "string"},
+                        "indicator_type": {
+                            "type": "string",
+                            "enum": ["ip", "domain", "hash", "url", "email"],
+                        },
+                    },
+                    "required": ["indicator", "indicator_type"],
+                },
+            ),
+            UCTool(
+                name="search_events",
+                description="Search events matching IOC patterns",
+                catalog=self.cfg.catalog,
+                schema=self.cfg.schema,
+                function_name="search_events",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "event_type": {"type": "string"},
+                        "source_ip": {"type": "string"},
+                        "hours_back": {"type": "integer"},
+                        "limit": {"type": "integer"},
+                    },
+                },
+            ),
+        ]
 
-# COMMAND ----------
+    def execute(self) -> AgentResult:
+        """Main CTI attribution workflow."""
+        span = self._start_trace("cti_attribution_execute")
+        processed = 0
+        errors = 0
 
-def get_known_threat_actors():
-    """Retrieve the catalog of known threat actors and their profiles."""
-    with mon.time("query_threat_actors"):
-        actors_df = (
-            qb()
-            .table(threat_actors_table)
-            .where("status = 'active'")
-            .execute()
-        )
-        return [row.asDict() for row in actors_df.collect()]
+        try:
+            # Fetch recent IOCs
+            iocs = self._fetch_iocs(lookback_days)
+            if len(iocs) == 0:
+                logger.info("No recent IOCs found")
+                return AgentResult(
+                    status=AgentStatus.COMPLETED,
+                    agent_name=self.agent_name,
+                    processed_count=0,
+                    details={"reason": "no_iocs"},
+                )
 
-# COMMAND ----------
+            processed = len(iocs)
+            logger.info(f"Found {processed} IOCs")
 
-def get_campaign_iocs(campaign_id):
-    """Retrieve IOCs associated with a campaign."""
-    with mon.time("query_campaign_iocs"):
-        iocs_df = (
-            qb()
-            .table(iocs_table)
-            .where("campaign_id = :campaign_id", campaign_id=campaign_id)
-            .execute()
-        )
-        return [row.asDict() for row in iocs_df.collect()]
+            # Correlate IOCs
+            correlations = self._correlate_iocs(iocs)
+            logger.info(f"Found {len(correlations)} correlations")
 
-# COMMAND ----------
+            # Perform attribution
+            attributions = self._perform_attribution(correlations)
+            if not attributions:
+                logger.warning("Attribution failed")
+                errors += 1
+                return AgentResult(
+                    status=AgentStatus.DEGRADED,
+                    agent_name=self.agent_name,
+                    processed_count=processed,
+                    error_count=1,
+                    error="Attribution failed",
+                )
 
-# MAGIC %md
-# MAGIC ## LLM Attribution Analysis
+            # Filter by confidence
+            high_conf = [
+                a for a in attributions
+                if a.get("confidence", 0) >= min_confidence
+            ]
+            logger.info(f"{len(high_conf)}/{len(attributions)} high confidence")
 
-# COMMAND ----------
+            # Write results
+            if high_conf:
+                self._write_results(high_conf)
+                logger.info(f"Wrote {len(high_conf)} results")
 
-def build_attribution_prompt(campaign_data, campaign_iocs, known_actors):
-    """Construct the LLM prompt for threat attribution via Diamond Model."""
-    actors_summary = json.dumps(
-        [{"name": a.get("actor_name"), "ttps": a.get("known_ttps"),
-          "targets": a.get("typical_targets"), "infrastructure": a.get("known_infrastructure")}
-         for a in known_actors[:20]],
-        default=str, indent=2
-    )[:4000]
+            return AgentResult(
+                status=AgentStatus.COMPLETED if errors == 0 else AgentStatus.DEGRADED,
+                agent_name=self.agent_name,
+                processed_count=processed,
+                error_count=errors,
+                details={
+                    "iocs_analyzed": processed,
+                    "correlations": len(correlations),
+                    "attributions": len(attributions),
+                    "high_confidence": len(high_conf),
+                },
+            )
 
-    iocs_summary = json.dumps(campaign_iocs[:50], default=str, indent=2)[:2000]
+        except Exception as e:
+            logger.exception("Execute failed")
+            raise
 
-    prompt = f"""You are a senior Cyber Threat Intelligence analyst performing threat attribution
-using the Diamond Model framework.
+    def _fetch_iocs(self, days: int) -> List[Dict[str, Any]]:
+        """Fetch recent IOCs from threat intel feeds."""
+        try:
+            results = spark.sql(f"""
+                SELECT
+                    indicator_id,
+                    indicator_value,
+                    indicator_type,
+                    feed_source,
+                    threat_actor,
+                    campaign_name,
+                    severity,
+                    first_seen,
+                    last_seen,
+                    COALESCE(tlp, 'WHITE') as tlp
+                FROM {self.threat_intel_table}
+                WHERE first_seen > current_timestamp() - INTERVAL {days} DAYS
+                  OR last_seen > current_timestamp() - INTERVAL {days} DAYS
+                ORDER BY last_seen DESC
+                LIMIT 1000
+            """).collect()
 
-Campaign Under Analysis:
-- Campaign ID: {campaign_data.get('campaign_id', 'N/A')}
-- Campaign Name: {campaign_data.get('campaign_name', 'N/A')}
-- First Seen: {campaign_data.get('first_seen', 'N/A')}
-- TTPs Observed: {campaign_data.get('observed_ttps', 'N/A')}
-- Target Sectors: {campaign_data.get('target_sectors', 'N/A')}
-- Target Regions: {campaign_data.get('target_regions', 'N/A')}
-- Malware Families: {campaign_data.get('malware_families', 'N/A')}
+            return [row.asDict() for row in results]
 
-Campaign IOCs ({len(campaign_iocs)} indicators):
-{iocs_summary}
+        except Exception as e:
+            logger.error(f"Failed to fetch IOCs: {e}")
+            return []
 
-Known Threat Actors Database:
-{actors_summary}
+    def _correlate_iocs(self, iocs: List[Dict]) -> List[Dict]:
+        """Group IOCs by value to find correlations."""
+        if not iocs:
+            return []
 
-Perform attribution analysis using the Diamond Model. Consider:
-1. TTP overlap with known actors (MITRE ATT&CK alignment)
-2. Infrastructure reuse or similarity
-3. Victimology patterns (sector, region targeting)
-4. Malware family associations
-5. Operational tempo and tradecraft consistency
+        correlations = {}
 
-Respond with JSON:
-{{
-    "attributed_actor": "Name of the most likely threat actor or 'unattributed' if confidence is too low",
-    "confidence_score": 0.0 to 1.0,
-    "diamond_model": {{
-        "adversary": "Assessed threat actor identity and motivation",
-        "capability": "Tools, malware, and techniques employed",
-        "infrastructure": "C2 servers, domains, hosting providers used",
-        "victim": "Targeted organizations, sectors, and regions"
-    }},
-    "ttp_overlap": [
-        {{"technique_id": "T1xxx", "technique_name": "name", "shared_with": "actor_name"}}
-    ],
-    "alternative_candidates": [
-        {{"actor": "name", "confidence": 0.0, "rationale": "brief reason"}}
-    ],
-    "reasoning": "Detailed explanation of attribution rationale"
-}}"""
-    return prompt
+        for ioc in iocs:
+            key = (ioc["indicator_value"], ioc["indicator_type"])
+            if key not in correlations:
+                correlations[key] = {
+                    "value": ioc["indicator_value"],
+                    "type": ioc["indicator_type"],
+                    "feeds": [],
+                    "threat_actors": set(),
+                    "campaigns": set(),
+                    "severity": ioc.get("severity", "unknown"),
+                }
 
-# COMMAND ----------
+            correlations[key]["feeds"].append(ioc["feed_source"])
+            if ioc.get("threat_actor"):
+                correlations[key]["threat_actors"].add(ioc["threat_actor"])
+            if ioc.get("campaign_name"):
+                correlations[key]["campaigns"].add(ioc["campaign_name"])
 
-def perform_attribution(campaign_data, campaign_iocs, known_actors):
-    """Use LLM to attribute a campaign to a threat actor."""
-    with mon.time("llm_attribution_analysis"):
-        prompt = build_attribution_prompt(campaign_data, campaign_iocs, known_actors)
-        result = llm.extract_json(prompt)
+        result = []
+        for corr in correlations.values():
+            corr["threat_actors"] = list(corr["threat_actors"])
+            corr["campaigns"] = list(corr["campaigns"])
+            corr["feed_count"] = len(corr["feeds"])
+            result.append(corr)
 
-        if not result or "attributed_actor" not in result:
-            mon.log_event("llm_attribution_failed", {
-                "campaign_id": campaign_data.get("campaign_id")
-            })
-            return None
-
-        mon.log_event("llm_attribution_complete", {
-            "campaign_id": campaign_data.get("campaign_id"),
-            "attributed_actor": result.get("attributed_actor", "unattributed"),
-            "confidence": result.get("confidence_score", 0.0)
-        })
         return result
 
+    def _perform_attribution(self, correlations: List[Dict]) -> List[Dict]:
+        """Use LLM to perform threat actor attribution."""
+        if not correlations:
+            return []
+
+        correlation_summary = self._summarize_correlations(correlations)
+
+        system_prompt = """You are a cyber threat intelligence analyst. Analyze IOC correlations
+and threat actor patterns to determine likely campaign attribution.
+
+For each IOC group:
+1. Check for TTP consistency
+2. Evaluate confidence based on feed agreement
+3. Identify campaign if applicable
+4. Rate confidence 0.0-1.0
+
+Return ONLY valid JSON array, no markdown."""
+
+        user_prompt = f"""Perform threat actor attribution:
+
+{correlation_summary}
+
+Return JSON array where each element is:
+{{
+  "campaign_name": "Campaign name or Unknown",
+  "threat_actor": "Attribution",
+  "aliases": ["Names"],
+  "confidence": 0.0-1.0,
+  "ttp_overlap": ["TTPs"],
+  "evidence": "Summary"
+}}"""
+
+        try:
+            response = self.llm_classify(
+                system=system_prompt,
+                user=user_prompt,
+                json_mode=True,
+                temperature=0.2,
+            )
+
+            if isinstance(response, dict) and "raw_content" in response:
+                attributions = json.loads(response["raw_content"])
+            else:
+                attributions = response
+
+            if not isinstance(attributions, list):
+                attributions = [attributions]
+
+            return attributions[:max_actors]
+
+        except Exception as e:
+            logger.error(f"Attribution LLM failed: {e}")
+            return []
+
+    def _summarize_correlations(self, correlations: List[Dict]) -> str:
+        """Create correlation summary for LLM."""
+        lines = []
+        for i, corr in enumerate(correlations[:15], 1):
+            lines.append(
+                f"{i}. {corr['type'].upper()}: {corr['value'][:50]} "
+                f"({len(corr['feeds'])} feeds) "
+                f"Actors: {','.join(corr['threat_actors'][:2]) or 'Unknown'}"
+            )
+        return "\n".join(lines)
+
+    def _write_results(self, attributions: List[Dict]):
+        """Write attribution results to Delta."""
+        try:
+            rows = []
+            for attr in attributions:
+                rows.append({
+                    "attribution_id": str(uuid.uuid4()),
+                    "campaign_name": attr.get("campaign_name", "Unknown"),
+                    "threat_actor": attr.get("threat_actor", "Unknown"),
+                    "threat_actor_aliases": attr.get("aliases", []),
+                    "confidence": attr.get("confidence", 0.0),
+                    "ttp_overlap": attr.get("ttp_overlap", []),
+                    "ioc_matches": 0,
+                    "ioc_types": {},
+                    "evidence_summary": attr.get("evidence", ""),
+                    "first_observed": datetime.now(),
+                    "last_observed": datetime.now(),
+                    "trace_id": self.agent_name,
+                    "agent_name": self.agent_name,
+                    "created_at": datetime.now(),
+                })
+
+            df = spark.createDataFrame(rows)
+            safe_append(df, self.results_table, idempotency_key="attribution_id")
+
+        except Exception as e:
+            logger.error(f"Failed to write results: {e}")
+            raise
+
+
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Store Attribution Results
+# MAGIC ## Agent Execution
 
 # COMMAND ----------
 
-def store_attribution(campaign_id, attribution):
-    """Persist the attribution result."""
-    with mon.time("store_attribution"):
-        now = datetime.now(timezone.utc)
-        attribution_id = f"ATTR-{campaign_id}-{now.strftime('%Y%m%d%H%M%S')}"
+try:
+    import mlflow
+    mlflow.set_experiment(f"/0xDSI/agents/cti_attribution")
+except Exception as e:
+    logger.warning(f"MLflow unavailable: {e}")
 
-        diamond = attribution.get("diamond_model", {})
+# Create and configure agent
+agent = CTIAttributionAgent("cti_attribution", cfg, llm, mon, spark)
+for tool in agent.get_tools():
+    agent.register_tool(tool)
 
-        row_data = [(
-            attribution_id,
-            campaign_id,
-            attribution.get("attributed_actor", "unattributed"),
-            float(attribution.get("confidence_score", 0.0)),
-            diamond.get("adversary", ""),
-            diamond.get("capability", ""),
-            diamond.get("infrastructure", ""),
-            diamond.get("victim", ""),
-            json.dumps(attribution.get("ttp_overlap", []), default=str),
-            attribution.get("reasoning", ""),
-            AGENT_NAME,
-            now,
-            "completed"
-        )]
-
-        schema = StructType([
-            StructField("attribution_id", StringType(), False),
-            StructField("campaign_id", StringType(), False),
-            StructField("attributed_actor", StringType(), True),
-            StructField("confidence_score", FloatType(), True),
-            StructField("diamond_adversary", StringType(), True),
-            StructField("diamond_capability", StringType(), True),
-            StructField("diamond_infrastructure", StringType(), True),
-            StructField("diamond_victim", StringType(), True),
-            StructField("ttp_overlap_json", StringType(), True),
-            StructField("reasoning", StringType(), True),
-            StructField("attributed_by", StringType(), True),
-            StructField("attributed_at", TimestampType(), True),
-            StructField("status", StringType(), True),
-        ])
-
-        result_df = spark.createDataFrame(row_data, schema)
-        result_df.write.mode("append").saveAsTable(attribution_results_table)
-
-        mon.log_event("attribution_stored", {
-            "attribution_id": attribution_id,
-            "campaign_id": campaign_id
-        })
-        return attribution_id
-
-# COMMAND ----------
-
-def update_campaign_attribution(campaign_id, attribution):
-    """Update the threat_campaigns table with the attribution."""
-    with mon.time("update_campaign_attribution"):
-        actor = attribution.get("attributed_actor", "unattributed")
-        confidence = float(attribution.get("confidence_score", 0.0))
-
-        # Only update if confidence meets minimum threshold
-        if confidence < 0.4 or actor == "unattributed":
-            mon.log_event("attribution_below_threshold", {
-                "campaign_id": campaign_id,
-                "confidence": confidence
-            })
-            return False
-
-        campaign_df = (
-            spark.read.table(threat_campaigns_table)
-            .filter(F.col("campaign_id") == campaign_id)
-            .withColumn("attributed_actor", F.lit(actor))
-            .withColumn("attribution_confidence", F.lit(confidence))
-            .withColumn("attributed_at", F.lit(datetime.now(timezone.utc)))
-        )
-
-        campaign_df.write.mode("overwrite").option(
-            "replaceWhere", f"campaign_id = '{campaign_id}'"
-        ).saveAsTable(threat_campaigns_table)
-
-        mon.log_event("campaign_attribution_updated", {
-            "campaign_id": campaign_id,
-            "actor": actor,
-            "confidence": confidence
-        })
-        return True
+# Execute
+result = agent.run()
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Main Execution
+# MAGIC ## Results Summary
 
 # COMMAND ----------
 
-def run():
-    """Main execution loop for the CTI Attribution agent."""
-    results = {
-        "agent": AGENT_NAME,
-        "version": AGENT_VERSION,
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "campaigns_analyzed": 0,
-        "attributions_made": 0,
-        "campaigns_updated": 0,
-        "errors": []
-    }
+mon.log_event("cti_attribution_complete", {
+    "status": result.status.value,
+    "processed": result.processed_count,
+    "errors": result.error_count,
+    "duration": result.duration_seconds,
+})
 
-    try:
-        # Load known threat actors once for all evaluations
-        known_actors = get_known_threat_actors()
-        results["known_actors_count"] = len(known_actors)
-
-        if not known_actors:
-            mon.log_event("no_threat_actors_in_database")
-            results["status"] = "skipped"
-            results["reason"] = "No known threat actors available for comparison"
-            return results
-
-        unattributed = get_unattributed_campaigns()
-        campaign_list = unattributed.collect()
-        results["total_unattributed"] = len(campaign_list)
-
-        for campaign_row in campaign_list:
-            campaign_data = campaign_row.asDict()
-            campaign_id = campaign_data.get("campaign_id", "unknown")
-
-            try:
-                with mon.time(f"attribute_campaign_{campaign_id}"):
-                    campaign_iocs = get_campaign_iocs(campaign_id)
-                    attribution = perform_attribution(campaign_data, campaign_iocs, known_actors)
-
-                    if attribution is None:
-                        results["errors"].append(f"Attribution failed for {campaign_id}")
-                        continue
-
-                    store_attribution(campaign_id, attribution)
-                    results["attributions_made"] += 1
-
-                    if update_campaign_attribution(campaign_id, attribution):
-                        results["campaigns_updated"] += 1
-
-                    results["campaigns_analyzed"] += 1
-
-            except Exception as campaign_err:
-                mon.log_error(f"Error attributing campaign {campaign_id}", exception=campaign_err)
-                results["errors"].append(f"{campaign_id}: {str(campaign_err)}")
-
-        results["completed_at"] = datetime.now(timezone.utc).isoformat()
-        results["status"] = "success"
-        mon.log_complete(results)
-
-    except Exception as e:
-        results["status"] = "failed"
-        results["error"] = str(e)
-        mon.log_error("CTI Attribution agent failed", exception=e)
-
-    return results
-
-# COMMAND ----------
-
-result = run()
-dbutils.notebook.exit(json.dumps(result, default=str))
+logger.info(f"CTI Attribution: {result.to_json()}")
+dbutils.notebook.exit(result.to_json())

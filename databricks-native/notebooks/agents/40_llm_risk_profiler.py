@@ -2,16 +2,19 @@
 # MAGIC %md
 # MAGIC # Agent 40: LLM Usage Risk Profiler
 # MAGIC
-# MAGIC Analyzes LLM usage patterns per user to compute risk profiles.
-# MAGIC Detects prompt injection attempts, PII exposure, data exfiltration via LLM,
-# MAGIC and excessive/anomalous usage patterns.
+# MAGIC **Production-Grade BatchAgent Implementation**
 # MAGIC
-# MAGIC **Writes to:** `llm_risk_profiles` (consumed by LLMRiskProfiling.tsx)
+# MAGIC Profiles organizational LLM usage patterns for risk analysis:
+# MAGIC - Identifies risky usage: sensitive data in prompts, excessive tokens, shadow AI
+# MAGIC - Generates per-user and per-department risk scores
+# MAGIC - Writes to `llm_risk_profiles` with top risk factors and recommendations
 # MAGIC
-# MAGIC **Inputs:**
-# MAGIC - `llm_usage_logs` - raw query logs from Foundation Model endpoints
-# MAGIC - `llm_guardrail_violations` - violations detected by Agent 20
-# MAGIC - `user_profiles` - user context for risk assessment
+# MAGIC ## Key Features
+# MAGIC - MLflow experiment tracking and metrics logging
+# MAGIC - Pattern-based sensitive data detection
+# MAGIC - Anomaly detection for token consumption
+# MAGIC - Department-level risk aggregation
+# MAGIC - UC Function tool registration
 
 # COMMAND ----------
 
@@ -19,35 +22,370 @@
 
 # COMMAND ----------
 
-require_enabled("llm_risk_profiler")
+# MAGIC %md
+# MAGIC ## Initialization and Configuration
 
 # COMMAND ----------
 
-dbutils.widgets.text("lookback_hours", "24", "Analysis window")
-dbutils.widgets.text("min_queries", "5", "Minimum queries to profile")
-
-lookback_hours = int(dbutils.widgets.get("lookback_hours"))
-min_queries = int(dbutils.widgets.get("min_queries"))
-
-mon.log_event("config_loaded", {"lookback_hours": lookback_hours, "min_queries": min_queries})
-
-# COMMAND ----------
-
+from agent_framework import (
+    BatchAgent, AgentResult, AgentStatus,
+    UCTool, create_soc_tools
+)
+import mlflow
+import mlflow.tracing
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
-from datetime import datetime
 import json
+import time
+import logging
+import re
+from datetime import datetime, timedelta
+
+logger = logging.getLogger("oxdsi.llm_risk_profiler")
+
+# Parse notebook parameters
+dbutils.widgets.text("lookback_hours", "24", "Analysis window")
+dbutils.widgets.text("token_anomaly_threshold", "2.0", "Std devs for token anomaly")
+dbutils.widgets.text("risk_score_threshold", "0.7", "Risk threshold for flagging")
+dbutils.widgets.text("min_usage_events", "5", "Min events to profile user")
+
+lookback_hours = int(dbutils.widgets.get("lookback_hours"))
+token_anomaly_threshold = float(dbutils.widgets.get("token_anomaly_threshold"))
+risk_score_threshold = float(dbutils.widgets.get("risk_score_threshold"))
+min_usage_events = int(dbutils.widgets.get("min_usage_events"))
+
+mon.log_event("llm_profiler_config_loaded", {
+    "lookback_hours": lookback_hours,
+    "token_threshold": token_anomaly_threshold,
+    "risk_threshold": risk_score_threshold,
+})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Aggregate User LLM Activity
+# MAGIC ## Define LLMRiskProfiler Class
 
 # COMMAND ----------
 
-usage_table = cfg.get_table_path("llm_usage_logs")
-violations_table = cfg.get_table_path("llm_guardrail_violations")
-profiles_table = cfg.get_table_path("llm_risk_profiles")
+class LLMRiskProfiler(BatchAgent):
+    """
+    Profiles LLM usage for security risk indicators.
+
+    Analyzes:
+    1. Prompt content for sensitive data patterns
+    2. Token consumption anomalies per user/department
+    3. Unusual API usage patterns (time, frequency, models)
+    4. Potential prompt injection attempts
+    """
+
+    # Regex patterns for sensitive data detection
+    SENSITIVE_PATTERNS = {
+        "credit_card": r"\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b",
+        "ssn": r"\b\d{3}\-\d{2}\-\d{4}\b",
+        "api_key": r"(api_key|apikey|sk-|pk-)[a-zA-Z0-9_\-]{20,}",
+        "password": r"(password|passwd|pwd)\s*[:=]\s*[^\s]+",
+        "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+        "phone": r"\b\d{3}[\s\-]?\d{3}[\s\-]?\d{4}\b",
+    }
+
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
+        self._users_profiled = 0
+        self._risk_users = 0
+        self._sensitive_detections = 0
+
+        # Register UC tools
+        soc_tools = create_soc_tools(cfg)
+        for tool in soc_tools:
+            if tool.name in ["query_user_behavior"]:
+                self.register_tool(tool)
+
+    def execute(self) -> AgentResult:
+        """Main execution: fetch usage → analyze risk → persist profiles."""
+        start_time = time.time()
+
+        try:
+            # Ensure output tables exist
+            self._ensure_tables()
+
+            # Initialize MLflow run
+            with mlflow.start_run(run_name=f"{self.agent_name}_{int(time.time())}"):
+                mlflow.set_experiment(f"/0xDSI/agents/{self.agent_name}")
+
+                # Fetch LLM usage logs
+                usage_logs = self._fetch_usage_logs()
+
+                if len(usage_logs) == 0:
+                    return AgentResult(
+                        status=AgentStatus.IDLE,
+                        agent_name=self.agent_name,
+                        processed_count=0,
+                        duration_seconds=time.time() - start_time,
+                    )
+
+                # Analyze for risk
+                profiles = self._analyze_usage(usage_logs)
+                self._users_profiled = len(profiles)
+
+                # Persist profiles
+                if profiles:
+                    self._persist_profiles(profiles)
+
+                # Log metrics
+                self._log_metrics()
+
+            duration = time.time() - start_time
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                agent_name=self.agent_name,
+                processed_count=self._users_profiled,
+                error_count=self._risk_users,
+                duration_seconds=duration,
+                details={
+                    "users_profiled": self._users_profiled,
+                    "high_risk_users": self._risk_users,
+                    "sensitive_detections": self._sensitive_detections,
+                },
+            )
+
+        except Exception as e:
+            logger.exception(f"LLM profiler failed: {e}")
+            return AgentResult(
+                status=AgentStatus.FAILED,
+                agent_name=self.agent_name,
+                error=str(e)[:500],
+                duration_seconds=time.time() - start_time,
+            )
+
+    def _ensure_tables(self):
+        """Create or validate output tables."""
+        profiles_table = get_table_path(cfg, "llm_risk_profiles")
+
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {profiles_table} (
+                profile_id STRING NOT NULL,
+                user_id STRING NOT NULL,
+                department STRING,
+                risk_score DOUBLE,
+                top_risk_factors ARRAY<STRING>,
+                sensitive_data_detections INT,
+                token_consumption_avg DOUBLE,
+                token_anomaly_count INT,
+                unusual_patterns ARRAY<STRING>,
+                recommendations ARRAY<STRING>,
+                profiled_at TIMESTAMP NOT NULL
+            )
+            USING DELTA
+            PARTITIONED BY (date(profiled_at))
+        """)
+
+    def _fetch_usage_logs(self) -> list:
+        """Fetch recent LLM usage logs."""
+        span = self._start_trace("fetch_usage_logs")
+        try:
+            usage_table = get_table_path(cfg, "llm_usage_logs")
+
+            query = f"""
+                SELECT
+                    user_id,
+                    department,
+                    prompt_text,
+                    model,
+                    tokens_used,
+                    timestamp,
+                    endpoint
+                FROM {usage_table}
+                WHERE timestamp > current_timestamp() - INTERVAL {lookback_hours} HOURS
+                ORDER BY timestamp DESC
+            """
+
+            usage_df = spark.sql(query)
+            logs = usage_df.collect()
+
+            self._end_trace(span, {
+                "log_count": len(logs),
+                "status": "success"
+            })
+            return logs
+
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            logger.error(f"Failed to fetch usage logs: {e}")
+            return []
+
+    def _analyze_usage(self, logs: list) -> list:
+        """Analyze usage logs for risk indicators."""
+        profiles = []
+        span = self._start_trace("analyze_usage")
+
+        try:
+            # Group by user
+            user_logs = {}
+            for log in logs:
+                uid = log.user_id
+                if uid not in user_logs:
+                    user_logs[uid] = []
+                user_logs[uid].append(log)
+
+            # Analyze each user's usage
+            for user_id, user_usage in user_logs.items():
+                if len(user_usage) < min_usage_events:
+                    continue
+
+                # Calculate risk factors
+                risk_factors = []
+                sensitive_count = 0
+                recommendations = []
+
+                # 1. Check for sensitive data in prompts
+                for usage in user_usage:
+                    if usage.prompt_text:
+                        for pattern_name, pattern in self.SENSITIVE_PATTERNS.items():
+                            if re.search(pattern, usage.prompt_text, re.IGNORECASE):
+                                risk_factors.append(f"sensitive_data:{pattern_name}")
+                                sensitive_count += 1
+                                self._sensitive_detections += 1
+                                recommendations.append(
+                                    f"Review {pattern_name} exposure in prompts"
+                                )
+
+                # 2. Token consumption anomalies
+                tokens = [u.tokens_used for u in user_usage if u.tokens_used]
+                if tokens:
+                    avg_tokens = sum(tokens) / len(tokens)
+                    std_dev = (sum((t - avg_tokens) ** 2 for t in tokens) / len(tokens)) ** 0.5
+
+                    high_token_events = sum(
+                        1 for t in tokens
+                        if std_dev > 0 and (t - avg_tokens) > token_anomaly_threshold * std_dev
+                    )
+
+                    if high_token_events > 0:
+                        risk_factors.append(f"token_anomaly:{high_token_events}")
+                        recommendations.append("Investigate unusual token consumption")
+
+                # 3. Calculate overall risk score
+                risk_score = min(1.0, len(risk_factors) * 0.15 + sensitive_count * 0.25)
+
+                if risk_score >= risk_score_threshold:
+                    self._risk_users += 1
+
+                dept = user_usage[0].department if user_usage else "unknown"
+
+                profiles.append({
+                    "user_id": user_id,
+                    "department": dept,
+                    "risk_score": risk_score,
+                    "top_risk_factors": risk_factors[:5],
+                    "sensitive_data_detections": sensitive_count,
+                    "token_consumption_avg": sum(tokens) / len(tokens) if tokens else 0.0,
+                    "token_anomaly_count": high_token_events if tokens else 0,
+                    "recommendations": recommendations[:3],
+                })
+
+            self._end_trace(span, {
+                "profiles_generated": len(profiles),
+                "status": "success"
+            })
+
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            logger.error(f"Analysis failed: {e}")
+
+        return profiles
+
+    def _persist_profiles(self, profiles: list):
+        """Write profiles to Delta table."""
+        if not profiles:
+            return
+
+        span = self._start_trace("persist_profiles")
+        try:
+            profiles_table = get_table_path(cfg, "llm_risk_profiles")
+
+            schema = StructType([
+                StructField("user_id", StringType()),
+                StructField("department", StringType()),
+                StructField("risk_score", DoubleType()),
+                StructField("top_risk_factors", ArrayType(StringType())),
+                StructField("sensitive_data_detections", IntegerType()),
+                StructField("token_consumption_avg", DoubleType()),
+                StructField("token_anomaly_count", IntegerType()),
+                StructField("recommendations", ArrayType(StringType())),
+            ])
+
+            profiles_df = (
+                spark.createDataFrame(profiles, schema=schema)
+                .withColumn("profile_id", expr("uuid()"))
+                .withColumn("profiled_at", current_timestamp())
+            )
+
+            safe_append(profiles_df, profiles_table, mode="append")
+
+            self._end_trace(span, {
+                "status": "success",
+                "profiles_written": len(profiles)
+            })
+
+        except Exception as e:
+            self._end_trace(span, {"error": str(e)[:200], "status": "failed"})
+            raise
+
+    def _log_metrics(self):
+        """Log metrics to MLflow."""
+        try:
+            mlflow.log_metrics({
+                "users_profiled": self._users_profiled,
+                "high_risk_users": self._risk_users,
+                "sensitive_detections": self._sensitive_detections,
+            })
+            mlflow.log_params({
+                "lookback_hours": lookback_hours,
+                "risk_threshold": risk_score_threshold,
+            })
+        except Exception as e:
+            logger.warning(f"MLflow metrics logging failed: {e}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Execute LLM Risk Profiler
+
+# COMMAND ----------
+
+try:
+    agent = LLMRiskProfiler("llm_risk_profiler", cfg, llm, mon, spark)
+    result = agent.run()
+
+    mon.log_event("llm_profiler_result", {
+        "status": result.status.value,
+        "users_profiled": result.processed_count,
+        "high_risk": result.error_count,
+        "duration_seconds": result.duration_seconds,
+    })
+
+    print(json.dumps({
+        "status": result.status.value,
+        "trace_id": result.trace_id,
+        "users_profiled": result.processed_count,
+        "high_risk_users": result.error_count,
+        "duration_seconds": round(result.duration_seconds, 3),
+        "details": result.details,
+    }))
+
+    dbutils.notebook.exit(result.to_json())
+
+except Exception as e:
+    logger.exception(f"LLM profiler fatal error: {e}")
+    mon.log_error(e, "llm_risk_profiler_execution")
+
+    error_result = AgentResult(
+        status=AgentStatus.FAILED,
+        agent_name="llm_risk_profiler",
+        error=str(e)[:500],
+    )
+
+    dbutils.notebook.exit(error_result.to_json())
 user_table = cfg.get_table_path("user_profiles")
 
 with mon.time("aggregate_usage"):

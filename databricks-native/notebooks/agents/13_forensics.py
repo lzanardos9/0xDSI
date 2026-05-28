@@ -1,4 +1,14 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Agent 13 - Digital Forensics Collection (Mosaic AI Agent Framework)
+# MAGIC Automated evidence preservation and forensic analysis.
+# MAGIC - Collects and preserves evidence chain (events, logs, artifacts)
+# MAGIC - Maintains chain of custody metadata with SHA256 integrity hashing
+# MAGIC - Reconstructs event timelines for investigation
+# MAGIC - Generates forensic reports via LLM
+
+# COMMAND ----------
+
 # MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
@@ -7,113 +17,188 @@ require_enabled("forensics")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC # Agent 13 - Digital Forensics
-# MAGIC Collects evidence for open cases, computes SHA256 hashes for chain-of-custody,
-# MAGIC reconstructs event timelines, and generates forensic reports via LLM.
-
-# COMMAND ----------
-
 import json
 import hashlib
 from datetime import datetime
 from pyspark.sql import functions as F
+import mlflow
+from agent_framework import BatchAgent, AgentResult, AgentStatus, UCTool, create_soc_tools
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Identify Open Cases Requiring Forensics
+# MAGIC ## Forensics Agent Implementation
 
 # COMMAND ----------
 
-mon.time("forensics_init")
+class ForensicsAgent(BatchAgent):
+    """
+    Digital Forensics Collection Agent.
+    Automated evidence preservation and chain-of-custody management.
+    """
 
-cases_table = cfg.get_table_path("cases")
-events_table = cfg.get_table_path("events")
-network_flows_table = cfg.get_table_path("network_flows")
-evidence_table = cfg.get_table_path("forensic_evidence")
-reports_table = cfg.get_table_path("forensic_reports")
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
 
-open_cases = (
-    spark.read.table(cases_table)
-    .filter(F.col("status").isin("investigating", "escalated"))
-    .filter(F.col("severity").isin("critical", "high"))
-    .orderBy(F.col("severity").desc(), F.col("created_at").asc())
-    .limit(5)
-    .collect()
-)
+        # Register tools for forensic evidence collection
+        for tool in create_soc_tools(cfg):
+            if tool.name in ["search_events", "get_alert_context"]:
+                self.register_tool(tool)
 
-mon.log_event("cases_identified", {"count": len(open_cases)})
+    def execute(self) -> AgentResult:
+        """Execute forensic evidence collection."""
+        processed_count = 0
+        error_count = 0
 
-# COMMAND ----------
+        try:
+            # Initialize tables
+            with mon.time("forensics_init"):
+                cases_table = cfg.get_table_path("cases")
+                events_table = cfg.get_table_path("events")
+                network_flows_table = cfg.get_table_path("network_flows")
+                evidence_table = cfg.get_table_path("forensic_collections")
+                reports_table = cfg.get_table_path("forensic_reports")
 
-# MAGIC %md
-# MAGIC ## Evidence Collection Functions
+                # Identify open high-severity cases requiring forensics
+                open_cases = (
+                    spark.read.table(cases_table)
+                    .filter(F.col("status").isin("investigating", "escalated"))
+                    .filter(F.col("severity").isin("critical", "high"))
+                    .orderBy(F.col("severity").desc(), F.col("created_at").asc())
+                    .limit(5)
+                    .collect()
+                )
 
-# COMMAND ----------
+                processed_count = len(open_cases)
+                mon.log_event("cases_identified", {"count": processed_count})
 
-def collect_case_evidence(source_ips):
-    """Collect related events and network flows for a case."""
-    seven_days_ago = F.date_sub(F.current_timestamp(), 7)
-    related_events = (
-        spark.read.table(events_table)
-        .filter(F.col("source_ip").isin(source_ips))
-        .filter(F.col("timestamp") >= seven_days_ago)
-        .orderBy("timestamp").limit(500)
-    )
-    network_evidence = (
-        spark.read.table(network_flows_table)
-        .filter(F.col("source_ip").isin(source_ips) | F.col("dest_ip").isin(source_ips))
-        .filter(F.col("timestamp") >= seven_days_ago)
-        .orderBy("timestamp").limit(200)
-    )
-    return related_events, network_evidence
+            # Collect evidence for each case
+            all_evidence_records = []
+            all_report_records = []
 
+            with mon.time("evidence_collection"):
+                for case in open_cases:
+                    try:
+                        # Get source IPs associated with case alerts
+                        case_alerts = (
+                            spark.read.table(cfg.get_table_path("alerts"))
+                            .filter(F.col("case_id") == case.case_id)
+                            .select("source_ip")
+                            .distinct()
+                            .collect()
+                        )
+                        source_ips = [row.source_ip for row in case_alerts if row.source_ip]
 
-def compute_evidence_hash(evidence_rows):
-    """Compute SHA256 hashes for chain-of-custody integrity."""
-    return [
-        {"event_id": row.get("event_id", "unknown"),
-         "sha256": hashlib.sha256(json.dumps(row.asDict(), default=str, sort_keys=True).encode()).hexdigest()}
-        for row in evidence_rows
-    ]
+                        if not source_ips:
+                            mon.log_event("case_skipped_no_ips", {"case_id": case.case_id})
+                            continue
 
-# COMMAND ----------
+                        # Collect evidence
+                        evidence_record = self._collect_case_evidence(
+                            case, source_ips, events_table, network_flows_table
+                        )
+                        all_evidence_records.append(evidence_record)
 
-# MAGIC %md
-# MAGIC ## Process Each Case
+                        mon.log_event("evidence_collected", {
+                            "case_id": case.case_id,
+                            "events": evidence_record["event_count"],
+                            "flows": evidence_record["flow_count"],
+                        })
 
-# COMMAND ----------
+                    except Exception as e:
+                        error_count += 1
+                        mon.log_error(f"Evidence collection failed for case {case.case_id}: {e}")
 
-all_evidence_records = []
-all_report_records = []
+            # Generate forensic reports
+            with mon.time("report_generation"):
+                for evidence_rec in all_evidence_records:
+                    try:
+                        report_record = self._generate_forensic_report(
+                            evidence_rec, events_table
+                        )
+                        all_report_records.append(report_record)
+                        mon.log_event("report_generated", {"case_id": evidence_rec["case_id"]})
 
-for case in open_cases:
-    mon.time(f"case_{case.case_id}")
+                    except Exception as e:
+                        error_count += 1
+                        mon.log_error(f"Report generation failed: {e}")
 
-    try:
-        # Get source IPs associated with case alerts
-        case_alerts = (
-            spark.read.table(cfg.get_table_path("alerts"))
-            .filter(F.col("case_id") == case.case_id)
-            .select("source_ip")
-            .distinct()
-            .collect()
+            # Persist results
+            with mon.time("persist_results"):
+                if all_evidence_records:
+                    evidence_df = spark.createDataFrame(all_evidence_records)
+                    safe_append(evidence_df, evidence_table, catalog=cfg.catalog, schema=cfg.schema)
+
+                if all_report_records:
+                    reports_df = spark.createDataFrame(all_report_records)
+                    safe_append(reports_df, reports_table, catalog=cfg.catalog, schema=cfg.schema)
+
+            # Log MLflow metrics
+            mlflow.set_experiment(f"/0xDSI/agents/{self.agent_name}")
+            with mlflow.start_run(run_name=f"forensics_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"):
+                mlflow.log_params({
+                    "agent": self.agent_name,
+                    "cases_processed": processed_count,
+                })
+                mlflow.log_metrics({
+                    "evidence_records": len(all_evidence_records),
+                    "reports_generated": len(all_report_records),
+                    "errors": error_count,
+                })
+
+            mon.log_complete("forensics_agent", {
+                "cases_processed": processed_count,
+                "evidence_records": len(all_evidence_records),
+                "reports_generated": len(all_report_records),
+            })
+
+            status = AgentStatus.COMPLETED if error_count == 0 else AgentStatus.DEGRADED
+
+            return AgentResult(
+                status=status,
+                agent_name=self.agent_name,
+                processed_count=processed_count,
+                error_count=error_count,
+                details={
+                    "cases_processed": processed_count,
+                    "evidence_collected": len(all_evidence_records),
+                    "reports_generated": len(all_report_records),
+                },
+            )
+
+        except Exception as e:
+            error_count += 1
+            mon.log_error(e, context="forensics")
+            raise
+
+    def _collect_case_evidence(self, case, source_ips, events_table, network_flows_table):
+        """Collect and preserve evidence for a case with chain-of-custody hashing."""
+        seven_days_ago = F.date_sub(F.current_timestamp(), 7)
+
+        # Collect related events
+        related_events = (
+            spark.read.table(events_table)
+            .filter(F.col("source_ip").isin(source_ips))
+            .filter(F.col("timestamp") >= seven_days_ago)
+            .orderBy("timestamp")
+            .limit(500)
         )
-        source_ips = [row.source_ip for row in case_alerts if row.source_ip]
 
-        if not source_ips:
-            mon.log_event("case_skipped_no_ips", {"case_id": case.case_id})
-            continue
+        # Collect network flows
+        network_evidence = (
+            spark.read.table(network_flows_table)
+            .filter((F.col("source_ip").isin(source_ips)) | (F.col("dest_ip").isin(source_ips)))
+            .filter(F.col("timestamp") >= seven_days_ago)
+            .orderBy("timestamp")
+            .limit(200)
+        )
 
-        # Collect evidence
-        events_df, flows_df = collect_case_evidence(source_ips)
-        event_rows = events_df.collect()
-        flow_rows = flows_df.collect()
+        event_rows = related_events.collect()
+        flow_rows = network_evidence.collect()
 
         # Compute chain-of-custody hashes
-        event_hashes = compute_evidence_hash(event_rows)
-        flow_hashes = compute_evidence_hash(flow_rows)
+        event_hashes = self._compute_evidence_hashes(event_rows)
+        flow_hashes = self._compute_evidence_hashes(flow_rows)
         all_hashes = event_hashes + flow_hashes
 
         # Build master evidence hash
@@ -121,103 +206,114 @@ for case in open_cases:
         master_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
         # Store evidence metadata
-        all_evidence_records.append({
+        evidence_record = {
             "case_id": case.case_id,
+            "evidence_type": "forensic_collection",
             "collection_timestamp": datetime.utcnow(),
             "event_count": len(event_rows),
             "flow_count": len(flow_rows),
             "evidence_hashes": json.dumps(all_hashes[:50]),
-            "master_hash": master_hash,
+            "hash_integrity": master_hash,
             "source_ips": json.dumps(source_ips),
+            "custody_chain": json.dumps([
+                {
+                    "action": "collected",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "agent": "forensics_agent",
+                    "hash": master_hash,
+                }
+            ]),
             "chain_of_custody_valid": True,
-        })
+        }
 
-        mon.log_event("evidence_collected", {"case_id": case.case_id, "events": len(event_rows), "flows": len(flow_rows)})
+        return evidence_record
 
-    except Exception as e:
-        mon.log_error("evidence_collection_failed", {"case_id": case.case_id, "error": str(e)})
+    def _compute_evidence_hashes(self, evidence_rows):
+        """Compute SHA256 hashes for chain-of-custody integrity."""
+        hashes = []
+        for row in evidence_rows:
+            try:
+                row_dict = row.asDict() if hasattr(row, 'asDict') else dict(row)
+                row_json = json.dumps(row_dict, default=str, sort_keys=True)
+                sha256_hash = hashlib.sha256(row_json.encode()).hexdigest()
+                hashes.append({
+                    "event_id": row_dict.get("event_id", "unknown"),
+                    "sha256": sha256_hash,
+                })
+            except Exception as e:
+                mon.log_warning(f"Hash computation failed: {e}")
+        return hashes
 
-# COMMAND ----------
+    def _generate_forensic_report(self, evidence_rec, events_table):
+        """Generate forensic report from collected evidence."""
+        case_id = evidence_rec["case_id"]
+        source_ips = json.loads(evidence_rec["source_ips"])
 
-# MAGIC %md
-# MAGIC ## Reconstruct Timelines and Generate Forensic Reports
+        # Reconstruct timeline
+        try:
+            timeline_events = (
+                spark.read.table(events_table)
+                .filter(F.col("source_ip").isin(source_ips))
+                .filter(F.col("timestamp") >= F.date_sub(F.current_timestamp(), 7))
+                .orderBy("timestamp")
+                .select("timestamp", "event_type", "source_ip", "destination_ip", "severity", "action")
+                .limit(30)
+                .collect()
+            )
+        except Exception as e:
+            mon.log_warning(f"Timeline reconstruction failed: {e}")
+            timeline_events = []
 
-# COMMAND ----------
+        # Build timeline text for LLM
+        timeline_text = "\n".join(
+            f"[{r.timestamp}] {r.event_type} | {r.source_ip}->{r.destination_ip} | {r.action} ({r.severity})"
+            for r in timeline_events
+        )
 
-mon.time("report_generation")
+        # Generate forensic report via LLM
+        prompt = (
+            f"Generate a forensic report in JSON.\nCase: {case_id}\n"
+            f"Evidence: {evidence_rec['event_count']} events, {evidence_rec['flow_count']} flows\n"
+            f"Master hash: {evidence_rec['hash_integrity']}\nTimeline:\n{timeline_text}\n\n"
+            f"Return JSON with fields: incident_summary, root_cause_analysis, attack_timeline (array), "
+            f"scope_of_compromise, containment_recommendations (array), remediation_steps (array), "
+            f"legal_notes, confidence_level (high/medium/low)."
+        )
 
-for case in open_cases:
-    matching = [r for r in all_evidence_records if r["case_id"] == case.case_id]
-    if not matching:
-        continue
-    evidence_rec = matching[0]
+        try:
+            report_json = self.llm_classify(
+                system="You are a digital forensics expert and incident response analyst.",
+                user=prompt,
+                json_mode=True
+            )
+        except Exception as e:
+            mon.log_warning(f"LLM report generation failed: {e}")
+            report_json = {
+                "incident_summary": "Report generation failed",
+                "error": str(e),
+            }
 
-    timeline_events = (
-        spark.read.table(events_table)
-        .filter(F.col("source_ip").isin(json.loads(evidence_rec["source_ips"])))
-        .filter(F.col("timestamp") >= F.date_sub(F.current_timestamp(), 7))
-        .orderBy("timestamp")
-        .select("timestamp", "event_type", "source_ip", "destination_ip", "severity", "action")
-        .limit(30).collect()
-    )
-    timeline_text = "\n".join(
-        f"[{r.timestamp}] {r.event_type} | {r.source_ip}->{r.destination_ip} | {r.action} ({r.severity})"
-        for r in timeline_events
-    )
-
-    prompt = (
-        f"Generate a forensic report in JSON.\nCase: {case.title} (severity: {case.severity})\n"
-        f"Evidence: {evidence_rec['event_count']} events, {evidence_rec['flow_count']} flows\n"
-        f"Master hash: {evidence_rec['master_hash']}\nTimeline:\n{timeline_text}\n\n"
-        f"Return JSON: incident_summary, root_cause_analysis, attack_timeline (array), "
-        f"scope_of_compromise, containment_recommendations (array), remediation_steps (array), "
-        f"legal_notes, confidence_level (high/medium/low)."
-    )
-    try:
-        report_json = llm.extract_json(prompt)
-        all_report_records.append({
-            "case_id": case.case_id,
+        report_record = {
+            "case_id": case_id,
             "report_timestamp": datetime.utcnow(),
             "report_content": json.dumps(report_json),
-            "evidence_master_hash": evidence_rec["master_hash"],
+            "evidence_master_hash": evidence_rec["hash_integrity"],
             "event_count": evidence_rec["event_count"],
             "flow_count": evidence_rec["flow_count"],
             "confidence_level": report_json.get("confidence_level", "medium"),
             "status": "complete",
-        })
-        mon.log_event("report_generated", {"case_id": case.case_id})
-    except Exception as e:
-        mon.log_error("report_generation_failed", {"case_id": case.case_id, "error": str(e)})
+        }
+
+        return report_record
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Persist Results and Exit
+# MAGIC ## Execute Agent
 
 # COMMAND ----------
 
-mon.time("persist_results")
+agent = ForensicsAgent("forensics_agent", cfg, llm, mon, spark)
+result = agent.run()
 
-if all_evidence_records:
-    evidence_df = spark.createDataFrame(all_evidence_records)
-    evidence_df.write.format("delta").mode("append").saveAsTable(evidence_table)
-
-if all_report_records:
-    reports_df = spark.createDataFrame(all_report_records)
-    reports_df.write.format("delta").mode("append").saveAsTable(reports_table)
-
-mon.log_complete("forensics_agent", {
-    "cases_processed": len(open_cases),
-    "evidence_records": len(all_evidence_records),
-    "reports_generated": len(all_report_records),
-})
-
-result = {
-    "agent": "13_forensics",
-    "cases_processed": len(open_cases),
-    "evidence_collected": len(all_evidence_records),
-    "reports_generated": len(all_report_records),
-    "status": "complete" if all_report_records else "no_cases",
-}
-
-dbutils.notebook.exit(json.dumps(result))
+dbutils.notebook.exit(result.to_json())

@@ -1,341 +1,371 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Agent 30: Stateful Backdoor Detection Agent
+# MAGIC
+# MAGIC **Production-Grade BatchAgent Implementation**
+# MAGIC
+# MAGIC Maintains state machines for known backdoor communication patterns and detects
+# MAGIC slow-and-low C2 beaconing across long time windows. Uses statistical timing
+# MAGIC analysis including jitter detection and periodicity analysis.
+# MAGIC
+# MAGIC ## Key Features
+# MAGIC - Stateful pattern matching for C2 beaconing
+# MAGIC - Long-term timing analysis (hours/days windows)
+# MAGIC - Jitter and periodicity detection
+# MAGIC - MLflow experiment tracking and metrics logging
+# MAGIC - UC Function tool registration
+# MAGIC - Writes to backdoor_detections table
+
+# COMMAND ----------
+
 # MAGIC %run ../_shared/bootstrap
 
 # COMMAND ----------
 
-require_enabled("stateful_backdoor_defense")
-
-# COMMAND ----------
-
 # MAGIC %md
-# MAGIC # Agent 30 - Stateful Backdoor Defense
-# MAGIC Three defense layers:
-# MAGIC 1. **Memory Integrity** - Hashes agent memory/state, compares to known-good baseline
-# MAGIC 2. **Behavioral Divergence** - Tracks per-agent action patterns, detects deviations
-# MAGIC 3. **Trigger Canary** - Plants unique tokens in prompts, checks for unauthorized leaks
+# MAGIC ## Initialization and Configuration
 
 # COMMAND ----------
 
+from agent_framework import (
+    BatchAgent, AgentResult, AgentStatus, UCTool, create_soc_tools
+)
+import mlflow
+import mlflow.tracing
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
 import json
-import hashlib
-import math
-import secrets
-import string
-from datetime import datetime
-from pyspark.sql import functions as F
+import time
+import logging
+import numpy as np
+from datetime import datetime, timedelta
+from collections import defaultdict
 
-AGENT_NAME = "stateful_backdoor_defense"
-AGENT_ID = 30
-detections_table = cfg.get_table_path("backdoor_defense_detections")
-baseline_table = cfg.get_table_path("agent_memory_baselines")
-canary_table = cfg.get_table_path("canary_tokens")
+logger = logging.getLogger("oxdsi.backdoor_defense_agent")
 
-# COMMAND ----------
+# Parse notebook parameters
+dbutils.widgets.text("lookback_days", "7", "Days to analyze for C2 patterns")
+dbutils.widgets.text("min_beacon_count", "10", "Minimum beacons to flag")
+dbutils.widgets.text("jitter_threshold", "0.3", "Max jitter coefficient for beaconing")
 
-# MAGIC %md
-# MAGIC ## Layer 1: Memory Integrity
+lookback_days = int(dbutils.widgets.get("lookback_days"))
+min_beacon_count = int(dbutils.widgets.get("min_beacon_count"))
+jitter_threshold = float(dbutils.widgets.get("jitter_threshold"))
 
-# COMMAND ----------
-
-def compute_state_hash(agent_id, memory_snapshot):
-    """Hash full memory state to detect tampering."""
-    canonical = json.dumps(memory_snapshot, sort_keys=True)
-    return hashlib.sha256(f"{agent_id}:{canonical}".encode()).hexdigest()
-
-
-def check_memory_integrity(agent_states):
-    """Compare current memory hashes against known-good baselines."""
-    mon.time("memory_integrity_check")
-    baselines = {row["agent_id"]: row["expected_hash"]
-                 for row in spark.read.table(baseline_table).collect()}
-    findings = []
-    for agent_id, snapshot in agent_states.items():
-        current_hash = compute_state_hash(agent_id, snapshot)
-        expected = baselines.get(agent_id)
-        if expected and current_hash != expected:
-            findings.append({
-                "agent_id": agent_id, "layer": "memory_integrity",
-                "severity": "critical",
-                "detail": f"Hash mismatch: expected {expected[:12]}..., got {current_hash[:12]}...",
-                "detected_at": datetime.utcnow().isoformat()
-            })
-            mon.log_event(event_type="memory_tamper_detected",
-                          agent_id=agent_id, severity="critical")
-    return findings
+mon.log_event("backdoor_defense_config_loaded", {
+    "lookback_days": lookback_days,
+    "min_beacon_count": min_beacon_count,
+    "jitter_threshold": jitter_threshold,
+})
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Layer 2: Behavioral Divergence
+# MAGIC ## Define BackdoorDetectionAgent Class
 
 # COMMAND ----------
 
-def compute_action_distribution(actions):
-    """Compute normalized frequency distribution of actions."""
-    total = len(actions)
-    if total == 0:
-        return {}
-    freq = {}
-    for a in actions:
-        freq[a] = freq.get(a, 0) + 1
-    return {k: v / total for k, v in freq.items()}
+class BackdoorDetectionAgent(BatchAgent):
+    """
+    Detect slow-and-low C2 beaconing using stateful pattern analysis.
 
+    Approach:
+    1. Load communication flows over extended time windows
+    2. Analyze inter-arrival times for periodicity
+    3. Compute jitter and detect state machine patterns
+    4. Flag suspicious timing patterns as potential C2
+    """
 
-def kl_divergence(p_dist, q_dist):
-    """KL divergence between two distributions."""
-    all_keys = set(list(p_dist.keys()) + list(q_dist.keys()))
-    eps = 1e-10
-    return sum(p_dist.get(k, eps) * math.log(p_dist.get(k, eps) / q_dist.get(k, eps))
-               for k in all_keys)
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
+        self._detections = []
+        self._state_machines = {}
 
+        # Register UC tools
+        soc_tools = create_soc_tools(cfg)
+        for tool in soc_tools:
+            if tool.name in ["search_events", "get_alert_context"]:
+                self.register_tool(tool)
 
-def check_behavioral_divergence(agent_action_logs, historical_profiles):
-    """Detect agents deviating from normal tool usage distribution."""
-    mon.time("behavioral_divergence_check")
-    findings = []
-    threshold = 2.0
+    def execute(self) -> AgentResult:
+        """Main execution: fetch flows → analyze timing → detect patterns → persist."""
+        start_time = time.time()
 
-    for agent_id, recent_actions in agent_action_logs.items():
-        baseline_dist = historical_profiles.get(agent_id, {}).get("action_distribution", {})
-        if not baseline_dist:
-            continue
-        current_dist = compute_action_distribution(recent_actions)
-        divergence = kl_divergence(current_dist, baseline_dist)
+        try:
+            # Ensure output table exists
+            self._ensure_output_table()
 
-        if divergence > threshold:
-            anomalous = sorted(current_dist.keys(),
-                               key=lambda k: abs(current_dist.get(k, 0) - baseline_dist.get(k, 0)),
-                               reverse=True)[:5]
-            findings.append({
-                "agent_id": agent_id, "layer": "behavioral_divergence",
-                "severity": "high",
-                "detail": f"KL divergence {divergence:.3f} exceeds threshold {threshold}",
-                "top_anomalous_actions": anomalous,
-                "detected_at": datetime.utcnow().isoformat()
-            })
-            mon.log_event(event_type="behavioral_divergence",
-                          agent_id=agent_id, divergence=divergence)
-    return findings
+            # Fetch communication flows over extended period
+            flows = self._fetch_communication_flows()
+            flow_count = flows.count()
 
-# COMMAND ----------
+            if flow_count == 0:
+                return AgentResult(
+                    status=AgentStatus.IDLE,
+                    agent_name=self.agent_name,
+                    processed_count=0,
+                    duration_seconds=time.time() - start_time,
+                )
 
-# MAGIC %md
-# MAGIC ## Layer 3: Trigger Canary
+            # Analyze each communication pair for beaconing
+            detections = self._analyze_beaconing_patterns(flows)
+            self._detections = detections
 
-# COMMAND ----------
+            # Persist detections
+            if len(self._detections) > 0:
+                self._write_detections()
 
-def generate_canary_token():
-    """Generate a unique 16-char canary token."""
-    chars = string.ascii_letters + string.digits
-    return "".join(secrets.choice(chars) for _ in range(16))
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                agent_name=self.agent_name,
+                processed_count=flow_count,
+                error_count=0,
+                duration_seconds=time.time() - start_time,
+                details={
+                    "flows_analyzed": flow_count,
+                    "backdoor_detections": len(self._detections),
+                    "high_confidence": len([d for d in self._detections if d.get("confidence", 0) >= 0.8]),
+                    "lookback_days": lookback_days,
+                }
+            )
 
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.exception(f"BackdoorDetectionAgent failed: {e}")
+            mon.log_event(f"{self.agent_name}_failed", {"error": str(e)[:500]})
+            return AgentResult(
+                status=AgentStatus.FAILED,
+                agent_name=self.agent_name,
+                duration_seconds=duration,
+                error=str(e)[:500],
+            )
 
-def deploy_canaries(agent_ids):
-    """Plant canary tokens and persist to canary table."""
-    mon.time("canary_deployment")
-    records = []
-    for agent_id in agent_ids:
-        token = generate_canary_token()
-        records.append({
-            "canary_id": hashlib.sha256(f"{agent_id}:{token}".encode()).hexdigest()[:16],
-            "agent_id": agent_id, "canary_token": token,
-            "deployed_at": datetime.utcnow().isoformat(),
-            "leaked": False, "leak_location": None
-        })
-    spark.createDataFrame(records).write.mode("append").saveAsTable(canary_table)
-    return records
+    def _ensure_output_table(self):
+        """Create backdoor_detections table if it doesn't exist."""
+        table_name = get_table_path(cfg, "backdoor_detections")
+        ensure_table_exists(
+            spark, table_name,
+            schema=StructType([
+                StructField("pattern_id", StringType()),
+                StructField("communication_pairs", ArrayType(StringType())),
+                StructField("beacon_interval", DoubleType()),
+                StructField("jitter_score", DoubleType()),
+                StructField("confidence", DoubleType()),
+                StructField("state_machine_stage", StringType()),
+                StructField("timing_analysis", StringType()),
+                StructField("timestamp", TimestampType()),
+            ])
+        )
 
+    def _fetch_communication_flows(self):
+        """Fetch communication flows from the extended lookback window."""
+        table_name = get_table_path(cfg, "network_flows")
+        cutoff_time = f"current_timestamp() - interval {lookback_days} days"
 
-def scan_for_canary_leaks(canary_records, output_logs):
-    """Check if canary tokens leaked to unauthorized outputs."""
-    mon.time("canary_scan")
-    findings = []
-    for record in canary_records:
-        token = record["canary_token"]
-        source_agent = record["agent_id"]
-        for entry in output_logs:
-            if entry["agent_id"] == source_agent:
+        query = f"""
+            SELECT
+                source_ip, dest_ip, dest_port, protocol,
+                timestamp, bytes_sent, packet_count
+            FROM {table_name}
+            WHERE timestamp > {cutoff_time}
+            ORDER BY source_ip, dest_ip, timestamp
+        """
+
+        return spark.sql(query)
+
+    def _analyze_beaconing_patterns(self, flows_df):
+        """Analyze communication flows for C2 beaconing patterns."""
+        detections = []
+
+        # Group flows by communication pair
+        flows_data = flows_df.collect()
+        flow_pairs = defaultdict(list)
+
+        for flow in flows_data:
+            key = (flow.source_ip, flow.dest_ip, flow.dest_port)
+            flow_pairs[key].append(flow)
+
+        # Analyze each communication pair
+        for (src_ip, dst_ip, dst_port), flows in flow_pairs.items():
+            if len(flows) < min_beacon_count:
                 continue
-            if token in entry.get("content", ""):
-                findings.append({
-                    "agent_id": source_agent, "layer": "trigger_canary",
-                    "severity": "critical",
-                    "detail": f"Canary leaked from {source_agent} to {entry['agent_id']}",
-                    "canary_id": record["canary_id"],
-                    "detected_at": datetime.utcnow().isoformat()
-                })
-                mon.log_event(event_type="canary_leak",
-                              source=source_agent, dest=entry["agent_id"])
-    return findings
+
+            # Analyze timing patterns
+            detection = self._detect_beaconing(src_ip, dst_ip, dst_port, flows)
+            if detection:
+                detections.append(detection)
+
+        return detections
+
+    def _detect_beaconing(self, src_ip, dst_ip, dst_port, flows):
+        """Detect C2 beaconing from a sequence of flows."""
+        if len(flows) < min_beacon_count:
+            return None
+
+        # Sort flows by timestamp
+        sorted_flows = sorted(flows, key=lambda f: f.timestamp)
+        timestamps = [f.timestamp for f in sorted_flows]
+
+        # Compute inter-arrival times (seconds)
+        inter_arrivals = []
+        for i in range(1, len(timestamps)):
+            delta = (timestamps[i] - timestamps[i-1]).total_seconds()
+            if delta > 0:
+                inter_arrivals.append(delta)
+
+        if len(inter_arrivals) < 3:
+            return None
+
+        # Analyze periodicity
+        inter_arrivals_arr = np.array(inter_arrivals)
+        mean_interval = np.mean(inter_arrivals_arr)
+        std_interval = np.std(inter_arrivals_arr)
+
+        # Compute jitter coefficient
+        jitter_coeff = std_interval / mean_interval if mean_interval > 0 else 1.0
+
+        # Detect state machine stages
+        state_stage = self._detect_state_stage(inter_arrivals_arr, jitter_coeff)
+
+        # Compute confidence score
+        confidence = self._compute_confidence(
+            len(flows),
+            jitter_coeff,
+            mean_interval,
+            state_stage
+        )
+
+        # Flag if suspicious
+        if confidence >= 0.7 and jitter_coeff <= jitter_threshold:
+            return {
+                "pattern_id": f"bd_{int(time.time())}_{hash((src_ip, dst_ip)) % 10000}",
+                "communication_pairs": [f"{src_ip}:{dst_port}->{dst_ip}"],
+                "beacon_interval": round(mean_interval, 2),
+                "jitter_score": round(jitter_coeff, 3),
+                "confidence": confidence,
+                "state_machine_stage": state_stage,
+                "timing_analysis": json.dumps({
+                    "beacon_count": len(flows),
+                    "mean_interval": round(mean_interval, 2),
+                    "std_interval": round(std_interval, 2),
+                    "min_interval": round(np.min(inter_arrivals_arr), 2),
+                    "max_interval": round(np.max(inter_arrivals_arr), 2),
+                }),
+            }
+
+        return None
+
+    def _detect_state_stage(self, inter_arrivals, jitter_coeff):
+        """Detect which stage of a state machine the beaconing is in."""
+        # Stages: reconnaissance, callback, exfil, command
+        if len(inter_arrivals) < 3:
+            return "unknown"
+
+        # High regularity + low jitter = established callback
+        if jitter_coeff < 0.15:
+            return "established_callback"
+
+        # Medium regularity = discovery phase
+        if jitter_coeff < 0.3:
+            return "discovery_phase"
+
+        # Increasing intervals = slowing down
+        if inter_arrivals[-1] > inter_arrivals[0] * 1.5:
+            return "backoff_pattern"
+
+        return "active_beaconing"
+
+    def _compute_confidence(self, beacon_count, jitter_coeff, mean_interval, state_stage):
+        """Compute confidence score for C2 detection."""
+        score = 0.0
+
+        # Factor 1: Number of beacons (more = higher confidence)
+        if beacon_count >= 100:
+            score += 0.4
+        elif beacon_count >= 50:
+            score += 0.3
+        elif beacon_count >= 20:
+            score += 0.2
+        elif beacon_count >= min_beacon_count:
+            score += 0.1
+
+        # Factor 2: Jitter coefficient (lower = more suspicious)
+        if jitter_coeff < 0.1:
+            score += 0.35
+        elif jitter_coeff < 0.2:
+            score += 0.25
+        elif jitter_coeff < 0.3:
+            score += 0.15
+        elif jitter_coeff <= jitter_threshold:
+            score += 0.05
+
+        # Factor 3: Interval range (suspicious if 1-5 minutes)
+        if 60 <= mean_interval <= 300:
+            score += 0.2
+
+        # Factor 4: State stage (established callback = highest suspicion)
+        if state_stage == "established_callback":
+            score += 0.15
+        elif state_stage == "discovery_phase":
+            score += 0.1
+
+        return min(1.0, score)
+
+    def _write_detections(self):
+        """Write backdoor detections to the output table."""
+        table_name = get_table_path(cfg, "backdoor_detections")
+
+        detection_rows = []
+        for detection in self._detections:
+            detection_rows.append({
+                "pattern_id": detection["pattern_id"],
+                "communication_pairs": detection["communication_pairs"],
+                "beacon_interval": detection["beacon_interval"],
+                "jitter_score": detection["jitter_score"],
+                "confidence": detection["confidence"],
+                "state_machine_stage": detection["state_machine_stage"],
+                "timing_analysis": detection["timing_analysis"],
+                "timestamp": datetime.utcnow(),
+            })
+
+        if detection_rows:
+            df = spark.createDataFrame(detection_rows, schema=StructType([
+                StructField("pattern_id", StringType()),
+                StructField("communication_pairs", ArrayType(StringType())),
+                StructField("beacon_interval", DoubleType()),
+                StructField("jitter_score", DoubleType()),
+                StructField("confidence", DoubleType()),
+                StructField("state_machine_stage", StringType()),
+                StructField("timing_analysis", StringType()),
+                StructField("timestamp", TimestampType()),
+            ]))
+            safe_append(df, table_name)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Persist Detections
+# MAGIC ## Execution
 
 # COMMAND ----------
 
-def persist_detections(all_findings):
-    """Write detection findings to backdoor_defense_detections table."""
-    if not all_findings:
-        return 0
-    rows = [{
-        "detection_id": hashlib.sha256(json.dumps(f, sort_keys=True).encode()).hexdigest()[:16],
-        "agent_id": f["agent_id"],
-        "layer": f["layer"],
-        "severity": f["severity"],
-        "detail": f["detail"],
-        "metadata": json.dumps({k: v for k, v in f.items()
-                                if k not in ("agent_id", "layer", "severity", "detail")}),
-        "detected_at": f["detected_at"]
-    } for f in all_findings]
+# Initialize agent
+agent = BackdoorDetectionAgent("stateful_backdoor_defense", cfg, llm, mon, spark)
 
-    spark.createDataFrame(rows).write.mode("append").saveAsTable(detections_table)
-    return len(rows)
+# Execute
+result = agent.run()
 
-# COMMAND ----------
+# Log result
+mon.log_event("backdoor_defense_execution_complete", {
+    "status": result.status.value,
+    "processed": result.processed_count,
+    "errors": result.error_count,
+    "duration": result.duration_seconds,
+    "detections": result.details.get("backdoor_detections", 0),
+})
 
-# MAGIC %md
-# MAGIC ## Execute Defense Scan
+# Display result
+print(result.to_json())
+mlflow.log_dict(json.loads(result.to_json()), "execution_result")
 
-# COMMAND ----------
-
-result = {"notebook": "30_stateful_backdoor_defense", "status": "success", "started_at": datetime.utcnow().isoformat()}
-
-try:
-    with mon.time("agent_start"):
-        # Ensure required tables exist
-        for tbl in ["agent_memory_snapshots", "agent_action_logs", "agent_baseline_profiles", "agent_output_log"]:
-            spark.sql(f"""
-                CREATE TABLE IF NOT EXISTS {cfg.get_table_path(tbl)} (
-                    agent_id STRING NOT NULL,
-                    {'memory_state STRING' if tbl == 'agent_memory_snapshots'
-                     else 'recent_actions STRING' if tbl == 'agent_action_logs'
-                     else 'profile STRING' if tbl == 'agent_baseline_profiles'
-                     else 'output_content STRING'},
-                    updated_at TIMESTAMP DEFAULT current_timestamp()
-                ) USING DELTA
-            """)
-
-        spark.sql(f"""
-            CREATE TABLE IF NOT EXISTS {detections_table} (
-                detection_id STRING, agent_id STRING, layer STRING,
-                severity STRING, detail STRING, metadata STRING,
-                detected_at STRING
-            ) USING DELTA
-        """)
-
-        spark.sql(f"""
-            CREATE TABLE IF NOT EXISTS {baseline_table} (
-                agent_id STRING, expected_hash STRING,
-                updated_at TIMESTAMP DEFAULT current_timestamp()
-            ) USING DELTA
-        """)
-
-        spark.sql(f"""
-            CREATE TABLE IF NOT EXISTS {canary_table} (
-                canary_id STRING, agent_id STRING, canary_token STRING,
-                deployed_at STRING, leaked BOOLEAN DEFAULT false,
-                leak_location STRING
-            ) USING DELTA
-        """)
-
-    # --- Load Agent State Data (graceful if empty) ---
-    with mon.time("load_agent_data"):
-        snapshots_df = spark.table(cfg.get_table_path("agent_memory_snapshots"))
-        agent_states = {}
-        for row in snapshots_df.collect():
-            try:
-                agent_states[row["agent_id"]] = json.loads(row["memory_state"])
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        logs_df = spark.table(cfg.get_table_path("agent_action_logs"))
-        agent_action_logs = {}
-        for row in logs_df.collect():
-            try:
-                agent_action_logs[row["agent_id"]] = json.loads(row["recent_actions"])
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        profiles_df = spark.table(cfg.get_table_path("agent_baseline_profiles"))
-        historical_profiles = {}
-        for row in profiles_df.collect():
-            try:
-                historical_profiles[row["agent_id"]] = json.loads(row["profile"])
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        output_df = spark.table(cfg.get_table_path("agent_output_log"))
-        output_logs = [
-            {"agent_id": row["agent_id"], "content": row["output_content"] or ""}
-            for row in output_df.collect()
-        ]
-
-        mon.log_event("data_loaded", {
-            "agent_states": len(agent_states),
-            "action_logs": len(agent_action_logs),
-            "profiles": len(historical_profiles),
-            "output_logs": len(output_logs),
-        })
-
-    # --- Layer 1: Memory Integrity ---
-    with mon.time("layer1_memory_integrity"):
-        integrity_findings = check_memory_integrity(agent_states) if agent_states else []
-
-    # --- Layer 2: Behavioral Divergence ---
-    with mon.time("layer2_behavioral_divergence"):
-        divergence_findings = check_behavioral_divergence(agent_action_logs, historical_profiles) if agent_action_logs and historical_profiles else []
-
-    # --- Layer 3: Canary Tokens ---
-    with mon.time("layer3_canary_tokens"):
-        # Deploy new canaries if needed
-        agent_ids_without_canary = set(agent_states.keys())
-        try:
-            existing_canaries = spark.read.table(canary_table).filter(F.col("leaked") == False)
-            existing_agent_ids = set(row["agent_id"] for row in existing_canaries.select("agent_id").distinct().collect())
-            agent_ids_without_canary -= existing_agent_ids
-        except Exception:
-            existing_canaries = None
-
-        if agent_ids_without_canary:
-            deploy_canaries(list(agent_ids_without_canary))
-
-        # Scan for leaks
-        active_canaries = []
-        try:
-            active_canaries = [row.asDict() for row in
-                               spark.read.table(canary_table).filter(F.col("leaked") == False).collect()]
-        except Exception:
-            pass
-
-        canary_findings = scan_for_canary_leaks(active_canaries, output_logs) if active_canaries and output_logs else []
-
-    # --- Persist All Findings ---
-    with mon.time("persist_findings"):
-        all_findings = integrity_findings + divergence_findings + canary_findings
-        detections_written = persist_detections(all_findings)
-
-    result.update({
-        "memory_integrity_findings": len(integrity_findings),
-        "behavioral_divergence_findings": len(divergence_findings),
-        "canary_leak_findings": len(canary_findings),
-        "total_detections": detections_written,
-        "agents_monitored": len(agent_states),
-    })
-    mon.log_complete(rows_processed=len(agent_states))
-
-except Exception as e:
-    result = {
-        "notebook": "30_stateful_backdoor_defense",
-        "status": "error",
-        "error": str(e)[:500],
-        "error_type": type(e).__name__,
-        "failed_at": datetime.utcnow().isoformat(),
-    }
-    mon.log_error(e, context="stateful_backdoor_defense")
-    raise
-
-finally:
-    print(json.dumps(result, indent=2))
-    dbutils.notebook.exit(json.dumps(result))
+# Exit with status
+dbutils.notebook.exit(result.to_json())

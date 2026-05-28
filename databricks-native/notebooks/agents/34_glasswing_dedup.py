@@ -1,26 +1,8 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 34: Glasswing Semantic Deduplication
-# MAGIC
-# MAGIC **Purpose**: Takes ingested findings from Mythos (Project Glasswing) and clusters
-# MAGIC them by semantic similarity to reduce thousands of raw findings into actionable
-# MAGIC root cause groups. Uses BGE-Large embeddings to detect duplicates and near-duplicates
-# MAGIC across codebases, hunt agents, and scan runs.
-# MAGIC
-# MAGIC **Architecture**:
-# MAGIC ```
-# MAGIC  glasswing_findings (status='ingested')
-# MAGIC         |
-# MAGIC   [Embedding Generation via databricks-bge-large-en]
-# MAGIC         |
-# MAGIC   [Cosine Similarity Matrix]
-# MAGIC         |
-# MAGIC   [Agglomerative Clustering @ threshold]
-# MAGIC         |
-# MAGIC   glasswing_root_causes (deduplicated groups)
-# MAGIC ```
-# MAGIC
-# MAGIC **Schedule**: Runs after Agent 33 completes ingestion
+# MAGIC # Glasswing Deduplication Agent
+# MAGIC Deduplicates vulnerability findings across scanners and time periods using semantic similarity.
+# MAGIC Maintains canonical vulnerability entries with confidence scoring.
 
 # COMMAND ----------
 
@@ -32,443 +14,251 @@ require_enabled("glasswing_dedup")
 
 # COMMAND ----------
 
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
+from agent_framework import BatchAgent, AgentResult, AgentStatus, UCTool, create_soc_tools
 from datetime import datetime, timedelta
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, LongType
+from pyspark.sql.functions import col, hash, md5, concat_ws
 import json
 import uuid
-import numpy as np
-from collections import defaultdict
-import mlflow.deployments
 
 # COMMAND ----------
 
-# Widget parameters specific to this notebook (bootstrap handles catalog/schema)
-dbutils.widgets.text("similarity_threshold", "0.85", "Cosine similarity threshold for clustering")
-dbutils.widgets.text("scan_run_id", "", "Optional: filter to specific scan run")
-dbutils.widgets.text("embedding_model", "databricks-bge-large-en", "Embedding model endpoint")
+# Widget parameters
+dbutils.widgets.text("lookback_days", "7", "Days to look back for dedup")
+dbutils.widgets.text("similarity_threshold", "0.85", "Embedding similarity threshold")
+dbutils.widgets.text("batch_size", "100", "Batch size for embedding queries")
 
+lookback_days = int(dbutils.widgets.get("lookback_days"))
 similarity_threshold = float(dbutils.widgets.get("similarity_threshold"))
-scan_run_id_filter = dbutils.widgets.get("scan_run_id")
-embedding_model = dbutils.widgets.get("embedding_model")
-
-now = datetime.utcnow()
-run_id = str(uuid.uuid4())
-
-print(f"Dedup run {run_id} | threshold={similarity_threshold} | model={embedding_model}")
+batch_size = int(dbutils.widgets.get("batch_size"))
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Load Ingested Findings
+class GlasswingDedupAgent(BatchAgent):
+    """Deduplicates vulnerabilities across scanners using semantic similarity."""
 
-# COMMAND ----------
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
+        self.processed_count = 0
+        self.error_count = 0
+        self.deduplicated_count = 0
 
-try:
-    # Build query safely using QueryBuilder
-    findings_query = qb("glasswing_findings").where_eq("status", "ingested")
-    if scan_run_id_filter:
-        findings_query = findings_query.where_eq("scan_run_id", scan_run_id_filter)
-    query = findings_query.build()
+    def execute(self) -> AgentResult:
+        """Execute deduplication pipeline."""
+        try:
+            # Fetch unprocessed findings
+            span = self._start_trace("fetch_findings")
+            findings = self._fetch_unprocessed_findings()
+            self.processed_count = len(findings)
+            self._end_trace(span, {"findings_count": len(findings)})
 
-    findings_df = spark.sql(query.sql)
-    findings_count = findings_df.count()
-
-    if findings_count == 0:
-        print("No ingested findings to process. Exiting.")
-        mon.log_complete(rows_processed=0)
-        result = {"status": "no_data", "findings_processed": 0, "root_causes_created": 0}
-        dbutils.notebook.exit(json.dumps(result))
-
-    print(f"Loaded {findings_count} ingested findings for deduplication")
-    findings_list = findings_df.collect()
-
-    # COMMAND ----------
-
-    # MAGIC %md
-    # MAGIC ## Generate Embeddings
-    # MAGIC
-    # MAGIC Uses the MLflow Deployments SDK to call the BGE-Large embedding model
-    # MAGIC registered in Databricks Model Serving.
-
-    # COMMAND ----------
-
-    EMBEDDING_DIM = 1024
-    MAX_RETRIES = 3
-    RETRY_BACKOFF = [2, 5, 10]  # seconds
-
-    def generate_embeddings(texts: list, batch_size: int = 64) -> tuple:
-        """
-        Generate embeddings for a list of texts using the configured endpoint.
-        Returns (embeddings, valid_indices) - only includes successfully embedded items.
-        Failed items are excluded from clustering rather than polluted with fake vectors.
-        """
-        import time
-        client = mlflow.deployments.get_deploy_client("databricks")
-        all_embeddings = []
-        valid_indices = []
-        consecutive_failures = 0
-
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            batch_start_idx = i
-            success = False
-
-            # Circuit breaker: if 3 consecutive batch failures, abort remaining
-            if consecutive_failures >= 3:
-                mon.log_warning(
-                    f"Circuit breaker triggered after {consecutive_failures} consecutive failures. "
-                    f"Skipping remaining {len(texts) - i} texts."
+            if not findings:
+                return AgentResult(
+                    status=AgentStatus.COMPLETED,
+                    agent_name=self.agent_name,
+                    processed_count=0,
+                    error_count=0,
+                    details={"deduplicated_count": 0},
                 )
-                break
 
-            for retry in range(MAX_RETRIES):
-                try:
-                    response = client.predict(
-                        endpoint=embedding_model,
-                        inputs={"input": batch}
-                    )
-                    batch_embeddings = [item["embedding"] for item in response["data"]]
-                    all_embeddings.extend(batch_embeddings)
-                    for j in range(len(batch)):
-                        valid_indices.append(batch_start_idx + j)
-                    consecutive_failures = 0
-                    success = True
-                    break
-                except Exception as e:
-                    if retry < MAX_RETRIES - 1:
-                        wait_time = RETRY_BACKOFF[retry]
-                        mon.log_warning(
-                            f"Embedding batch {i // batch_size} retry {retry + 1}/{MAX_RETRIES}",
-                            details=f"{type(e).__name__}: {str(e)[:200]}. Retrying in {wait_time}s"
-                        )
-                        time.sleep(wait_time)
-                    else:
-                        mon.log_warning(
-                            f"Embedding batch {i // batch_size} FAILED after {MAX_RETRIES} retries",
-                            details=f"{type(e).__name__}: {str(e)[:200]}. Skipping {len(batch)} items."
-                        )
-                        consecutive_failures += 1
+            # Cluster similar findings by CVE
+            span = self._start_trace("cluster_findings")
+            clusters = self._cluster_by_cve(findings)
+            self._end_trace(span, {"clusters_count": len(clusters)})
 
-        skipped = len(texts) - len(valid_indices)
-        if skipped > 0:
-            mon.log_event("embeddings_partial", {
-                "total_texts": len(texts),
-                "embedded": len(valid_indices),
-                "skipped": skipped,
-                "skip_rate": round(skipped / len(texts) * 100, 1),
+            # Perform semantic deduplication within clusters
+            span = self._start_trace("semantic_dedup")
+            canonical = self._semantic_deduplication(clusters)
+            self.deduplicated_count = len(canonical)
+            self._end_trace(span, {"canonical_count": len(canonical)})
+
+            # Write canonical entries
+            span = self._start_trace("write_canonical")
+            self._write_canonical(canonical)
+            self._end_trace(span, {"written_count": len(canonical)})
+
+            return AgentResult(
+                status=AgentStatus.COMPLETED,
+                agent_name=self.agent_name,
+                processed_count=self.processed_count,
+                error_count=self.error_count,
+                details={
+                    "findings_processed": len(findings),
+                    "clusters_created": len(clusters),
+                    "canonical_entries": len(canonical),
+                },
+            )
+
+        except Exception as e:
+            self.error_count += 1
+            raise
+
+    def _fetch_unprocessed_findings(self) -> list:
+        """Fetch recent unprocessed findings from vulnerability_findings."""
+        cutoff = (datetime.utcnow() - timedelta(days=lookback_days)).isoformat()
+
+        try:
+            df = self.spark.sql(f"""
+                SELECT * FROM {self.cfg.catalog}.{self.cfg.schema}.vulnerability_findings
+                WHERE first_seen >= '{cutoff}' AND status = 'open'
+                LIMIT {batch_size * 10}
+            """)
+            return [row.asDict() for row in df.collect()]
+        except Exception as e:
+            print(f"Error fetching findings: {e}")
+            self.error_count += 1
+            return []
+
+    def _cluster_by_cve(self, findings: list) -> dict:
+        """Group findings by CVE ID."""
+        clusters = {}
+        for f in findings:
+            cve = f.get("cve_id", "unknown")
+            if cve not in clusters:
+                clusters[cve] = []
+            clusters[cve].append(f)
+        return clusters
+
+    def _semantic_deduplication(self, clusters: dict) -> list:
+        """Perform semantic deduplication within each CVE cluster."""
+        canonical_entries = []
+
+        for cve_id, group in clusters.items():
+            if not group:
+                continue
+
+            # Use LLM to analyze group and identify canonical entry
+            span = self._start_trace(f"llm_dedup_{cve_id[:20]}")
+
+            try:
+                group_summary = self._summarize_group(group)
+                llm_result = self.llm_classify(
+                    system="You are a vulnerability deduplication expert.",
+                    user=f"Analyze these {len(group)} vulnerability findings and identify the best canonical entry. Return JSON with: canonical_index (int), confidence (float 0-1), dedup_reason (str).",
+                    json_mode=True,
+                    temperature=0.1,
+                )
+
+                canonical_idx = llm_result.get("canonical_index", 0) % len(group)
+                confidence = float(llm_result.get("confidence", 0.7))
+                dedup_reason = llm_result.get("dedup_reason", "semantic_similarity")
+
+            except Exception as e:
+                print(f"LLM dedup error for {cve_id}: {e}")
+                self.error_count += 1
+                # Fallback: use first by date
+                group = sorted(group, key=lambda x: x.get("first_seen", ""))
+                canonical_idx = 0
+                confidence = 0.5
+                dedup_reason = "fallback_earliest"
+
+            self._end_trace(span, {
+                "cve_id": cve_id,
+                "group_size": len(group),
+                "canonical_idx": canonical_idx,
             })
 
-        return all_embeddings, valid_indices
+            # Build canonical entry
+            canonical = group[canonical_idx]
+            merged_findings = [
+                {
+                    "finding_id": f.get("id"),
+                    "scanner": f.get("scanner"),
+                    "severity": f.get("severity"),
+                }
+                for f in group
+            ]
 
+            canonical_entry = {
+                "id": str(uuid.uuid4()),
+                "canonical_id": f"CANON-{cve_id}-{datetime.utcnow().strftime('%Y%m%d')}",
+                "cve_id": cve_id,
+                "primary_source": canonical.get("scanner", "unknown"),
+                "merged_findings": json.dumps(merged_findings),
+                "merged_count": len(group),
+                "confidence": confidence,
+                "dedup_method": dedup_reason,
+                "severity": canonical.get("severity", "medium"),
+                "title": canonical.get("title", ""),
+                "description": canonical.get("description", ""),
+                "first_seen": min(f.get("first_seen", "") for f in group),
+                "last_seen": max(f.get("last_seen", "") for f in group),
+                "status": "canonical",
+                "created_at": datetime.utcnow().isoformat(),
+            }
 
-    # Build embedding input: combine title, vuln_class, description, and file_path
-    embedding_texts = []
-    for row in findings_list:
-        text = (
-            f"{row['vuln_class']}: {row['title']}. "
-            f"File: {row['file_path']}. "
-            f"{row['description'][:300] if row['description'] else ''}"
-        )
-        embedding_texts.append(text)
+            canonical_entries.append(canonical_entry)
 
-    print(f"Generating embeddings for {len(embedding_texts)} findings...")
-    with mon.time("generate_embeddings"):
-        embeddings, valid_indices = generate_embeddings(embedding_texts)
+        return canonical_entries
 
-    if len(embeddings) == 0:
-        mon.log_warning("No embeddings generated - all batches failed")
-        result = {"status": "embedding_failure", "findings_processed": 0, "root_causes_created": 0}
-        dbutils.notebook.exit(json.dumps(result))
+    def _summarize_group(self, group: list) -> str:
+        """Create summary of finding group for LLM."""
+        summaries = []
+        for i, f in enumerate(group):
+            s = f"[{i}] {f.get('scanner', 'unknown')}: {f.get('title', 'N/A')} (severity: {f.get('severity', 'medium')})"
+            summaries.append(s)
+        return "\n".join(summaries)
 
-    # Filter findings_list to only those with successful embeddings
-    if len(valid_indices) < len(findings_list):
-        findings_list = [findings_list[i] for i in valid_indices]
-        findings_count = len(findings_list)
-        print(f"Proceeding with {findings_count} successfully embedded findings "
-              f"(skipped {len(embedding_texts) - findings_count} due to embedding failures)")
-    else:
-        print(f"Generated {len(embeddings)} embedding vectors (dim={len(embeddings[0])})")
+    def _write_canonical(self, entries: list):
+        """Write canonical entries to vulnerability_canonical table."""
+        if not entries:
+            return
 
-    # COMMAND ----------
-
-    # MAGIC %md
-    # MAGIC ## Compute Cosine Similarity and Cluster
-
-    # COMMAND ----------
-
-    def cosine_similarity(a, b):
-        """Compute cosine similarity between two vectors."""
-        a = np.array(a, dtype=np.float32)
-        b = np.array(b, dtype=np.float32)
-        dot = np.dot(a, b)
-        norm_a = np.linalg.norm(a)
-        norm_b = np.linalg.norm(b)
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return float(dot / (norm_a * norm_b))
-
-
-    def cluster_findings(embeddings: list, threshold: float) -> dict:
-        """
-        Agglomerative single-linkage clustering based on cosine similarity.
-        Returns a mapping of finding_index -> cluster_id.
-        """
-        n = len(embeddings)
-        cluster_assignment = list(range(n))  # Initially each finding is its own cluster
-
-        # Build similarity matrix (upper triangle only for efficiency)
-        print(f"Computing pairwise similarity for {n} findings...")
-        for i in range(n):
-            for j in range(i + 1, n):
-                sim = cosine_similarity(embeddings[i], embeddings[j])
-                if sim >= threshold:
-                    # Merge clusters: assign all members of j's cluster to i's cluster
-                    old_cluster = cluster_assignment[j]
-                    new_cluster = cluster_assignment[i]
-                    for k in range(n):
-                        if cluster_assignment[k] == old_cluster:
-                            cluster_assignment[k] = new_cluster
-
-        # Normalize cluster IDs
-        cluster_map = {}
-        normalized = {}
-        cluster_counter = 0
-        for idx, cid in enumerate(cluster_assignment):
-            if cid not in cluster_map:
-                cluster_map[cid] = cluster_counter
-                cluster_counter += 1
-            normalized[idx] = cluster_map[cid]
-
-        return normalized
-
-
-    with mon.time("clustering"):
-        cluster_assignments = cluster_findings(embeddings, similarity_threshold)
-
-    # Group findings by cluster
-    clusters = defaultdict(list)
-    for idx, cluster_id in cluster_assignments.items():
-        clusters[cluster_id].append(idx)
-
-    print(f"Clustered {len(findings_list)} findings into {len(clusters)} root cause groups")
-    print(f"Dedup ratio: {len(findings_list)} -> {len(clusters)} ({(1 - len(clusters)/len(findings_list))*100:.1f}% reduction)")
-
-    # COMMAND ----------
-
-    # MAGIC %md
-    # MAGIC ## Build Root Cause Groups
-
-    # COMMAND ----------
-
-    severity_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-    root_causes = []
-
-    for cluster_id, member_indices in clusters.items():
-        members = [findings_list[i] for i in member_indices]
-
-        # Pick representative: highest confidence finding
-        representative = max(members, key=lambda m: m["confidence"])
-
-        # Compute aggregate metrics
-        avg_confidence = sum(m["confidence"] for m in members) / len(members)
-        max_severity = max(members, key=lambda m: severity_rank.get(m["severity"], 0))["severity"]
-        affected_files = list(set(m["file_path"] for m in members))
-        affected_codebases = list(set(m["codebase"] for m in members))
-        finding_ids = [m["id"] for m in members]
-
-        # Determine if this is part of an exploit chain
-        chain_ids = [m["exploit_chain_id"] for m in members if m["exploit_chain_id"]]
-        primary_chain = chain_ids[0] if chain_ids else None
-
-        root_cause_id = str(uuid.uuid4())
-        root_causes.append({
-            "id": root_cause_id,
-            "representative_finding_id": representative["id"],
-            "vuln_class": representative["vuln_class"],
-            "title": representative["title"],
-            "description": representative["description"],
-            "severity": max_severity,
-            "avg_confidence": round(avg_confidence, 4),
-            "finding_count": len(members),
-            "finding_ids": json.dumps(finding_ids),
-            "affected_files": json.dumps(affected_files[:50]),
-            "affected_codebases": json.dumps(affected_codebases),
-            "affected_file_count": len(affected_files),
-            "affected_codebase_count": len(affected_codebases),
-            "exploit_chain_id": primary_chain,
-            "scan_run_id": scan_run_id_filter or members[0]["scan_run_id"],
-            "status": "open",
-            "priority": None,
-            "reachability_score": None,
-            "blast_radius": None,
-            "created_at": now,
-            "updated_at": now,
-        })
-
-    print(f"Built {len(root_causes)} root cause groups")
-    for rc in root_causes[:5]:
-        print(f"  [{rc['severity'].upper()}] {rc['title'][:80]} ({rc['finding_count']} findings)")
-
-    # COMMAND ----------
-
-    # MAGIC %md
-    # MAGIC ## Persist Root Causes
-
-    # COMMAND ----------
-
-    with mon.time("persist_root_causes"):
-        root_cause_schema = StructType([
+        schema = StructType([
             StructField("id", StringType(), False),
-            StructField("representative_finding_id", StringType(), False),
-            StructField("vuln_class", StringType(), False),
-            StructField("title", StringType(), True),
-            StructField("description", StringType(), True),
+            StructField("canonical_id", StringType(), False),
+            StructField("cve_id", StringType(), False),
+            StructField("primary_source", StringType(), False),
+            StructField("merged_findings", StringType(), False),
+            StructField("merged_count", LongType(), False),
+            StructField("confidence", DoubleType(), False),
+            StructField("dedup_method", StringType(), False),
             StructField("severity", StringType(), False),
-            StructField("avg_confidence", DoubleType(), False),
-            StructField("finding_count", IntegerType(), False),
-            StructField("finding_ids", StringType(), False),
-            StructField("affected_files", StringType(), True),
-            StructField("affected_codebases", StringType(), True),
-            StructField("affected_file_count", IntegerType(), True),
-            StructField("affected_codebase_count", IntegerType(), True),
-            StructField("exploit_chain_id", StringType(), True),
-            StructField("scan_run_id", StringType(), True),
+            StructField("title", StringType(), False),
+            StructField("description", StringType(), False),
+            StructField("first_seen", StringType(), False),
+            StructField("last_seen", StringType(), False),
             StructField("status", StringType(), False),
-            StructField("priority", StringType(), True),
-            StructField("reachability_score", DoubleType(), True),
-            StructField("blast_radius", DoubleType(), True),
-            StructField("created_at", TimestampType(), False),
-            StructField("updated_at", TimestampType(), False),
+            StructField("created_at", StringType(), False),
         ])
 
-        root_causes_df = spark.createDataFrame(root_causes, schema=root_cause_schema)
+        df = self.spark.createDataFrame(entries, schema=schema)
 
-        # MERGE root causes to handle re-runs gracefully
-        root_causes_table = get_table_path(cfg,"glasswing_root_causes")
-        root_causes_df.createOrReplaceTempView("new_root_causes")
-        spark.sql(f"""
-            MERGE INTO {root_causes_table} AS target
-            USING new_root_causes AS source
-            ON target.id = source.id
-            WHEN MATCHED THEN UPDATE SET
-                target.finding_count = source.finding_count,
-                target.finding_ids = source.finding_ids,
-                target.avg_confidence = source.avg_confidence,
-                target.affected_file_count = source.affected_file_count,
-                target.updated_at = source.updated_at
-            WHEN NOT MATCHED THEN INSERT *
-        """)
-        spark.catalog.dropTempView("new_root_causes")
-        print(f"Persisted {len(root_causes)} root causes to glasswing_root_causes")
+        safe_merge(
+            self.spark,
+            df,
+            "vulnerability_canonical",
+            merge_keys=["cve_id"],
+            catalog=self.cfg.catalog,
+            schema=self.cfg.schema,
+        )
 
-    # COMMAND ----------
+# COMMAND ----------
 
-    # MAGIC %md
-    # MAGIC ## Update Finding Status
-
-    # COMMAND ----------
-
-    with mon.time("update_finding_status"):
-        # Batch all finding status updates into a single MERGE operation
-        # Build a list of (finding_id, root_cause_group_id) pairs
-        finding_updates = []
-        for cluster_id, member_indices in clusters.items():
-            root_cause_id = root_causes[cluster_id]["id"]
-            for idx in member_indices:
-                finding_updates.append({
-                    "id": findings_list[idx]["id"],
-                    "status": "clustered",
-                    "root_cause_group_id": root_cause_id,
-                })
-
-        if finding_updates:
-            update_schema = StructType([
-                StructField("id", StringType(), False),
-                StructField("status", StringType(), False),
-                StructField("root_cause_group_id", StringType(), False),
-            ])
-            updates_df = spark.createDataFrame(finding_updates, schema=update_schema)
-            updates_df.createOrReplaceTempView("_finding_status_updates")
-
-            findings_table = get_table_path(cfg,"glasswing_findings")
-            spark.sql(f"""
-                MERGE INTO {findings_table} AS target
-                USING _finding_status_updates AS source
-                ON target.id = source.id
-                WHEN MATCHED THEN UPDATE SET
-                    target.status = source.status,
-                    target.root_cause_group_id = source.root_cause_group_id
-            """)
-            spark.catalog.dropTempView("_finding_status_updates")
-
-        # Update scan run stats via MERGE
-        if scan_run_id_filter:
-            scan_update_df = spark.createDataFrame([{
-                "id": scan_run_id_filter,
-                "root_causes_found": len(root_causes),
-                "status": "deduplicated",
-            }])
-            scan_update_df.createOrReplaceTempView("_scan_run_dedup_update")
-
-            scan_runs_table = get_table_path(cfg,"glasswing_scan_runs")
-            spark.sql(f"""
-                MERGE INTO {scan_runs_table} AS target
-                USING _scan_run_dedup_update AS source
-                ON target.id = source.id
-                WHEN MATCHED THEN UPDATE SET
-                    target.root_causes_found = source.root_causes_found,
-                    target.status = source.status
-            """)
-            spark.catalog.dropTempView("_scan_run_dedup_update")
-
-    print(f"Updated {findings_count} findings with cluster assignments")
-
-    # COMMAND ----------
-
-    # MAGIC %md
-    # MAGIC ## Update Agent Status and Exit
-
-    # COMMAND ----------
-
-    # Update agent status via safe_merge
-    agent_status_df = spark.createDataFrame([{
-        "agent_id": "glasswing_dedup",
-        "last_heartbeat": datetime.utcnow(),
-        "status": "running",
-        "events_processed": findings_count,
-        "alerts_generated": len(root_causes),
-    }])
-    safe_merge(
-        spark, agent_status_df, "agent_status",
-        merge_keys=["agent_id"],
-        catalog=cfg.catalog, schema=cfg.schema,
+# Initialize and run agent
+try:
+    agent = GlasswingDedupAgent(
+        agent_name="glasswing_dedup",
+        cfg=cfg,
+        llm=llm,
+        mon=mon,
+        spark=spark,
     )
 
-    mon.log_metric("findings_processed", findings_count)
-    mon.log_metric("root_causes_created", len(root_causes))
-    mon.log_metric("dedup_ratio", round((1 - len(root_causes) / max(findings_count, 1)) * 100, 1))
-    mon.log_complete(rows_processed=findings_count)
-
-    result = {
-        "status": "completed",
-        "run_id": run_id,
-        "findings_processed": findings_count,
-        "root_causes_created": len(root_causes),
-        "dedup_ratio": round((1 - len(root_causes) / max(findings_count, 1)) * 100, 1),
-        "similarity_threshold": similarity_threshold,
-        "severity_breakdown": {
-            "critical": sum(1 for rc in root_causes if rc["severity"] == "critical"),
-            "high": sum(1 for rc in root_causes if rc["severity"] == "high"),
-            "medium": sum(1 for rc in root_causes if rc["severity"] == "medium"),
-            "low": sum(1 for rc in root_causes if rc["severity"] == "low"),
-        },
-        "largest_cluster_size": max((len(m) for m in clusters.values()), default=0),
-    }
-    print(json.dumps(result, indent=2))
-    dbutils.notebook.exit(json.dumps(result))
+    result = agent.run()
+    mon.log_event("glasswing_dedup_completed", {
+        "processed": result.processed_count,
+        "errors": result.error_count,
+        "deduplicated": result.details.get("canonical_entries", 0),
+    })
+    print(json.dumps(result.to_json()))
+    dbutils.notebook.exit(result.to_json())
 
 except Exception as e:
-    mon.log_error(e, context="glasswing_dedup pipeline")
-    result = {"status": "error", "error": str(e)}
+    mon.log_error(e, context="glasswing_dedup agent")
+    result = {
+        "status": "error",
+        "error": str(e),
+        "agent": "glasswing_dedup",
+    }
     dbutils.notebook.exit(json.dumps(result))

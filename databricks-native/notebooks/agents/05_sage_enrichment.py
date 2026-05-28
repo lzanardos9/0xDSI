@@ -1,9 +1,17 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 05: Sage (Deep Enrichment)
+# MAGIC # SAGE Agent: Security Analytics & Graphical Enrichment
+# MAGIC **Production InteractiveAgent for Mosaic AI Agent Framework**
 # MAGIC
-# MAGIC Enriches alerts with threat intel cross-referencing, asset context, geo-IP,
-# MAGIC network flow analysis, and LLM-powered intelligent summarization.
+# MAGIC SAGE is an enrichment specialist that builds comprehensive context around alerts.
+# MAGIC It excels at:
+# MAGIC - Enriching alerts with threat intelligence
+# MAGIC - Building behavioral context from user/asset data
+# MAGIC - Generating structured enrichment narratives with risk scoring
+# MAGIC - Querying network topology and asset relationships
+# MAGIC
+# MAGIC **Model Serving Endpoint**: Deployed as interactive chat agent
+# MAGIC **Conversation Model**: MLflow ChatModel with multi-turn tool calling
 
 # COMMAND ----------
 
@@ -11,164 +19,292 @@
 
 # COMMAND ----------
 
-require_enabled("sage_enrichment")
-
-# COMMAND ----------
-
-dbutils.widgets.text("batch_size", "30", "Max alerts per run")
-dbutils.widgets.text("lookback_hours", "1", "Alert window")
-
-batch_size = int(dbutils.widgets.get("batch_size"))
-lookback_hours = int(dbutils.widgets.get("lookback_hours"))
-
-# COMMAND ----------
-
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
+from agent_framework import InteractiveAgent, UCTool
 import json
+import time
+import logging
+
+logger = logging.getLogger("oxdsi.sage")
+
+# ──────────────────────────────────────────────────────────────────────
+# SAGE Agent Implementation
+# ──────────────────────────────────────────────────────────────────────
+
+class SAGEAgent(InteractiveAgent):
+    """
+    Security Analytics & Graphical Enrichment Agent.
+
+    Specializes in building rich context around alerts through:
+    - Threat intelligence lookups (IOC correlation)
+    - Asset information (criticality, owner, zone)
+    - User behavior analysis (baseline comparison)
+    - Event search (pattern detection)
+
+    Each enrichment is tied to a risk score and confidence level.
+    """
+
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
+        self._register_tools()
+
+    def _register_tools(self):
+        """Register all tools SAGE uses for enrichment."""
+        cat, sch = cfg.catalog, cfg.schema
+
+        # Threat intelligence lookup
+        self.register_tool(UCTool(
+            name="lookup_ioc",
+            description="Look up an Indicator of Compromise (IP, domain, hash, URL, email) against threat intelligence feeds and internal blacklists. Returns reputation score, threat tags, and source feeds.",
+            catalog=cat,
+            schema=sch,
+            function_name="lookup_ioc",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "indicator": {
+                        "type": "string",
+                        "description": "The IOC value (IP address, domain, hash, URL, or email)"
+                    },
+                    "indicator_type": {
+                        "type": "string",
+                        "enum": ["ip", "domain", "hash", "url", "email"],
+                        "description": "Type of indicator for proper categorization"
+                    },
+                },
+                "required": ["indicator", "indicator_type"],
+            },
+        ))
+
+        # Asset information
+        self.register_tool(UCTool(
+            name="get_asset_info",
+            description="Retrieve comprehensive asset information including criticality tier, business owner, network zone (DMZ/internal/cloud), patch status, and last seen timestamp. Useful for context building.",
+            catalog=cat,
+            schema=sch,
+            function_name="get_asset_info",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "identifier": {
+                        "type": "string",
+                        "description": "Asset identifier: IP address, hostname, FQDN, or asset ID"
+                    },
+                },
+                "required": ["identifier"],
+            },
+        ))
+
+        # User behavior baseline
+        self.register_tool(UCTool(
+            name="query_user_behavior",
+            description="Query user behavioral baseline including typical login hours, geographic patterns, device types, and access patterns. Compare recent activity against baseline to detect anomalies.",
+            catalog=cat,
+            schema=sch,
+            function_name="query_user_behavior",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "user_id": {
+                        "type": "string",
+                        "description": "User identifier (email, username, employee_id)"
+                    },
+                    "days_back": {
+                        "type": "integer",
+                        "description": "Number of days of historical baseline data to fetch (default: 90)"
+                    },
+                },
+                "required": ["user_id"],
+            },
+        ))
+
+        # Event search
+        self.register_tool(UCTool(
+            name="search_events",
+            description="Search raw security events by type, source IP, time range, and other filters. Returns event details for correlation and timeline building.",
+            catalog=cat,
+            schema=sch,
+            function_name="search_events",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "event_type": {
+                        "type": "string",
+                        "description": "Event type filter (e.g., 'login_success', 'login_failure', 'file_access', 'network_traffic')"
+                    },
+                    "source_ip": {
+                        "type": "string",
+                        "description": "Filter by source IP address"
+                    },
+                    "hours_back": {
+                        "type": "integer",
+                        "description": "Time window in hours (default: 24)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (default: 50, max: 500)"
+                    },
+                },
+            },
+        ))
+
+    def get_system_prompt(self) -> str:
+        """Return the system prompt for SAGE enrichment analysis."""
+        return """You are SAGE (Security Analytics & Graphical Enrichment), an expert security enrichment analyst.
+
+Your Role:
+You specialize in building comprehensive context around security alerts and incidents. When given an alert or security event, you systematically:
+1. Enrich with threat intelligence (IOC lookups for IPs, domains, hashes)
+2. Gather asset context (criticality, owner, network zone, patch status)
+3. Analyze user behavior (baseline comparison, anomaly detection)
+4. Search for related events (patterns, correlations, timeline building)
+
+Your Approach:
+- Start with what we know about the alert itself
+- Query IOCs (IPs, domains, URLs, hashes) against threat feeds
+- Get asset info for source and destination resources
+- Check user behavioral baselines for anomalies
+- Search for related events in the time window
+- Build a coherent enrichment narrative with risk scoring
+
+Output Structure:
+Always structure your enrichment analysis as:
+1. **Alert Summary**: What triggered
+2. **Threat Intelligence**: IOC reputation, threat tags, source feeds
+3. **Asset Context**: Criticality, owner, zone, last activity
+4. **User Behavior**: Baseline analysis, anomaly indicators
+5. **Related Events**: Event patterns, timeline, correlations
+6. **Risk Score**: 1-100 based on threat intel, asset criticality, anomalies
+7. **Confidence**: Your confidence in this assessment (High/Medium/Low)
+8. **Recommended Next Steps**: Actions for NOVA (investigation) or VANGUARD (response)
+
+Guidelines:
+- Always query IOCs when you have indicators (IPs, domains, URLs)
+- Compare user activity against behavioral baselines
+- Look for patterns that indicate reconnaissance or lateral movement
+- Consider asset criticality when scoring risk
+- If you can't find data, acknowledge the limitation and suggest alternate approaches
+- Be precise about what you found vs. what you inferred
+- Flag high-risk scenarios (critical asset involved, insider threat indicators, etc.)
+
+You have access to UC Function tools for enrichment. Use them systematically to build comprehensive context."""
+
+# ──────────────────────────────────────────────────────────────────────
+# Agent Initialization and Testing
+# ──────────────────────────────────────────────────────────────────────
 
 # COMMAND ----------
 
-alerts_table = cfg.get_table_path("alerts")
-ioc_table = cfg.get_table_path("ioc_entries")
-assets_table = cfg.get_table_path("asset_registry")
-events_table = cfg.get_table_path("events")
-enrichments_table = cfg.get_table_path("sage_enrichments")
-
-spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS {enrichments_table} (
-        id STRING, alert_id STRING, threat_intel_summary STRING,
-        asset_criticality STRING, geo_context STRING,
-        network_flow_summary STRING, llm_narrative STRING,
-        risk_adjustment INT, agent_name STRING, enriched_at TIMESTAMP
-    ) USING DELTA
-    TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-""")
-
-# Fetch unenriched alerts
-alerts = spark.sql(f"""
-    SELECT a.* FROM {alerts_table} a
-    LEFT JOIN {enrichments_table} e ON a.id = e.alert_id
-    WHERE a.status IN ('new', 'in_progress')
-      AND a.created_at > current_timestamp() - INTERVAL {lookback_hours} HOURS
-      AND e.alert_id IS NULL
-    ORDER BY CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END
-    LIMIT {batch_size}
-""").collect()
-
-mon.log_event("alerts_fetched", {"count": len(alerts)})
-
-if not alerts:
-    mon.log_complete(details={"status": "idle"})
-    dbutils.notebook.exit('{"status": "idle"}')
+sage = SAGEAgent("sage_enrichment", cfg, llm, mon, spark)
+logger.info(f"SAGE Agent initialized with {len(sage._tools)} tools")
+print(f"✓ SAGE Agent ready with tools: {[t.name for t in sage._tools]}")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Enrichment Pipeline
+def test_sage_enrichment():
+    """Test SAGE enrichment capability with a sample enrichment request."""
+    test_messages = [
+        {
+            "role": "user",
+            "content": """Enrich this alert for me:
+
+Alert: Unusual login detected
+- Source IP: 192.0.2.42
+- User: alice@company.com
+- Time: 2024-01-15 03:15 UTC
+- Location: Shanghai (VPN terminated)
+- Device: New Chrome browser (never seen before)
+
+Please provide full enrichment with risk scoring."""
+        }
+    ]
+
+    response = sage.predict_messages(test_messages)
+    print("=" * 80)
+    print("SAGE ENRICHMENT RESPONSE")
+    print("=" * 80)
+    print(response.get("content", "No content"))
+    print("\nMetadata:", response.get("metadata"))
+    return response
+
+# Uncomment to test in notebook:
+# test_response = test_sage_enrichment()
 
 # COMMAND ----------
 
-results = []
+# ──────────────────────────────────────────────────────────────────────
+# MLflow Model Logging for Deployment to Model Serving
+# ──────────────────────────────────────────────────────────────────────
 
-with mon.time("sage_enrichment"):
-    for alert in alerts:
+import mlflow
+from mlflow.pyfunc import PythonModel
+
+class SAGEChatModel(PythonModel):
+    """MLflow wrapper for SAGE agent for Model Serving deployment."""
+
+    def load_context(self, context):
+        """Load the agent and dependencies."""
+        self.sage = SAGEAgent("sage_enrichment", cfg, llm, mon, spark)
+
+    def predict(self, context, model_input):
+        """
+        Predict method called by Model Serving.
+
+        Args:
+            model_input: dict with 'messages' key containing conversation history
+
+        Returns:
+            dict with 'content', 'tool_calls', and 'metadata'
+        """
+        messages = model_input.get("messages", [])
+        params = model_input.get("params", {})
+
         try:
-            source_ip = getattr(alert, "source_ip", None)
-            dest_ip = getattr(alert, "dest_ip", None)
-            hostname = getattr(alert, "hostname", None)
-
-            # Threat Intel lookup (safe)
-            ips_to_check = [ip for ip in [source_ip, dest_ip] if ip]
-            ti_summary = "No matches"
-            if ips_to_check:
-                ti_query = qb().select("value, threat_type, confidence").from_table(ioc_table).where_in("value", ips_to_check).build()
-                ti_rows = spark.sql(ti_query).collect()
-                if ti_rows:
-                    ti_summary = "; ".join(f"{r.value}={r.threat_type}(conf:{r.confidence})" for r in ti_rows[:5])
-
-            # Asset lookup
-            asset_crit = "unknown"
-            if source_ip:
-                asset_query = qb().select("criticality, owner, department").from_table(assets_table).where_eq("ip_address", source_ip).limit(1).build()
-                try:
-                    asset_rows = spark.sql(asset_query).collect()
-                    if asset_rows:
-                        asset_crit = asset_rows[0].criticality or "medium"
-                except Exception:
-                    pass
-
-            # Network flow context
-            flow_summary = "No recent flows"
-            if source_ip:
-                flow_query = (
-                    qb().select("COUNT(*) as cnt, COUNT(DISTINCT dest_ip) as dests")
-                    .from_table(events_table)
-                    .where_eq("source_ip", source_ip)
-                    .where_raw("timestamp > current_timestamp() - INTERVAL 1 HOUR")
-                    .build()
-                )
-                try:
-                    flow = spark.sql(flow_query).collect()[0]
-                    flow_summary = f"{flow.cnt} events to {flow.dests} destinations in last hour"
-                except Exception:
-                    pass
-
-            # LLM narrative
-            prompt = f"""Summarize this security context for an analyst:
-Alert: {alert.title} ({alert.severity})
-Threat Intel: {ti_summary}
-Asset: {asset_crit} criticality
-Network: {flow_summary}
-
-Provide a 2-sentence actionable summary."""
-
-            narrative = ""
-            try:
-                resp = llm.chat(prompt)
-                narrative = resp.content[:500] if resp else ""
-            except Exception:
-                narrative = "LLM unavailable"
-
-            results.append({
-                "alert_id": alert.id,
-                "threat_intel_summary": ti_summary[:500],
-                "asset_criticality": asset_crit,
-                "geo_context": "",
-                "network_flow_summary": flow_summary,
-                "llm_narrative": narrative,
-                "risk_adjustment": 10 if ti_summary != "No matches" else 0,
-            })
-
+            result = self.sage.predict_messages(messages, params)
+            return result
         except Exception as e:
-            mon.log_event("sage_error", {"alert_id": alert.id, "error": str(e)[:200]})
-            results.append({
-                "alert_id": alert.id, "threat_intel_summary": "", "asset_criticality": "unknown",
-                "geo_context": "", "network_flow_summary": "", "llm_narrative": f"Error: {str(e)[:100]}",
-                "risk_adjustment": 0,
-            })
+            logger.error(f"SAGE prediction error: {e}")
+            return {
+                "content": f"I encountered an error during enrichment: {str(e)[:200]}",
+                "metadata": {"error": True, "agent": "sage_enrichment"}
+            }
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## Persist
+with mlflow.start_run(run_name="sage_enrichment_deploy"):
+    mlflow.log_params({
+        "agent_type": "InteractiveAgent",
+        "model_type": "ChatModel",
+        "tools_count": len(sage._tools),
+        "max_tool_iterations": sage.MAX_TOOL_ITERATIONS,
+    })
 
-# COMMAND ----------
-
-if results:
-    schema = StructType([
-        StructField("alert_id", StringType()), StructField("threat_intel_summary", StringType()),
-        StructField("asset_criticality", StringType()), StructField("geo_context", StringType()),
-        StructField("network_flow_summary", StringType()), StructField("llm_narrative", StringType()),
-        StructField("risk_adjustment", IntegerType()),
-    ])
-    df = (
-        spark.createDataFrame(results, schema=schema)
-        .withColumn("id", expr("uuid()"))
-        .withColumn("agent_name", lit("sage_enrichment"))
-        .withColumn("enriched_at", current_timestamp())
+    mlflow.pyfunc.log_model(
+        artifact_path="sage_agent",
+        python_model=SAGEChatModel(),
+        registered_model_name="0xdsi_sage_enrichment",
+        input_example={
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Enrich this alert: Source IP 192.0.2.42, User alice@company.com, unusual login"
+                }
+            ]
+        },
+        pip_requirements=[
+            "databricks-sdk>=0.20.0",
+            "mlflow>=2.10.0",
+        ],
     )
-    df.write.mode("append").saveAsTable(enrichments_table)
 
-mon.log_complete(details={"enriched": len(results)})
-dbutils.notebook.exit(json.dumps({"status": "completed", "enriched": len(results)}))
+    mlflow.log_metrics({
+        "timestamp": time.time(),
+        "tools_count": len(sage._tools),
+    })
+
+print("✓ SAGE model logged to MLflow as '0xdsi_sage_enrichment'")
+print("✓ Ready for deployment to Model Serving via UC Models")
+
+# COMMAND ----------
+
+print(f"Model registered in: {cfg.catalog}.{cfg.schema}.0xdsi_sage_enrichment")
+print("Next steps: Deploy to endpoint via Databricks Model Serving")

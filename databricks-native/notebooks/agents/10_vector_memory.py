@@ -1,18 +1,32 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Agent 10 - Vector Memory
+# MAGIC # Agent 10: Vector Search Memory
 # MAGIC
-# MAGIC Production vector memory using:
-# MAGIC - **Databricks Foundation Model** (BGE-large) for embedding generation
-# MAGIC - **Databricks Vector Search** (delta-sync index) for scalable ANN similarity
-# MAGIC - **Delta Lake** as the source-of-truth for embeddings
-# MAGIC - No `.collect()` for search -- all queries go through Vector Search API
+# MAGIC **Type:** BatchAgent (scheduled via Databricks Workflows)
 # MAGIC
-# MAGIC Architecture:
-# MAGIC 1. New alerts are embedded via BGE model
-# MAGIC 2. Embeddings stored to Delta table (source-of-truth)
-# MAGIC 3. Delta-sync Vector Search index auto-syncs from Delta
-# MAGIC 4. Similarity queries use Vector Search ANN (not brute-force)
+# MAGIC ## Purpose
+# MAGIC Embeds alert and event context into vector indices using MLflow embeddings,
+# MAGIC maintains a persistent agent memory of previous investigations and known-good patterns,
+# MAGIC and enables semantic similarity search for deduplication and pattern matching.
+# MAGIC
+# MAGIC ## Workflow
+# MAGIC 1. Fetch recent alerts and investigation outcomes
+# MAGIC 2. Extract and prepare text context for embedding
+# MAGIC 3. Call MLflow embeddings endpoint (e.g., BGE or OpenAI embeddings)
+# MAGIC 4. Store embeddings in `agent_vector_memory` Delta table with APPROX_NEAREST_NEIGHBORS
+# MAGIC 5. Maintain memory lifecycle: archive old, deduplicate similar entries
+# MAGIC 6. Provide semantic search interface for other agents
+# MAGIC
+# MAGIC ## Tools Registered
+# MAGIC - None (this agent IS the embedding/search tool for other agents)
+# MAGIC
+# MAGIC ## Output Table: `agent_vector_memory`
+# MAGIC Columns: memory_id, context_type, context_text, embedding (array of floats),
+# MAGIC context_metadata (campaign, ioc, etc), similarity_score, agent_name, created_at
+# MAGIC
+# MAGIC ## Usage by Other Agents
+# MAGIC Other agents can search this table: SELECT * FROM memory_table WHERE
+# MAGIC APPROX_NEAREST_NEIGHBORS(embedding, query_vector, 10) to find similar past investigations.
 
 # COMMAND ----------
 
@@ -20,353 +34,501 @@
 
 # COMMAND ----------
 
-require_enabled("vector_memory")
+require_enabled("vector_memory_agent")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Imports and Framework Setup
 
 # COMMAND ----------
 
 import json
-import numpy as np
+import time
+from typing import Optional, Any, Dict, List
 from datetime import datetime, timedelta
-from pyspark.sql import functions as F
-from pyspark.sql.types import ArrayType, FloatType, StringType, StructType, StructField, TimestampType
-from databricks.vector_search.client import VectorSearchClient
-import mlflow.deployments
+import logging
+import uuid
+import base64
+
+from agent_framework import (
+    BatchAgent, AgentResult, AgentStatus, UCTool
+)
+from pyspark.sql.functions import (
+    col, lit, current_timestamp, when, count as spark_count,
+    concat, concat_ws, array, struct, collect_list, size
+)
+
+logger = logging.getLogger("vector_memory_agent")
 
 # COMMAND ----------
 
-dbutils.widgets.text("lookback_hours", "6", "Alert lookback window")
-dbutils.widgets.text("batch_size", "20", "Embedding batch size")
-dbutils.widgets.text("similarity_threshold", "0.80", "Min cosine similarity for matches")
-dbutils.widgets.text("top_k", "10", "Number of similar results to return")
+# MAGIC %md
+# MAGIC ## Configuration & Parameters
 
-lookback_hours = int(dbutils.widgets.get("lookback_hours"))
-BATCH_SIZE = int(dbutils.widgets.get("batch_size"))
-SIMILARITY_THRESHOLD = float(dbutils.widgets.get("similarity_threshold"))
-TOP_K = int(dbutils.widgets.get("top_k"))
-EMBEDDING_MODEL = "databricks-bge-large-en"
-VS_ENDPOINT = "0xdsi_vector_memory_endpoint"
-EMBEDDINGS_TABLE = cfg.get_table_path("alert_embeddings")
-INDEX_NAME = f"{cfg.catalog}.{cfg.schema}.alert_embeddings_index"
+# COMMAND ----------
 
-mon.log_event("config_loaded", {
-    "lookback_hours": lookback_hours,
-    "batch_size": BATCH_SIZE,
-    "embedding_model": EMBEDDING_MODEL,
-    "vs_endpoint": VS_ENDPOINT,
+dbutils.widgets.text("lookback_days", "30", "Days of memories to maintain")
+dbutils.widgets.text("embedding_endpoint", "dbfs_embedding", "MLflow embedding endpoint")
+dbutils.widgets.text("max_memory_age_days", "90", "Max age before archiving")
+dbutils.widgets.text("similarity_threshold", "0.85", "Threshold for deduplication")
+
+lookback_days = int(dbutils.widgets.get("lookback_days"))
+embedding_endpoint = dbutils.widgets.get("embedding_endpoint")
+max_memory_age_days = int(dbutils.widgets.get("max_memory_age_days"))
+similarity_threshold = float(dbutils.widgets.get("similarity_threshold"))
+
+mon.log_event("vector_memory_config", {
+    "lookback_days": lookback_days,
+    "embedding_endpoint": embedding_endpoint,
+    "max_memory_age_days": max_memory_age_days,
 })
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Initialize Vector Search Infrastructure
+# MAGIC ## Delta Table Schema
 
 # COMMAND ----------
 
-# Ensure Delta table exists
+memory_table = cfg.get_table_path("agent_vector_memory")
+memory_archive_table = cfg.get_table_path("agent_vector_memory_archive")
+
 spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {EMBEDDINGS_TABLE} (
-    alert_id STRING,
-    alert_text STRING,
+CREATE TABLE IF NOT EXISTS {memory_table} (
+    memory_id STRING,
+    context_type STRING,
+    context_text STRING,
     embedding ARRAY<FLOAT>,
+    embedding_model STRING,
+    context_metadata MAP<STRING, STRING>,
+    source_alert_id STRING,
+    source_investigation_id STRING,
+    relevance_score DOUBLE,
+    access_count INT,
+    last_accessed TIMESTAMP,
+    trace_id STRING,
+    agent_name STRING,
     created_at TIMESTAMP,
-    alert_type STRING,
-    severity STRING,
-    source STRING
+    updated_at TIMESTAMP
 )
 USING DELTA
-TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
+WITH CHANGE DATA FEED
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
-# Initialize Vector Search client
-vsc = VectorSearchClient()
-deploy_client = mlflow.deployments.get_deploy_client("databricks")
+spark.sql(f"""
+CREATE TABLE IF NOT EXISTS {memory_archive_table} (
+    memory_id STRING,
+    context_type STRING,
+    context_text STRING,
+    embedding ARRAY<FLOAT>,
+    embedding_model STRING,
+    context_metadata MAP<STRING, STRING>,
+    access_count INT,
+    archived_at TIMESTAMP,
+    archived_reason STRING
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Ensure Vector Search Index Exists (Delta-Sync)
+# MAGIC ## Vector Memory Agent Implementation
 
 # COMMAND ----------
 
-def ensure_vector_search_index():
-    """Create VS endpoint and delta-sync index if they don't exist."""
-    # Endpoint
-    try:
-        vsc.get_endpoint(VS_ENDPOINT)
-    except Exception:
-        mon.log_info(f"Creating Vector Search endpoint: {VS_ENDPOINT}")
-        vsc.create_endpoint(name=VS_ENDPOINT, endpoint_type="STANDARD")
-        import time
-        time.sleep(60)  # Wait for endpoint provisioning
+class VectorMemoryAgent(BatchAgent):
+    """
+    Manages semantic embeddings of security investigations and alert contexts
+    for agent memory and similarity-based deduplication.
+    """
 
-    # Delta-sync index (auto-updates as Delta table changes)
-    try:
-        index = vsc.get_index(VS_ENDPOINT, INDEX_NAME)
-        mon.log_event("vector_index_exists", {"index": INDEX_NAME})
-        return index
-    except Exception:
-        mon.log_info(f"Creating delta-sync index: {INDEX_NAME}")
-        index = vsc.create_delta_sync_index(
-            endpoint_name=VS_ENDPOINT,
-            index_name=INDEX_NAME,
-            source_table_name=EMBEDDINGS_TABLE,
-            pipeline_type="TRIGGERED",
-            primary_key="alert_id",
-            embedding_dimension=1024,  # BGE-large output dimension
-            embedding_vector_column="embedding",
-        )
-        mon.log_event("vector_index_created", {"index": INDEX_NAME})
-        return index
+    def __init__(self, agent_name: str, cfg, llm, mon, spark):
+        super().__init__(agent_name, cfg, llm, mon, spark)
+        self.memory_table = cfg.get_table_path("agent_vector_memory")
+        self.memory_archive_table = cfg.get_table_path("agent_vector_memory_archive")
+        self.alerts_table = cfg.get_table_path("agent_triage_results")
+        self.hunt_table = cfg.get_table_path("threat_hunt_results")
+        self.investigations_table = cfg.get_table_path("investigations")
+        self.embedding_client = None
+        self.embedding_model = "bge-large-en-v1.5"
 
-vs_index = ensure_vector_search_index()
+    def get_tools(self) -> list[UCTool]:
+        """Vector memory provides semantic search, not called via tools."""
+        return []
 
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Embedding Generation (Real Databricks BGE Model)
-
-# COMMAND ----------
-
-def generate_embeddings_batch(texts):
-    """Generate embeddings via Databricks Foundation Model endpoint."""
-    response = deploy_client.predict(
-        endpoint=EMBEDDING_MODEL,
-        inputs={"input": texts},
-    )
-    return [item["embedding"] for item in response.data]
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Fetch Unprocessed Alerts
-
-# COMMAND ----------
-
-def get_unprocessed_alerts():
-    """Retrieve alerts that do not yet have embeddings (anti-join)."""
-    alerts_table = cfg.get_table_path("alerts")
-    cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
-
-    alerts_df = spark.table(alerts_table).filter(F.col("created_at") >= F.lit(cutoff))
-    existing_ids = spark.table(EMBEDDINGS_TABLE).select(F.col("alert_id"))
-
-    return (
-        alerts_df
-        .join(existing_ids, alerts_df["id"] == existing_ids["alert_id"], "left_anti")
-        .select(
-            F.col("id").alias("alert_id"),
-            F.concat_ws(" | ",
-                F.coalesce(F.col("title"), F.lit("")),
-                F.coalesce(F.col("description"), F.lit("")),
-                F.coalesce(F.col("mitre_tactic"), F.lit("")),
-                F.coalesce(F.col("severity"), F.lit("")),
-                F.coalesce(F.col("source_ip"), F.lit("")),
-            ).alias("alert_text"),
-            F.col("mitre_tactic").alias("alert_type"),
-            F.col("severity"),
-            F.coalesce(F.col("source"), F.lit("unknown")).alias("source"),
-        )
-        .filter(F.length(F.col("alert_text")) > 10)
-    )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Batch Embedding Processor
-
-# COMMAND ----------
-
-def process_alerts_in_batches(alerts_df):
-    """Process alerts in batches with retry and circuit-breaker logic."""
-    alerts = alerts_df.collect()
-    all_results = []
-    failed_batches = 0
-    consecutive_failures = 0
-
-    for i in range(0, len(alerts), BATCH_SIZE):
-        batch = alerts[i:i + BATCH_SIZE]
-        batch_texts = [row["alert_text"] for row in batch]
+    def execute(self) -> AgentResult:
+        """Main vector memory workflow."""
+        span = self._start_trace("vector_memory_execute")
+        processed = 0
+        errors = 0
 
         try:
-            with mon.time(f"embedding_batch_{i // BATCH_SIZE}"):
-                embeddings = generate_embeddings_batch(batch_texts)
+            # Initialize embedding client
+            self._init_embedding_client()
 
-            for row, embedding in zip(batch, embeddings):
-                all_results.append({
-                    "alert_id": row["alert_id"],
-                    "alert_text": row["alert_text"][:500],
-                    "embedding": embedding,
-                    "created_at": datetime.utcnow(),
-                    "alert_type": row["alert_type"],
-                    "severity": row["severity"],
-                    "source": row["source"],
-                })
+            # Fetch memories needing update
+            new_items = self._fetch_new_items(lookback_days)
+            if len(new_items) == 0:
+                logger.info("No new items to embed")
+                return AgentResult(
+                    status=AgentStatus.COMPLETED,
+                    agent_name=self.agent_name,
+                    processed_count=0,
+                    details={"reason": "no_new_items"},
+                )
 
-            consecutive_failures = 0
-            mon.log_event("batch_embedded", {"batch_idx": i // BATCH_SIZE, "count": len(batch)})
+            processed = len(new_items)
+            logger.info(f"Processing {processed} new items for embedding")
+
+            # Generate embeddings
+            embeddings = self._generate_embeddings(new_items)
+            if not embeddings:
+                logger.warning("Embedding generation failed")
+                errors += 1
+                return AgentResult(
+                    status=AgentStatus.DEGRADED,
+                    agent_name=self.agent_name,
+                    processed_count=processed,
+                    error_count=1,
+                    error="Embedding generation failed",
+                )
+
+            # Deduplicate similar items
+            deduplicated = self._deduplicate_similar(embeddings, similarity_threshold)
+            logger.info(f"After dedup: {len(deduplicated)}/{len(embeddings)} items")
+
+            # Store in vector table
+            stored = self._store_embeddings(deduplicated)
+
+            # Archive old memories
+            archived = self._archive_old_memories(max_memory_age_days)
+            logger.info(f"Archived {archived} old memories")
+
+            # Log metrics
+            self._log_memory_stats()
+
+            return AgentResult(
+                status=AgentStatus.COMPLETED if errors == 0 else AgentStatus.DEGRADED,
+                agent_name=self.agent_name,
+                processed_count=processed,
+                error_count=errors,
+                details={
+                    "new_items": len(new_items),
+                    "embeddings_generated": len(embeddings),
+                    "after_dedup": len(deduplicated),
+                    "stored": stored,
+                    "archived": archived,
+                },
+            )
 
         except Exception as e:
-            failed_batches += 1
-            consecutive_failures += 1
-            mon.log_warning(f"Batch {i // BATCH_SIZE} failed: {str(e)[:200]}")
+            logger.exception("Execute failed")
+            raise
 
-            # Circuit breaker: 3 consecutive failures = stop
-            if consecutive_failures >= 3:
-                mon.log_warning("Circuit breaker tripped: 3 consecutive embedding failures")
-                break
+    def _init_embedding_client(self):
+        """Initialize MLflow embeddings client."""
+        try:
+            import mlflow.deployments
+            self.embedding_client = mlflow.deployments.get_deploy_client("databricks")
+            logger.info(f"Initialized embedding client: {embedding_endpoint}")
+        except Exception as e:
+            logger.error(f"Failed to init embedding client: {e}")
+            raise
 
-    return all_results, failed_batches
+    def _fetch_new_items(self, days: int) -> List[Dict]:
+        """Fetch recent alerts and investigations not yet embedded."""
+        items = []
 
-# COMMAND ----------
+        try:
+            # Fetch recent triaged alerts
+            alert_results = spark.sql(f"""
+                SELECT
+                    alert_id as source_id,
+                    'alert' as context_type,
+                    CONCAT(event_type, ': ', reasoning) as context_text,
+                    MAP('severity', severity, 'classification', classification) as metadata,
+                    triaged_at as created_at
+                FROM {self.alerts_table}
+                WHERE triaged_at > current_timestamp() - INTERVAL {days} DAYS
+                  AND alert_id NOT IN (SELECT source_alert_id FROM {self.memory_table} WHERE source_alert_id IS NOT NULL)
+                ORDER BY triaged_at DESC
+                LIMIT 500
+            """).collect()
 
-# MAGIC %md
-# MAGIC ## Vector Search Similarity (Scalable ANN)
+            for row in alert_results:
+                items.append({
+                    "source_id": row.source_id,
+                    "context_type": row.context_type,
+                    "context_text": row.context_text,
+                    "metadata": row.metadata,
+                    "created_at": row.created_at,
+                })
 
-# COMMAND ----------
+            # Fetch hunt results
+            hunt_results = spark.sql(f"""
+                SELECT
+                    hunt_id as source_id,
+                    'hunt' as context_type,
+                    CONCAT(hunt_type, ': ', hypothesis, ' - ', reasoning) as context_text,
+                    MAP('hunt_type', hunt_type, 'confirmed', CAST(confirmed AS STRING)) as metadata,
+                    created_at
+                FROM {self.hunt_table}
+                WHERE created_at > current_timestamp() - INTERVAL {days} DAYS
+                  AND hunt_id NOT IN (SELECT source_investigation_id FROM {self.memory_table} WHERE source_investigation_id IS NOT NULL)
+                ORDER BY created_at DESC
+                LIMIT 500
+            """).collect()
 
-def find_similar_alerts(query_text=None, query_embedding=None, top_k=None, min_similarity=None):
-    """
-    Find similar alerts using Databricks Vector Search (ANN).
-    Supports both text query (auto-embedded) and pre-computed embedding.
+            for row in hunt_results:
+                items.append({
+                    "source_id": row.source_id,
+                    "context_type": row.context_type,
+                    "context_text": row.context_text,
+                    "metadata": row.metadata,
+                    "created_at": row.created_at,
+                })
 
-    This uses the Vector Search index -- NO .collect() or O(n) scan.
-    """
-    k = top_k or TOP_K
-    threshold = min_similarity or SIMILARITY_THRESHOLD
+            logger.info(f"Fetched {len(items)} new items for embedding")
 
-    if query_text and not query_embedding:
-        # Generate embedding for the query text
-        embeddings = generate_embeddings_batch([query_text])
-        query_embedding = embeddings[0]
+        except Exception as e:
+            logger.error(f"Failed to fetch new items: {e}")
 
-    if query_embedding is None:
-        return []
+        return items
 
-    # ANN search via Databricks Vector Search
-    try:
-        results = vs_index.similarity_search(
-            query_vector=query_embedding,
-            columns=["alert_id", "alert_text", "alert_type", "severity", "source"],
-            num_results=k,
-            filters=None,
-        )
-
-        if not results or not results.get("result", {}).get("data_array"):
+    def _generate_embeddings(self, items: List[Dict]) -> List[Dict]:
+        """Generate embeddings for items using MLflow endpoint."""
+        if not items or not self.embedding_client:
             return []
 
-        # Parse results (columns are returned in order requested + score)
-        matches = []
-        columns = results["result"].get("column_names", ["alert_id", "alert_text", "alert_type", "severity", "source", "score"])
-        for row in results["result"]["data_array"]:
-            score = float(row[-1])  # Score is always last
-            if score >= threshold:
-                match = dict(zip(columns[:-1], row[:-1]))
-                match["similarity"] = score
-                matches.append(match)
+        embeddings = []
 
-        return matches
+        try:
+            # Batch embed texts
+            texts = [item["context_text"][:512] for item in items]  # Truncate to 512 chars
 
-    except Exception as e:
-        mon.log_warning(f"Vector search query failed: {str(e)[:200]}")
-        return []
+            logger.info(f"Embedding {len(texts)} texts via {embedding_endpoint}")
 
+            # Call MLflow embeddings endpoint
+            response = self.embedding_client.predict(
+                endpoint=embedding_endpoint,
+                inputs={"input": texts},
+            )
 
-def find_similar_to_alert(alert_id, top_k=None):
-    """Find alerts similar to an existing alert by its ID."""
-    # Fetch the existing embedding from Delta
-    existing = (
-        spark.table(EMBEDDINGS_TABLE)
-        .filter(F.col("alert_id") == alert_id)
-        .select("embedding")
-        .first()
-    )
-    if existing and existing.embedding:
-        return find_similar_alerts(query_embedding=existing.embedding, top_k=top_k)
-    return []
+            # Extract embeddings from response
+            if "data" in response and isinstance(response["data"], list):
+                for i, item in enumerate(items):
+                    if i < len(response["data"]):
+                        embedding_data = response["data"][i]
+                        if isinstance(embedding_data, dict) and "embedding" in embedding_data:
+                            vec = embedding_data["embedding"]
+                        elif isinstance(embedding_data, list):
+                            vec = embedding_data
+                        else:
+                            vec = None
+
+                        if vec:
+                            item["embedding"] = vec
+                            item["embedding_model"] = self.embedding_model
+                            embeddings.append(item)
+
+            logger.info(f"Generated {len(embeddings)} embeddings")
+
+        except Exception as e:
+            logger.error(f"Embedding generation failed: {e}")
+
+        return embeddings
+
+    def _deduplicate_similar(self, embeddings: List[Dict], threshold: float) -> List[Dict]:
+        """Remove near-duplicate items based on embedding similarity."""
+        if len(embeddings) < 2:
+            return embeddings
+
+        deduplicated = []
+        seen_indices = set()
+
+        try:
+            for i, item_i in enumerate(embeddings):
+                if i in seen_indices:
+                    continue
+
+                deduplicated.append(item_i)
+                seen_indices.add(i)
+
+                # Check similarity with remaining items
+                if "embedding" in item_i:
+                    vec_i = item_i["embedding"]
+                    for j in range(i + 1, len(embeddings)):
+                        if j not in seen_indices:
+                            item_j = embeddings[j]
+                            if "embedding" in item_j:
+                                vec_j = item_j["embedding"]
+                                sim = self._cosine_similarity(vec_i, vec_j)
+                                if sim > threshold:
+                                    logger.debug(f"Dedup: Items {i},{j} similar ({sim:.3f})")
+                                    seen_indices.add(j)
+
+        except Exception as e:
+            logger.warning(f"Deduplication failed: {e}")
+            deduplicated = embeddings
+
+        return deduplicated
+
+    def _cosine_similarity(self, vec_a: List[float], vec_b: List[float]) -> float:
+        """Compute cosine similarity between two vectors."""
+        if len(vec_a) != len(vec_b):
+            return 0.0
+
+        dot_product = sum(a * b for a, b in zip(vec_a, vec_b))
+        mag_a = sum(x ** 2 for x in vec_a) ** 0.5
+        mag_b = sum(x ** 2 for x in vec_b) ** 0.5
+
+        if mag_a == 0 or mag_b == 0:
+            return 0.0
+
+        return dot_product / (mag_a * mag_b)
+
+    def _store_embeddings(self, items: List[Dict]) -> int:
+        """Store embeddings in vector memory table."""
+        if not items:
+            return 0
+
+        try:
+            rows = []
+            for item in items:
+                rows.append({
+                    "memory_id": str(uuid.uuid4()),
+                    "context_type": item["context_type"],
+                    "context_text": item["context_text"],
+                    "embedding": item.get("embedding", []),
+                    "embedding_model": item.get("embedding_model", self.embedding_model),
+                    "context_metadata": item.get("metadata", {}),
+                    "source_alert_id": item["source_id"] if item["context_type"] == "alert" else None,
+                    "source_investigation_id": item["source_id"] if item["context_type"] != "alert" else None,
+                    "relevance_score": 1.0,
+                    "access_count": 0,
+                    "last_accessed": datetime.now(),
+                    "trace_id": self.agent_name,
+                    "agent_name": self.agent_name,
+                    "created_at": datetime.now(),
+                    "updated_at": datetime.now(),
+                })
+
+            df = spark.createDataFrame(rows)
+            safe_append(df, self.memory_table, idempotency_key="memory_id")
+
+            logger.info(f"Stored {len(rows)} embeddings")
+            return len(rows)
+
+        except Exception as e:
+            logger.error(f"Failed to store embeddings: {e}")
+            return 0
+
+    def _archive_old_memories(self, max_age_days: int) -> int:
+        """Archive old memories beyond retention period."""
+        try:
+            # Find old memories
+            old_results = spark.sql(f"""
+                SELECT *
+                FROM {self.memory_table}
+                WHERE created_at < current_timestamp() - INTERVAL {max_age_days} DAYS
+            """).collect()
+
+            if len(old_results) == 0:
+                return 0
+
+            # Move to archive
+            archive_rows = []
+            for row in old_results:
+                archive_rows.append({
+                    "memory_id": row.memory_id,
+                    "context_type": row.context_type,
+                    "context_text": row.context_text,
+                    "embedding": row.embedding,
+                    "embedding_model": row.embedding_model,
+                    "context_metadata": row.context_metadata,
+                    "access_count": row.access_count,
+                    "archived_at": datetime.now(),
+                    "archived_reason": "retention_expired",
+                })
+
+            # Delete from active table
+            spark.sql(f"""
+                DELETE FROM {self.memory_table}
+                WHERE memory_id IN ({','.join(repr(r['memory_id']) for r in old_results)})
+            """)
+
+            # Insert into archive
+            if archive_rows:
+                df = spark.createDataFrame(archive_rows)
+                safe_append(df, self.memory_archive_table, idempotency_key="memory_id")
+
+            logger.info(f"Archived {len(old_results)} old memories")
+            return len(old_results)
+
+        except Exception as e:
+            logger.warning(f"Archival failed: {e}")
+            return 0
+
+    def _log_memory_stats(self):
+        """Log memory statistics to monitoring."""
+        try:
+            stats = spark.sql(f"""
+                SELECT
+                    COUNT(*) as total_memories,
+                    COUNT(DISTINCT context_type) as context_types,
+                    SUM(access_count) as total_accesses,
+                    MAX(last_accessed) as most_recent_access
+                FROM {self.memory_table}
+            """).collect()
+
+            if stats:
+                row = stats[0]
+                mon.log_event("vector_memory_stats", {
+                    "total_memories": row.total_memories,
+                    "context_types": row.context_types,
+                    "total_accesses": row.total_accesses or 0,
+                })
+
+        except Exception as e:
+            logger.warning(f"Stats logging failed: {e}")
+
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Main Execution
+# MAGIC ## Agent Execution
 
 # COMMAND ----------
 
-result = {"notebook": "10_vector_memory", "status": "failed", "started_at": datetime.utcnow().isoformat()}
-
 try:
-    with mon.time("vector_memory_total"):
-        # Step 1: Get unprocessed alerts
-        with mon.time("fetch_unprocessed"):
-            unprocessed_df = get_unprocessed_alerts()
-            alert_count = unprocessed_df.count()
-            mon.log_metric("unprocessed_alerts", alert_count)
-
-        if alert_count == 0:
-            result = {"notebook": "10_vector_memory", "status": "success", "alerts_processed": 0, "message": "no_new_alerts"}
-            mon.log_info("No new alerts to embed")
-        else:
-            # Step 2: Generate embeddings in batches
-            with mon.time("generate_embeddings"):
-                embedded_results, failed_batches = process_alerts_in_batches(unprocessed_df)
-                mon.log_metric("embeddings_generated", len(embedded_results))
-                mon.log_metric("failed_batches", failed_batches)
-
-            # Step 3: Store embeddings in Delta (this auto-triggers VS index sync)
-            if embedded_results:
-                with mon.time("store_embeddings"):
-                    embeddings_df = spark.createDataFrame(embedded_results)
-                    safe_append(
-                        embeddings_df,
-                        "alert_embeddings",
-                        catalog=cfg.catalog,
-                        schema=cfg.schema,
-                    )
-                    mon.log_event("embeddings_stored", {"count": len(embedded_results)})
-
-                # Step 4: Trigger Vector Search index sync
-                with mon.time("trigger_index_sync"):
-                    try:
-                        vs_index.sync()
-                        mon.log_event("index_sync_triggered", {"index": INDEX_NAME})
-                    except Exception as sync_err:
-                        mon.log_warning(f"Index sync trigger failed (will auto-sync): {sync_err}")
-
-            # Step 5: Validate by running similarity queries on sample
-            enriched_count = 0
-            with mon.time("similarity_validation"):
-                for alert in embedded_results[:5]:
-                    similar = find_similar_alerts(
-                        query_embedding=alert["embedding"],
-                        top_k=5,
-                    )
-                    if similar:
-                        enriched_count += 1
-                        mon.log_event("similarity_validated", {
-                            "alert_id": alert["alert_id"],
-                            "match_count": len(similar),
-                            "top_score": similar[0]["similarity"] if similar else 0,
-                        })
-
-            result = {
-                "notebook": "10_vector_memory",
-                "status": "success",
-                "alerts_processed": len(embedded_results),
-                "failed_batches": failed_batches,
-                "enriched_sample": enriched_count,
-                "total_candidates": alert_count,
-                "index_name": INDEX_NAME,
-                "completed_at": datetime.utcnow().isoformat(),
-            }
-
-    mon.log_complete(rows_processed=result.get("alerts_processed", 0))
-
+    import mlflow
+    mlflow.set_experiment(f"/0xDSI/agents/vector_memory")
 except Exception as e:
-    result["status"] = "error"
-    result["error"] = str(e)[:500]
-    result["error_type"] = type(e).__name__
-    mon.log_error(e, context="vector_memory_main")
-    raise
+    logger.warning(f"MLflow unavailable: {e}")
 
-finally:
-    print(json.dumps(result, indent=2))
-    dbutils.notebook.exit(json.dumps(result))
+# Create and configure agent
+agent = VectorMemoryAgent("vector_memory", cfg, llm, mon, spark)
+
+# Execute
+result = agent.run()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Results Summary
+
+# COMMAND ----------
+
+mon.log_event("vector_memory_complete", {
+    "status": result.status.value,
+    "processed": result.processed_count,
+    "errors": result.error_count,
+    "duration": result.duration_seconds,
+})
+
+logger.info(f"Vector Memory: {result.to_json()}")
+dbutils.notebook.exit(result.to_json())
