@@ -697,12 +697,8 @@ async def agent_chat(request: Request):
 @app.post("/api/correlation-engine")
 async def correlation_engine(request: Request):
     """Triggers a correlation engine run via Databricks Workflows."""
-    try:
-        w = WorkspaceClient()
-        run = w.jobs.run_now(job_id=0)  # Will need real job ID
-        return {"status": "triggered", "message": "Correlation engine triggered"}
-    except Exception as e:
-        return {"status": "simulated", "message": "Correlation results from last run"}
+    result = trigger_job("[0xDSI] Correlation 07 - Detection Confluence")
+    return {"status": "triggered" if result.get("triggered") else "failed", "details": result}
 
 
 @app.post("/api/generate-correlation-rule")
@@ -880,6 +876,864 @@ async def agent_orchestrator_endpoint(request: Request):
             return {"status": "triggered", "agent_id": agent_id}
         else:
             return {"status": "unknown_action"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ══════════════════════════════════════════════════════════════
+# CONTROL PLANE: Write Operations + Job Triggering
+# All mutations write to Delta config tables in Unity Catalog.
+# Notebooks read these tables on each run, picking up changes.
+# For immediate effect, trigger on-demand job runs via Jobs API.
+# ══════════════════════════════════════════════════════════════
+
+
+def execute_write(sql: str, params: Optional[dict] = None):
+    """Execute a write (INSERT/UPDATE/DELETE/MERGE) statement."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(sql, params)
+    finally:
+        cursor.close()
+
+
+def resolve_job_id(job_name_prefix: str) -> Optional[int]:
+    """Resolve a Databricks job ID by its name prefix."""
+    try:
+        w = WorkspaceClient()
+        jobs = w.jobs.list(name=job_name_prefix)
+        for job in jobs:
+            if job.settings and job.settings.name and job_name_prefix in job.settings.name:
+                return job.job_id
+    except Exception:
+        pass
+    return None
+
+
+def trigger_job(job_name_prefix: str, params: Optional[dict] = None) -> dict:
+    """Trigger a Databricks job by name prefix with optional parameter overrides."""
+    job_id = resolve_job_id(job_name_prefix)
+    if not job_id:
+        return {"triggered": False, "reason": f"Job not found: {job_name_prefix}"}
+    try:
+        w = WorkspaceClient()
+        run = w.jobs.run_now(job_id=job_id, notebook_params=params or {})
+        return {"triggered": True, "job_id": job_id, "run_id": run.run_id}
+    except Exception as e:
+        return {"triggered": False, "reason": str(e)}
+
+
+# ──────────────────────────────────────────────
+# Jobs: List & Trigger On-Demand
+# ──────────────────────────────────────────────
+
+@app.get("/api/control/jobs")
+async def list_jobs():
+    """List all 0xDSI workflow jobs with status."""
+    try:
+        w = WorkspaceClient()
+        all_jobs = []
+        for job in w.jobs.list(name="[0xDSI]"):
+            all_jobs.append({
+                "job_id": job.job_id,
+                "name": job.settings.name if job.settings else "",
+                "created_time": str(job.created_time) if job.created_time else None,
+            })
+        return JSONResponse(content=all_jobs)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/control/jobs/trigger")
+async def trigger_job_endpoint(request: Request):
+    """Trigger a job on-demand with optional parameter overrides."""
+    body = await request.json()
+    job_name = body.get("job_name", "")
+    params = body.get("params", {})
+    user = get_current_user(request)
+
+    result = trigger_job(job_name, params)
+    result["triggered_by"] = user.get("username", "unknown")
+    return JSONResponse(content=result)
+
+
+# ──────────────────────────────────────────────
+# Agent Config: CRUD + Enable/Disable + Trigger
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/agents/{agent_id}/toggle")
+async def toggle_agent(agent_id: str, request: Request):
+    """Enable or disable an agent. Takes effect on next scheduled run."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('agent_configs')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :agent_id
+        """, {"agent_id": agent_id})
+        return {"agent_id": agent_id, "enabled": enabled, "updated_by": user.get("username")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/agents/{agent_id}/config")
+async def update_agent_config(agent_id: str, request: Request):
+    """Update agent configuration (thresholds, schedule, parameters)."""
+    body = await request.json()
+    user = get_current_user(request)
+    updates = []
+    params = {"agent_id": agent_id}
+
+    if "schedule" in body:
+        updates.append("schedule = :schedule")
+        params["schedule"] = body["schedule"]
+    if "config" in body:
+        updates.append(f"config = map_from_entries(array({','.join(f\"struct('{k}', '{v}')\" for k, v in body['config'].items())}))")
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    updates.append("updated_at = current_timestamp()")
+    try:
+        execute_write(f"""
+            UPDATE {fqn('agent_configs')}
+            SET {', '.join(updates)}
+            WHERE id = :agent_id
+        """, params)
+        return {"agent_id": agent_id, "updated": True, "updated_by": user.get("username")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/control/agents/{agent_id}/run")
+async def trigger_agent_run(agent_id: str, request: Request):
+    """Trigger an immediate on-demand agent run."""
+    body = await request.json()
+    params = body.get("params", {})
+    user = get_current_user(request)
+    try:
+        agent = query(f"SELECT name, notebook_path FROM {fqn('agent_configs')} WHERE id = :id", {"id": agent_id})
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        job_name = agent[0].get("name", "")
+        result = trigger_job(f"[0xDSI] {job_name}", params)
+        result["triggered_by"] = user.get("username")
+        return JSONResponse(content=result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Correlation Rules: CRUD
+# ──────────────────────────────────────────────
+
+@app.post("/api/control/correlation-rules")
+async def create_correlation_rule(request: Request):
+    """Create a new correlation rule in Unity Catalog."""
+    body = await request.json()
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            INSERT INTO {fqn('correlation_rules')}
+            (id, name, description, rule_type, severity, enabled, conditions,
+             window_seconds, threshold, mitre_tactic, mitre_technique,
+             confidence_score, author, version, created_at, updated_at)
+            VALUES (
+                uuid(), :name, :description, :rule_type, :severity, true,
+                array(:conditions), :window_seconds, :threshold,
+                :mitre_tactic, :mitre_technique, :confidence_score,
+                :author, 1, current_timestamp(), current_timestamp()
+            )
+        """, {
+            "name": body["name"],
+            "description": body.get("description", ""),
+            "rule_type": body.get("rule_type", "threshold"),
+            "severity": body.get("severity", "medium"),
+            "conditions": json.dumps(body.get("conditions", [])),
+            "window_seconds": body.get("window_seconds", 300),
+            "threshold": body.get("threshold", 1),
+            "mitre_tactic": body.get("mitre_tactic"),
+            "mitre_technique": body.get("mitre_technique"),
+            "confidence_score": body.get("confidence_score", 0.7),
+            "author": user.get("username", "system"),
+        })
+        return {"created": True, "name": body["name"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/correlation-rules/{rule_id}/toggle")
+async def toggle_correlation_rule(rule_id: str, request: Request):
+    """Enable or disable a correlation rule."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('correlation_rules')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :rule_id
+        """, {"rule_id": rule_id})
+        return {"rule_id": rule_id, "enabled": enabled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/correlation-rules/{rule_id}")
+async def update_correlation_rule(rule_id: str, request: Request):
+    """Update correlation rule parameters (threshold, window, severity)."""
+    body = await request.json()
+    set_clauses = []
+    params = {"rule_id": rule_id}
+
+    for field in ["severity", "threshold", "window_seconds", "confidence_score", "description"]:
+        if field in body:
+            set_clauses.append(f"{field} = :{field}")
+            params[field] = body[field]
+
+    if not set_clauses:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    set_clauses.append("version = version + 1")
+    set_clauses.append("updated_at = current_timestamp()")
+    try:
+        execute_write(f"""
+            UPDATE {fqn('correlation_rules')}
+            SET {', '.join(set_clauses)}
+            WHERE id = :rule_id
+        """, params)
+        return {"rule_id": rule_id, "updated": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/control/correlation-rules/{rule_id}")
+async def delete_correlation_rule(rule_id: str, request: Request):
+    """Soft-delete a correlation rule (disable and mark deleted)."""
+    try:
+        execute_write(f"""
+            UPDATE {fqn('correlation_rules')}
+            SET enabled = false, updated_at = current_timestamp()
+            WHERE id = :rule_id
+        """, {"rule_id": rule_id})
+        return {"rule_id": rule_id, "deleted": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Detection Rules: CRUD
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/detection-rules/{rule_id}")
+async def update_detection_rule(rule_id: str, request: Request):
+    """Update detection rule (status, logic, version)."""
+    body = await request.json()
+    set_clauses = []
+    params = {"rule_id": rule_id}
+
+    for field in ["status", "logic", "sigma_rule"]:
+        if field in body:
+            set_clauses.append(f"{field} = :{field}")
+            params[field] = body[field]
+
+    if not set_clauses:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    set_clauses.append("updated_at = current_timestamp()")
+    try:
+        execute_write(f"""
+            UPDATE {fqn('detection_rules')}
+            SET {', '.join(set_clauses)}
+            WHERE id = :rule_id
+        """, params)
+        return {"rule_id": rule_id, "updated": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Alerts: Status Transitions
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/alerts/{alert_id}/status")
+async def update_alert_status(alert_id: str, request: Request):
+    """Transition alert status (new → investigating → resolved | false_positive)."""
+    body = await request.json()
+    status = body.get("status")
+    user = get_current_user(request)
+    if status not in ("new", "investigating", "resolved", "false_positive", "dismissed"):
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    try:
+        execute_write(f"""
+            UPDATE {fqn('alerts')}
+            SET status = :status, updated_at = current_timestamp()
+            WHERE id = :alert_id
+        """, {"alert_id": alert_id, "status": status})
+        return {"alert_id": alert_id, "status": status, "updated_by": user.get("username")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Cases: CRUD + Status Transitions
+# ──────────────────────────────────────────────
+
+@app.post("/api/control/cases")
+async def create_case(request: Request):
+    """Create a new investigation case."""
+    body = await request.json()
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            INSERT INTO {fqn('cases')}
+            (id, title, description, status, severity, priority, assigned_to, created_by, created_at, updated_at)
+            VALUES (uuid(), :title, :description, 'open', :severity, :priority, :assigned_to, :created_by, current_timestamp(), current_timestamp())
+        """, {
+            "title": body["title"],
+            "description": body.get("description", ""),
+            "severity": body.get("severity", "medium"),
+            "priority": body.get("priority", "medium"),
+            "assigned_to": body.get("assigned_to", user.get("username")),
+            "created_by": user.get("username", "system"),
+        })
+        return {"created": True, "title": body["title"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/cases/{case_id}/status")
+async def update_case_status(case_id: str, request: Request):
+    """Transition case status."""
+    body = await request.json()
+    status = body.get("status")
+    user = get_current_user(request)
+    if status not in ("open", "investigating", "contained", "resolved", "closed"):
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    try:
+        execute_write(f"""
+            UPDATE {fqn('cases')}
+            SET status = :status, updated_at = current_timestamp()
+            WHERE id = :case_id
+        """, {"case_id": case_id, "status": status})
+        return {"case_id": case_id, "status": status, "updated_by": user.get("username")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/cases/{case_id}/assign")
+async def assign_case(case_id: str, request: Request):
+    """Assign a case to an analyst."""
+    body = await request.json()
+    try:
+        execute_write(f"""
+            UPDATE {fqn('cases')}
+            SET assigned_to = :assignee, updated_at = current_timestamp()
+            WHERE id = :case_id
+        """, {"case_id": case_id, "assignee": body["assigned_to"]})
+        return {"case_id": case_id, "assigned_to": body["assigned_to"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Response Actions: Approve / Reject / Rollback
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/response-actions/{action_id}/approve")
+async def approve_response_action(action_id: str, request: Request):
+    """Approve a pending response action for execution."""
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('response_actions')}
+            SET status = 'approved', approved_by = :user, approved_at = current_timestamp(), updated_at = current_timestamp()
+            WHERE id = :action_id AND status = 'pending'
+        """, {"action_id": action_id, "user": user.get("username", "system")})
+        trigger_job("[0xDSI] Agent 15 - Automated Response")
+        return {"action_id": action_id, "status": "approved", "approved_by": user.get("username")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/response-actions/{action_id}/reject")
+async def reject_response_action(action_id: str, request: Request):
+    """Reject a pending response action."""
+    body = await request.json()
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('response_actions')}
+            SET status = 'rejected', rejected_by = :user, rejection_reason = :reason, updated_at = current_timestamp()
+            WHERE id = :action_id AND status = 'pending'
+        """, {"action_id": action_id, "user": user.get("username", "system"), "reason": body.get("reason", "")})
+        return {"action_id": action_id, "status": "rejected"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/response-actions/{action_id}/rollback")
+async def rollback_response_action(action_id: str, request: Request):
+    """Rollback a completed response action."""
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('response_actions')}
+            SET status = 'rolled_back', rolled_back_by = :user, rolled_back_at = current_timestamp(), updated_at = current_timestamp()
+            WHERE id = :action_id AND status = 'executed'
+        """, {"action_id": action_id, "user": user.get("username", "system")})
+        return {"action_id": action_id, "status": "rolled_back"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Threat Feeds: Toggle + Sync
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/threat-feeds/{feed_id}/toggle")
+async def toggle_threat_feed(feed_id: str, request: Request):
+    """Enable or disable a threat feed."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('threat_feeds')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :feed_id
+        """, {"feed_id": feed_id})
+        return {"feed_id": feed_id, "enabled": enabled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/control/threat-feeds/{feed_id}/sync")
+async def sync_threat_feed(feed_id: str, request: Request):
+    """Trigger an immediate sync of a specific threat feed."""
+    result = trigger_job("[0xDSI] Ingestion 06 - Threat Feed", {"feed_id": feed_id})
+    return {"feed_id": feed_id, "sync": result}
+
+
+# ──────────────────────────────────────────────
+# System Settings: Upsert
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/settings")
+async def update_system_settings(request: Request):
+    """Upsert system settings (key-value pairs). Notebooks read these at startup."""
+    body = await request.json()
+    user = get_current_user(request)
+    settings = body.get("settings", {})
+    category = body.get("category", "general")
+    updated = []
+    try:
+        for key, value in settings.items():
+            execute_write(f"""
+                MERGE INTO {fqn('system_settings')} t
+                USING (SELECT :key as key) s ON t.key = s.key
+                WHEN MATCHED THEN UPDATE SET value = :value, category = :category, updated_at = current_timestamp()
+                WHEN NOT MATCHED THEN INSERT (id, key, value, category, updated_at) VALUES (uuid(), :key, :value, :category, current_timestamp())
+            """, {"key": key, "value": str(value), "category": category})
+            updated.append(key)
+        return {"updated": updated, "updated_by": user.get("username")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/control/settings")
+async def get_system_settings(category: Optional[str] = None):
+    """Get all system settings, optionally filtered by category."""
+    try:
+        sql = f"SELECT key, value, category, updated_at FROM {fqn('system_settings')}"
+        if category:
+            sql += f" WHERE category = :category"
+            results = query(sql, {"category": category})
+        else:
+            results = query(sql)
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# LLM Guardrail Policies: Toggle + Update
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/guardrails/{policy_id}/toggle")
+async def toggle_guardrail(policy_id: str, request: Request):
+    """Enable or disable a guardrail policy."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('llm_guardrail_policies')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :policy_id
+        """, {"policy_id": policy_id})
+        return {"policy_id": policy_id, "enabled": enabled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/guardrails/{policy_id}")
+async def update_guardrail(policy_id: str, request: Request):
+    """Update guardrail policy rules or action."""
+    body = await request.json()
+    set_clauses = []
+    params = {"policy_id": policy_id}
+    for field in ["name", "action", "policy_type"]:
+        if field in body:
+            set_clauses.append(f"{field} = :{field}")
+            params[field] = body[field]
+    if not set_clauses:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    set_clauses.append("updated_at = current_timestamp()")
+    try:
+        execute_write(f"""
+            UPDATE {fqn('llm_guardrail_policies')}
+            SET {', '.join(set_clauses)}
+            WHERE id = :policy_id
+        """, params)
+        return {"policy_id": policy_id, "updated": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Edge Collectors: Register / Decommission / Config Push
+# ──────────────────────────────────────────────
+
+@app.post("/api/control/edge-collectors/register")
+async def register_edge_collector(request: Request):
+    """Register a new edge collector in the fleet."""
+    body = await request.json()
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            INSERT INTO {fqn('edge_collector_registry')}
+            (collector_id, collector_name, collector_type, site_name, region, environment,
+             network_zone, transport_protocol, supported_sources, max_eps, compression,
+             status, version, config_version, events_forwarded_total, events_forwarded_24h,
+             registered_at, updated_at)
+            VALUES (
+                :collector_id, :collector_name, :collector_type, :site_name, :region,
+                :environment, :network_zone, :transport_protocol,
+                array(:supported_sources), :max_eps, :compression,
+                'registered', :version, 1, 0, 0, current_timestamp(), current_timestamp()
+            )
+        """, {
+            "collector_id": body["collector_id"],
+            "collector_name": body.get("collector_name", body["collector_id"]),
+            "collector_type": body.get("collector_type", "generic"),
+            "site_name": body.get("site_name", "default"),
+            "region": body.get("region", "unknown"),
+            "environment": body.get("environment", "production"),
+            "network_zone": body.get("network_zone", "dmz"),
+            "transport_protocol": body.get("transport_protocol", "https"),
+            "supported_sources": ",".join(body.get("supported_sources", ["syslog", "json", "cef"])),
+            "max_eps": body.get("max_eps", 10000),
+            "compression": body.get("compression", "zstd"),
+            "version": body.get("version", "1.0.0"),
+        })
+        return {"collector_id": body["collector_id"], "status": "registered", "registered_by": user.get("username")}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/edge-collectors/{collector_id}/decommission")
+async def decommission_edge_collector(collector_id: str, request: Request):
+    """Decommission an edge collector."""
+    try:
+        execute_write(f"""
+            UPDATE {fqn('edge_collector_registry')}
+            SET status = 'decommissioned', updated_at = current_timestamp()
+            WHERE collector_id = :cid
+        """, {"cid": collector_id})
+        return {"collector_id": collector_id, "status": "decommissioned"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/edge-collectors/{collector_id}/config")
+async def update_edge_collector_config(collector_id: str, request: Request):
+    """Push new configuration to an edge collector."""
+    body = await request.json()
+    try:
+        execute_write(f"""
+            INSERT INTO {fqn('edge_collector_configs')}
+            (config_id, collector_id, config_scope, filter_rules, sampling_rate,
+             batch_size, batch_interval_ms, buffer_max_bytes, compression,
+             max_eps, throttle_on_backpressure, version, is_active, created_at)
+            VALUES (
+                uuid(), :collector_id, 'collector',
+                :filter_rules, :sampling_rate, :batch_size, :batch_interval_ms,
+                :buffer_max_bytes, :compression, :max_eps, :throttle_on_backpressure,
+                (SELECT COALESCE(MAX(version), 0) + 1 FROM {fqn('edge_collector_configs')} WHERE collector_id = :collector_id),
+                true, current_timestamp()
+            )
+        """, {
+            "collector_id": collector_id,
+            "filter_rules": body.get("filter_rules", ""),
+            "sampling_rate": body.get("sampling_rate", 1.0),
+            "batch_size": body.get("batch_size", 1000),
+            "batch_interval_ms": body.get("batch_interval_ms", 5000),
+            "buffer_max_bytes": body.get("buffer_max_bytes", 104857600),
+            "compression": body.get("compression", "zstd"),
+            "max_eps": body.get("max_eps", 10000),
+            "throttle_on_backpressure": body.get("throttle_on_backpressure", True),
+        })
+        trigger_job("[0xDSI] Ingestion 09 - Edge Collector Config Sync")
+        return {"collector_id": collector_id, "config_pushed": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# MUSE Proposals: Approve / Reject
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/muse/proposals/{proposal_id}/approve")
+async def approve_muse_proposal(proposal_id: str, request: Request):
+    """Approve a MUSE learning proposal. Applied on next MUSE run."""
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('tuning_proposals')}
+            SET status = 'approved', approved_by = :user, approved_at = current_timestamp()
+            WHERE proposal_id = :proposal_id AND status = 'pending'
+        """, {"proposal_id": proposal_id, "user": user.get("username", "system")})
+        return {"proposal_id": proposal_id, "status": "approved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/muse/proposals/{proposal_id}/reject")
+async def reject_muse_proposal(proposal_id: str, request: Request):
+    """Reject a MUSE learning proposal."""
+    body = await request.json()
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('tuning_proposals')}
+            SET status = 'rejected', rejected_by = :user, rejection_reason = :reason
+            WHERE proposal_id = :proposal_id AND status = 'pending'
+        """, {"proposal_id": proposal_id, "user": user.get("username", "system"), "reason": body.get("reason", "")})
+        return {"proposal_id": proposal_id, "status": "rejected"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/control/muse/weights/{proposal_id}/approve")
+async def approve_weight_proposal(proposal_id: str, request: Request):
+    """Approve a lens weight calibration proposal."""
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('lens_weight_proposals')}
+            SET status = 'approved', approved_by = :user, approved_at = current_timestamp()
+            WHERE id = :proposal_id AND status = 'pending'
+        """, {"proposal_id": proposal_id, "user": user.get("username", "system")})
+        return {"proposal_id": proposal_id, "status": "approved"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Compliance: Acknowledge Violations
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/compliance/violations/{violation_id}/resolve")
+async def resolve_compliance_violation(violation_id: str, request: Request):
+    """Mark a compliance violation as resolved."""
+    body = await request.json()
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('compliance_violations')}
+            SET resolved_at = current_timestamp(), resolution = :resolution
+            WHERE violation_id = :violation_id
+        """, {"violation_id": violation_id, "resolution": body.get("resolution", f"Resolved by {user.get('username')}")})
+        return {"violation_id": violation_id, "resolved": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Workflows: CRUD + Toggle + Execute
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/workflows/{workflow_id}/toggle")
+async def toggle_workflow(workflow_id: str, request: Request):
+    """Enable or disable a workflow."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('workflows')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :workflow_id
+        """, {"workflow_id": workflow_id})
+        return {"workflow_id": workflow_id, "enabled": enabled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Active Lists: CRUD
+# ──────────────────────────────────────────────
+
+@app.post("/api/control/active-lists")
+async def create_active_list(request: Request):
+    """Create a new active list (blocklist, allowlist, watchlist)."""
+    body = await request.json()
+    user = get_current_user(request)
+    try:
+        execute_write(f"""
+            INSERT INTO {fqn('active_lists')}
+            (id, name, list_type, category, description, auto_update, created_by, created_at, updated_at)
+            VALUES (uuid(), :name, :list_type, :category, :description, :auto_update, :user, current_timestamp(), current_timestamp())
+        """, {
+            "name": body["name"],
+            "list_type": body.get("list_type", "blocklist"),
+            "category": body.get("category", "ip"),
+            "description": body.get("description", ""),
+            "auto_update": body.get("auto_update", False),
+            "user": user.get("username", "system"),
+        })
+        return {"created": True, "name": body["name"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/control/active-lists/{list_id}")
+async def delete_active_list(list_id: str, request: Request):
+    """Delete an active list."""
+    try:
+        execute_write(f"DELETE FROM {fqn('active_lists')} WHERE id = :list_id", {"list_id": list_id})
+        return {"list_id": list_id, "deleted": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Honeypots: Toggle + Create
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/honeypots/{honeypot_id}/toggle")
+async def toggle_honeypot(honeypot_id: str, request: Request):
+    """Enable or disable a honeypot deployment."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    status = "active" if enabled else "inactive"
+    try:
+        execute_write(f"""
+            UPDATE {fqn('honeypot_deployments')}
+            SET status = :status, updated_at = current_timestamp()
+            WHERE id = :honeypot_id
+        """, {"honeypot_id": honeypot_id, "status": status})
+        return {"honeypot_id": honeypot_id, "status": status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# ETL Ingestion Configs: Toggle + Update
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/etl-configs/{config_id}/toggle")
+async def toggle_etl_config(config_id: str, request: Request):
+    """Enable or disable an ETL ingestion config."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('etl_ingestion_configs')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :config_id
+        """, {"config_id": config_id})
+        return {"config_id": config_id, "enabled": enabled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# IOCs: Deactivate
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/iocs/{ioc_id}/deactivate")
+async def deactivate_ioc(ioc_id: str, request: Request):
+    """Deactivate an IOC."""
+    try:
+        execute_write(f"""
+            UPDATE {fqn('ioc_entries')}
+            SET is_active = false, updated_at = current_timestamp()
+            WHERE id = :ioc_id
+        """, {"ioc_id": ioc_id})
+        return {"ioc_id": ioc_id, "is_active": False}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# CEP Patterns: Toggle
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/cep-patterns/{pattern_id}/toggle")
+async def toggle_cep_pattern(pattern_id: str, request: Request):
+    """Enable or disable a CEP pattern."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('cep_patterns')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :pattern_id
+        """, {"pattern_id": pattern_id})
+        return {"pattern_id": pattern_id, "enabled": enabled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Negative Correlation Rules: Toggle
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/negative-rules/{rule_id}/toggle")
+async def toggle_negative_rule(rule_id: str, request: Request):
+    """Enable or disable a negative correlation rule."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('negative_correlation_rules')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :rule_id
+        """, {"rule_id": rule_id})
+        return {"rule_id": rule_id, "enabled": enabled}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Threat Escalation Rules: Toggle
+# ──────────────────────────────────────────────
+
+@app.put("/api/control/escalation-rules/{rule_id}/toggle")
+async def toggle_escalation_rule(rule_id: str, request: Request):
+    """Enable or disable an escalation rule."""
+    body = await request.json()
+    enabled = body.get("enabled", True)
+    try:
+        execute_write(f"""
+            UPDATE {fqn('threat_escalation_rules')}
+            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            WHERE id = :rule_id
+        """, {"rule_id": rule_id})
+        return {"rule_id": rule_id, "enabled": enabled}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
