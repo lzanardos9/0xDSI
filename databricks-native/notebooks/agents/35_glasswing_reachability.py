@@ -268,36 +268,12 @@ with mon.time("event_stream_query"):
         traffic_data = events_df.collect()
         print(f"Found {len(traffic_data)} traffic records hitting vulnerable endpoints")
     except Exception as e:
-        print(f"Events table query failed: {e}")
-        print("Generating synthetic traffic data for pipeline validation...")
-
-        # Synthetic traffic data for demo
+        mon.log_warning(f"Events table query failed: {e}")
+        mon.log_event("reachability_no_traffic_data", {"error": str(e)[:200]})
         traffic_data = []
-        synthetic_traffic = [
-            ("/api/v2/nodes/register", "198.51.100.47", 342, True),
-            ("/api/v1/search", "203.0.113.12", 1847, True),
-            ("/api/v1/artifacts", "198.51.100.99", 56, True),
-            ("/api/webhooks", "10.0.0.15", 230, False),
-            ("/api/v1/storage/file_handler", "172.16.0.8", 12, False),
-            ("/auth/*", "198.51.100.200", 891, True),
-            ("/api/v1/rbac/evaluator", "203.0.113.55", 127, True),
-            ("/login", "192.0.2.100", 4521, True),
-            ("/api/integrations", "198.51.100.33", 78, True),
-        ]
-
-        from pyspark.sql import Row
-        traffic_data = [
-            Row(
-                request_path=path,
-                source_ip=ip,
-                request_count=count,
-                unique_sources=max(1, count // 20),
-                external_requests=count if is_ext else 0,
-                source_ips=[ip],
-                last_seen=now - timedelta(minutes=idx * 7)
-            )
-            for idx, (path, ip, count, is_ext) in enumerate(synthetic_traffic)
-        ]
+        # Without traffic data, reachability scores will be based solely on
+        # attack surface factors (vuln class). This is expected during initial
+        # deployment before traffic instrumentation is in place.
 
 # COMMAND ----------
 
@@ -319,15 +295,11 @@ try:
     known_bad_ips = {row["indicator"]: row for row in ioc_df.collect()}
     print(f"Loaded {len(known_bad_ips)} active IOC IP indicators")
 except Exception as e:
-    print(f"IOC table not available: {e}")
-    # Synthetic IOC data
-    known_bad_ips = {
-        "198.51.100.47": {"indicator": "198.51.100.47", "threat_level": "high", "source": "threat_intel_feed"},
-        "203.0.113.12": {"indicator": "203.0.113.12", "threat_level": "critical", "source": "incident_response"},
-        "198.51.100.200": {"indicator": "198.51.100.200", "threat_level": "medium", "source": "honeypot"},
-        "203.0.113.55": {"indicator": "203.0.113.55", "threat_level": "high", "source": "cti_attribution"},
-    }
-    print(f"Using {len(known_bad_ips)} synthetic IOC entries for demo")
+    mon.log_warning(f"IOC table not available: {e}")
+    mon.log_event("reachability_no_ioc_data", {"error": str(e)[:200]})
+    known_bad_ips = {}
+    # Without IOC data, reachability will not factor in threat actor correlation.
+    # The ioc_factor component of the score will be 0 for all findings.
 
 # COMMAND ----------
 

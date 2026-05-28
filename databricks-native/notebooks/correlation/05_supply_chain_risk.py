@@ -24,20 +24,25 @@
 dbutils.widgets.text("lookback_minutes", "15", "Detection window in minutes")
 dbutils.widgets.text("baseline_days", "30", "Days of history for package baseline")
 dbutils.widgets.text("max_alerts", "25", "Maximum alerts per run")
+dbutils.widgets.text("mode", "batch", "Execution mode: streaming | batch")
 
 lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 baseline_days = int(dbutils.widgets.get("baseline_days"))
 max_alerts = int(dbutils.widgets.get("max_alerts"))
+mode = dbutils.widgets.get("mode")
 
 mon.log_event("config_loaded", {
     "lookback_minutes": lookback_minutes,
     "baseline_days": baseline_days,
+    "mode": mode,
 })
 
 # COMMAND ----------
 
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
+import json
+from datetime import datetime
 
 # COMMAND ----------
 
@@ -49,6 +54,78 @@ from pyspark.sql.types import *
 events_table = cfg.get_table_path("events")
 alerts_table = cfg.get_table_path("alerts")
 
+if mode == "streaming":
+    # Streaming mode: use readStream with foreachBatch for continuous detection
+    supply_chain_stream = (
+        spark.readStream
+        .format("delta")
+        .option("maxFilesPerTrigger", 50)
+        .table(events_table)
+    )
+
+    def detect_supply_chain_batch(batch_df, batch_id):
+        """Run all supply chain detections on each micro-batch."""
+        sc_events = batch_df.filter(
+            col("event_type").isin(
+                'software_install', 'build_event', 'deployment', 'package_update',
+                'software', 'build', 'package'
+            )
+        )
+        if sc_events.count() == 0:
+            return
+
+        # Unexpected packages: check against baseline
+        baseline_packages = spark.sql(f"""
+            SELECT DISTINCT action as known_action
+            FROM {events_table}
+            WHERE event_type IN ('software_install', 'software', 'package_update', 'package')
+              AND timestamp BETWEEN current_timestamp() - INTERVAL {baseline_days} DAYS
+                               AND current_timestamp() - INTERVAL 1 DAY
+        """)
+
+        unexpected = (
+            sc_events
+            .filter(col("action").contains("install"))
+            .join(baseline_packages, sc_events["action"] == baseline_packages["known_action"], "left_anti")
+        )
+
+        if unexpected.count() > 0:
+            alerts = (
+                unexpected.limit(max_alerts)
+                .withColumn("id", expr("uuid()"))
+                .withColumn("title", lit("Supply Chain: Unexpected Package Installation"))
+                .withColumn("description", concat(
+                    lit("New package from "), col("source_ip"),
+                    lit(" by "), coalesce(col("user_id"), lit("unknown")),
+                    lit(": "), col("action")
+                ))
+                .withColumn("severity", lit("high"))
+                .withColumn("status", lit("new"))
+                .withColumn("source", lit("supply_chain_correlation"))
+                .withColumn("mitre_tactic", lit("initial-access"))
+                .withColumn("mitre_technique", lit("T1195.002"))
+                .withColumn("confidence_score", lit(0.75))
+                .withColumn("created_at", current_timestamp())
+                .select("id", "title", "description", "severity", "status",
+                        "source", "mitre_tactic", "confidence_score", "created_at")
+            )
+            alerts.write.mode("append").saveAsTable(alerts_table)
+
+        mon.log_event("supply_chain_streaming_batch", {"batch_id": batch_id, "events": sc_events.count()})
+
+    query = (
+        supply_chain_stream
+        .writeStream
+        .foreachBatch(detect_supply_chain_batch)
+        .option("checkpointLocation", get_checkpoint_path(cfg, "supply_chain_risk"))
+        .trigger(processingTime="30 seconds")
+        .queryName("supply_chain_risk_detector")
+        .start()
+    )
+    query.awaitTermination(timeout=600)
+    dbutils.notebook.exit(json.dumps({"status": "streaming_complete", "mode": "streaming"}))
+
+# Batch mode continues below
 supply_chain_events = spark.sql(f"""
     SELECT source_ip, user_id, action, dest_ip, timestamp, severity,
            event_type, raw_log, hostname

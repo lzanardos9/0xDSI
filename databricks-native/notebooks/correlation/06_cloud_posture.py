@@ -25,26 +25,191 @@
 
 dbutils.widgets.text("lookback_minutes", "10", "Detection window in minutes")
 dbutils.widgets.text("max_alerts", "30", "Maximum alerts per run")
+dbutils.widgets.text("mode", "batch", "Execution mode: streaming | batch")
 
 lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 max_alerts = int(dbutils.widgets.get("max_alerts"))
+mode = dbutils.widgets.get("mode")
 
-mon.log_event("config_loaded", {"lookback_minutes": lookback_minutes})
+mon.log_event("config_loaded", {"lookback_minutes": lookback_minutes, "mode": mode})
 
 # COMMAND ----------
 
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
+import json
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Detection: Security Group Opened to Internet
+# MAGIC ## Streaming Mode
 
 # COMMAND ----------
 
 events_table = cfg.get_table_path("events")
 alerts_table = cfg.get_table_path("alerts")
+
+CLOUD_EVENT_TYPES = ['cloud_config', 'cloud_audit', 'cloud_trail']
+
+IAM_ESCALATION_ACTIONS = [
+    'attach_admin_policy', 'create_access_key', 'assume_role',
+    'put_role_policy', 'create_login_profile', 'attach_user_policy',
+    'add_user_to_group', 'update_assume_role_policy',
+]
+
+ENCRYPTION_DISABLE_ACTIONS = [
+    'put_bucket_encryption_disabled', 'modify_db_instance_unencrypted',
+    'delete_kms_key', 'disable_encryption', 'remove_server_side_encryption',
+    'delete_encryption_configuration',
+]
+
+PUBLIC_ACCESS_ACTIONS = [
+    'put_public_access_block_disabled', 'make_bucket_public',
+    'enable_public_access', 'set_public_ip', 'create_public_endpoint',
+]
+
+SG_OPEN_ACTIONS = [
+    'authorize_security_group_ingress', 'modify_network_acl',
+    'create_security_group_rule', 'update_firewall_rule',
+]
+
+if mode == "streaming":
+    cspm_stream = (
+        spark.readStream
+        .format("delta")
+        .option("maxFilesPerTrigger", 50)
+        .table(events_table)
+    )
+
+    def detect_cspm_batch(batch_df, batch_id):
+        """Run all CSPM detections on each micro-batch."""
+        cloud_events = batch_df.filter(col("event_type").isin(*CLOUD_EVENT_TYPES))
+        if cloud_events.count() == 0:
+            return
+
+        alerts_to_write = []
+
+        # Security groups opened to internet
+        open_sg = cloud_events.filter(
+            (col("action").isin(*SG_OPEN_ACTIONS)) &
+            (col("raw_log").like("%0.0.0.0/0%") | col("raw_log").like("%::/0%"))
+        )
+        if open_sg.count() > 0:
+            alerts_to_write.append(
+                open_sg.limit(max_alerts)
+                .withColumn("id", expr("uuid()"))
+                .withColumn("title", lit("Cloud: Security Group Opened to Internet"))
+                .withColumn("description", concat(
+                    lit("User "), coalesce(col("user_id"), lit("unknown")),
+                    lit(" opened security group to 0.0.0.0/0 via "), col("action"),
+                    lit(" from "), col("source_ip")
+                ))
+                .withColumn("severity", lit("critical"))
+                .withColumn("status", lit("new"))
+                .withColumn("source", lit("cspm_correlation"))
+                .withColumn("mitre_tactic", lit("defense-evasion"))
+                .withColumn("mitre_technique", lit("T1562.007"))
+                .withColumn("confidence_score", lit(0.95))
+                .withColumn("created_at", current_timestamp())
+                .select("id", "title", "description", "severity", "status",
+                        "source", "mitre_tactic", "confidence_score", "created_at")
+            )
+
+        # IAM escalation
+        iam_events = cloud_events.filter(col("action").isin(*IAM_ESCALATION_ACTIONS))
+        if iam_events.count() > 0:
+            alerts_to_write.append(
+                iam_events.limit(max_alerts)
+                .withColumn("id", expr("uuid()"))
+                .withColumn("title", lit("Cloud: IAM Privilege Escalation"))
+                .withColumn("description", concat(
+                    coalesce(col("user_id"), lit("unknown")),
+                    lit(" performed IAM escalation: "), col("action"),
+                    lit(" from "), col("source_ip")
+                ))
+                .withColumn("severity", lit("high"))
+                .withColumn("status", lit("new"))
+                .withColumn("source", lit("cspm_correlation"))
+                .withColumn("mitre_tactic", lit("privilege-escalation"))
+                .withColumn("mitre_technique", lit("T1078.004"))
+                .withColumn("confidence_score", lit(0.80))
+                .withColumn("created_at", current_timestamp())
+                .select("id", "title", "description", "severity", "status",
+                        "source", "mitre_tactic", "confidence_score", "created_at")
+            )
+
+        # Encryption disabled
+        enc_events = cloud_events.filter(col("action").isin(*ENCRYPTION_DISABLE_ACTIONS))
+        if enc_events.count() > 0:
+            alerts_to_write.append(
+                enc_events.limit(max_alerts)
+                .withColumn("id", expr("uuid()"))
+                .withColumn("title", lit("Cloud: Encryption Disabled on Resource"))
+                .withColumn("description", concat(
+                    coalesce(col("user_id"), lit("unknown")),
+                    lit(" disabled encryption via "), col("action"),
+                    lit(" from "), col("source_ip")
+                ))
+                .withColumn("severity", lit("critical"))
+                .withColumn("status", lit("new"))
+                .withColumn("source", lit("cspm_correlation"))
+                .withColumn("mitre_tactic", lit("defense-evasion"))
+                .withColumn("mitre_technique", lit("T1600"))
+                .withColumn("confidence_score", lit(0.90))
+                .withColumn("created_at", current_timestamp())
+                .select("id", "title", "description", "severity", "status",
+                        "source", "mitre_tactic", "confidence_score", "created_at")
+            )
+
+        # Public access enabled
+        pub_events = cloud_events.filter(col("action").isin(*PUBLIC_ACCESS_ACTIONS))
+        if pub_events.count() > 0:
+            alerts_to_write.append(
+                pub_events.limit(max_alerts)
+                .withColumn("id", expr("uuid()"))
+                .withColumn("title", lit("Cloud: Public Access Enabled on Resource"))
+                .withColumn("description", concat(
+                    coalesce(col("user_id"), lit("unknown")),
+                    lit(" enabled public access: "), col("action")
+                ))
+                .withColumn("severity", lit("high"))
+                .withColumn("status", lit("new"))
+                .withColumn("source", lit("cspm_correlation"))
+                .withColumn("mitre_tactic", lit("initial-access"))
+                .withColumn("mitre_technique", lit("T1190"))
+                .withColumn("confidence_score", lit(0.85))
+                .withColumn("created_at", current_timestamp())
+                .select("id", "title", "description", "severity", "status",
+                        "source", "mitre_tactic", "confidence_score", "created_at")
+            )
+
+        for alert_df in alerts_to_write:
+            alert_df.write.mode("append").saveAsTable(alerts_table)
+
+        mon.log_event("cspm_streaming_batch", {
+            "batch_id": batch_id, "cloud_events": cloud_events.count(),
+            "alert_groups": len(alerts_to_write)
+        })
+
+    query = (
+        cspm_stream
+        .writeStream
+        .foreachBatch(detect_cspm_batch)
+        .option("checkpointLocation", get_checkpoint_path(cfg, "cloud_posture"))
+        .trigger(processingTime="30 seconds")
+        .queryName("cspm_correlation_detector")
+        .start()
+    )
+    query.awaitTermination(timeout=600)
+    dbutils.notebook.exit(json.dumps({"status": "streaming_complete", "mode": "streaming"}))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Batch Mode: Security Group Opened to Internet
+
+# COMMAND ----------
+
 total_alerts = 0
 
 with mon.time("open_sg_detection"):
@@ -52,9 +217,8 @@ with mon.time("open_sg_detection"):
         SELECT source_ip, user_id, action, dest_ip as resource,
                timestamp, raw_log, hostname
         FROM {events_table}
-        WHERE event_type = 'cloud_config'
-          AND action IN ('authorize_security_group_ingress', 'modify_network_acl',
-                         'create_security_group_rule', 'update_firewall_rule')
+        WHERE event_type IN ({', '.join(f"'{t}'" for t in CLOUD_EVENT_TYPES)})
+          AND action IN ({', '.join(f"'{a}'" for a in SG_OPEN_ACTIONS)})
           AND (raw_log LIKE '%0.0.0.0/0%' OR raw_log LIKE '%::/0%')
           AND timestamp > current_timestamp() - INTERVAL {lookback_minutes} MINUTES
     """)
@@ -93,18 +257,12 @@ with mon.time("open_sg_detection"):
 # COMMAND ----------
 
 with mon.time("iam_escalation_detection"):
-    IAM_ESCALATION_ACTIONS = [
-        'attach_admin_policy', 'create_access_key', 'assume_role',
-        'put_role_policy', 'create_login_profile', 'attach_user_policy',
-        'add_user_to_group', 'update_assume_role_policy',
-    ]
-
     iam_escalation = spark.sql(f"""
         SELECT source_ip, user_id, action, COUNT(*) as action_count,
                collect_set(dest_ip) as affected_resources,
                MIN(timestamp) as first_seen, MAX(timestamp) as last_seen
         FROM {events_table}
-        WHERE event_type = 'cloud_config'
+        WHERE event_type IN ({', '.join(f"'{t}'" for t in CLOUD_EVENT_TYPES)})
           AND action IN ({', '.join(f"'{a}'" for a in IAM_ESCALATION_ACTIONS)})
           AND timestamp > current_timestamp() - INTERVAL {lookback_minutes} MINUTES
         GROUP BY source_ip, user_id, action
@@ -119,7 +277,7 @@ with mon.time("iam_escalation_detection"):
                    COUNT(*) as total_actions,
                    collect_set(action) as actions_performed
             FROM {events_table}
-            WHERE event_type = 'cloud_config'
+            WHERE event_type IN ({', '.join(f"'{t}'" for t in CLOUD_EVENT_TYPES)})
               AND action IN ({', '.join(f"'{a}'" for a in IAM_ESCALATION_ACTIONS)})
               AND timestamp > current_timestamp() - INTERVAL {lookback_minutes} MINUTES
             GROUP BY source_ip, user_id
@@ -169,17 +327,11 @@ with mon.time("iam_escalation_detection"):
 # COMMAND ----------
 
 with mon.time("encryption_disabled_detection"):
-    ENCRYPTION_DISABLE_ACTIONS = [
-        'put_bucket_encryption_disabled', 'modify_db_instance_unencrypted',
-        'delete_kms_key', 'disable_encryption', 'remove_server_side_encryption',
-        'delete_encryption_configuration',
-    ]
-
     encryption_disabled = spark.sql(f"""
         SELECT source_ip, user_id, action, dest_ip as resource,
                timestamp, hostname
         FROM {events_table}
-        WHERE event_type = 'cloud_config'
+        WHERE event_type IN ({', '.join(f"'{t}'" for t in CLOUD_EVENT_TYPES)})
           AND action IN ({', '.join(f"'{a}'" for a in ENCRYPTION_DISABLE_ACTIONS)})
           AND timestamp > current_timestamp() - INTERVAL {lookback_minutes} MINUTES
     """)
@@ -222,9 +374,8 @@ with mon.time("public_access_detection"):
     public_access = spark.sql(f"""
         SELECT source_ip, user_id, action, dest_ip as resource, timestamp
         FROM {events_table}
-        WHERE event_type = 'cloud_config'
-          AND action IN ('put_public_access_block_disabled', 'make_bucket_public',
-                         'enable_public_access', 'set_public_ip', 'create_public_endpoint')
+        WHERE event_type IN ({', '.join(f"'{t}'" for t in CLOUD_EVENT_TYPES)})
+          AND action IN ({', '.join(f"'{a}'" for a in PUBLIC_ACCESS_ACTIONS)})
           AND timestamp > current_timestamp() - INTERVAL {lookback_minutes} MINUTES
     """)
 

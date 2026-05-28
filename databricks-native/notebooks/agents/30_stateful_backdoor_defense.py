@@ -196,41 +196,142 @@ def persist_detections(all_findings):
 
 # COMMAND ----------
 
-mon.time("agent_start")
+result = {"notebook": "30_stateful_backdoor_defense", "status": "success", "started_at": datetime.utcnow().isoformat()}
 
-agent_states = {r["agent_id"]: json.loads(r["memory_state"])
-                for r in qb().table("agent_memory_snapshots").execute()}
-agent_action_logs = {r["agent_id"]: json.loads(r["recent_actions"])
-                     for r in qb().table("agent_action_logs").execute()}
-historical_profiles = {r["agent_id"]: json.loads(r["profile"])
-                       for r in qb().table("agent_baseline_profiles").execute()}
-output_logs = [{"agent_id": r["agent_id"], "content": r["output_content"]}
-               for r in qb().table("agent_output_log").execute()]
+try:
+    with mon.time("agent_start"):
+        # Ensure required tables exist
+        for tbl in ["agent_memory_snapshots", "agent_action_logs", "agent_baseline_profiles", "agent_output_log"]:
+            spark.sql(f"""
+                CREATE TABLE IF NOT EXISTS {cfg.get_table_path(tbl)} (
+                    agent_id STRING NOT NULL,
+                    {'memory_state STRING' if tbl == 'agent_memory_snapshots'
+                     else 'recent_actions STRING' if tbl == 'agent_action_logs'
+                     else 'profile STRING' if tbl == 'agent_baseline_profiles'
+                     else 'output_content STRING'},
+                    updated_at TIMESTAMP DEFAULT current_timestamp()
+                ) USING DELTA
+            """)
 
-# Layer 1
-integrity_findings = check_memory_integrity(agent_states)
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {detections_table} (
+                detection_id STRING, agent_id STRING, layer STRING,
+                severity STRING, detail STRING, metadata STRING,
+                detected_at STRING
+            ) USING DELTA
+        """)
 
-# Layer 2
-divergence_findings = check_behavioral_divergence(agent_action_logs, historical_profiles)
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {baseline_table} (
+                agent_id STRING, expected_hash STRING,
+                updated_at TIMESTAMP DEFAULT current_timestamp()
+            ) USING DELTA
+        """)
 
-# Layer 3
-active_canaries = [row.asDict() for row in
-                   spark.read.table(canary_table).filter(F.col("leaked") == False).collect()]
-canary_findings = scan_for_canary_leaks(active_canaries, output_logs)
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {canary_table} (
+                canary_id STRING, agent_id STRING, canary_token STRING,
+                deployed_at STRING, leaked BOOLEAN DEFAULT false,
+                leak_location STRING
+            ) USING DELTA
+        """)
 
-# Persist all
-all_findings = integrity_findings + divergence_findings + canary_findings
-detections_written = persist_detections(all_findings)
+    # --- Load Agent State Data (graceful if empty) ---
+    with mon.time("load_agent_data"):
+        snapshots_df = spark.table(cfg.get_table_path("agent_memory_snapshots"))
+        agent_states = {}
+        for row in snapshots_df.collect():
+            try:
+                agent_states[row["agent_id"]] = json.loads(row["memory_state"])
+            except (json.JSONDecodeError, TypeError):
+                pass
 
-summary = {
-    "agent_id": AGENT_ID,
-    "agent_name": AGENT_NAME,
-    "memory_integrity_findings": len(integrity_findings),
-    "behavioral_divergence_findings": len(divergence_findings),
-    "canary_leak_findings": len(canary_findings),
-    "total_detections": detections_written,
-    "status": "success"
-}
+        logs_df = spark.table(cfg.get_table_path("agent_action_logs"))
+        agent_action_logs = {}
+        for row in logs_df.collect():
+            try:
+                agent_action_logs[row["agent_id"]] = json.loads(row["recent_actions"])
+            except (json.JSONDecodeError, TypeError):
+                pass
 
-mon.log_complete(summary)
-dbutils.notebook.exit(json.dumps(summary))
+        profiles_df = spark.table(cfg.get_table_path("agent_baseline_profiles"))
+        historical_profiles = {}
+        for row in profiles_df.collect():
+            try:
+                historical_profiles[row["agent_id"]] = json.loads(row["profile"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        output_df = spark.table(cfg.get_table_path("agent_output_log"))
+        output_logs = [
+            {"agent_id": row["agent_id"], "content": row["output_content"] or ""}
+            for row in output_df.collect()
+        ]
+
+        mon.log_event("data_loaded", {
+            "agent_states": len(agent_states),
+            "action_logs": len(agent_action_logs),
+            "profiles": len(historical_profiles),
+            "output_logs": len(output_logs),
+        })
+
+    # --- Layer 1: Memory Integrity ---
+    with mon.time("layer1_memory_integrity"):
+        integrity_findings = check_memory_integrity(agent_states) if agent_states else []
+
+    # --- Layer 2: Behavioral Divergence ---
+    with mon.time("layer2_behavioral_divergence"):
+        divergence_findings = check_behavioral_divergence(agent_action_logs, historical_profiles) if agent_action_logs and historical_profiles else []
+
+    # --- Layer 3: Canary Tokens ---
+    with mon.time("layer3_canary_tokens"):
+        # Deploy new canaries if needed
+        agent_ids_without_canary = set(agent_states.keys())
+        try:
+            existing_canaries = spark.read.table(canary_table).filter(F.col("leaked") == False)
+            existing_agent_ids = set(row["agent_id"] for row in existing_canaries.select("agent_id").distinct().collect())
+            agent_ids_without_canary -= existing_agent_ids
+        except Exception:
+            existing_canaries = None
+
+        if agent_ids_without_canary:
+            deploy_canaries(list(agent_ids_without_canary))
+
+        # Scan for leaks
+        active_canaries = []
+        try:
+            active_canaries = [row.asDict() for row in
+                               spark.read.table(canary_table).filter(F.col("leaked") == False).collect()]
+        except Exception:
+            pass
+
+        canary_findings = scan_for_canary_leaks(active_canaries, output_logs) if active_canaries and output_logs else []
+
+    # --- Persist All Findings ---
+    with mon.time("persist_findings"):
+        all_findings = integrity_findings + divergence_findings + canary_findings
+        detections_written = persist_detections(all_findings)
+
+    result.update({
+        "memory_integrity_findings": len(integrity_findings),
+        "behavioral_divergence_findings": len(divergence_findings),
+        "canary_leak_findings": len(canary_findings),
+        "total_detections": detections_written,
+        "agents_monitored": len(agent_states),
+    })
+    mon.log_complete(rows_processed=len(agent_states))
+
+except Exception as e:
+    result = {
+        "notebook": "30_stateful_backdoor_defense",
+        "status": "error",
+        "error": str(e)[:500],
+        "error_type": type(e).__name__,
+        "failed_at": datetime.utcnow().isoformat(),
+    }
+    mon.log_error(e, context="stateful_backdoor_defense")
+    raise
+
+finally:
+    print(json.dumps(result, indent=2))
+    dbutils.notebook.exit(json.dumps(result))
