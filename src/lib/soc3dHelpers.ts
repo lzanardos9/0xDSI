@@ -99,72 +99,194 @@ export const AGENT_THOUGHTS: Record<string, string[]> = {
   ],
 };
 
-function agentMat(hex: number, emissive = 0.35, opacity = 0.92): THREE.MeshPhongMaterial {
+const SKIN_TONES = [0xd4a574, 0xc68642, 0x8d5524, 0xe0ac69, 0xf1c27d];
+const HAIR_COLORS: Record<string, number> = {
+  triage: 0x2c1810,
+  enrichment: 0x1a1a2e,
+  orchestrator: 0x3d3d3d,
+  investigation: 0x4a2c17,
+  response: 0x1c1c1c,
+};
+const SHIRT_COLORS: Record<string, number> = {
+  triage: 0x1e3a5f,
+  enrichment: 0x1a3d3d,
+  orchestrator: 0x2d2d3d,
+  investigation: 0x1e2d4a,
+  response: 0x3d1a1a,
+};
+
+function skinMat(tone: number): THREE.MeshPhongMaterial {
   return new THREE.MeshPhongMaterial({
-    color: hex, emissive: hex, emissiveIntensity: emissive,
-    shininess: 90, transparent: true, opacity,
+    color: tone, emissive: tone, emissiveIntensity: 0.05,
+    shininess: 30, transparent: false,
+  });
+}
+
+function clothMat(color: number, emissiveHex: number): THREE.MeshPhongMaterial {
+  return new THREE.MeshPhongMaterial({
+    color, emissive: emissiveHex, emissiveIntensity: 0.08,
+    shininess: 15, transparent: false,
   });
 }
 
 export function buildCharacter(def: AgentDef, angle: number, radius: number): BuiltAgent {
   const group = new THREE.Group();
-  const mat = agentMat(def.hex);
-  const limbMat = agentMat(def.hex, 0.25, 0.88);
+  const agentIdx = AGENT_DEFS.indexOf(def);
+  const skinTone = SKIN_TONES[agentIdx % SKIN_TONES.length];
+  const hairColor = HAIR_COLORS[def.type] || 0x2c1810;
+  const shirtColor = SHIRT_COLORS[def.type] || 0x1e3a5f;
+
+  const skin = skinMat(skinTone);
+  const shirt = clothMat(shirtColor, def.hex);
+  const pantsColor = 0x1a1a2a;
+  const pants = clothMat(pantsColor, 0x0a0a1a);
   const meshes: THREE.Mesh[] = [];
-  const materials: THREE.MeshPhongMaterial[] = [mat, limbMat];
+  const materials: THREE.MeshPhongMaterial[] = [skin, shirt, pants];
   const rad = (angle * Math.PI) / 180;
 
   group.position.set(Math.sin(rad) * radius, 0, Math.cos(rad) * radius);
   group.rotation.y = -rad;
 
+  // Head - realistic proportions
   const headGroup = new THREE.Group();
-  headGroup.position.y = 1.38;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 20, 20), mat);
+  headGroup.position.y = 1.42;
+
+  // Skull shape (slightly elongated sphere)
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 24, 24),
+    skin
+  );
+  head.scale.set(1, 1.08, 1.02);
   meshes.push(head);
   headGroup.add(head);
 
-  const visor = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, 0.07, 0.04),
-    new THREE.MeshPhongMaterial({ color: 0x0f172a, emissive: def.hex, emissiveIntensity: 0.9, transparent: true, opacity: 0.85 })
-  );
-  visor.position.set(0, 0.02, 0.17);
-  headGroup.add(visor);
+  // Hair (cap-like shape on top/back)
+  const hairGeo = new THREE.SphereGeometry(0.168, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  const hairMat = new THREE.MeshPhongMaterial({ color: hairColor, shininess: 50 });
+  const hair = new THREE.Mesh(hairGeo, hairMat);
+  hair.position.y = 0.02;
+  hair.scale.set(1.02, 1.0, 1.05);
+  headGroup.add(hair);
 
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  [-0.06, 0.06].forEach(x => {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 6), eyeMat);
-    eye.position.set(x, 0.035, 0.19);
-    headGroup.add(eye);
+  // Eyes - more realistic with iris
+  const eyeWhiteMat = new THREE.MeshPhongMaterial({ color: 0xf5f5f5, shininess: 100 });
+  const irisMat = new THREE.MeshPhongMaterial({ color: def.hex, emissive: def.hex, emissiveIntensity: 0.3, shininess: 120 });
+  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
+  [-0.055, 0.055].forEach(x => {
+    const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 12), eyeWhiteMat);
+    eyeWhite.position.set(x, -0.01, 0.14);
+    eyeWhite.scale.set(1.2, 0.8, 0.5);
+    headGroup.add(eyeWhite);
+    const iris = new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 10), irisMat);
+    iris.position.set(x, -0.012, 0.155);
+    headGroup.add(iris);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.007, 8, 8), pupilMat);
+    pupil.position.set(x, -0.012, 0.16);
+    headGroup.add(pupil);
   });
 
+  // Eyebrows
+  const browMat = new THREE.MeshPhongMaterial({ color: hairColor });
+  [-0.055, 0.055].forEach(x => {
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.008, 0.012), browMat);
+    brow.position.set(x, 0.025, 0.145);
+    brow.rotation.z = x > 0 ? -0.1 : 0.1;
+    headGroup.add(brow);
+  });
+
+  // Nose
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.015, 0.03, 8),
+    skin
+  );
+  nose.position.set(0, -0.035, 0.155);
+  nose.rotation.x = -Math.PI / 2;
+  headGroup.add(nose);
+
+  // Ears
+  [-0.155, 0.155].forEach(x => {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8), skin);
+    ear.position.set(x, -0.01, 0.0);
+    ear.scale.set(0.4, 0.7, 0.7);
+    headGroup.add(ear);
+  });
+
+  // Subtle ambient glow around head (agent color, very faint)
   const headGlow = new THREE.Mesh(
-    new THREE.SphereGeometry(0.24, 16, 16),
-    new THREE.MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.06, side: THREE.BackSide })
+    new THREE.SphereGeometry(0.22, 16, 16),
+    new THREE.MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.04, side: THREE.BackSide })
   );
   headGroup.add(headGlow);
+
+  // Neck
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.045, 0.055, 0.08, 12),
+    skin
+  );
+  neck.position.y = -0.2;
+  headGroup.add(neck);
+
   group.add(headGroup);
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.34, 0.2), mat);
-  torso.position.y = 1.02;
+  // Torso - shirt/jacket with agent accent
+  const torso = new THREE.Mesh(
+    new THREE.BoxGeometry(0.36, 0.38, 0.2),
+    shirt
+  );
+  torso.position.y = 1.0;
+  torso.scale.set(1, 1, 1);
   meshes.push(torso);
   group.add(torso);
 
+  // Collar / accent trim
+  const collar = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.04, 0.21),
+    new THREE.MeshPhongMaterial({ color: def.hex, emissive: def.hex, emissiveIntensity: 0.2 })
+  );
+  collar.position.set(0, 1.18, 0.0);
+  group.add(collar);
+
+  // Shoulders (rounded)
+  [-1, 1].forEach(s => {
+    const shoulder = new THREE.Mesh(
+      new THREE.SphereGeometry(0.065, 12, 12),
+      shirt
+    );
+    shoulder.position.set(s * 0.22, 1.15, 0);
+    group.add(shoulder);
+  });
+
+  // Arms - more anatomical
   const buildArm = (side: number): THREE.Group => {
     const arm = new THREE.Group();
-    arm.position.set(side * 0.27, 1.08, 0);
-    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.22, 8), limbMat);
-    upper.position.y = -0.11;
+    arm.position.set(side * 0.26, 1.1, 0);
+
+    // Upper arm (shirt sleeve)
+    const upper = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.045, 0.24, 10),
+      shirt
+    );
+    upper.position.y = -0.12;
     meshes.push(upper);
     arm.add(upper);
-    const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.035, 0.22, 8), limbMat);
-    forearm.position.set(0, -0.22, 0.14);
+
+    // Forearm (skin showing, rolled sleeves)
+    const forearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.042, 0.035, 0.24, 10),
+      skin
+    );
+    forearm.position.set(0, -0.24, 0.14);
     forearm.rotation.x = Math.PI / 3;
     meshes.push(forearm);
     arm.add(forearm);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), mat);
-    hand.position.set(0, -0.28, 0.26);
+
+    // Hand
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 8), skin);
+    hand.position.set(0, -0.3, 0.27);
+    hand.scale.set(1, 0.7, 1.2);
     meshes.push(hand);
     arm.add(hand);
+
     return arm;
   };
 
@@ -172,54 +294,78 @@ export function buildCharacter(def: AgentDef, angle: number, radius: number): Bu
   const rightArm = buildArm(1);
   group.add(leftArm, rightArm);
 
+  // Legs - pants
   [-1, 1].forEach(s => {
-    const uleg = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.1, 0.28), limbMat);
-    uleg.position.set(s * 0.11, 0.66, 0.12);
-    meshes.push(uleg);
-    group.add(uleg);
-    const lleg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.32, 8), limbMat);
-    lleg.position.set(s * 0.11, 0.37, 0.26);
-    meshes.push(lleg);
-    group.add(lleg);
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.14), limbMat);
-    foot.position.set(s * 0.11, 0.18, 0.3);
-    meshes.push(foot);
-    group.add(foot);
+    const thigh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.055, 0.22, 10),
+      pants
+    );
+    thigh.position.set(s * 0.1, 0.68, 0.12);
+    thigh.rotation.x = Math.PI / 6;
+    meshes.push(thigh);
+    group.add(thigh);
+
+    const shin = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.04, 0.28, 10),
+      pants
+    );
+    shin.position.set(s * 0.1, 0.4, 0.24);
+    shin.rotation.x = Math.PI / 8;
+    meshes.push(shin);
+    group.add(shin);
+
+    // Shoes
+    const shoe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.08, 0.05, 0.14),
+      new THREE.MeshPhongMaterial({ color: 0x1a1a1a, shininess: 60 })
+    );
+    shoe.position.set(s * 0.1, 0.2, 0.32);
+    group.add(shoe);
   });
 
-  const chairMat = new THREE.MeshPhongMaterial({ color: 0x1e293b, emissive: def.hex, emissiveIntensity: 0.04 });
-  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.05, 0.38), chairMat);
-  seat.position.set(0, 0.58, -0.04);
+  // Modern ergonomic chair
+  const chairMat = new THREE.MeshPhongMaterial({ color: 0x1e293b, emissive: def.hex, emissiveIntensity: 0.03, shininess: 40 });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.04, 0.38), chairMat);
+  seat.position.set(0, 0.56, -0.04);
   group.add(seat);
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.38, 0.05), chairMat);
-  back.position.set(0, 0.84, -0.2);
-  group.add(back);
+  const backrest = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.04), chairMat);
+  backrest.position.set(0, 0.82, -0.2);
+  group.add(backrest);
+  // Chair armrests
+  [-1, 1].forEach(s => {
+    const armrest = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.2), chairMat);
+    armrest.position.set(s * 0.22, 0.64, -0.06);
+    group.add(armrest);
+  });
 
+  // Status ring (agent color halo)
   const statusRing = new THREE.Mesh(
-    new THREE.TorusGeometry(0.24, 0.015, 8, 32),
-    new THREE.MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.6 })
+    new THREE.TorusGeometry(0.2, 0.012, 8, 32),
+    new THREE.MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.5 })
   );
-  statusRing.position.y = 1.68;
+  statusRing.position.y = 1.72;
   statusRing.rotation.x = Math.PI / 2;
   group.add(statusRing);
 
   const secondRing = new THREE.Mesh(
-    new THREE.TorusGeometry(0.30, 0.008, 8, 32),
-    new THREE.MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.25 })
+    new THREE.TorusGeometry(0.26, 0.006, 8, 32),
+    new THREE.MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.2 })
   );
-  secondRing.position.y = 1.68;
+  secondRing.position.y = 1.72;
   secondRing.rotation.x = Math.PI / 2;
   group.add(secondRing);
 
+  // Desk glow
   const deskGlow = new THREE.Mesh(
     new THREE.PlaneGeometry(0.9, 0.35),
-    new THREE.MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.05, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: def.hex, transparent: true, opacity: 0.04, side: THREE.DoubleSide })
   );
   deskGlow.position.set(0, 0.75, 0.48);
   deskGlow.rotation.x = -Math.PI / 2;
   group.add(deskGlow);
 
-  const pl = new THREE.PointLight(def.hex, 0.3, 3);
+  // Subtle point light
+  const pl = new THREE.PointLight(def.hex, 0.25, 3);
   pl.position.set(0, 1.5, 0.5);
   group.add(pl);
 
@@ -591,25 +737,31 @@ export function animateScene(agents: BuiltAgent[], time: number, particleGeo: TH
     const reaction = Math.max(0, a.reactionTime - time);
     const reactionBoost = Math.min(reaction * 2, 1);
 
-    a.headGroup.rotation.y = Math.sin(time * 0.4 + o) * (0.25 + reactionBoost * 0.3);
-    a.headGroup.rotation.x = Math.sin(time * 0.25 + o + 1) * 0.06 - reactionBoost * 0.15;
+    // Natural head movement (subtle sway like a real person)
+    a.headGroup.rotation.y = Math.sin(time * 0.3 + o) * (0.15 + reactionBoost * 0.2);
+    a.headGroup.rotation.x = Math.sin(time * 0.2 + o + 1) * 0.04 - reactionBoost * 0.1;
 
-    const speed = a.def.status === 'alert' ? 9 : a.def.status === 'busy' ? 7 : 3.5;
-    const typingAmplitude = 0.07 + reactionBoost * 0.08;
-    a.leftArm.rotation.x = Math.sin(time * (speed + reactionBoost * 4) + o) * typingAmplitude;
-    a.rightArm.rotation.x = Math.sin(time * (speed + reactionBoost * 4) + o + Math.PI) * typingAmplitude;
+    // Typing animation (more natural rhythm)
+    const speed = a.def.status === 'alert' ? 7 : a.def.status === 'busy' ? 5 : 2.5;
+    const typingAmplitude = 0.05 + reactionBoost * 0.06;
+    a.leftArm.rotation.x = Math.sin(time * (speed + reactionBoost * 3) + o) * typingAmplitude;
+    a.rightArm.rotation.x = Math.sin(time * (speed + reactionBoost * 3) + o + Math.PI * 0.8) * typingAmplitude;
 
-    a.statusRing.rotation.z = time * (0.6 + reactionBoost * 2);
-    const pulse = 1 + Math.sin(time * 2.5 + o) * 0.12 + reactionBoost * 0.15;
+    // Status ring (slower, subtler)
+    a.statusRing.rotation.z = time * (0.4 + reactionBoost * 1.5);
+    const pulse = 1 + Math.sin(time * 2 + o) * 0.08 + reactionBoost * 0.12;
     a.statusRing.scale.set(pulse, pulse, pulse);
 
-    const emissiveBoost = 0.35 + Math.sin(time * 1.5 + o) * 0.1 + reactionBoost * 0.4;
-    a.bodyMaterials.forEach(m => { m.emissiveIntensity = emissiveBoost; });
+    // Subtle clothing emissive for agent identity glow (keep skin natural)
+    const shirtEmissive = 0.06 + Math.sin(time * 1.2 + o) * 0.02 + reactionBoost * 0.1;
+    a.bodyMaterials.forEach((m, idx) => {
+      if (idx > 0) m.emissiveIntensity = shirtEmissive;
+    });
 
     const glowMat = a.deskGlow.material as THREE.MeshBasicMaterial;
-    glowMat.opacity = 0.03 + Math.sin(time * speed + o) * 0.03 + reactionBoost * 0.08;
+    glowMat.opacity = 0.03 + Math.sin(time * speed + o) * 0.02 + reactionBoost * 0.06;
 
-    a.pointLight.intensity = 0.3 + reactionBoost * 0.7 + Math.sin(time * 2 + o) * 0.1;
+    a.pointLight.intensity = 0.2 + reactionBoost * 0.5 + Math.sin(time * 1.5 + o) * 0.08;
   });
 
   const positions = particleGeo.attributes.position as THREE.BufferAttribute;

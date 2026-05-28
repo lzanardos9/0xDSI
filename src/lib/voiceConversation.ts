@@ -69,19 +69,19 @@ const AGENT_ACTIVITY_LINES: Record<string, string[]> = {
 };
 
 const VOICE_PITCH_MAP: Record<string, number> = {
-  triage: 1.1,
-  enrichment: 0.9,
-  orchestrator: 1.0,
-  investigation: 0.85,
-  response: 1.15,
+  triage: 1.0,
+  enrichment: 0.95,
+  orchestrator: 0.92,
+  investigation: 0.88,
+  response: 1.02,
 };
 
 const VOICE_RATE_MAP: Record<string, number> = {
-  triage: 1.05,
-  enrichment: 0.95,
-  orchestrator: 1.0,
-  investigation: 0.9,
-  response: 1.1,
+  triage: 0.92,
+  enrichment: 0.88,
+  orchestrator: 0.9,
+  investigation: 0.85,
+  response: 0.95,
 };
 
 class VoiceConversationEngine {
@@ -114,9 +114,37 @@ class VoiceConversationEngine {
     const english = this.voices.filter(v => v.lang.startsWith('en'));
     if (english.length === 0) return this.voices[0];
 
+    // Prefer natural/premium voices over robotic ones
+    const naturalKeywords = ['natural', 'premium', 'enhanced', 'neural', 'google', 'samantha', 'daniel', 'karen', 'moira', 'alex', 'tom', 'fiona', 'tessa'];
+    const roboticKeywords = ['espeak', 'festival', 'mbrola'];
+
+    const naturalVoices = english.filter(v => {
+      const name = v.name.toLowerCase();
+      if (roboticKeywords.some(k => name.includes(k))) return false;
+      return naturalKeywords.some(k => name.includes(k)) || v.localService === false;
+    });
+
+    const pool = naturalVoices.length >= 3 ? naturalVoices : english;
+
+    // Assign different voices to each agent for distinct personalities
+    const voicePrefs: Record<string, string[]> = {
+      triage: ['zira', 'samantha', 'karen', 'google us', 'female'],
+      enrichment: ['daniel', 'alex', 'google uk', 'male'],
+      orchestrator: ['david', 'tom', 'james', 'google us', 'male'],
+      investigation: ['moira', 'fiona', 'tessa', 'google uk', 'female'],
+      response: ['aaron', 'fred', 'lee', 'google us', 'male'],
+    };
+
+    const prefs = voicePrefs[agentType] || [];
+    for (const pref of prefs) {
+      const match = pool.find(v => v.name.toLowerCase().includes(pref));
+      if (match) return match;
+    }
+
+    // Fallback: assign by index to ensure each agent sounds different
     const agentIndex = AGENT_DEFS.findIndex(a => a.type === agentType);
-    const idx = agentIndex >= 0 ? agentIndex % english.length : 0;
-    return english[idx];
+    const idx = agentIndex >= 0 ? agentIndex % pool.length : 0;
+    return pool[idx];
   }
 
   subscribe(listener: VoiceEventListener) {
@@ -152,7 +180,7 @@ class VoiceConversationEngine {
   }
 
   private scheduleNext() {
-    const delay = 4000 + Math.random() * 6000;
+    const delay = 6000 + Math.random() * 8000;
     this.activityTimer = setTimeout(() => {
       if (!this.enabled) return;
       this.speakRandomActivity();
@@ -216,8 +244,8 @@ class VoiceConversationEngine {
     const voice = this.pickVoice(agentType);
     if (voice) su.voice = voice;
     su.pitch = VOICE_PITCH_MAP[agentType] ?? 1.0;
-    su.rate = VOICE_RATE_MAP[agentType] ?? 1.0;
-    su.volume = 0.8;
+    su.rate = VOICE_RATE_MAP[agentType] ?? 0.9;
+    su.volume = 0.85;
 
     su.onend = () => this.onSpeechEnd();
     su.onerror = () => this.onSpeechEnd();
@@ -230,7 +258,7 @@ class VoiceConversationEngine {
     this.speaking = false;
     if (this.queue.length > 0) {
       const next = this.queue.shift()!;
-      setTimeout(() => this.performSpeak(next), 600);
+      setTimeout(() => this.performSpeak(next), 1200);
     }
   }
 

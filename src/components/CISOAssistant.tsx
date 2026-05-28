@@ -163,9 +163,9 @@ const CISOAssistant = () => {
     const cleaned = text.replace(/[*#_`]/g, '').replace(/\n{2,}/g, '. ').replace(/\n/g, ', ');
     const utterance = new SpeechSynthesisUtterance(cleaned);
     if (preferredVoiceRef.current) utterance.voice = preferredVoiceRef.current;
-    utterance.rate = 0.95;
-    utterance.pitch = 1.08;
-    utterance.volume = 1.0;
+    utterance.rate = 0.92;
+    utterance.pitch = 1.02;
+    utterance.volume = 0.9;
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
