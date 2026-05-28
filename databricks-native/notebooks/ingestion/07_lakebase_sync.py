@@ -3,9 +3,9 @@
 # MAGIC # Ingestion - Lakebase Sync Engine
 # MAGIC
 # MAGIC Production implementation of the **Lakebase** architecture layer:
-# MAGIC - Delta Lake (analytics) -> Lakebase (low-latency RDBMS sync)
+# MAGIC - Delta Lake (analytics) -> Lakebase (low-latency serving tables in Delta)
 # MAGIC - Uses Spark Structured Streaming with CDC (Change Data Feed)
-# MAGIC - Sub-100ms latency for application queries via incremental sync
+# MAGIC - Materializes serving-optimized Delta tables with Z-ORDER indexing
 # MAGIC - Manages session lists and active lists as stateful streaming tables
 # MAGIC
 # MAGIC Sync modes:
@@ -13,7 +13,8 @@
 # MAGIC - **Incremental (1-min)**: events, threat_feeds
 # MAGIC - **Full (hourly)**: reference data, correlation_rules
 # MAGIC
-# MAGIC Target: Postgres (Supabase) via JDBC or Delta Sharing
+# MAGIC Target: Delta serving tables (lakebase_* prefix) optimized for point lookups.
+# MAGIC Optionally syncs to external JDBC targets if secrets are configured.
 
 # COMMAND ----------
 
@@ -31,24 +32,62 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # COMMAND ----------
 
 dbutils.widgets.text("mode", "streaming", "Execution mode: streaming | batch | full_refresh")
-dbutils.widgets.text("target", "postgres", "Sync target: postgres | delta_sharing")
 dbutils.widgets.text("max_concurrent_streams", "6", "Max concurrent streaming queries")
 dbutils.widgets.text("trigger_interval", "10 seconds", "Streaming trigger interval")
 
 mode = dbutils.widgets.get("mode")
-target = dbutils.widgets.get("target")
 max_streams = int(dbutils.widgets.get("max_concurrent_streams"))
 trigger_interval = dbutils.widgets.get("trigger_interval")
 
-# JDBC connection for Postgres sync
-POSTGRES_URL = secrets_mgr.get("supabase-postgres-jdbc-url")
-POSTGRES_PROPERTIES = {
-    "user": secrets_mgr.get("supabase-postgres-user"),
-    "password": secrets_mgr.get("supabase-postgres-password"),
-    "driver": "org.postgresql.Driver",
-    "batchsize": "1000",
-    "isolationLevel": "READ_COMMITTED",
-}
+# Optional external JDBC target (not required -- Delta serving is the default)
+JDBC_TARGET_ENABLED = False
+JDBC_URL = None
+JDBC_PROPERTIES = {}
+try:
+    JDBC_URL = secrets_mgr.get("lakebase-jdbc-url")
+    JDBC_PROPERTIES = {
+        "user": secrets_mgr.get("lakebase-jdbc-user"),
+        "password": secrets_mgr.get("lakebase-jdbc-password"),
+        "driver": secrets_mgr.get("lakebase-jdbc-driver", default="org.postgresql.Driver"),
+        "batchsize": "1000",
+        "isolationLevel": "READ_COMMITTED",
+    }
+    JDBC_TARGET_ENABLED = True
+    mon.log_info("External JDBC target configured for Lakebase sync")
+except Exception:
+    mon.log_info("No external JDBC target; using Delta serving tables only")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Lakebase Serving Table Setup
+
+# COMMAND ----------
+
+def get_serving_table(table_name: str) -> str:
+    """Get the lakebase serving table path (prefixed with lakebase_)."""
+    return cfg.get_table_path(f"lakebase_{table_name}")
+
+
+def ensure_serving_table(source_table: str, target_name: str):
+    """Create serving table if not exists, mirroring source schema."""
+    serving_path = get_serving_table(target_name)
+    source_path = cfg.get_table_path(source_table)
+    try:
+        spark.table(serving_path)
+    except Exception:
+        # Create from source schema with CDC enabled
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {serving_path}
+            USING DELTA
+            TBLPROPERTIES (
+                'delta.enableChangeDataFeed' = 'true',
+                'delta.autoOptimize.optimizeWrite' = 'true',
+                'delta.autoOptimize.autoCompact' = 'true'
+            )
+            AS SELECT * FROM {source_path} WHERE 1=0
+        """)
+        mon.log_event("serving_table_created", {"table": serving_path})
 
 # COMMAND ----------
 
@@ -57,7 +96,6 @@ POSTGRES_PROPERTIES = {
 
 # COMMAND ----------
 
-# Tables to sync with their configuration
 LAKEBASE_SYNC_CONFIG = [
     {
         "source_table": "session_lists",
@@ -65,7 +103,7 @@ LAKEBASE_SYNC_CONFIG = [
         "sync_type": "cdc",
         "priority": 1,
         "key_columns": ["id"],
-        "track_columns": ["name", "list_type", "entries", "ttl_seconds", "expires_at"],
+        "z_order_cols": ["id", "name"],
     },
     {
         "source_table": "active_lists",
@@ -73,7 +111,7 @@ LAKEBASE_SYNC_CONFIG = [
         "sync_type": "cdc",
         "priority": 1,
         "key_columns": ["id"],
-        "track_columns": ["name", "category", "entries", "max_size", "updated_at"],
+        "z_order_cols": ["id", "category"],
     },
     {
         "source_table": "alerts",
@@ -81,7 +119,7 @@ LAKEBASE_SYNC_CONFIG = [
         "sync_type": "cdc",
         "priority": 1,
         "key_columns": ["id"],
-        "track_columns": ["status", "severity", "assigned_to", "resolved_at"],
+        "z_order_cols": ["id", "severity", "created_at"],
     },
     {
         "source_table": "cases",
@@ -89,7 +127,7 @@ LAKEBASE_SYNC_CONFIG = [
         "sync_type": "cdc",
         "priority": 1,
         "key_columns": ["id"],
-        "track_columns": ["status", "severity", "assigned_to", "closed_at"],
+        "z_order_cols": ["id", "status"],
     },
     {
         "source_table": "silver_events",
@@ -99,6 +137,7 @@ LAKEBASE_SYNC_CONFIG = [
         "key_columns": ["id"],
         "watermark_column": "timestamp",
         "max_rows_per_batch": 10000,
+        "z_order_cols": ["timestamp", "source_ip", "event_type"],
     },
     {
         "source_table": "threat_feeds",
@@ -107,6 +146,7 @@ LAKEBASE_SYNC_CONFIG = [
         "priority": 3,
         "key_columns": ["id"],
         "watermark_column": "updated_at",
+        "z_order_cols": ["id"],
     },
     {
         "source_table": "correlation_rules",
@@ -114,8 +154,58 @@ LAKEBASE_SYNC_CONFIG = [
         "sync_type": "full",
         "priority": 4,
         "key_columns": ["id"],
+        "z_order_cols": ["id", "severity"],
     },
 ]
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Write Helpers (Delta Serving + Optional JDBC)
+
+# COMMAND ----------
+
+def write_to_serving(df, config: dict, write_mode: str = "append"):
+    """
+    Write to Delta serving table. Optionally also to JDBC target.
+    Uses MERGE for upserts based on key_columns.
+    """
+    serving_table = get_serving_table(config["target_table"])
+    key_cols = config["key_columns"]
+
+    if write_mode == "overwrite":
+        df.write.mode("overwrite").saveAsTable(serving_table)
+    else:
+        # MERGE/upsert into serving table
+        df.createOrReplaceTempView(f"_lakebase_batch_{config['target_table']}")
+        merge_condition = " AND ".join([f"t.{k} = s.{k}" for k in key_cols])
+        update_cols = [c for c in df.columns if c not in key_cols]
+        update_set = ", ".join([f"t.{c} = s.{c}" for c in update_cols])
+        insert_cols = ", ".join(df.columns)
+        insert_vals = ", ".join([f"s.{c}" for c in df.columns])
+
+        spark.sql(f"""
+            MERGE INTO {serving_table} t
+            USING _lakebase_batch_{config['target_table']} s
+            ON {merge_condition}
+            WHEN MATCHED THEN UPDATE SET {update_set}
+            WHEN NOT MATCHED THEN INSERT ({insert_cols}) VALUES ({insert_vals})
+        """)
+
+    # Optional: also write to external JDBC target
+    if JDBC_TARGET_ENABLED:
+        try:
+            (
+                df.write
+                .format("jdbc")
+                .option("url", JDBC_URL)
+                .option("dbtable", config["target_table"])
+                .options(**JDBC_PROPERTIES)
+                .mode("append")
+                .save()
+            )
+        except Exception as jdbc_err:
+            mon.log_warning(f"JDBC write failed for {config['target_table']}: {jdbc_err}")
 
 # COMMAND ----------
 
@@ -127,13 +217,14 @@ LAKEBASE_SYNC_CONFIG = [
 def start_cdc_stream(config: dict) -> StreamingQuery:
     """
     Start a CDC streaming sync using Delta Change Data Feed.
-    Captures INSERT, UPDATE, DELETE operations and applies them downstream.
+    Captures INSERT, UPDATE, DELETE operations and materializes to serving table.
     """
     source = cfg.get_table_path(config["source_table"])
-    target_table = config["target_table"]
     checkpoint = get_checkpoint_path(cfg, f"lakebase_cdc_{config['source_table']}")
 
-    # Read Change Data Feed from Delta table
+    # Ensure serving table exists
+    ensure_serving_table(config["source_table"], config["target_table"])
+
     cdc_stream = (
         spark.readStream
         .format("delta")
@@ -143,7 +234,7 @@ def start_cdc_stream(config: dict) -> StreamingQuery:
     )
 
     def write_cdc_batch(batch_df, batch_id):
-        """Apply CDC operations to Postgres via JDBC."""
+        """Apply CDC operations to Delta serving table."""
         if batch_df.count() == 0:
             return
 
@@ -154,31 +245,32 @@ def start_cdc_stream(config: dict) -> StreamingQuery:
         updates = batch_df.filter(F.col("_change_type") == "update_postimage")
         deletes = batch_df.filter(F.col("_change_type") == "delete")
 
-        # Drop CDC metadata columns before writing
+        # Drop CDC metadata columns
         cdc_cols = ["_change_type", "_commit_version", "_commit_timestamp"]
         clean_cols = [c for c in batch_df.columns if c not in cdc_cols]
 
-        # Upsert (INSERT + UPDATE) via overwrite mode on key columns
+        # Upsert (INSERT + UPDATE) via MERGE
         upserts = inserts.union(updates).select(clean_cols)
         if upserts.count() > 0:
-            (
-                upserts
-                .write
-                .format("jdbc")
-                .option("url", POSTGRES_URL)
-                .option("dbtable", target_table)
-                .options(**POSTGRES_PROPERTIES)
-                .mode("append")  # Use append + ON CONFLICT via Postgres
-                .save()
-            )
+            write_to_serving(upserts, config, write_mode="append")
 
-        # Track deletes (soft-delete in target)
+        # Handle deletes via soft-delete flag or MERGE DELETE
         if deletes.count() > 0:
-            delete_ids = [row.id for row in deletes.select("id").collect()]
-            mon.log_event(f"lakebase_deletes_{target_table}", {"count": len(delete_ids)})
+            serving_table = get_serving_table(config["target_table"])
+            key_cols = config["key_columns"]
+            delete_df = deletes.select(clean_cols).select(key_cols)
+            delete_df.createOrReplaceTempView(f"_lakebase_deletes_{config['target_table']}")
+            merge_cond = " AND ".join([f"t.{k} = d.{k}" for k in key_cols])
+            spark.sql(f"""
+                MERGE INTO {serving_table} t
+                USING _lakebase_deletes_{config['target_table']} d
+                ON {merge_cond}
+                WHEN MATCHED THEN DELETE
+            """)
+            mon.log_event(f"lakebase_deletes_{config['target_table']}", {"count": deletes.count()})
 
         elapsed_ms = (time.time() - batch_start) * 1000
-        mon.log_event(f"lakebase_cdc_batch_{target_table}", {
+        mon.log_event(f"lakebase_cdc_batch_{config['target_table']}", {
             "batch_id": batch_id,
             "inserts": inserts.count(),
             "updates": updates.count(),
@@ -196,7 +288,7 @@ def start_cdc_stream(config: dict) -> StreamingQuery:
         .start()
     )
 
-    mon.log_info(f"CDC stream started: {config['source_table']} -> {target_table}")
+    mon.log_info(f"CDC stream started: {config['source_table']} -> lakebase_{config['target_table']}")
     return query
 
 # COMMAND ----------
@@ -209,12 +301,13 @@ def start_cdc_stream(config: dict) -> StreamingQuery:
 def run_incremental_sync(config: dict) -> int:
     """
     Incremental sync based on watermark column.
-    Reads only rows newer than last sync point.
+    Reads only rows newer than last sync point, writes to serving table.
     """
     source = cfg.get_table_path(config["source_table"])
-    target_table = config["target_table"]
     watermark_col = config.get("watermark_column", "created_at")
     max_rows = config.get("max_rows_per_batch", 50000)
+
+    ensure_serving_table(config["source_table"], config["target_table"])
 
     # Get last sync watermark from tracking table
     tracking_table = cfg.get_table_path("lakebase_sync_tracking")
@@ -240,23 +333,14 @@ def run_incremental_sync(config: dict) -> int:
     if row_count == 0:
         return 0
 
-    # Write to Postgres
-    (
-        new_rows
-        .write
-        .format("jdbc")
-        .option("url", POSTGRES_URL)
-        .option("dbtable", target_table)
-        .options(**POSTGRES_PROPERTIES)
-        .mode("append")
-        .save()
-    )
+    # Write to serving table
+    write_to_serving(new_rows, config, write_mode="append")
 
     # Update watermark tracking
     new_watermark = new_rows.agg(F.max(watermark_col)).first()[0]
     tracking_data = [{
         "source_table": config["source_table"],
-        "target_table": target_table,
+        "target_table": config["target_table"],
         "last_watermark": new_watermark,
         "rows_synced": row_count,
         "synced_at": datetime.utcnow(),
@@ -282,24 +366,24 @@ def run_incremental_sync(config: dict) -> int:
 # COMMAND ----------
 
 def run_full_sync(config: dict) -> int:
-    """Full table overwrite to target (for reference data that changes infrequently)."""
+    """Full table overwrite to serving table (for reference data)."""
     source = cfg.get_table_path(config["source_table"])
-    target_table = config["target_table"]
+
+    ensure_serving_table(config["source_table"], config["target_table"])
 
     source_df = spark.table(source)
     row_count = source_df.count()
 
-    (
-        source_df
-        .write
-        .format("jdbc")
-        .option("url", POSTGRES_URL)
-        .option("dbtable", target_table)
-        .options(**POSTGRES_PROPERTIES)
-        .option("truncate", "true")
-        .mode("overwrite")
-        .save()
-    )
+    write_to_serving(source_df, config, write_mode="overwrite")
+
+    # Optimize serving table with Z-ORDER for fast point lookups
+    serving_table = get_serving_table(config["target_table"])
+    z_cols = config.get("z_order_cols", config["key_columns"])
+    z_order_expr = ", ".join(z_cols)
+    try:
+        spark.sql(f"OPTIMIZE {serving_table} ZORDER BY ({z_order_expr})")
+    except Exception:
+        pass  # Table may be too small to benefit from optimization
 
     mon.log_event(f"lakebase_full_{config['source_table']}", {"rows_synced": row_count})
     return row_count
@@ -320,6 +404,7 @@ CREATE TABLE IF NOT EXISTS {cfg.get_table_path('lakebase_sync_tracking')} (
     synced_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # COMMAND ----------
@@ -369,15 +454,11 @@ try:
                     else:
                         rows = run_full_sync(config)
                     total_rows_synced += rows
-                    mon.log_event("batch_sync_complete", {
-                        "table": config["source_table"],
-                        "rows": rows,
-                    })
                 except Exception as e:
                     mon.log_warning(f"Batch sync failed for {config['source_table']}: {e}")
 
     elif mode == "full_refresh":
-        # Full refresh all tables
+        # Full refresh all tables with Z-ORDER optimization
         with mon.time("full_refresh_all"):
             for config in LAKEBASE_SYNC_CONFIG:
                 try:
@@ -388,7 +469,7 @@ try:
 
     result.update({
         "mode": mode,
-        "target": target,
+        "jdbc_target_enabled": JDBC_TARGET_ENABLED,
         "tables_configured": len(LAKEBASE_SYNC_CONFIG),
         "cdc_streams_active": len(active_streams),
         "total_rows_synced": total_rows_synced,
@@ -405,7 +486,6 @@ except Exception as e:
         "failed_at": datetime.utcnow().isoformat(),
     }
     mon.log_error(e, context="lakebase_sync")
-    # Stop any active streams on error
     for stream in active_streams:
         try:
             stream.stop()
