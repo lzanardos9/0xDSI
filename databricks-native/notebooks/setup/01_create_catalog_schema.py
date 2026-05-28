@@ -1590,8 +1590,197 @@ print("Production integration tables created (18 tables)")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Phase 1: Entity Spine, Knowledge Store, and UEO Tables
+
+# COMMAND ----------
+
+# Entity Spine: canonical identity graph
+spark.sql("""
+CREATE TABLE IF NOT EXISTS entity_spine (
+    entity_id STRING NOT NULL,
+    entity_type STRING NOT NULL,
+    canonical_name STRING NOT NULL,
+    display_name STRING,
+    attributes MAP<STRING, STRING>,
+    first_seen TIMESTAMP NOT NULL,
+    last_seen TIMESTAMP NOT NULL,
+    observation_count BIGINT DEFAULT 1,
+    risk_score DOUBLE DEFAULT 0.0,
+    centrality_degree DOUBLE DEFAULT 0.0,
+    centrality_betweenness DOUBLE DEFAULT 0.0,
+    centrality_pagerank DOUBLE DEFAULT 0.0,
+    is_high_value BOOLEAN DEFAULT false,
+    is_service_account BOOLEAN DEFAULT false,
+    department STRING,
+    owner STRING,
+    tags ARRAY<STRING>,
+    merged_from ARRAY<STRING>,
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.enableChangeDataFeed' = 'true',
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS entity_edges (
+    edge_id STRING NOT NULL,
+    source_entity_id STRING NOT NULL,
+    target_entity_id STRING NOT NULL,
+    edge_type STRING NOT NULL,
+    weight DOUBLE DEFAULT 1.0,
+    first_seen TIMESTAMP NOT NULL,
+    last_seen TIMESTAMP NOT NULL,
+    observation_count BIGINT DEFAULT 1,
+    properties MAP<STRING, STRING>,
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.enableChangeDataFeed' = 'true',
+    'delta.autoOptimize.optimizeWrite' = 'true'
+)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS entity_mentions (
+    mention_id STRING NOT NULL,
+    event_id STRING NOT NULL,
+    entity_id STRING,
+    entity_type STRING NOT NULL,
+    raw_value STRING NOT NULL,
+    source_field STRING NOT NULL,
+    event_timestamp TIMESTAMP NOT NULL,
+    resolved BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+# Knowledge Store: operational memory
+spark.sql("""
+CREATE TABLE IF NOT EXISTS knowledge_store (
+    ks_id STRING NOT NULL,
+    entry_type STRING NOT NULL,
+    title STRING NOT NULL,
+    content STRING NOT NULL,
+    content_hash STRING NOT NULL,
+    source_id STRING,
+    source_table STRING,
+    entity_ids ARRAY<STRING>,
+    mitre_tactics ARRAY<STRING>,
+    mitre_techniques ARRAY<STRING>,
+    tags ARRAY<STRING>,
+    severity STRING,
+    confidence DOUBLE DEFAULT 0.5,
+    outcome STRING,
+    analyst_id STRING,
+    valid_from TIMESTAMP DEFAULT current_timestamp(),
+    valid_until TIMESTAMP,
+    is_active BOOLEAN DEFAULT true,
+    retrieval_count BIGINT DEFAULT 0,
+    last_retrieved TIMESTAMP,
+    created_at TIMESTAMP DEFAULT current_timestamp(),
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.enableChangeDataFeed' = 'true',
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS knowledge_store_embeddings (
+    ks_id STRING NOT NULL,
+    embedding ARRAY<DOUBLE> NOT NULL,
+    text_for_embedding STRING NOT NULL,
+    model_name STRING NOT NULL,
+    embedded_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+# Unified Evidence Objects (UEO): formal evidence container
+spark.sql("""
+CREATE TABLE IF NOT EXISTS unified_evidence_objects (
+    ueo_id STRING NOT NULL,
+    entity_id STRING NOT NULL,
+    entity_type STRING,
+    entity_name STRING,
+    window_start TIMESTAMP NOT NULL,
+    window_end TIMESTAMP NOT NULL,
+    fused_risk_score DOUBLE NOT NULL,
+    max_signal_score DOUBLE,
+    signal_count INT NOT NULL,
+    independent_signal_count INT NOT NULL,
+    has_cep BOOLEAN DEFAULT false,
+    has_cet BOOLEAN DEFAULT false,
+    has_graph BOOLEAN DEFAULT false,
+    has_negative_correlation BOOLEAN DEFAULT false,
+    has_ks_recall BOOLEAN DEFAULT false,
+    has_model_score BOOLEAN DEFAULT false,
+    has_behavioral BOOLEAN DEFAULT false,
+    disagreement_score DOUBLE DEFAULT 0.0,
+    min_signal_score DOUBLE,
+    score_variance DOUBLE DEFAULT 0.0,
+    causal_chain ARRAY<STRING>,
+    kill_chain_stage STRING,
+    ks_similar_incidents INT DEFAULT 0,
+    ks_prior_suppressions INT DEFAULT 0,
+    ks_best_match_id STRING,
+    ks_best_match_similarity DOUBLE,
+    entity_centrality DOUBLE DEFAULT 0.0,
+    entity_is_high_value BOOLEAN DEFAULT false,
+    entity_is_service_account BOOLEAN DEFAULT false,
+    contributing_event_ids ARRAY<STRING>,
+    contributing_alert_ids ARRAY<STRING>,
+    confluence_processed BOOLEAN DEFAULT false,
+    confluence_verdict_id STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.enableChangeDataFeed' = 'true',
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS ueo_signals (
+    signal_id STRING NOT NULL,
+    ueo_id STRING NOT NULL,
+    signal_class STRING NOT NULL,
+    signal_source STRING NOT NULL,
+    raw_score DOUBLE NOT NULL,
+    decayed_score DOUBLE NOT NULL,
+    independence_weight DOUBLE DEFAULT 1.0,
+    signal_timestamp TIMESTAMP NOT NULL,
+    decay_age_minutes DOUBLE,
+    source_event_ids ARRAY<STRING>,
+    source_alert_id STRING,
+    explanation STRING,
+    metadata STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+print("Phase 1 tables created: Entity Spine (3), Knowledge Store (2), UEO (2)")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Setup Complete
-# MAGIC All 90+ tables have been created in Unity Catalog.
+# MAGIC All tables have been created in Unity Catalog.
 
 # COMMAND ----------
 

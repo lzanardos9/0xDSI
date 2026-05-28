@@ -1265,8 +1265,8 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
 
-        # Stage 2: Confluence Fusion (depends on ALL detection lenses)
-        - task_key: confluence_fusion
+        # Stage 2: UEO Assembly (depends on ALL detection lenses)
+        - task_key: ueo_assembly
           environment_key: default
           depends_on:
             - task_key: behavioral_detection
@@ -1275,6 +1275,20 @@ resources:
             - task_key: graph_correlation_step
             - task_key: negative_correlation_step
           notebook_task:
+            notebook_path: ../notebooks/correlation/09_unified_evidence_object.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              window_seconds: "300"
+              lookback_minutes: "10"
+              min_signals_for_ueo: "2"
+
+        # Stage 3: Confluence Decision (depends on UEO)
+        - task_key: confluence_fusion
+          environment_key: default
+          depends_on:
+            - task_key: ueo_assembly
+          notebook_task:
             notebook_path: ../notebooks/correlation/07_detection_confluence.py
             base_parameters:
               catalog: ${var.catalog}
@@ -1282,7 +1296,7 @@ resources:
               fusion_window_seconds: "300"
               escalation_threshold: "0.78"
 
-        # Stage 3: Triage (depends on Confluence)
+        # Stage 4: Triage (depends on Confluence)
         - task_key: triage_step
           environment_key: default
           depends_on:
@@ -1294,7 +1308,7 @@ resources:
               schema: ${var.schema}
               batch_size: "20"
 
-        # Stage 4: Deduplication + Response (depends on Triage)
+        # Stage 5: Deduplication + Response (depends on Triage)
         - task_key: deduplication
           environment_key: default
           depends_on:
@@ -1316,6 +1330,107 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
               auto_respond_threshold: "0.9"
+
+    # ─────────────────────────────────────────────────────
+    # PHASE 1: ENTITY SPINE, KNOWLEDGE STORE, UEO
+    # ─────────────────────────────────────────────────────
+    entity_spine:
+      name: "[0xDSI] Correlation 08 - Entity Spine Resolution"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: resolve_entities
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/correlation/08_entity_spine.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "10"
+              compute_centrality: "true"
+
+    knowledge_store:
+      name: "[0xDSI] Agent 42 - Knowledge Store Ingestion"
+      schedule:
+        quartz_cron_expression: "0 */10 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: ingest_ks
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/42_knowledge_store.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "ingest"
+              lookback_minutes: "15"
+
+    knowledge_store_gc:
+      name: "[0xDSI] Agent 42 - Knowledge Store GC (Daily)"
+      schedule:
+        quartz_cron_expression: "0 0 3 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: gc_ks
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/42_knowledge_store.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "gc"
+
+    ueo_builder:
+      name: "[0xDSI] Correlation 09 - UEO Builder"
+      schedule:
+        quartz_cron_expression: "0 */2 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: build_ueos
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/correlation/09_unified_evidence_object.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              window_seconds: "300"
+              lookback_minutes: "5"
+              min_signals_for_ueo: "2"
+
+    trend_engine_cet:
+      name: "[0xDSI] Analytics 01 - Trend Engine CET (Continuous)"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: run_cet
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/analytics/01_trend_engine_cet.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
 
     # ─────────────────────────────────────────────────────
     # LLM USAGE INTERCEPTOR
