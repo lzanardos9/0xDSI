@@ -255,32 +255,28 @@ async def health():
 
 
 # ──────────────────────────────────────────────
-# Authentication (Databricks SSO)
+# User Identity (from Databricks Apps reverse proxy headers)
+# Databricks handles all authentication via workspace SSO.
+# The app receives user identity via X-Forwarded-* headers.
 # ──────────────────────────────────────────────
+
+def get_current_user(request: Request) -> dict:
+    """Extract user identity from Databricks-injected HTTP headers."""
+    return {
+        "id": request.headers.get("x-forwarded-user", "unknown"),
+        "username": request.headers.get("x-forwarded-preferred-username", "unknown"),
+        "email": request.headers.get("x-forwarded-email", ""),
+        "display_name": request.headers.get("x-forwarded-preferred-username", "SOC Analyst"),
+        "ip": request.headers.get("x-real-ip", ""),
+        "request_id": request.headers.get("x-request-id", ""),
+    }
+
 
 @app.get("/api/auth/session")
 async def auth_session(request: Request):
-    """Returns current user session from Databricks workspace SSO."""
-    try:
-        w = WorkspaceClient()
-        current_user = w.current_user.me()
-        return {
-            "user": {
-                "id": str(current_user.id),
-                "username": current_user.user_name,
-                "display_name": current_user.display_name or current_user.user_name,
-                "email": current_user.user_name,
-                "full_name": current_user.display_name or current_user.user_name,
-            }
-        }
-    except Exception:
-        return {"user": {
-            "id": "workspace-user",
-            "username": "analyst",
-            "display_name": "SOC Analyst",
-            "email": "analyst@databricks",
-            "full_name": "SOC Analyst",
-        }}
+    """Returns current user session from Databricks workspace SSO headers."""
+    user = get_current_user(request)
+    return {"user": user}
 
 
 # ──────────────────────────────────────────────

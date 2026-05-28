@@ -69,8 +69,8 @@ if [ ! -x "node_modules/.bin/vite" ]; then
     npm install
 fi
 
-npm run build
-echo "  Frontend built -> dist/"
+VITE_DATABRICKS_MODE=true npm run build
+echo "  Frontend built -> dist/ (Databricks mode: auth disabled, using SSO headers)"
 echo ""
 
 # ──────────────────────────────────────────────────────

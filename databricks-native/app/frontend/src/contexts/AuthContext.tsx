@@ -9,7 +9,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 interface User {
   id: string;
   username: string;
-  full_name: string;
+  display_name: string;
   email: string;
 }
 
@@ -43,15 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         if (data.user) {
-          setUser(data.user);
-        } else {
-          // In Databricks Apps, the user is always authenticated via workspace SSO.
-          // If the backend can't identify them, use a default profile.
           setUser({
-            id: 'databricks-user',
-            username: data.username || 'analyst',
-            full_name: data.display_name || 'SOC Analyst',
-            email: data.email || 'analyst@workspace.databricks.com',
+            id: data.user.id,
+            username: data.user.username,
+            display_name: data.user.display_name || data.user.username,
+            email: data.user.email || '',
           });
         }
       } else {
@@ -59,8 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser({
           id: 'databricks-sso-user',
           username: 'analyst',
-          full_name: 'SOC Analyst',
-          email: 'analyst@workspace.databricks.com',
+          display_name: 'SOC Analyst',
+          email: '',
         });
       }
     } catch {
@@ -68,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser({
         id: 'local-dev',
         username: 'developer',
-        full_name: 'Local Developer',
+        display_name: 'Local Developer',
         email: 'dev@local',
       });
     } finally {
