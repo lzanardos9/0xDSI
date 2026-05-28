@@ -120,6 +120,89 @@ class DatabricksClient {
     const response = await fetch(`${API_BASE}/health`);
     return response.json();
   }
+
+  // Phase 1: Entity Spine & Knowledge Store
+  async getEntitySpineStats() {
+    const response = await fetch(`${API_BASE}/entity-spine/stats`);
+    return response.json();
+  }
+
+  async resolveEntity(identifier: string) {
+    const response = await fetch(`${API_BASE}/entity-spine/resolve/${encodeURIComponent(identifier)}`);
+    return response.json();
+  }
+
+  async getKnowledgeStoreStats() {
+    const response = await fetch(`${API_BASE}/knowledge-store/stats`);
+    return response.json();
+  }
+
+  // Phase 1+3: UEO & Fuse Engine
+  async getRecentUEOs(limit = 20) {
+    const response = await fetch(`${API_BASE}/ueo/recent?limit=${limit}`);
+    return response.json();
+  }
+
+  async getFuseResults(limit = 20) {
+    const response = await fetch(`${API_BASE}/fuse-engine/results?limit=${limit}`);
+    return response.json();
+  }
+
+  async getFuseDisagreements(limit = 20) {
+    const response = await fetch(`${API_BASE}/fuse-engine/disagreements?limit=${limit}`);
+    return response.json();
+  }
+
+  // Phase 2: Entity Drift & Bytecode
+  async getEntityDriftScores(limit = 20) {
+    const response = await fetch(`${API_BASE}/entity-drift/scores?limit=${limit}`);
+    return response.json();
+  }
+
+  async getBytecodeAnalysis(limit = 20) {
+    const response = await fetch(`${API_BASE}/bytecode/recent-analysis?limit=${limit}`);
+    return response.json();
+  }
+
+  // Phase 4: MUSE Learning
+  async getMuseProposals(status = 'pending', limit = 30) {
+    const response = await fetch(`${API_BASE}/muse/proposals?status=${status}&limit=${limit}`);
+    return response.json();
+  }
+
+  async getMuseMetrics() {
+    const response = await fetch(`${API_BASE}/muse/metrics`);
+    return response.json();
+  }
+
+  // Phase 4: GUARDIAN Compliance
+  async getCompliancePosture() {
+    const response = await fetch(`${API_BASE}/compliance/posture`);
+    return response.json();
+  }
+
+  // Phase 4: Edge Collectors
+  async getEdgeCollectorFleet() {
+    const response = await fetch(`${API_BASE}/edge-collectors/fleet`);
+    return response.json();
+  }
+
+  async getCollectorHeartbeats(collectorId: string, limit = 50) {
+    const response = await fetch(`${API_BASE}/edge-collectors/${encodeURIComponent(collectorId)}/heartbeats?limit=${limit}`);
+    return response.json();
+  }
+
+  // Phase 4: Typed Bronze
+  async getTypedBronzeMetrics() {
+    const response = await fetch(`${API_BASE}/typed-bronze/metrics`);
+    return response.json();
+  }
+
+  // Full Pipeline Overview (all phases)
+  async getPipelineOverview() {
+    const response = await fetch(`${API_BASE}/pipeline/overview`);
+    return response.json();
+  }
 }
 
 export const db = new DatabricksClient();

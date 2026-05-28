@@ -76,6 +76,7 @@ def fqn(table: str) -> str:
 # ──────────────────────────────────────────────
 
 ALLOWED_TABLES = [
+    # Core SOC tables
     "alerts", "cases", "events", "correlation_rules", "threat_feeds",
     "ioc_entries", "response_actions", "agent_configs", "agent_status",
     "user_profiles", "user_behavior_anomalies", "threat_escalation_rules",
@@ -105,6 +106,25 @@ ALLOWED_TABLES = [
     "unity_catalog_audit_events", "asset_registry",
     "threat_escalation_contracts", "graph_pattern_scores",
     "threat_radar_items", "threat_radar_sources",
+    # Phase 1: Entity Spine, Knowledge Store, UEO
+    "entity_spine", "entity_edges", "entity_mentions",
+    "knowledge_store", "knowledge_store_embeddings",
+    "unified_evidence_objects", "ueo_signals",
+    # Phase 2: CET Drift, Bytecode Semantics, Delta Replay
+    "entity_drift_scores", "entity_drift_history",
+    "bytecode_analysis", "code_behavioral_features", "code_behavioral_baselines",
+    "replay_packs", "detection_evaluations", "learning_data",
+    # Phase 3: Fuse Engine, KS Recall, Model Disagreement
+    "fuse_results", "model_disagreements", "ks_recall_signals",
+    # Phase 4: Typed Bronze, MUSE, GUARDIAN, Edge Collectors
+    "bronze_network_flow", "bronze_endpoint", "bronze_identity",
+    "bronze_cloud", "bronze_application", "bronze_email",
+    "bronze_physical", "bronze_code_runtime",
+    "typed_bronze_quarantine", "typed_bronze_metrics",
+    "tuning_proposals", "lens_weight_proposals", "muse_learning_metrics",
+    "compliance_posture", "compliance_violations", "sla_metrics",
+    "edge_collector_registry", "edge_collector_heartbeats",
+    "edge_collector_configs", "edge_collector_incidents",
 ]
 
 
@@ -234,6 +254,354 @@ async def user_risk_scores(limit: int = 20):
     try:
         results = query(sql)
         return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Phase 1: Entity Spine & Knowledge Store
+# ──────────────────────────────────────────────
+
+@app.get("/api/entity-spine/stats")
+async def entity_spine_stats():
+    """Entity Spine resolution statistics and top entities by centrality."""
+    try:
+        stats = {}
+        stats["total_entities"] = query(f"SELECT COUNT(*) as cnt FROM {fqn('entity_spine')}")[0]["cnt"]
+        stats["total_edges"] = query(f"SELECT COUNT(*) as cnt FROM {fqn('entity_edges')}")[0]["cnt"]
+        stats["unresolved_mentions"] = query(
+            f"SELECT COUNT(*) as cnt FROM {fqn('entity_mentions')} WHERE resolved_entity_id IS NULL"
+        )[0]["cnt"]
+        top_entities = query(f"""
+            SELECT entity_id, canonical_name, entity_type, centrality_score,
+                   connected_entities, first_seen, last_seen
+            FROM {fqn('entity_spine')}
+            ORDER BY centrality_score DESC LIMIT 20
+        """)
+        return {"stats": stats, "top_entities": top_entities}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/entity-spine/resolve/{identifier}")
+async def entity_spine_resolve(identifier: str):
+    """Resolve an identifier (IP, user, host) to its canonical entity."""
+    try:
+        results = query(f"""
+            SELECT es.* FROM {fqn('entity_spine')} es
+            JOIN {fqn('entity_mentions')} em ON es.entity_id = em.resolved_entity_id
+            WHERE em.mention_value = :identifier
+            LIMIT 5
+        """, {"identifier": identifier})
+        edges = []
+        if results:
+            eid = results[0]["entity_id"]
+            edges = query(f"""
+                SELECT * FROM {fqn('entity_edges')}
+                WHERE source_entity_id = :eid OR target_entity_id = :eid
+                ORDER BY weight DESC LIMIT 20
+            """, {"eid": eid})
+        return {"entities": results, "edges": edges}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/knowledge-store/stats")
+async def knowledge_store_stats():
+    """Knowledge Store statistics and recent entries."""
+    try:
+        stats = {}
+        stats["total_entries"] = query(f"SELECT COUNT(*) as cnt FROM {fqn('knowledge_store')}")[0]["cnt"]
+        stats["by_type"] = query(f"""
+            SELECT entry_type, COUNT(*) as cnt
+            FROM {fqn('knowledge_store')}
+            GROUP BY entry_type ORDER BY cnt DESC
+        """)
+        recent = query(f"""
+            SELECT entry_id, entry_type, title, confidence, created_at
+            FROM {fqn('knowledge_store')}
+            ORDER BY created_at DESC LIMIT 15
+        """)
+        return {"stats": stats, "recent_entries": recent}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Phase 1+3: UEO & Fuse Engine
+# ──────────────────────────────────────────────
+
+@app.get("/api/ueo/recent")
+async def ueo_recent(limit: int = 20):
+    """Recent Unified Evidence Objects with signal counts."""
+    try:
+        ueos = query(f"""
+            SELECT ueo_id, entity_id, time_window_start, time_window_end,
+                   signal_count, fused_risk_score, dominant_category,
+                   created_at
+            FROM {fqn('unified_evidence_objects')}
+            ORDER BY created_at DESC LIMIT {limit}
+        """)
+        return JSONResponse(content=ueos)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/fuse-engine/results")
+async def fuse_engine_results(limit: int = 20):
+    """Recent Fuse Engine Dempster-Shafer fusion results."""
+    try:
+        results = query(f"""
+            SELECT fr.fuse_id, fr.ueo_id, fr.entity_id,
+                   fr.belief_threat, fr.belief_benign, fr.uncertainty,
+                   fr.signal_count, fr.independence_groups,
+                   fr.has_disagreement, fr.causal_chain_length,
+                   fr.decision, fr.created_at
+            FROM {fqn('fuse_results')} fr
+            ORDER BY fr.created_at DESC LIMIT {limit}
+        """)
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/fuse-engine/disagreements")
+async def fuse_engine_disagreements(limit: int = 20):
+    """Model disagreements detected by Fuse Engine (conflicting lenses)."""
+    try:
+        results = query(f"""
+            SELECT md.disagreement_id, md.ueo_id, md.entity_id,
+                   md.high_signal_source, md.high_signal_score,
+                   md.low_signal_source, md.low_signal_score,
+                   md.score_gap, md.routed_to, md.created_at
+            FROM {fqn('model_disagreements')} md
+            ORDER BY md.score_gap DESC, md.created_at DESC LIMIT {limit}
+        """)
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Phase 2: Entity Drift & Bytecode Analysis
+# ──────────────────────────────────────────────
+
+@app.get("/api/entity-drift/scores")
+async def entity_drift_scores(limit: int = 20):
+    """Top entities by behavioral drift score."""
+    try:
+        results = query(f"""
+            SELECT entity_id, overall_drift_score,
+                   rate_drift, diversity_drift, temporal_drift,
+                   centrality_drift, pivot_potential_drift,
+                   destination_novelty_drift, computed_at
+            FROM {fqn('entity_drift_scores')}
+            ORDER BY overall_drift_score DESC LIMIT {limit}
+        """)
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/bytecode/recent-analysis")
+async def bytecode_recent(limit: int = 20):
+    """Recent bytecode semantic analysis results."""
+    try:
+        results = query(f"""
+            SELECT analysis_id, event_id, process_name, service,
+                   anomaly_score, matched_patterns, mitre_techniques,
+                   verdict, analyzed_at
+            FROM {fqn('bytecode_analysis')}
+            ORDER BY anomaly_score DESC, analyzed_at DESC LIMIT {limit}
+        """)
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Phase 4: MUSE Learning Proposals
+# ──────────────────────────────────────────────
+
+@app.get("/api/muse/proposals")
+async def muse_proposals(status: str = "pending", limit: int = 30):
+    """MUSE learning proposals awaiting analyst approval."""
+    try:
+        results = query(f"""
+            SELECT proposal_id, proposal_type, title, description,
+                   confidence, impact_estimate, proposed_change,
+                   status, created_at
+            FROM {fqn('tuning_proposals')}
+            WHERE status = :status
+            ORDER BY confidence DESC, created_at DESC LIMIT {limit}
+        """, {"status": status})
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/muse/metrics")
+async def muse_metrics():
+    """MUSE learning loop performance metrics."""
+    try:
+        metrics = query(f"""
+            SELECT loop_type, proposals_generated, proposals_accepted,
+                   proposals_rejected, accuracy_improvement, run_at
+            FROM {fqn('muse_learning_metrics')}
+            ORDER BY run_at DESC LIMIT 20
+        """)
+        weight_proposals = query(f"""
+            SELECT lens_name, current_weight, proposed_weight,
+                   evidence_count, status, created_at
+            FROM {fqn('lens_weight_proposals')}
+            ORDER BY created_at DESC LIMIT 10
+        """)
+        return {"metrics": metrics, "weight_proposals": weight_proposals}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Phase 4: GUARDIAN Compliance
+# ──────────────────────────────────────────────
+
+@app.get("/api/compliance/posture")
+async def compliance_posture():
+    """Current compliance posture from GUARDIAN agent."""
+    try:
+        posture = query(f"""
+            SELECT posture_id, check_type, status, score,
+                   details, checked_at
+            FROM {fqn('compliance_posture')}
+            ORDER BY checked_at DESC LIMIT 30
+        """)
+        violations = query(f"""
+            SELECT violation_id, check_type, severity, title,
+                   description, remediation, detected_at, resolved_at
+            FROM {fqn('compliance_violations')}
+            WHERE resolved_at IS NULL
+            ORDER BY severity DESC, detected_at DESC LIMIT 20
+        """)
+        sla = query(f"""
+            SELECT metric_name, target_value, actual_value,
+                   is_met, measured_at
+            FROM {fqn('sla_metrics')}
+            ORDER BY measured_at DESC LIMIT 20
+        """)
+        return {"posture": posture, "open_violations": violations, "sla_metrics": sla}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Phase 4: Edge Collector Fleet
+# ──────────────────────────────────────────────
+
+@app.get("/api/edge-collectors/fleet")
+async def edge_collector_fleet():
+    """Edge collector fleet status and health overview."""
+    try:
+        collectors = query(f"""
+            SELECT collector_id, collector_name, collector_type,
+                   site_name, region, transport_protocol, status,
+                   version, last_heartbeat, events_forwarded_24h, max_eps
+            FROM {fqn('edge_collector_registry')}
+            WHERE status != 'decommissioned'
+            ORDER BY status, last_heartbeat DESC
+        """)
+        stats = {
+            "total": len(collectors),
+            "healthy": sum(1 for c in collectors if c.get("status") == "healthy"),
+            "offline": sum(1 for c in collectors if c.get("status") == "offline"),
+            "degraded": sum(1 for c in collectors if c.get("status") == "degraded"),
+        }
+        incidents = query(f"""
+            SELECT incident_id, collector_id, incident_type, severity,
+                   title, events_at_risk, created_at
+            FROM {fqn('edge_collector_incidents')}
+            WHERE resolved_at IS NULL
+            ORDER BY created_at DESC LIMIT 15
+        """)
+        return {"collectors": collectors, "stats": stats, "open_incidents": incidents}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/edge-collectors/{collector_id}/heartbeats")
+async def edge_collector_heartbeats(collector_id: str, limit: int = 50):
+    """Recent heartbeats for a specific edge collector."""
+    try:
+        results = query(f"""
+            SELECT heartbeat_id, received_at, cpu_percent, memory_percent,
+                   disk_percent, queue_depth, events_per_second,
+                   bytes_per_second, latency_ms, error_count
+            FROM {fqn('edge_collector_heartbeats')}
+            WHERE collector_id = :cid
+            ORDER BY received_at DESC LIMIT {limit}
+        """, {"cid": collector_id})
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Phase 4: Typed Bronze Ingestion Metrics
+# ──────────────────────────────────────────────
+
+@app.get("/api/typed-bronze/metrics")
+async def typed_bronze_metrics():
+    """Typed bronze ingestion metrics by source type."""
+    try:
+        metrics = query(f"""
+            SELECT source_type, events_processed, events_quarantined,
+                   avg_latency_ms, last_batch_at
+            FROM {fqn('typed_bronze_metrics')}
+            ORDER BY last_batch_at DESC
+        """)
+        quarantine = query(f"""
+            SELECT source_type, failure_reason, COUNT(*) as cnt
+            FROM {fqn('typed_bronze_quarantine')}
+            WHERE quarantined_at > current_timestamp() - INTERVAL 24 HOURS
+            GROUP BY source_type, failure_reason
+            ORDER BY cnt DESC LIMIT 20
+        """)
+        return {"metrics": metrics, "quarantine_summary": quarantine}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Pipeline Overview (all phases combined)
+# ──────────────────────────────────────────────
+
+@app.get("/api/pipeline/overview")
+async def pipeline_overview():
+    """Full 6-stage pipeline overview with health from all phases."""
+    try:
+        overview = {}
+        overview["entity_spine_count"] = query(f"SELECT COUNT(*) as cnt FROM {fqn('entity_spine')}")[0]["cnt"]
+        overview["ueo_24h"] = query(
+            f"SELECT COUNT(*) as cnt FROM {fqn('unified_evidence_objects')} WHERE created_at > current_timestamp() - INTERVAL 24 HOURS"
+        )[0]["cnt"]
+        overview["fuse_24h"] = query(
+            f"SELECT COUNT(*) as cnt FROM {fqn('fuse_results')} WHERE created_at > current_timestamp() - INTERVAL 24 HOURS"
+        )[0]["cnt"]
+        overview["disagreements_24h"] = query(
+            f"SELECT COUNT(*) as cnt FROM {fqn('model_disagreements')} WHERE created_at > current_timestamp() - INTERVAL 24 HOURS"
+        )[0]["cnt"]
+        overview["muse_pending_proposals"] = query(
+            f"SELECT COUNT(*) as cnt FROM {fqn('tuning_proposals')} WHERE status = 'pending'"
+        )[0]["cnt"]
+        overview["compliance_violations"] = query(
+            f"SELECT COUNT(*) as cnt FROM {fqn('compliance_violations')} WHERE resolved_at IS NULL"
+        )[0]["cnt"]
+        overview["edge_collectors_online"] = query(
+            f"SELECT COUNT(*) as cnt FROM {fqn('edge_collector_registry')} WHERE status = 'healthy'"
+        )[0]["cnt"]
+        overview["drifting_entities"] = query(
+            f"SELECT COUNT(*) as cnt FROM {fqn('entity_drift_scores')} WHERE overall_drift_score > 0.6"
+        )[0]["cnt"]
+        return JSONResponse(content=overview)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -531,6 +899,13 @@ GENIE_QUERY_CATALOG = {
     "recent_events_by_type": f"SELECT event_type, COUNT(*) as count FROM {{fqn_events}} WHERE timestamp > current_timestamp() - INTERVAL 1 HOUR GROUP BY event_type ORDER BY count DESC",
     "compliance_status": f"SELECT framework_name, compliance_score, last_assessed FROM {{fqn_compliance}} ORDER BY last_assessed DESC LIMIT 10",
     "network_anomalies": f"SELECT source_ip, dest_ip, protocol, bytes_sent FROM {{fqn_network}} WHERE bytes_sent > 1000000 AND timestamp > current_timestamp() - INTERVAL 1 HOUR ORDER BY bytes_sent DESC LIMIT 20",
+    # Phase 1-4 queries for Genie
+    "entity_spine_top": f"SELECT entity_id, canonical_name, entity_type, centrality_score, connected_entities FROM {{fqn_entity_spine}} ORDER BY centrality_score DESC LIMIT 20",
+    "fuse_high_threat": f"SELECT fuse_id, entity_id, belief_threat, signal_count, has_disagreement, decision, created_at FROM {{fqn_fuse}} WHERE belief_threat > 0.7 ORDER BY belief_threat DESC LIMIT 20",
+    "entity_drift": f"SELECT entity_id, overall_drift_score, rate_drift, diversity_drift, temporal_drift FROM {{fqn_drift}} WHERE overall_drift_score > 0.5 ORDER BY overall_drift_score DESC LIMIT 20",
+    "muse_proposals": f"SELECT proposal_type, title, confidence, status, created_at FROM {{fqn_proposals}} WHERE status = 'pending' ORDER BY confidence DESC LIMIT 15",
+    "compliance_violations": f"SELECT check_type, severity, title, detected_at FROM {{fqn_violations}} WHERE resolved_at IS NULL ORDER BY severity DESC, detected_at DESC LIMIT 15",
+    "edge_collector_health": f"SELECT collector_id, collector_name, status, last_heartbeat, events_forwarded_24h FROM {{fqn_collectors}} WHERE status != 'decommissioned' ORDER BY last_heartbeat DESC",
 }
 
 
@@ -562,7 +937,10 @@ If none of the pre-built queries suffice, generate a SQL query.
 Available tables in Unity Catalog ({CATALOG}.{SCHEMA}): events, alerts, cases,
 correlation_rules, ioc_entries, threat_feeds, user_behavior_anomalies,
 agent_status, agent_configs, threat_campaigns, network_flows, assets,
-response_actions, malware_samples, vulnerability_scans
+response_actions, malware_samples, vulnerability_scans, entity_spine,
+entity_edges, unified_evidence_objects, fuse_results, model_disagreements,
+entity_drift_scores, bytecode_analysis, knowledge_store, tuning_proposals,
+compliance_posture, compliance_violations, edge_collector_registry
 
 Question: {question}
 
@@ -588,17 +966,28 @@ Respond as JSON: {{"queries": ["query_key1", "query_key2"], "custom_sql": null_o
         query_results = {}
         selected_queries = plan.get("queries", [])[:5]
 
+        genie_table_map = {
+            "{fqn}": fqn("alerts"),
+            "{fqn_events}": fqn("events"),
+            "{fqn_uba}": fqn("user_behavior_anomalies"),
+            "{fqn_cases}": fqn("cases"),
+            "{fqn_campaigns}": fqn("threat_campaigns"),
+            "{fqn_agent_status}": fqn("agent_status"),
+            "{fqn_compliance}": fqn("compliance_frameworks"),
+            "{fqn_network}": fqn("network_flows"),
+            "{fqn_entity_spine}": fqn("entity_spine"),
+            "{fqn_fuse}": fqn("fuse_results"),
+            "{fqn_drift}": fqn("entity_drift_scores"),
+            "{fqn_proposals}": fqn("tuning_proposals"),
+            "{fqn_violations}": fqn("compliance_violations"),
+            "{fqn_collectors}": fqn("edge_collector_registry"),
+        }
+
         for q_key in selected_queries:
             if q_key in GENIE_QUERY_CATALOG:
-                sql_template = GENIE_QUERY_CATALOG[q_key]
-                sql_resolved = sql_template.replace("{fqn}", fqn("alerts"))
-                sql_resolved = sql_resolved.replace("{fqn_events}", fqn("events"))
-                sql_resolved = sql_resolved.replace("{fqn_uba}", fqn("user_behavior_anomalies"))
-                sql_resolved = sql_resolved.replace("{fqn_cases}", fqn("cases"))
-                sql_resolved = sql_resolved.replace("{fqn_campaigns}", fqn("threat_campaigns"))
-                sql_resolved = sql_resolved.replace("{fqn_agent_status}", fqn("agent_status"))
-                sql_resolved = sql_resolved.replace("{fqn_compliance}", fqn("compliance_frameworks"))
-                sql_resolved = sql_resolved.replace("{fqn_network}", fqn("network_flows"))
+                sql_resolved = GENIE_QUERY_CATALOG[q_key]
+                for placeholder, table_fqn in genie_table_map.items():
+                    sql_resolved = sql_resolved.replace(placeholder, table_fqn)
                 try:
                     query_results[q_key] = query(sql_resolved)
                 except:
