@@ -3,21 +3,295 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-const IS_DATABRICKS = import.meta.env.VITE_DATABRICKS_MODE === 'true';
+export const IS_DATABRICKS = import.meta.env.VITE_DATABRICKS_MODE === 'true';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  if (!IS_DATABRICKS) {
+// ─── Databricks Proxy: Supabase-compatible client that routes through FastAPI ───
+
+type FilterEntry = { column: string; op: string; value: unknown };
+
+class DatabricksQueryBuilder {
+  private _table: string;
+  private _selectCols = '*';
+  private _filters: FilterEntry[] = [];
+  private _orderCol: string | null = null;
+  private _ascending = false;
+  private _limitVal = 1000;
+  private _offsetVal = 0;
+  private _single = false;
+  private _count = false;
+  private _headOnly = false;
+
+  constructor(table: string) {
+    this._table = table;
+  }
+
+  select(columns = '*', opts?: { count?: string; head?: boolean }) {
+    this._selectCols = columns;
+    if (opts?.count) this._count = true;
+    if (opts?.head) this._headOnly = true;
+    return this;
+  }
+
+  eq(column: string, value: unknown) { this._filters.push({ column, op: 'eq', value }); return this; }
+  neq(column: string, value: unknown) { this._filters.push({ column, op: 'neq', value }); return this; }
+  gt(column: string, value: unknown) { this._filters.push({ column, op: 'gt', value }); return this; }
+  gte(column: string, value: unknown) { this._filters.push({ column, op: 'gte', value }); return this; }
+  lt(column: string, value: unknown) { this._filters.push({ column, op: 'lt', value }); return this; }
+  lte(column: string, value: unknown) { this._filters.push({ column, op: 'lte', value }); return this; }
+  like(column: string, value: string) { this._filters.push({ column, op: 'like', value }); return this; }
+  ilike(column: string, value: string) { this._filters.push({ column, op: 'ilike', value }); return this; }
+  is(column: string, value: unknown) { this._filters.push({ column, op: 'is', value }); return this; }
+  in(column: string, values: unknown[]) { this._filters.push({ column, op: 'in', value: values }); return this; }
+  not(column: string, op: string, value: unknown) {
+    if (op === 'is' && value === null) this._filters.push({ column, op: 'not_is', value: null });
+    else this._filters.push({ column, op: `not_${op}`, value });
+    return this;
+  }
+  contains(column: string, value: unknown) { this._filters.push({ column, op: 'contains', value }); return this; }
+  or(_expr: string) { return this; }
+
+  order(column: string, opts?: { ascending?: boolean }) {
+    this._orderCol = column;
+    this._ascending = opts?.ascending ?? false;
+    return this;
+  }
+
+  limit(n: number) { this._limitVal = n; return this; }
+  range(from: number, to: number) { this._offsetVal = from; this._limitVal = to - from + 1; return this; }
+  single() { this._single = true; return this; }
+  maybeSingle() { this._single = true; return this; }
+
+  async then(resolve: (value: { data: unknown; error: unknown; count?: number }) => void, reject?: (err: unknown) => void) {
+    try {
+      const result = await this._execute();
+      resolve(result);
+    } catch (e) {
+      if (reject) reject(e);
+      else resolve({ data: null, error: e });
+    }
+  }
+
+  private async _execute(): Promise<{ data: unknown; error: unknown; count?: number }> {
+    try {
+      const body: Record<string, unknown> = {
+        select: this._selectCols,
+        filters: this._filters,
+        limit: this._limitVal,
+        offset: this._offsetVal,
+        single: this._single,
+        count: this._count && this._headOnly,
+      };
+      if (this._orderCol) {
+        body.order = this._orderCol;
+        body.ascending = this._ascending;
+      }
+
+      const resp = await fetch(`/api/query/${this._table}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { data: null, error: { message: errText, code: resp.status } };
+      }
+
+      const json = await resp.json();
+
+      if (this._count && this._headOnly) {
+        return { data: null, error: null, count: json.count ?? 0 };
+      }
+      return { data: json, error: null };
+    } catch (e: unknown) {
+      return { data: null, error: { message: (e as Error).message } };
+    }
+  }
+}
+
+class DatabricksMutationBuilder {
+  private _table: string;
+  private _operation: string;
+  private _data: unknown;
+  private _filters: FilterEntry[] = [];
+  private _returning: string | null = null;
+  private _single = false;
+
+  constructor(table: string, operation: string, data: unknown) {
+    this._table = table;
+    this._operation = operation;
+    this._data = data;
+  }
+
+  eq(column: string, value: unknown) { this._filters.push({ column, op: 'eq', value }); return this; }
+  neq(column: string, value: unknown) { this._filters.push({ column, op: 'neq', value }); return this; }
+  in(column: string, values: unknown[]) { this._filters.push({ column, op: 'in', value: values }); return this; }
+  select(columns = '*') { this._returning = columns; return this; }
+  single() { this._single = true; return this; }
+  maybeSingle() { this._single = true; return this; }
+
+  async then(resolve: (value: { data: unknown; error: unknown }) => void, reject?: (err: unknown) => void) {
+    try {
+      const result = await this._execute();
+      resolve(result);
+    } catch (e) {
+      if (reject) reject(e);
+      else resolve({ data: null, error: e });
+    }
+  }
+
+  private async _execute(): Promise<{ data: unknown; error: unknown }> {
+    try {
+      const resp = await fetch(`/api/mutate/${this._table}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operation: this._operation,
+          data: this._data,
+          filters: this._filters,
+          returning: this._returning,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { data: null, error: { message: errText, code: resp.status } };
+      }
+
+      const json = await resp.json();
+      return { data: this._single ? json.data : (Array.isArray(json.data) ? json.data : [json.data]), error: null };
+    } catch (e: unknown) {
+      return { data: null, error: { message: (e as Error).message } };
+    }
+  }
+}
+
+class DatabricksTableProxy {
+  private _table: string;
+
+  constructor(table: string) {
+    this._table = table;
+  }
+
+  select(columns = '*', opts?: { count?: string; head?: boolean }) {
+    const qb = new DatabricksQueryBuilder(this._table);
+    return qb.select(columns, opts);
+  }
+
+  insert(data: unknown) {
+    return new DatabricksMutationBuilder(this._table, 'insert', data);
+  }
+
+  update(data: unknown) {
+    return new DatabricksMutationBuilder(this._table, 'update', data);
+  }
+
+  upsert(data: unknown) {
+    return new DatabricksMutationBuilder(this._table, 'upsert', data);
+  }
+
+  delete() {
+    return new DatabricksMutationBuilder(this._table, 'delete', null);
+  }
+}
+
+class DatabricksAuthProxy {
+  private _user: { id: string; email: string } | null = null;
+
+  async getUser() {
+    if (this._user) return { data: { user: this._user }, error: null };
+    try {
+      const resp = await fetch('/api/auth/session');
+      if (resp.ok) {
+        const data = await resp.json();
+        this._user = data.user || { id: 'databricks-sso-user', email: 'analyst@workspace.databricks.com' };
+        return { data: { user: this._user }, error: null };
+      }
+    } catch { /* fall through */ }
+    this._user = { id: 'databricks-sso-user', email: 'analyst@workspace.databricks.com' };
+    return { data: { user: this._user }, error: null };
+  }
+
+  async getSession() {
+    const { data } = await this.getUser();
+    return { data: { session: data.user ? { user: data.user } : null }, error: null };
+  }
+
+  onAuthStateChange(callback: (event: string, session: unknown) => void) {
+    setTimeout(() => {
+      this.getUser().then(({ data }) => {
+        callback('SIGNED_IN', { user: data.user });
+      });
+    }, 0);
+    return { data: { subscription: { unsubscribe: () => {} } } };
+  }
+
+  async signOut() {
+    this._user = null;
+    return { error: null };
+  }
+
+  async signInWithPassword(_creds: { email: string; password: string }) {
+    const { data } = await this.getUser();
+    return { data: { user: data.user, session: { user: data.user } }, error: null };
+  }
+
+  async signUp(_creds: { email: string; password: string }) {
+    return { data: { user: null, session: null }, error: { message: 'Sign up not supported in Databricks mode' } };
+  }
+}
+
+class DatabricksRealtimeProxy {
+  on(_event: string, _opts: unknown, _callback: unknown) { return this; }
+  subscribe() { return { unsubscribe: () => {} }; }
+}
+
+class DatabricksSupabaseProxy {
+  auth = new DatabricksAuthProxy();
+
+  from(table: string) {
+    return new DatabricksTableProxy(table);
+  }
+
+  channel(_name: string) {
+    return new DatabricksRealtimeProxy();
+  }
+
+  async rpc(functionName: string, params?: Record<string, unknown>) {
+    try {
+      const resp = await fetch(`/api/rpc/${functionName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params: params || {} }),
+      });
+      if (!resp.ok) {
+        return { data: null, error: { message: await resp.text() } };
+      }
+      return { data: await resp.json(), error: null };
+    } catch (e: unknown) {
+      return { data: null, error: { message: (e as Error).message } };
+    }
+  }
+}
+
+// ─── Export the right client based on mode ───
+
+let _supabaseInstance: unknown;
+
+if (IS_DATABRICKS) {
+  _supabaseInstance = new DatabricksSupabaseProxy();
+} else {
+  if (!supabaseUrl || !supabaseAnonKey) {
     console.error('Missing Supabase configuration:', {
       hasUrl: !!supabaseUrl,
       hasKey: !!supabaseAnonKey,
     });
   }
+  _supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
 }
 
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-key'
-);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const supabase = _supabaseInstance as any;
 
 export type SecurityEvent = {
   id: string;

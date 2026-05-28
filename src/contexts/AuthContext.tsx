@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, IS_DATABRICKS } from '../lib/supabase';
 import { trackLogin, trackLogout, setActivityUser, ensureSession } from '../lib/activityTracker';
 
 interface User {
@@ -16,9 +16,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const IS_DATABRICKS = import.meta.env.VITE_DATABRICKS_MODE === 'true' ||
-  (!import.meta.env.VITE_SUPABASE_URL && typeof window !== 'undefined' && window.location.pathname !== '/');
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);

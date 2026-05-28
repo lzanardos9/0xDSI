@@ -128,6 +128,202 @@ ALLOWED_TABLES = [
 ]
 
 
+def _parse_filters(filters: list[dict]) -> tuple[str, dict]:
+    """Parse Supabase-style filters into SQL WHERE clauses."""
+    clauses = []
+    params = {}
+    for i, f in enumerate(filters):
+        col = f["column"]
+        op = f["op"]
+        val = f["value"]
+        pkey = f"p{i}"
+
+        if op == "eq":
+            clauses.append(f"{col} = :{pkey}")
+            params[pkey] = val
+        elif op == "neq":
+            clauses.append(f"{col} != :{pkey}")
+            params[pkey] = val
+        elif op == "gt":
+            clauses.append(f"{col} > :{pkey}")
+            params[pkey] = val
+        elif op == "gte":
+            clauses.append(f"{col} >= :{pkey}")
+            params[pkey] = val
+        elif op == "lt":
+            clauses.append(f"{col} < :{pkey}")
+            params[pkey] = val
+        elif op == "lte":
+            clauses.append(f"{col} <= :{pkey}")
+            params[pkey] = val
+        elif op == "like":
+            clauses.append(f"{col} LIKE :{pkey}")
+            params[pkey] = val
+        elif op == "ilike":
+            clauses.append(f"LOWER({col}) LIKE LOWER(:{pkey})")
+            params[pkey] = val
+        elif op == "is":
+            if val is None:
+                clauses.append(f"{col} IS NULL")
+            else:
+                clauses.append(f"{col} IS :{pkey}")
+                params[pkey] = val
+        elif op == "not_is":
+            clauses.append(f"{col} IS NOT NULL")
+        elif op == "in":
+            if isinstance(val, list) and val:
+                placeholders = ", ".join(f":{pkey}_{j}" for j in range(len(val)))
+                clauses.append(f"{col} IN ({placeholders})")
+                for j, v in enumerate(val):
+                    params[f"{pkey}_{j}"] = v
+        elif op == "contains":
+            clauses.append(f"array_contains({col}, :{pkey})")
+            params[pkey] = val
+
+    where = " AND ".join(clauses) if clauses else ""
+    return where, params
+
+
+@app.post("/api/query/{table_name}")
+async def query_table(table_name: str, request: Request):
+    """
+    Generic Supabase-compatible query endpoint.
+    Accepts a JSON body with: select, filters, order, limit, offset, single.
+    This powers the Supabase client proxy in Databricks mode.
+    """
+    if table_name not in ALLOWED_TABLES:
+        raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+
+    body = await request.json()
+    columns = body.get("select", "*")
+    filters = body.get("filters", [])
+    order = body.get("order", None)
+    order_asc = body.get("ascending", False)
+    limit_val = body.get("limit", 1000)
+    offset_val = body.get("offset", 0)
+    single = body.get("single", False)
+    count_only = body.get("count", False)
+
+    where_clause, params = _parse_filters(filters)
+
+    if count_only:
+        sql = f"SELECT COUNT(*) as count FROM {fqn(table_name)}"
+    else:
+        sql = f"SELECT {columns} FROM {fqn(table_name)}"
+
+    if where_clause:
+        sql += f" WHERE {where_clause}"
+    if order and not count_only:
+        direction = "ASC" if order_asc else "DESC"
+        sql += f" ORDER BY {order} {direction}"
+    if not count_only:
+        sql += f" LIMIT {limit_val} OFFSET {offset_val}"
+
+    try:
+        results = query(sql, params if params else None)
+        if count_only:
+            return JSONResponse(content={"count": results[0]["count"] if results else 0})
+        if single:
+            return JSONResponse(content=results[0] if results else None)
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mutate/{table_name}")
+async def mutate_table(table_name: str, request: Request):
+    """
+    Generic write endpoint for INSERT / UPDATE / DELETE.
+    Accepts JSON: { operation: 'insert'|'update'|'upsert'|'delete', data: {...}, filters: [...], returning: 'col1,col2' }
+    """
+    if table_name not in ALLOWED_TABLES:
+        raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+
+    body = await request.json()
+    operation = body.get("operation", "insert")
+    data = body.get("data", {})
+    filters = body.get("filters", [])
+    returning = body.get("returning", None)
+
+    try:
+        if operation == "insert":
+            if isinstance(data, list):
+                for row in data:
+                    cols = ", ".join(row.keys())
+                    vals = ", ".join(f":{k}" for k in row.keys())
+                    execute_write(f"INSERT INTO {fqn(table_name)} ({cols}) VALUES ({vals})", row)
+            else:
+                cols = ", ".join(data.keys())
+                vals = ", ".join(f":{k}" for k in data.keys())
+                execute_write(f"INSERT INTO {fqn(table_name)} ({cols}) VALUES ({vals})", data)
+
+            if returning:
+                where_clause, params = _parse_filters(filters)
+                sql = f"SELECT {returning} FROM {fqn(table_name)}"
+                if where_clause:
+                    sql += f" WHERE {where_clause}"
+                sql += " ORDER BY created_at DESC LIMIT 1"
+                results = query(sql, params if params else None)
+                return JSONResponse(content={"data": results[0] if results else data})
+            return JSONResponse(content={"data": data})
+
+        elif operation == "update":
+            where_clause, params = _parse_filters(filters)
+            if not where_clause:
+                raise HTTPException(status_code=400, detail="UPDATE requires at least one filter")
+            set_parts = []
+            for k, v in data.items():
+                params[f"set_{k}"] = v
+                set_parts.append(f"{k} = :set_{k}")
+            sql = f"UPDATE {fqn(table_name)} SET {', '.join(set_parts)} WHERE {where_clause}"
+            execute_write(sql, params)
+            return JSONResponse(content={"data": data})
+
+        elif operation == "upsert":
+            cols = ", ".join(data.keys())
+            vals = ", ".join(f":{k}" for k in data.keys())
+            updates = ", ".join(f"{k} = :{k}" for k in data.keys() if k != "id")
+            sql = f"""
+                MERGE INTO {fqn(table_name)} t
+                USING (SELECT :{list(data.keys())[0]} as {list(data.keys())[0]}) s
+                ON t.id = s.{list(data.keys())[0]}
+                WHEN MATCHED THEN UPDATE SET {updates}
+                WHEN NOT MATCHED THEN INSERT ({cols}) VALUES ({vals})
+            """
+            execute_write(sql, data)
+            return JSONResponse(content={"data": data})
+
+        elif operation == "delete":
+            where_clause, params = _parse_filters(filters)
+            if not where_clause:
+                raise HTTPException(status_code=400, detail="DELETE requires at least one filter")
+            sql = f"DELETE FROM {fqn(table_name)} WHERE {where_clause}"
+            execute_write(sql, params)
+            return JSONResponse(content={"data": None})
+
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown operation: {operation}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/rpc/{function_name}")
+async def rpc_call(function_name: str, request: Request):
+    """Execute a stored function / SQL function in Unity Catalog."""
+    body = await request.json()
+    params = body.get("params", {})
+    try:
+        param_list = ", ".join(f":{k}" for k in params.keys()) if params else ""
+        sql = f"SELECT * FROM {fqn(function_name)}({param_list})"
+        results = query(sql, params if params else None)
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/{table_name}")
 async def get_table(
     table_name: str,
