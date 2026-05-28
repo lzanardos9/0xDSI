@@ -200,6 +200,78 @@ resources:
               schema: ${var.schema}
 
     # ─────────────────────────────────────────────────────
+    # ENRICHMENT & MONITORING AGENTS
+    # ─────────────────────────────────────────────────────
+    llm_risk_profiler:
+      name: "[0xDSI] Agent 40 - LLM Risk Profiler"
+      schedule:
+        quartz_cron_expression: "0 */10 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: profile_llm_usage
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/40_llm_risk_profiler.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+
+    glasswing_scanner:
+      name: "[0xDSI] Agent 41 - Glasswing Vulnerability Scanner"
+      schedule:
+        quartz_cron_expression: "0 0 */6 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: scan_assets
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/41_glasswing_scanner.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              scan_type: "full_infrastructure"
+
+    report_generator:
+      name: "[0xDSI] Report Generator (Daily)"
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: generate_operational
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/response/05_report_generator.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              report_type: "operational"
+              lookback_hours: "24"
+        - task_key: generate_executive
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/response/05_report_generator.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              report_type: "executive"
+              lookback_hours: "168"
+          depends_on:
+            - task_key: generate_operational
+
+    # ─────────────────────────────────────────────────────
     # ML TRAINING (Weekly)
     # ─────────────────────────────────────────────────────
     threat_scoring_training:
