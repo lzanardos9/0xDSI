@@ -1286,6 +1286,16 @@ resources:
               lookback_minutes: "10"
               anomaly_threshold: "0.7"
 
+        - task_key: ks_recall_step
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/07_ks_recall_lens.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "10"
+              similarity_threshold: "0.72"
+
         # Stage 2: UEO Assembly (depends on ALL detection lenses)
         - task_key: ueo_assembly
           environment_key: default
@@ -1297,6 +1307,7 @@ resources:
             - task_key: negative_correlation_step
             - task_key: entity_drift_step
             - task_key: bytecode_analysis_step
+            - task_key: ks_recall_step
           notebook_task:
             notebook_path: ../notebooks/correlation/09_unified_evidence_object.py
             base_parameters:
@@ -1306,11 +1317,24 @@ resources:
               lookback_minutes: "10"
               min_signals_for_ueo: "2"
 
-        # Stage 3: Confluence Decision (depends on UEO)
-        - task_key: confluence_fusion
+        # Stage 3: Fuse Engine (Dempster-Shafer, independence, causal chains)
+        - task_key: fuse_engine
           environment_key: default
           depends_on:
             - task_key: ueo_assembly
+          notebook_task:
+            notebook_path: ../notebooks/correlation/10_fuse_engine.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              decay_half_life_minutes: "30"
+              conflict_threshold: "0.4"
+
+        # Stage 4: Confluence Decision (reads Fuse output)
+        - task_key: confluence_fusion
+          environment_key: default
+          depends_on:
+            - task_key: fuse_engine
           notebook_task:
             notebook_path: ../notebooks/correlation/07_detection_confluence.py
             base_parameters:
@@ -1319,7 +1343,7 @@ resources:
               fusion_window_seconds: "300"
               escalation_threshold: "0.78"
 
-        # Stage 4: Triage (depends on Confluence)
+        # Stage 5: Triage (depends on Confluence)
         - task_key: triage_step
           environment_key: default
           depends_on:
@@ -1331,7 +1355,7 @@ resources:
               schema: ${var.schema}
               batch_size: "20"
 
-        # Stage 5: Deduplication + Response (depends on Triage)
+        # Stage 6: Deduplication + Response (depends on Triage)
         - task_key: deduplication
           environment_key: default
           depends_on:
@@ -1498,6 +1522,46 @@ resources:
               schema: ${var.schema}
               lookback_minutes: "10"
               anomaly_threshold: "0.7"
+
+    fuse_engine:
+      name: "[0xDSI] Correlation 10 - Fuse Engine (Dempster-Shafer)"
+      schedule:
+        quartz_cron_expression: "0 */2 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: fuse_evidence
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/correlation/10_fuse_engine.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              decay_half_life_minutes: "30"
+              conflict_threshold: "0.4"
+
+    ks_recall_lens:
+      name: "[0xDSI] Detection 07 - KS Recall Lens"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: ks_recall
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/07_ks_recall_lens.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "10"
+              similarity_threshold: "0.72"
 
     delta_replay_daily:
       name: "[0xDSI] Ops 05 - Delta Replay (Learning Data - Daily)"

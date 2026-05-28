@@ -595,6 +595,127 @@ def record_arbiter_run(lens_counts, signal_count, verdicts):
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## Fuse-Aware Mode: Read from Fuse Engine Output
+# MAGIC
+# MAGIC When the Fuse Engine (correlation/10_fuse_engine.py) has produced results,
+# MAGIC Confluence reads those instead of re-computing fusion from raw signals.
+# MAGIC This separates evidence alignment (Fuse) from decision-making (Confluence).
+
+# COMMAND ----------
+
+def run_fuse_aware_pipeline():
+    """
+    Read unconsumed Fuse results and produce Confluence verdicts.
+    The Fuse Engine already did Dempster-Shafer combination, independence scoring,
+    and disagreement detection. Confluence adds:
+    - Policy-based escalation decision
+    - Novelty gating (KS percentile check)
+    - Priority assignment
+    - Case/alert emission
+    """
+    fuse_path = cfg.get_table_path("fuse_results")
+    try:
+        fuse_df = spark.sql(f"""
+            SELECT *
+            FROM {fuse_path}
+            WHERE confluence_consumed = false
+            ORDER BY ds_combined_score DESC
+            LIMIT {max_signals}
+        """)
+        fuse_count = fuse_df.count()
+    except Exception:
+        return None  # Fuse table doesn't exist yet
+
+    if fuse_count == 0:
+        return None
+
+    print(f"[Fuse-Aware Mode] Processing {fuse_count} fused evidence records")
+
+    fuse_rows = fuse_df.collect()
+    fused_scores_map = {r.entity_id: r.ds_combined_score for r in fuse_rows}
+
+    # Novelty check
+    escalation_candidates = [r.entity_id for r in fuse_rows if r.ds_combined_score >= escalation_threshold]
+    novel_entities = batch_novelty_check(escalation_candidates, fused_scores_map)
+
+    verdicts = []
+    now = datetime.utcnow()
+
+    for row in fuse_rows:
+        # Priority from Fuse score + independence count
+        fused_score = row.ds_combined_score
+        ind_groups = row.independence_groups or 1
+
+        if fused_score >= 0.9 and ind_groups >= 3:
+            priority = "P1"
+        elif fused_score >= escalation_threshold:
+            priority = "P2"
+        elif fused_score >= 0.6:
+            priority = "P3"
+        else:
+            priority = "P4"
+
+        # Disagreement escalation: high-uncertainty cases get P2 minimum
+        if row.has_disagreement and row.conflict_mass >= 0.3:
+            priority = min(priority, "P2")  # alphabetical min = higher priority
+
+        should_escalate = (
+            fused_score >= escalation_threshold and
+            row.entity_id in novel_entities
+        ) or (
+            row.has_disagreement and row.conflict_mass >= conflict_threshold
+        )
+
+        verdicts.append({
+            "id": str(uuid.uuid4()),
+            "entity_id": row.entity_id,
+            "fused_score": fused_score,
+            "priority": priority,
+            "contributing_lenses": json.dumps(row.causal_chain_events or []),
+            "lens_count": row.independent_signals or 0,
+            "kill_chain_stage": row.kill_chain_progression or "unknown",
+            "signal_count": row.total_signals or 0,
+            "arbiter_mode": "dempster_shafer_fuse",
+            "escalated": should_escalate,
+            "verdict_time": now,
+            "fusion_window_seconds": fusion_window,
+        })
+
+    # Mark fuse records as consumed
+    fuse_ids = [r.fuse_id for r in fuse_rows]
+    id_list = "','".join(fuse_ids)
+    spark.sql(f"""
+        UPDATE {fuse_path}
+        SET confluence_consumed = true
+        WHERE fuse_id IN ('{id_list}')
+    """)
+
+    return verdicts
+
+
+# Try Fuse-aware mode first; fall back to legacy fusion
+fuse_verdicts = run_fuse_aware_pipeline()
+
+if fuse_verdicts is not None and len(fuse_verdicts) > 0:
+    # Fuse-aware path
+    persist_verdicts(fuse_verdicts, [])
+    escalated_count = escalate_verdicts(fuse_verdicts)
+    record_arbiter_run({}, len(fuse_verdicts), fuse_verdicts)
+
+    result = {
+        "notebook": "07_detection_confluence",
+        "mode": "fuse_aware",
+        "status": "success",
+        "verdicts": len(fuse_verdicts),
+        "escalated": escalated_count,
+    }
+    mon.log_complete(details=result)
+    print(f"[Fuse-Aware] {len(fuse_verdicts)} verdicts, {escalated_count} escalated")
+    dbutils.notebook.exit(json.dumps(result))
+
+# COMMAND ----------
+
 if mode == "streaming":
     # In streaming mode, use the alerts table as the trigger source
     # Each micro-batch of new alerts triggers a confluence fusion pass

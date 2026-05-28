@@ -2009,6 +2009,107 @@ print("Phase 2 tables created: CET Drift (2), Bytecode (3), Delta Replay (3)")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Phase 3: Fuse Engine, Model Disagreement, KS Recall Lens
+
+# COMMAND ----------
+
+# Fuse Engine output (Dempster-Shafer combined evidence)
+spark.sql("""
+CREATE TABLE IF NOT EXISTS fuse_results (
+    fuse_id STRING NOT NULL,
+    ueo_id STRING NOT NULL,
+    entity_id STRING NOT NULL,
+    entity_name STRING,
+    belief_threat DOUBLE NOT NULL,
+    belief_benign DOUBLE NOT NULL,
+    plausibility_threat DOUBLE NOT NULL,
+    uncertainty_mass DOUBLE NOT NULL,
+    conflict_mass DOUBLE NOT NULL,
+    ds_combined_score DOUBLE NOT NULL,
+    independence_weighted_score DOUBLE NOT NULL,
+    total_signals INT NOT NULL,
+    independent_signals INT NOT NULL,
+    independence_groups INT NOT NULL,
+    causal_chain_length INT DEFAULT 0,
+    causal_chain_events ARRAY<STRING>,
+    kill_chain_progression STRING,
+    temporal_span_minutes DOUBLE DEFAULT 0.0,
+    avg_signal_age_minutes DOUBLE,
+    freshness_factor DOUBLE DEFAULT 1.0,
+    has_disagreement BOOLEAN DEFAULT false,
+    disagreement_type STRING,
+    disagreeing_lenses ARRAY<STRING>,
+    entity_centrality DOUBLE DEFAULT 0.0,
+    entity_is_high_value BOOLEAN DEFAULT false,
+    confluence_consumed BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.enableChangeDataFeed' = 'true',
+    'delta.autoOptimize.optimizeWrite' = 'true'
+)
+""")
+
+# Model Disagreement routing table
+spark.sql("""
+CREATE TABLE IF NOT EXISTS model_disagreements (
+    disagreement_id STRING NOT NULL,
+    fuse_id STRING NOT NULL,
+    ueo_id STRING NOT NULL,
+    entity_id STRING NOT NULL,
+    entity_name STRING,
+    disagreement_type STRING NOT NULL,
+    high_signal_class STRING,
+    high_signal_score DOUBLE,
+    low_signal_class STRING,
+    low_signal_score DOUBLE,
+    score_gap DOUBLE NOT NULL,
+    conflict_mass DOUBLE NOT NULL,
+    entity_is_high_value BOOLEAN DEFAULT false,
+    asset_criticality STRING,
+    explanation STRING,
+    routed_to STRING DEFAULT 'investigation_queue',
+    priority STRING DEFAULT 'P2',
+    resolved BOOLEAN DEFAULT false,
+    resolution STRING,
+    resolved_by STRING,
+    resolved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+# KS Recall Lens output
+spark.sql("""
+CREATE TABLE IF NOT EXISTS ks_recall_signals (
+    recall_id STRING NOT NULL,
+    alert_id STRING,
+    event_id STRING,
+    entity_id STRING,
+    ks_entry_id STRING NOT NULL,
+    ks_entry_type STRING NOT NULL,
+    ks_title STRING,
+    similarity_score DOUBLE NOT NULL,
+    recall_signal_score DOUBLE NOT NULL,
+    signal_direction STRING NOT NULL,
+    ks_outcome STRING,
+    ks_severity STRING,
+    ks_mitre_techniques ARRAY<STRING>,
+    explanation STRING,
+    emitted_as_signal BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+print("Phase 3 tables created: Fuse Engine (1), Model Disagreement (1), KS Recall (1)")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Setup Complete
 # MAGIC All tables have been created in Unity Catalog.
 
