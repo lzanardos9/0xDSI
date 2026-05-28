@@ -2110,6 +2110,284 @@ print("Phase 3 tables created: Fuse Engine (1), Model Disagreement (1), KS Recal
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Phase 4: Typed Bronze, MUSE, GUARDIAN, Edge Collector
+
+# COMMAND ----------
+
+# Typed Bronze quarantine and metrics
+spark.sql("""
+CREATE TABLE IF NOT EXISTS typed_bronze_quarantine (
+    quarantine_id STRING NOT NULL,
+    original_event_id STRING,
+    source_type STRING NOT NULL,
+    source_connector STRING,
+    failure_reason STRING NOT NULL,
+    failed_fields ARRAY<STRING>,
+    raw_data STRING,
+    quarantined_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (source_type)
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS typed_bronze_metrics (
+    metric_id STRING NOT NULL,
+    source_type STRING NOT NULL,
+    batch_timestamp TIMESTAMP NOT NULL,
+    events_received BIGINT DEFAULT 0,
+    events_typed BIGINT DEFAULT 0,
+    events_quarantined BIGINT DEFAULT 0,
+    quarantine_rate DOUBLE DEFAULT 0.0,
+    avg_parse_latency_ms DOUBLE DEFAULT 0.0,
+    schema_version STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+# MUSE Learning Agent
+spark.sql("""
+CREATE TABLE IF NOT EXISTS tuning_proposals (
+    proposal_id STRING NOT NULL,
+    proposal_type STRING NOT NULL,
+    target_rule_id STRING,
+    target_lens STRING,
+    target_entity STRING,
+    current_value STRING,
+    current_precision DOUBLE,
+    current_fp_rate DOUBLE,
+    proposed_value STRING,
+    proposed_action STRING NOT NULL,
+    supporting_samples INT NOT NULL,
+    tp_count INT DEFAULT 0,
+    fp_count INT DEFAULT 0,
+    confidence DOUBLE NOT NULL,
+    rationale STRING NOT NULL,
+    sample_ids ARRAY<STRING>,
+    status STRING DEFAULT 'pending',
+    approved_by STRING,
+    approved_at TIMESTAMP,
+    applied BOOLEAN DEFAULT false,
+    applied_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS lens_weight_proposals (
+    proposal_id STRING NOT NULL,
+    current_weights STRING NOT NULL,
+    proposed_weights STRING NOT NULL,
+    evaluation_window_hours INT,
+    tp_contribution MAP<STRING, DOUBLE>,
+    fp_contribution MAP<STRING, DOUBLE>,
+    expected_precision_change DOUBLE,
+    expected_recall_change DOUBLE,
+    confidence DOUBLE NOT NULL,
+    rationale STRING NOT NULL,
+    status STRING DEFAULT 'pending',
+    approved_by STRING,
+    applied BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS muse_learning_metrics (
+    metric_id STRING NOT NULL,
+    run_timestamp TIMESTAMP NOT NULL,
+    total_feedback INT,
+    tp_feedback INT,
+    fp_feedback INT,
+    fn_feedback INT,
+    suppression_proposals INT DEFAULT 0,
+    threshold_proposals INT DEFAULT 0,
+    weight_proposals INT DEFAULT 0,
+    pattern_proposals INT DEFAULT 0,
+    ks_entries_created INT DEFAULT 0,
+    overall_precision DOUBLE,
+    overall_recall DOUBLE,
+    overall_f1 DOUBLE,
+    lens_quality MAP<STRING, DOUBLE>,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+# GUARDIAN Compliance Agent
+spark.sql("""
+CREATE TABLE IF NOT EXISTS compliance_posture (
+    posture_id STRING NOT NULL,
+    assessed_at TIMESTAMP NOT NULL,
+    overall_score DOUBLE NOT NULL,
+    data_freshness_score DOUBLE DEFAULT 100.0,
+    detection_coverage_score DOUBLE DEFAULT 100.0,
+    entity_health_score DOUBLE DEFAULT 100.0,
+    ks_quality_score DOUBLE DEFAULT 100.0,
+    pipeline_latency_score DOUBLE DEFAULT 100.0,
+    rule_drift_score DOUBLE DEFAULT 100.0,
+    audit_integrity_score DOUBLE DEFAULT 100.0,
+    retention_score DOUBLE DEFAULT 100.0,
+    active_violations INT DEFAULT 0,
+    total_checks INT DEFAULT 0,
+    passed_checks INT DEFAULT 0,
+    soc2_status STRING DEFAULT 'compliant',
+    nist_detect_score DOUBLE DEFAULT 100.0,
+    nist_respond_score DOUBLE DEFAULT 100.0,
+    score_change_24h DOUBLE DEFAULT 0.0,
+    degrading_dimensions ARRAY<STRING>
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS compliance_violations (
+    violation_id STRING NOT NULL,
+    dimension STRING NOT NULL,
+    severity STRING NOT NULL,
+    title STRING NOT NULL,
+    description STRING NOT NULL,
+    current_value STRING,
+    threshold_value STRING,
+    affected_tables ARRAY<STRING>,
+    affected_pipelines ARRAY<STRING>,
+    compliance_framework STRING,
+    auto_remediation_available BOOLEAN DEFAULT false,
+    remediation_suggestion STRING,
+    status STRING DEFAULT 'open',
+    acknowledged_by STRING,
+    resolved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS sla_metrics (
+    metric_id STRING NOT NULL,
+    measured_at TIMESTAMP NOT NULL,
+    metric_name STRING NOT NULL,
+    metric_value DOUBLE NOT NULL,
+    sla_target DOUBLE NOT NULL,
+    is_within_sla BOOLEAN NOT NULL,
+    dimension STRING,
+    details STRING
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+# Edge Collector Framework
+spark.sql("""
+CREATE TABLE IF NOT EXISTS edge_collector_registry (
+    collector_id STRING NOT NULL,
+    collector_name STRING NOT NULL,
+    collector_type STRING NOT NULL,
+    site_name STRING,
+    region STRING,
+    environment STRING,
+    network_zone STRING,
+    transport_protocol STRING NOT NULL,
+    supported_sources ARRAY<STRING>,
+    max_eps INT DEFAULT 10000,
+    compression STRING DEFAULT 'zstd',
+    mtls_cert_fingerprint STRING,
+    mtls_cert_expires TIMESTAMP,
+    api_key_hash STRING,
+    status STRING DEFAULT 'registered',
+    version STRING,
+    config_version INT DEFAULT 1,
+    last_heartbeat TIMESTAMP,
+    last_config_sync TIMESTAMP,
+    events_forwarded_total BIGINT DEFAULT 0,
+    events_forwarded_24h BIGINT DEFAULT 0,
+    registered_at TIMESTAMP DEFAULT current_timestamp(),
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.enableChangeDataFeed' = 'true',
+    'delta.autoOptimize.optimizeWrite' = 'true'
+)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS edge_collector_heartbeats (
+    heartbeat_id STRING NOT NULL,
+    collector_id STRING NOT NULL,
+    received_at TIMESTAMP NOT NULL,
+    cpu_percent DOUBLE,
+    memory_percent DOUBLE,
+    disk_percent DOUBLE,
+    queue_depth BIGINT DEFAULT 0,
+    events_per_second DOUBLE DEFAULT 0.0,
+    bytes_per_second DOUBLE DEFAULT 0.0,
+    latency_ms DOUBLE,
+    dropped_events BIGINT DEFAULT 0,
+    retry_count INT DEFAULT 0,
+    error_count INT DEFAULT 0,
+    last_error STRING,
+    agent_version STRING,
+    config_version INT
+)
+USING DELTA
+PARTITIONED BY (collector_id)
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS edge_collector_configs (
+    config_id STRING NOT NULL,
+    collector_id STRING,
+    config_scope STRING NOT NULL,
+    filter_rules STRING,
+    sampling_rate DOUBLE DEFAULT 1.0,
+    batch_size INT DEFAULT 1000,
+    batch_interval_ms INT DEFAULT 5000,
+    buffer_max_bytes BIGINT DEFAULT 104857600,
+    compression STRING DEFAULT 'zstd',
+    source_includes ARRAY<STRING>,
+    source_excludes ARRAY<STRING>,
+    max_eps INT DEFAULT 10000,
+    throttle_on_backpressure BOOLEAN DEFAULT true,
+    version INT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS edge_collector_incidents (
+    incident_id STRING NOT NULL,
+    collector_id STRING NOT NULL,
+    incident_type STRING NOT NULL,
+    severity STRING NOT NULL,
+    title STRING NOT NULL,
+    description STRING,
+    events_at_risk BIGINT DEFAULT 0,
+    data_loss_estimated BOOLEAN DEFAULT false,
+    auto_resolved BOOLEAN DEFAULT false,
+    resolved_at TIMESTAMP,
+    resolution STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+print("Phase 4 tables created: Typed Bronze (2), MUSE (3), GUARDIAN (3), Edge Collector (4)")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Setup Complete
 # MAGIC All tables have been created in Unity Catalog.
 

@@ -1697,6 +1697,147 @@ resources:
               auto_deploy_threshold: "0.9"
               max_patches_per_run: "20"
 
+    # ─────────────────────────────────────────────────────
+    # PHASE 4: TYPED BRONZE, MUSE, GUARDIAN, EDGE COLLECTORS
+    # ─────────────────────────────────────────────────────
+    typed_bronze_partitioner:
+      name: "[0xDSI] Ingestion 08 - Typed Bronze Partitioner (Streaming)"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: partition_events
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/08_typed_bronze_partitioner.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "streaming"
+              checkpoint_path: "/tmp/checkpoints/typed_bronze"
+
+    muse_alhf_learning:
+      name: "[0xDSI] Agent 25 - MUSE Learning (Every 30min)"
+      schedule:
+        quartz_cron_expression: "0 */30 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: suppression_loop
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/25_alhf_learning.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "suppression"
+              lookback_hours: "24"
+              min_samples: "10"
+        - task_key: weight_calibration
+          environment_key: default
+          depends_on:
+            - task_key: suppression_loop
+          notebook_task:
+            notebook_path: ../notebooks/agents/25_alhf_learning.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "weight_calibration"
+              lookback_hours: "24"
+              min_samples: "10"
+        - task_key: ks_enrichment
+          environment_key: default
+          depends_on:
+            - task_key: weight_calibration
+          notebook_task:
+            notebook_path: ../notebooks/agents/25_alhf_learning.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "ks_enrichment"
+              lookback_hours: "24"
+              min_samples: "10"
+        - task_key: pattern_discovery_loop
+          environment_key: default
+          depends_on:
+            - task_key: ks_enrichment
+          notebook_task:
+            notebook_path: ../notebooks/agents/25_alhf_learning.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "pattern_discovery"
+              lookback_hours: "24"
+              min_samples: "10"
+
+    guardian_compliance:
+      name: "[0xDSI] Agent 43 - GUARDIAN Compliance Monitor"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: compliance_check
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/43_guardian_compliance.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "full"
+              freshness_threshold_minutes: "15"
+              min_mitre_coverage: "0.6"
+
+    edge_collector_heartbeat:
+      name: "[0xDSI] Ingestion 09 - Edge Collector Heartbeat"
+      schedule:
+        quartz_cron_expression: "0 */2 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: check_heartbeats
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/09_edge_collector_framework.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "heartbeat"
+              heartbeat_timeout_seconds: "300"
+              max_backpressure_events: "100000"
+
+    edge_collector_config_sync:
+      name: "[0xDSI] Ingestion 09 - Edge Collector Config Sync (Hourly)"
+      schedule:
+        quartz_cron_expression: "0 0 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: sync_configs
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/09_edge_collector_framework.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "config_sync"
+
     glasswing_detection_confluence:
       name: "[0xDSI] Glasswing - Post-Scan Confluence Sweep"
       schedule:
