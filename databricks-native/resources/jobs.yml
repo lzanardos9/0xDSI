@@ -119,6 +119,46 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
 
+    detection_slm:
+      name: "[0xDSI] Detection SLM - Alert Classifier"
+      schedule:
+        quartz_cron_expression: "0 */2 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: classify_alerts
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/03_detection_slm.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              batch_size: "100"
+              lookback_minutes: "15"
+
+    formula_prioritization:
+      name: "[0xDSI] Formula Priority Scoring Engine"
+      schedule:
+        quartz_cron_expression: "0 */3 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: score_entities
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/04_formula_prioritization.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "30"
+              min_score_threshold: "70"
+
     # ─────────────────────────────────────────────────────
     # RESPONSE AGENTS (Scheduled)
     # ─────────────────────────────────────────────────────
