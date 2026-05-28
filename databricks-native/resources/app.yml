@@ -6,9 +6,8 @@ resources:
       source_code_path: ../app
       config:
         command:
-          - npm
-          - run
-          - start
+          - python
+          - backend/server.py
         env:
           - name: DATABRICKS_WAREHOUSE_ID
             value: ${var.warehouse_id}

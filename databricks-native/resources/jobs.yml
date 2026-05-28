@@ -1162,21 +1162,22 @@ resources:
               max_patches_per_run: "20"
 
     glasswing_detection_confluence:
-      name: "[0xDSI] Glasswing - Detection Confluence Feed"
+      name: "[0xDSI] Glasswing - Post-Scan Confluence Sweep"
       schedule:
-        quartz_cron_expression: "0 */5 * * * ?"
+        quartz_cron_expression: "0 */15 * * * ?"
         timezone_id: "UTC"
       environments:
         - environment_key: default
           spec:
             client: "1"
       tasks:
-        - task_key: confluence_fusion
+        - task_key: confluence_sweep
           environment_key: default
           notebook_task:
             notebook_path: ../notebooks/correlation/07_detection_confluence.py
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
-              fusion_window_seconds: "300"
-              escalation_threshold: "0.78"
+              fusion_window_seconds: "900"
+              escalation_threshold: "0.82"
+              mode: "batch"
