@@ -15,6 +15,10 @@
 
 # COMMAND ----------
 
+require_enabled("vector_search_index")
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from databricks.vector_search.client import VectorSearchClient

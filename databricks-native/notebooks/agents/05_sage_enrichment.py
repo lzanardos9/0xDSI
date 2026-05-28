@@ -11,6 +11,10 @@
 
 # COMMAND ----------
 
+require_enabled("sage_enrichment")
+
+# COMMAND ----------
+
 dbutils.widgets.text("batch_size", "30", "Max alerts per run")
 dbutils.widgets.text("lookback_hours", "1", "Alert window")
 

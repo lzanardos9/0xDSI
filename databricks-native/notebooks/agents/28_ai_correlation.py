@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("ai_correlation")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 28 - AI Correlation (KS Calibrated)
 # MAGIC Identifies uncorrelated high-severity events, uses LLM to generate correlation

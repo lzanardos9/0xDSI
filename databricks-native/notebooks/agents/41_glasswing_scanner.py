@@ -23,6 +23,10 @@
 
 # COMMAND ----------
 
+require_enabled("glasswing_scanner")
+
+# COMMAND ----------
+
 dbutils.widgets.text("mode", "assess", "Mode: assess | ingest")
 dbutils.widgets.text("scan_type", "full_infrastructure", "Scan type")
 

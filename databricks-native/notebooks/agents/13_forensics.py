@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("forensics")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 13 - Digital Forensics
 # MAGIC Collects evidence for open cases, computes SHA256 hashes for chain-of-custody,

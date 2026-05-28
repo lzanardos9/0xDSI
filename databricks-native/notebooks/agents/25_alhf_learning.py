@@ -33,6 +33,10 @@
 
 # COMMAND ----------
 
+require_enabled("alhf_learning")
+
+# COMMAND ----------
+
 dbutils.widgets.text("lookback_hours", "6", "Hours of feedback to process")
 dbutils.widgets.text("min_samples_for_proposal", "5", "Minimum samples before proposing a change")
 dbutils.widgets.text("fp_rate_threshold", "0.3", "FP rate above which to propose suppression")

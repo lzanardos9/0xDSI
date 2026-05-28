@@ -26,6 +26,10 @@
 
 # COMMAND ----------
 
+require_enabled("glasswing_ingest")
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from datetime import datetime, timedelta

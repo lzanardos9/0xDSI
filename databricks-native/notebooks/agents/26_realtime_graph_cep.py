@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("realtime_graph_cep")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 26 - Real-time Graph CEP
 # MAGIC Builds entity relationship graph from 1-hour event window.

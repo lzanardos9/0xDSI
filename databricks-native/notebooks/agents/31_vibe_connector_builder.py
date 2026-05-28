@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("vibe_connector_builder")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 31 - Vibe Connector Builder
 # MAGIC LLM-powered connector generation. Takes specs from connector_requests and generates

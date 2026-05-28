@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("document_analyzer")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 18 - Document Analyzer
 # MAGIC Processes uploaded documents from `pending_documents` table. Extracts IOCs

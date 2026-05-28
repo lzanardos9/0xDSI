@@ -32,6 +32,10 @@
 
 # COMMAND ----------
 
+require_enabled("glasswing_auto_patch")
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from datetime import datetime, timedelta

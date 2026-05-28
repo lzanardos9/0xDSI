@@ -10,6 +10,10 @@
 
 # COMMAND ----------
 
+require_enabled("vanguard_response")
+
+# COMMAND ----------
+
 import json
 from datetime import datetime, timezone
 from pyspark.sql import functions as F

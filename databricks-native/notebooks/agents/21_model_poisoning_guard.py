@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("model_poisoning_guard")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 21 - Model Poisoning Guard
 # MAGIC Monitors ML model predictions for distribution drift and potential poisoning.

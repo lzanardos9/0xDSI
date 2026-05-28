@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("llm_guardrails")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 20 - LLM Guardrails
 # MAGIC Scans recent LLM interactions (30min window) for PII exposure,
@@ -18,17 +22,43 @@ from pyspark.sql import functions as F
 
 # COMMAND ----------
 
-LLM_INTERACTIONS_TABLE = cfg.get_table_path("llm_interactions")
-GUARDRAIL_VIOLATIONS_TABLE = cfg.get_table_path("guardrail_violations")
-ALERTS_TABLE = cfg.get_table_path("alerts")
+LLM_INTERACTIONS_TABLE = get_table_path(cfg, "llm_interactions")
+GUARDRAIL_VIOLATIONS_TABLE = get_table_path(cfg, "guardrail_violations")
+ALERTS_TABLE = get_table_path(cfg, "alerts")
 SCAN_WINDOW_MINUTES = 30
 TOKEN_BUDGET_LIMIT = cfg.get("token_budget_limit", 50000)
 
+# Load active guardrail policies from the control plane
+ACTIVE_POLICIES = []
+try:
+    policies_table = get_table_path(cfg, "llm_guardrail_policies")
+    policies_df = spark.sql(f"""
+        SELECT id, policy_name, policy_type, severity, rules, action, enabled
+        FROM {policies_table}
+        WHERE enabled = true
+    """)
+    ACTIVE_POLICIES = [row.asDict() for row in policies_df.collect()]
+    mon.log_event("policies_loaded", {"count": len(ACTIVE_POLICIES)})
+except Exception as e:
+    mon.log_event("policies_load_fallback", {"reason": str(e)[:200]})
+
+# Build PII patterns from policy rules if available, otherwise use defaults
 PII_PATTERNS = {
     "ssn": r"\b\d{3}-\d{2}-\d{4}\b",
     "credit_card": r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b",
     "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
 }
+
+# Merge custom PII patterns from policies
+for policy in ACTIVE_POLICIES:
+    if policy.get("policy_type") == "pii_detection":
+        try:
+            rules = json.loads(policy["rules"]) if isinstance(policy["rules"], str) else policy.get("rules", {})
+            if isinstance(rules, dict) and "patterns" in rules:
+                for name, pattern in rules["patterns"].items():
+                    PII_PATTERNS[name] = pattern
+        except (json.JSONDecodeError, TypeError):
+            pass
 
 INJECTION_PATTERNS = [
     r"(?i)ignore\s+(all\s+)?previous\s+instructions",
@@ -39,6 +69,16 @@ INJECTION_PATTERNS = [
     r"(?i)\[system\]",
     r"(?i)bypass\s+(content|safety)\s+(filter|policy)",
 ]
+
+# Merge custom injection patterns from policies
+for policy in ACTIVE_POLICIES:
+    if policy.get("policy_type") == "prompt_injection":
+        try:
+            rules = json.loads(policy["rules"]) if isinstance(policy["rules"], str) else policy.get("rules", {})
+            if isinstance(rules, dict) and "patterns" in rules:
+                INJECTION_PATTERNS.extend(rules["patterns"])
+        except (json.JSONDecodeError, TypeError):
+            pass
 
 mon.log_event("agent_start", {"agent": "llm_guardrails", "window_minutes": SCAN_WINDOW_MINUTES})
 

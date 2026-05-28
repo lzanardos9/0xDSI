@@ -20,6 +20,10 @@
 
 # COMMAND ----------
 
+require_enabled("active_list_manager")
+
+# COMMAND ----------
+
 import json
 import uuid
 from datetime import datetime, timedelta

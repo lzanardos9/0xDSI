@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("connector_adapter")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 23 - Connector Adapter
 # MAGIC Normalizes heterogeneous log formats into OCSF schema. Supports CEF, LEEF,

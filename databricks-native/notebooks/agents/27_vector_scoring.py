@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("vector_scoring")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 27 - Vector Augmented Scoring
 # MAGIC Re-scores alerts using embedding similarity to confirmed true positives.

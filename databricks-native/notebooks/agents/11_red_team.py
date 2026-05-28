@@ -22,6 +22,10 @@
 
 # COMMAND ----------
 
+require_enabled("red_team")
+
+# COMMAND ----------
+
 import json
 import hashlib
 import time

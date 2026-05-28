@@ -24,6 +24,10 @@
 
 # COMMAND ----------
 
+require_enabled("threat_simulator")
+
+# COMMAND ----------
+
 import json
 import hashlib
 import uuid

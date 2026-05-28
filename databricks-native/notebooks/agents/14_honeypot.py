@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("honeypot")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 14 - Honeypot/Honeytoken Monitor
 # MAGIC Monitors honeypot/honeytoken tables for unprocessed interactions.

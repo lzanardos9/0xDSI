@@ -2,13 +2,15 @@
 # MAGIC %md
 # MAGIC # 0xDSI Shared Configuration
 # MAGIC Central configuration resolver for all SOC notebooks.
-# MAGIC Handles catalog/schema resolution, environment detection, and widget defaults.
+# MAGIC Handles catalog/schema resolution, environment detection, widget defaults,
+# MAGIC and runtime settings from the system_settings Delta table.
 
 # COMMAND ----------
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Any
 import os
+import json
 
 
 @dataclass
@@ -26,6 +28,15 @@ class SOCConfig:
     default_timeout_seconds: int = 300
     enable_monitoring: bool = True
     tags: dict = field(default_factory=dict)
+    _runtime_settings: dict = field(default_factory=dict, repr=False)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Read a setting from runtime system_settings (loaded from Delta)."""
+        return self._runtime_settings.get(key, default)
+
+    def get_table_path(self, table_name: str) -> str:
+        """Return fully qualified three-part table name."""
+        return f"`{self.catalog}`.`{self.schema}`.`{table_name}`"
 
 
 def _detect_environment(catalog: str) -> str:
@@ -48,14 +59,33 @@ def _resolve_volume_base(catalog: str, schema: str) -> str:
     return f"/Volumes/{catalog}/{schema}/data"
 
 
-def load_config(dbutils) -> SOCConfig:
+def _load_system_settings(spark, catalog: str, schema: str) -> dict:
+    """Load key-value settings from the system_settings Delta table."""
+    settings = {}
+    try:
+        table = f"`{catalog}`.`{schema}`.`system_settings`"
+        rows = spark.sql(f"SELECT setting_key, setting_value FROM {table}").collect()
+        for row in rows:
+            val = row.setting_value
+            # Auto-coerce JSON values
+            try:
+                val = json.loads(val)
+            except (json.JSONDecodeError, TypeError):
+                pass
+            settings[row.setting_key] = val
+    except Exception:
+        pass  # Table may not exist yet during initial setup
+    return settings
+
+
+def load_config(dbutils, spark=None) -> SOCConfig:
     """
-    Load configuration from Databricks widgets with sensible defaults.
-    Call this at the top of every notebook.
+    Load configuration from Databricks widgets with sensible defaults,
+    then overlay runtime settings from the system_settings Delta table.
 
     Usage:
         from _shared.config import load_config
-        cfg = load_config(dbutils)
+        cfg = load_config(dbutils, spark)
         spark.sql(f"USE CATALOG {cfg.catalog}")
         spark.sql(f"USE SCHEMA {cfg.schema}")
     """
@@ -78,6 +108,11 @@ def load_config(dbutils) -> SOCConfig:
     checkpoint_base = _resolve_checkpoint_base(environment, catalog, schema)
     volume_base = _resolve_volume_base(catalog, schema)
 
+    # Load runtime settings from Delta table
+    runtime_settings = {}
+    if spark is not None:
+        runtime_settings = _load_system_settings(spark, catalog, schema)
+
     tags = {
         "catalog": catalog,
         "schema": schema,
@@ -96,6 +131,7 @@ def load_config(dbutils) -> SOCConfig:
         model_fallback_endpoint=model_fallback,
         enable_monitoring=(environment != "dev"),
         tags=tags,
+        _runtime_settings=runtime_settings,
     )
 
 
@@ -122,3 +158,17 @@ def get_table_path(cfg: SOCConfig, table_name: str) -> str:
 def get_checkpoint_path(cfg: SOCConfig, stream_name: str) -> str:
     """Return checkpoint location for a named streaming query."""
     return f"{cfg.checkpoint_base}/{stream_name}"
+
+
+def is_agent_enabled(spark, cfg: SOCConfig, agent_name: str) -> bool:
+    """Check if a specific agent is enabled in the agent_configs table."""
+    try:
+        table = get_table_path(cfg, "agent_configs")
+        row = spark.sql(
+            f"SELECT enabled FROM {table} WHERE name = '{agent_name}' OR agent_type = '{agent_name}' LIMIT 1"
+        ).collect()
+        if row:
+            return bool(row[0].enabled)
+        return True  # Default to enabled if not in table
+    except Exception:
+        return True  # Default to enabled if table doesn't exist

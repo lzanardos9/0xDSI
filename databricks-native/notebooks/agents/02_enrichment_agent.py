@@ -11,6 +11,10 @@
 
 # COMMAND ----------
 
+require_enabled("enrichment_agent")
+
+# COMMAND ----------
+
 dbutils.widgets.text("batch_size", "50", "Max alerts to enrich per run")
 dbutils.widgets.text("lookback_hours", "2", "Alert age window")
 

@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("stateful_backdoor_defense")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 30 - Stateful Backdoor Defense
 # MAGIC Three defense layers:

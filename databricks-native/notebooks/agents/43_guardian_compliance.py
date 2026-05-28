@@ -30,6 +30,10 @@
 
 # COMMAND ----------
 
+require_enabled("guardian_compliance")
+
+# COMMAND ----------
+
 dbutils.widgets.text("freshness_sla_minutes", "5", "Max minutes before data is stale")
 dbutils.widgets.text("e2e_latency_sla_seconds", "120", "Max event-to-alert latency")
 dbutils.widgets.text("min_mitre_coverage", "0.7", "Minimum fraction of MITRE techniques covered")

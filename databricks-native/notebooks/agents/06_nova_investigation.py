@@ -10,6 +10,10 @@
 
 # COMMAND ----------
 
+require_enabled("nova_investigation")
+
+# COMMAND ----------
+
 import json
 from datetime import datetime, timezone
 from pyspark.sql import functions as F

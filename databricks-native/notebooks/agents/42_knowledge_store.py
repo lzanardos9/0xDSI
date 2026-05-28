@@ -40,6 +40,10 @@
 
 # COMMAND ----------
 
+require_enabled("knowledge_store")
+
+# COMMAND ----------
+
 dbutils.widgets.text("mode", "ingest", "Mode: ingest | reembed | gc | stats")
 dbutils.widgets.text("lookback_minutes", "15", "Minutes to look back for new material")
 dbutils.widgets.text("embedding_model", "databricks-bge-large-en", "Embedding model endpoint")

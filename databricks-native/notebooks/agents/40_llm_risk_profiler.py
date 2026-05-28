@@ -19,6 +19,10 @@
 
 # COMMAND ----------
 
+require_enabled("llm_risk_profiler")
+
+# COMMAND ----------
+
 dbutils.widgets.text("lookback_hours", "24", "Analysis window")
 dbutils.widgets.text("min_queries", "5", "Minimum queries to profile")
 

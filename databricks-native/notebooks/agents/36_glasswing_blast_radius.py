@@ -32,6 +32,10 @@
 
 # COMMAND ----------
 
+require_enabled("glasswing_blast_radius")
+
+# COMMAND ----------
+
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from datetime import datetime, timedelta

@@ -13,6 +13,10 @@
 
 # COMMAND ----------
 
+require_enabled("threat_hunter_agent")
+
+# COMMAND ----------
+
 dbutils.widgets.text("lookback_hours", "24", "Hunting window")
 dbutils.widgets.text("max_hypotheses", "10", "Max hypotheses per run")
 

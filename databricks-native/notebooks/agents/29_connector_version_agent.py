@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("connector_version_agent")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 29 - Connector Version Agent
 # MAGIC Monitors connector vendor versions, detects schema changes between versions,

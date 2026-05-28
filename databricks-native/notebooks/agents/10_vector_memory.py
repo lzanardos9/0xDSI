@@ -20,6 +20,10 @@
 
 # COMMAND ----------
 
+require_enabled("vector_memory")
+
+# COMMAND ----------
+
 import json
 import numpy as np
 from datetime import datetime, timedelta

@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("playbook_generator")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 16 - Playbook Generator
 # MAGIC Queries alerts grouped by MITRE ATT&CK technique that lack automated playbooks.

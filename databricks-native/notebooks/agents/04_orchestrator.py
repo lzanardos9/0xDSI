@@ -29,11 +29,11 @@ import json, time
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Pipeline Definition
+# MAGIC ## Pipeline Definition (Dynamic from agent_configs)
 
 # COMMAND ----------
 
-PIPELINE_STAGES = [
+DEFAULT_PIPELINE_STAGES = [
     {"name": "triage", "notebook": "01_triage_agent", "parallel_group": 1},
     {"name": "enrichment", "notebook": "02_enrichment_agent", "parallel_group": 2},
     {"name": "sage_enrichment", "notebook": "05_sage_enrichment", "parallel_group": 2},
@@ -41,7 +41,35 @@ PIPELINE_STAGES = [
     {"name": "vector_memory", "notebook": "10_vector_memory", "parallel_group": 3},
 ]
 
-orchestration_table = cfg.get_table_path("orchestration_runs")
+# Load enabled agents from the control plane (agent_configs table)
+agent_configs_table = get_table_path(cfg, "agent_configs")
+try:
+    enabled_agents_df = spark.sql(f"""
+        SELECT name, agent_type, config
+        FROM {agent_configs_table}
+        WHERE enabled = true
+    """)
+    enabled_agent_names = set(
+        row.agent_type or row.name for row in enabled_agents_df.collect()
+    )
+    # Filter pipeline to only include enabled stages
+    PIPELINE_STAGES = [
+        stage for stage in DEFAULT_PIPELINE_STAGES
+        if stage["name"] in enabled_agent_names or not enabled_agent_names
+    ]
+    if not PIPELINE_STAGES:
+        PIPELINE_STAGES = DEFAULT_PIPELINE_STAGES
+    mon.log_event("pipeline_config", {
+        "total_defined": len(DEFAULT_PIPELINE_STAGES),
+        "enabled_count": len(PIPELINE_STAGES),
+        "disabled": [s["name"] for s in DEFAULT_PIPELINE_STAGES if s not in PIPELINE_STAGES],
+    })
+except Exception as e:
+    # If agent_configs table doesn't exist, use all stages
+    PIPELINE_STAGES = DEFAULT_PIPELINE_STAGES
+    mon.log_event("pipeline_config_fallback", {"reason": str(e)[:200]})
+
+orchestration_table = get_table_path(cfg, "orchestration_runs")
 spark.sql(f"""
     CREATE TABLE IF NOT EXISTS {orchestration_table} (
         id STRING, run_mode STRING, stage_name STRING,

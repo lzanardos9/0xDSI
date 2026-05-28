@@ -26,7 +26,7 @@ notebook_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in dir()
 if notebook_dir not in sys.path:
     sys.path.insert(0, notebook_dir)
 
-from config import load_config, SOCConfig, activate_catalog, get_table_path, get_checkpoint_path
+from config import load_config, SOCConfig, activate_catalog, get_table_path, get_checkpoint_path, is_agent_enabled
 from llm_client import SOCLLMClient, LLMResponse, LLMBudgetExhausted, LLMAllEndpointsFailed
 from sql_safe import (
     QueryBuilder, SafeQuery, safe_identifier, safe_value, safe_in_list,
@@ -43,7 +43,7 @@ from secrets import SecretsManager, SecretNotFound, KNOWN_SECRETS
 # COMMAND ----------
 
 # Initialize core services
-cfg = load_config(dbutils)
+cfg = load_config(dbutils, spark)
 activate_catalog(spark, cfg)
 
 mon = Monitor(spark, cfg)
@@ -57,6 +57,20 @@ llm = SOCLLMClient(cfg)
 def qb(table: str) -> QueryBuilder:
     """Convenience factory for QueryBuilder with catalog/schema pre-filled."""
     return QueryBuilder(table, catalog=cfg.catalog, schema=cfg.schema)
+
+
+def require_enabled(agent_name: str):
+    """
+    Gate check: exit immediately if this agent is disabled in agent_configs.
+    Call at the top of any agent notebook after bootstrap:
+        require_enabled("triage")
+    """
+    if not is_agent_enabled(spark, cfg, agent_name):
+        msg = f"Agent '{agent_name}' is disabled in agent_configs. Skipping execution."
+        mon.log_event("agent_disabled_skip", {"agent": agent_name})
+        mon.log_complete(details={"status": "skipped", "reason": "disabled_in_control_plane"})
+        import json
+        dbutils.notebook.exit(json.dumps({"status": "skipped", "reason": f"{agent_name} disabled"}))
 
 
 # COMMAND ----------

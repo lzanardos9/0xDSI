@@ -15,6 +15,10 @@
 
 # COMMAND ----------
 
+require_enabled("triage_agent")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Configuration
 

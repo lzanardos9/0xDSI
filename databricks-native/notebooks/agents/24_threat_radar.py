@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("threat_radar")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 24 - Threat Radar
 # MAGIC Fetches latest IOCs from threat feeds, correlates against recent events (1h window),

@@ -23,17 +23,51 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("feeds", "otx,abuseipdb,misp,virustotal", "Comma-separated feed list")
+dbutils.widgets.text("feeds", "", "Comma-separated feed list (empty = read from threat_feeds table)")
 dbutils.widgets.text("lookback_days", "7", "Days to look back for new IOCs")
 dbutils.widgets.text("max_iocs_per_feed", "5000", "Max IOCs per feed per run")
 dbutils.widgets.text("confidence_decay_days", "30", "Days after which confidence starts decaying")
 dbutils.widgets.text("expiry_days", "90", "Days until IOC is marked expired")
 
-feeds = [f.strip() for f in dbutils.widgets.get("feeds").split(",") if f.strip()]
+feeds_override = dbutils.widgets.get("feeds").strip()
 lookback_days = int(dbutils.widgets.get("lookback_days"))
 max_iocs = int(dbutils.widgets.get("max_iocs_per_feed"))
 confidence_decay_days = int(dbutils.widgets.get("confidence_decay_days"))
 expiry_days = int(dbutils.widgets.get("expiry_days"))
+
+# Read enabled feeds from the control plane (threat_feeds table in Unity Catalog)
+feeds = []
+if feeds_override:
+    feeds = [f.strip() for f in feeds_override.split(",") if f.strip()]
+else:
+    try:
+        feeds_table = get_table_path(cfg, "threat_feeds")
+        enabled_feeds_df = spark.sql(f"""
+            SELECT feed_name, feed_source, feed_url, feed_type, sync_interval_hours
+            FROM {feeds_table}
+            WHERE enabled = true AND auto_sync = true
+        """)
+        enabled_rows = enabled_feeds_df.collect()
+        # Map feed_source to our internal feed function names
+        source_map = {
+            "otx_alienvault": "otx", "otx": "otx", "alienvault": "otx",
+            "abuseipdb": "abuseipdb", "abuse_ipdb": "abuseipdb",
+            "virustotal": "virustotal", "virus_total": "virustotal",
+            "misp": "misp",
+            "taxii": "taxii", "stix_taxii": "taxii",
+        }
+        for row in enabled_rows:
+            mapped = source_map.get(row.feed_source.lower().replace(" ", "_"))
+            if mapped and mapped not in feeds:
+                feeds.append(mapped)
+        mon.log_event("feeds_from_control_plane", {"enabled_feeds": feeds, "total_in_table": len(enabled_rows)})
+    except Exception as e:
+        # Fallback to defaults if table doesn't exist
+        feeds = ["otx", "abuseipdb", "misp", "virustotal"]
+        mon.log_event("feeds_fallback", {"reason": str(e)[:200]})
+
+if not feeds:
+    feeds = ["otx", "abuseipdb", "misp", "virustotal"]
 
 # COMMAND ----------
 

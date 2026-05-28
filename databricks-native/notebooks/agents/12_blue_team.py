@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("blue_team")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 12 - Blue Team
 # MAGIC Analyzes detection coverage against MITRE ATT&CK matrix. Identifies gaps,

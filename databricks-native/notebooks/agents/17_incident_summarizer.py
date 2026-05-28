@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("incident_summarizer")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 17 - Incident Summarizer
 # MAGIC Queries recent critical/high severity alerts within a 2-hour window, gathers

@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+require_enabled("ciso_assistant")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # Agent 15 - CISO Assistant
 # MAGIC Generates executive security briefings by computing key SOC metrics:
