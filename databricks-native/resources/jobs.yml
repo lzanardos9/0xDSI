@@ -1858,3 +1858,80 @@ resources:
               fusion_window_seconds: "900"
               escalation_threshold: "0.82"
               mode: "batch"
+
+    # ─────────────────────────────────────────────────────
+    # LAKEBASE SERVING LAYER (Session/Active Lists + CDC)
+    # ─────────────────────────────────────────────────────
+    lakebase_sync_streaming:
+      name: "[0xDSI] Ingestion 07 - Lakebase Sync (Streaming CDC)"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: stream_session_lists
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/07_lakebase_sync.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              sync_mode: "streaming"
+              tables: "session_lists,active_lists"
+              checkpoint_path: "/tmp/checkpoints/lakebase_sessions"
+
+        - task_key: stream_alerts_cases
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/07_lakebase_sync.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              sync_mode: "streaming"
+              tables: "alerts,cases"
+              checkpoint_path: "/tmp/checkpoints/lakebase_alerts_cases"
+
+        - task_key: stream_events
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/07_lakebase_sync.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              sync_mode: "streaming"
+              tables: "events"
+              checkpoint_path: "/tmp/checkpoints/lakebase_events"
+
+        - task_key: stream_threat_intel
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/07_lakebase_sync.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              sync_mode: "streaming"
+              tables: "threat_feeds,correlation_rules"
+              checkpoint_path: "/tmp/checkpoints/lakebase_threat_intel"
+
+    lakebase_full_refresh:
+      name: "[0xDSI] Ingestion 07 - Lakebase Full Refresh (Daily)"
+      schedule:
+        quartz_cron_expression: "0 0 5 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: full_sync_all
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/07_lakebase_sync.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              sync_mode: "full"
+              tables: "session_lists,active_lists,alerts,cases,threat_feeds,correlation_rules"
