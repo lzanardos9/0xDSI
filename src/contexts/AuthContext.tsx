@@ -42,33 +42,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const checkDatabricksSession = async () => {
+    const fallbackUser: User = {
+      id: 'databricks-sso-user',
+      username: 'analyst',
+      full_name: 'SOC Analyst',
+      email: 'analyst@workspace.databricks.com',
+    };
+
     try {
       const response = await fetch('/api/auth/session');
       if (response.ok) {
         const data = await response.json();
-        const u = data.user || {
-          id: 'databricks-sso-user',
-          username: 'analyst',
-          full_name: 'SOC Analyst',
-          email: 'analyst@workspace.databricks.com',
+        const raw = data.user;
+        const u: User = {
+          id: raw?.id || fallbackUser.id,
+          username: raw?.username || raw?.display_name || fallbackUser.username,
+          full_name: raw?.full_name || raw?.display_name || raw?.username || fallbackUser.full_name,
+          email: raw?.email || fallbackUser.email,
         };
         setUser(u);
         setActivityUser({ id: u.id, username: u.username });
       } else {
-        setUser({
-          id: 'databricks-sso-user',
-          username: 'analyst',
-          full_name: 'SOC Analyst',
-          email: 'analyst@workspace.databricks.com',
-        });
+        setUser(fallbackUser);
+        setActivityUser({ id: fallbackUser.id, username: fallbackUser.username });
       }
     } catch {
-      setUser({
-        id: 'databricks-sso-user',
-        username: 'analyst',
-        full_name: 'SOC Analyst',
-        email: 'analyst@workspace.databricks.com',
-      });
+      setUser(fallbackUser);
+      setActivityUser({ id: fallbackUser.id, username: fallbackUser.username });
     } finally {
       setLoading(false);
     }

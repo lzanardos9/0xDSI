@@ -101,14 +101,16 @@ ALLOWED_TABLES = [
     "insider_credential_cases", "feature_lab_features",
     "soc_agent_registry", "agent_implementations",
     "mcp_servers", "mcp_tools", "detection_confluence_signals",
-    "user_activity_logs", "swarm_battlefields", "trend_signals",
+    "user_activity_logs", "user_activity_sessions", "user_activity_events",
+    "user_activity_lineage", "swarm_battlefields", "trend_signals",
     "geopolitical_events", "geopolitical_risk_scores",
     "chronoweave_timelines", "chronoweave_branches",
     "cep_patterns", "cep_pattern_matches",
     "etl_ingestion_configs", "etl_ingestion_runs",
     "unity_catalog_audit_events", "asset_registry",
     "threat_escalation_contracts", "graph_pattern_scores",
-    "threat_radar_items", "threat_radar_sources",
+    "threat_radar_items", "threat_radar_sources", "threat_radar_runs",
+    "threat_radar_proposals",
     # Phase 1: Entity Spine, Knowledge Store, UEO
     "entity_spine", "entity_edges", "entity_mentions",
     "knowledge_store", "knowledge_store_embeddings",
@@ -230,6 +232,13 @@ async def query_table(table_name: str, request: Request):
             return JSONResponse(content=results[0] if results else None)
         return JSONResponse(content=results)
     except Exception as e:
+        error_msg = str(e).lower()
+        if "table_or_view_not_found" in error_msg or "does not exist" in error_msg or "not found" in error_msg:
+            if count_only:
+                return JSONResponse(content={"count": 0})
+            if single:
+                return JSONResponse(content=None)
+            return JSONResponse(content=[])
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -310,6 +319,9 @@ async def mutate_table(table_name: str, request: Request):
     except HTTPException:
         raise
     except Exception as e:
+        error_msg = str(e).lower()
+        if "table_or_view_not_found" in error_msg or "does not exist" in error_msg or "not found" in error_msg:
+            return JSONResponse(content={"data": None})
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -829,11 +841,13 @@ async def health():
 
 def get_current_user(request: Request) -> dict:
     """Extract user identity from Databricks-injected HTTP headers."""
+    username = request.headers.get("x-forwarded-preferred-username", "analyst")
     return {
-        "id": request.headers.get("x-forwarded-user", "unknown"),
-        "username": request.headers.get("x-forwarded-preferred-username", "unknown"),
-        "email": request.headers.get("x-forwarded-email", ""),
-        "display_name": request.headers.get("x-forwarded-preferred-username", "SOC Analyst"),
+        "id": request.headers.get("x-forwarded-user", "databricks-sso-user"),
+        "username": username,
+        "full_name": username if username != "analyst" else "SOC Analyst",
+        "display_name": username if username != "analyst" else "SOC Analyst",
+        "email": request.headers.get("x-forwarded-email", "analyst@workspace.databricks.com"),
         "ip": request.headers.get("x-real-ip", ""),
         "request_id": request.headers.get("x-request-id", ""),
     }

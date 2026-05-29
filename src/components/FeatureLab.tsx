@@ -5,7 +5,7 @@ import {
   Zap, FlaskConical, X, RefreshCw, Download, Copy, Check,
   CheckCircle2, FileCode, Layers, Globe, Wand2,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, IS_DATABRICKS } from '../lib/supabase';
 import { callFunction } from '../lib/llmGateway';
 import PlanReview from './feature-lab/PlanReview';
 import CodeViewer from './feature-lab/CodeViewer';
@@ -84,6 +84,7 @@ export default function FeatureLab() {
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const runtimeBaseUrl = IS_DATABRICKS ? '/api/feature-runtime' : `${supabaseUrl}/functions/v1/feature-runtime`;
 
   useEffect(() => { loadCreations(); }, []);
 
@@ -100,7 +101,7 @@ export default function FeatureLab() {
     const injection = `<script>
       window.__SUPABASE_URL__ = "${supabaseUrl}";
       window.__SUPABASE_ANON_KEY__ = "${supabaseAnonKey}";
-      window.__RUNTIME_URL__ = "${supabaseUrl}/functions/v1/feature-runtime";
+      window.__RUNTIME_URL__ = "${runtimeBaseUrl}";
     </script>`;
     if (html.includes('<head>')) return html.replace('<head>', '<head>' + injection);
     return injection + html;
