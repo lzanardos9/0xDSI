@@ -1192,6 +1192,10 @@ APP_DIR="${SCRIPT_DIR}/app"
 rm -rf "${APP_DIR}/dist"
 cp -r "${PROJECT_ROOT}/dist" "${APP_DIR}/dist"
 
+# Remove package.json so Databricks Apps doesn't auto-detect Node.js and attempt an npm build
+rm -f "${APP_DIR}/package.json" "${APP_DIR}/package-lock.json"
+rm -rf "${APP_DIR}/node_modules" 2>/dev/null || true
+
 cat > "${APP_DIR}/.env.databricks" <<EOF
 UNITY_CATALOG=${CATALOG}
 UNITY_SCHEMA=${SCHEMA}

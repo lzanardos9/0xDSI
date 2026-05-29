@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "echo 'Frontend pre-built by deploy.sh - skipping'",
-    "install": "echo 'No npm dependencies - Python backend only'"
-  }
+    "build": "echo 'Pre-built frontend served by FastAPI - no build step needed'"
+  },
+  "dependencies": {}
 }
