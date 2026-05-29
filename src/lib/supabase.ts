@@ -1,8 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
 export const IS_DATABRICKS = import.meta.env.VITE_DATABRICKS_MODE === 'true';
 
 // ─── Lakehouse Data Client: routes queries through FastAPI → SQL Warehouse → Unity Catalog ───
@@ -276,11 +271,15 @@ class LakehouseDataClient {
 
 // ─── Export the right client based on mode ───
 
+import { createClient } from '@supabase/supabase-js';
+
 let _clientInstance: unknown;
 
 if (IS_DATABRICKS) {
   _clientInstance = new LakehouseDataClient();
 } else {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
   if (!supabaseUrl || !supabaseAnonKey) {
     console.error('Missing Supabase configuration:', {
       hasUrl: !!supabaseUrl,

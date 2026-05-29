@@ -1177,8 +1177,15 @@ if [ ! -d "node_modules" ] || [ ! -x "node_modules/.bin/vite" ]; then
   npm ci --prefer-offline || npm install
 fi
 
-VITE_DATABRICKS_MODE=true npm run build
-log_ok "Frontend built -> dist/"
+# Set VITE_DATABRICKS_MODE=true so the build uses the LakehouseDataClient
+# and bypasses Supabase auth entirely. Dummy Supabase vars prevent build
+# warnings; they are never used at runtime in Databricks mode.
+VITE_DATABRICKS_MODE=true \
+VITE_SUPABASE_URL=https://unused.supabase.co \
+VITE_SUPABASE_ANON_KEY=unused \
+npm run build
+
+log_ok "Frontend built -> dist/ (Databricks mode, Supabase disabled)"
 printf "\n"
 
 # ══════════════════════════════════════════════════════

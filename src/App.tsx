@@ -3,14 +3,17 @@ import { useAuth } from './contexts/AuthContext';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
 import { Loader } from 'lucide-react';
+import { IS_DATABRICKS } from './lib/supabase';
 import { installGlobalActivityTracking, ensureSession } from './lib/activityTracker';
 
 function App() {
   const { user, loading } = useAuth();
 
   useEffect(() => {
-    installGlobalActivityTracking();
-    void ensureSession();
+    if (!IS_DATABRICKS) {
+      installGlobalActivityTracking();
+      void ensureSession();
+    }
   }, []);
 
   if (loading) {
