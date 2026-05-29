@@ -1935,3 +1935,69 @@ resources:
               schema: ${var.schema}
               sync_mode: "full"
               tables: "session_lists,active_lists,alerts,cases,threat_feeds,correlation_rules"
+
+    # ─────────────────────────────────────────────────────
+    # PLC & OT NATIVE PROTOCOL SECURITY
+    # ─────────────────────────────────────────────────────
+    ot_protocol_ingestion:
+      name: "[0xDSI] Ingestion 10 - PLC/OT Protocol Connector (Streaming)"
+      schedule:
+        quartz_cron_expression: "0 0 0 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: stream_ot_events
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ingestion/10_plc_ot_protocol_connector.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              source_type: "kafka"
+              topics: "ot-s7comm,ot-modbus,ot-cip,ot-opcua,ot-dnp3,ot-iec61850,ot-profinet,ot-bacnet"
+              trigger_interval: "5 seconds"
+              enable_anomaly_baseline: "true"
+              enable_command_audit: "true"
+
+    ot_protocol_security_agent:
+      name: "[0xDSI] Agent 44 - OT Protocol Security Monitor"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: monitor_ot_security
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/44_ot_protocol_security.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    ot_detection_engine:
+      name: "[0xDSI] Detection 08 - OT/ICS Anomaly Detection"
+      schedule:
+        quartz_cron_expression: "0 */5 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: detect_ot_anomalies
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/08_ot_protocol_anomaly_detection.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "15"
+              enable_allowlist: "true"
+              enable_sequence: "true"
+              enable_temporal: "true"
