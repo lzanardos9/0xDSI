@@ -1323,7 +1323,8 @@ async def update_agent_config(agent_id: str, request: Request):
         updates.append("schedule = :schedule")
         params["schedule"] = body["schedule"]
     if "config" in body:
-        updates.append(f"config = map_from_entries(array({','.join(f\"struct('{k}', '{v}')\" for k, v in body['config'].items())}))")
+        entries = ','.join(f"struct('{k}', '{v}')" for k, v in body['config'].items())
+        updates.append(f"config = map_from_entries(array({entries}))")
 
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
