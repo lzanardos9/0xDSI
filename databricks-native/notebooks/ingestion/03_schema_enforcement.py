@@ -43,6 +43,30 @@ OCSF_CATEGORIES = {
     6: "Application Activity",
 }
 
+# OCSF Class names for human-readable output
+OCSF_CLASS_NAMES = {
+    1001: "Process Activity",
+    1002: "Module Activity",
+    1003: "Scheduled Job Activity",
+    1004: "File System Activity",
+    1005: "Kernel Extension Activity",
+    1006: "Registry Key Activity",
+    2001: "Security Finding",
+    2003: "Compliance Finding",
+    3001: "Account Change",
+    3002: "Authentication",
+    3003: "Authorize Session",
+    3004: "Entity Management",
+    4001: "Network Activity",
+    4002: "HTTP Activity",
+    4003: "DNS Activity",
+    4009: "Email Activity",
+    4010: "Network File Activity",
+    5001: "Device Inventory Info",
+    6001: "Web Resources Activity",
+    6003: "API Activity",
+}
+
 # OCSF Class UIDs - comprehensive mapping
 OCSF_CLASS_MAP = {
     # Identity & Access (3xxx)
@@ -167,6 +191,16 @@ with mon.time("normalize"):
         activity_id_expr = when(col("event_type") == event_type, lit(ocsf["activity_id"])).otherwise(activity_id_expr)
         type_uid_expr = when(col("event_type") == event_type, lit(ocsf["type_uid"])).otherwise(type_uid_expr)
 
+    # Build human-readable category name mapping
+    category_name_expr = lit("Unknown")
+    for cat_uid, cat_name in OCSF_CATEGORIES.items():
+        category_name_expr = when(category_uid_expr == cat_uid, lit(cat_name)).otherwise(category_name_expr)
+
+    # Build human-readable class name mapping
+    class_name_expr = lit("Unknown")
+    for cls_uid, cls_name in OCSF_CLASS_NAMES.items():
+        class_name_expr = when(class_uid_expr == cls_uid, lit(cls_name)).otherwise(class_name_expr)
+
     # Severity normalization
     severity_norm_expr = col("severity")
     for alt, canonical in SEVERITY_NORMALIZE.items():
@@ -180,6 +214,8 @@ with mon.time("normalize"):
         .withColumn("ocsf_category_uid", category_uid_expr)
         .withColumn("ocsf_activity_id", activity_id_expr)
         .withColumn("ocsf_type_uid", type_uid_expr)
+        .withColumn("ocsf_category_name", category_name_expr)
+        .withColumn("ocsf_class_name", class_name_expr)
         .withColumn("severity",
             when(lower(col("severity")).isin(VALID_SEVERITIES), lower(col("severity")))
             .otherwise(severity_norm_expr)
@@ -230,6 +266,8 @@ with mon.time("merge_normalized"):
             target.ocsf_category_uid = source.ocsf_category_uid,
             target.ocsf_activity_id = source.ocsf_activity_id,
             target.ocsf_type_uid = source.ocsf_type_uid,
+            target.ocsf_category_name = source.ocsf_category_name,
+            target.ocsf_class_name = source.ocsf_class_name,
             target.severity = source.severity,
             target.severity_id = source.severity_id,
             target.outcome = source.outcome
