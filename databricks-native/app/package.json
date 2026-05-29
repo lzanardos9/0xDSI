@@ -1,5 +1,9 @@
 {
   "name": "0xdsi-agentic-soc-app",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "scripts": {
+    "build": "echo 'Frontend pre-built by deploy.sh - skipping'",
+    "install": "echo 'No npm dependencies - Python backend only'"
+  }
 }
