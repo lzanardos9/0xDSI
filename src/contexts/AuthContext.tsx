@@ -1,6 +1,4 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase, IS_DATABRICKS } from '../lib/supabase';
-import { trackLogin, trackLogout, setActivityUser, ensureSession } from '../lib/activityTracker';
 
 interface User {
   id: string;
@@ -22,23 +20,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (IS_DATABRICKS) {
-      checkDatabricksSession();
-      return;
-    }
-    void ensureSession();
-    checkUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        loadUserProfile(session.user.id);
-      } else {
-        setUser(null);
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    checkDatabricksSession();
   }, []);
 
   const checkDatabricksSession = async () => {
@@ -54,72 +36,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (response.ok) {
         const data = await response.json();
         const raw = data.user;
-        const u: User = {
+        setUser({
           id: raw?.id || fallbackUser.id,
           username: raw?.username || raw?.display_name || fallbackUser.username,
           full_name: raw?.full_name || raw?.display_name || raw?.username || fallbackUser.full_name,
           email: raw?.email || fallbackUser.email,
-        };
-        setUser(u);
-        setActivityUser({ id: u.id, username: u.username });
+        });
       } else {
         setUser(fallbackUser);
-        setActivityUser({ id: fallbackUser.id, username: fallbackUser.username });
       }
     } catch {
       setUser(fallbackUser);
-      setActivityUser({ id: fallbackUser.id, username: fallbackUser.username });
     } finally {
       setLoading(false);
     }
   };
 
-  const checkUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      await loadUserProfile(session.user.id);
-    } else {
-      setLoading(false);
-    }
-  };
-
-  const loadUserProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
-    const { data: { session: currentSession } } = await supabase.auth.getSession();
-    if (!currentSession) {
-      setLoading(false);
-      return;
-    }
-
-    if (data && !error) {
-      const { data: authUser } = await supabase.auth.getUser();
-      const u = {
-        id: data.id,
-        username: data.username,
-        full_name: data.full_name,
-        email: authUser.user?.email || ''
-      };
-      setUser(u);
-      setActivityUser({ id: u.id, username: u.username });
-      trackLogin(u.id, u.username);
-    }
-    setLoading(false);
-  };
-
   const signOut = async () => {
-    if (IS_DATABRICKS) {
-      setUser(null);
-      window.location.href = '/';
-      return;
-    }
-    trackLogout();
-    await supabase.auth.signOut();
     setUser(null);
+    window.location.href = '/';
   };
 
   return (

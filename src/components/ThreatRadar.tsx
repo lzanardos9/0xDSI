@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { supabase, IS_DATABRICKS } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { callFunction } from '../lib/llmGateway';
 import { CheckCircle2, XCircle } from 'lucide-react';
 import RadarHUD from './threat-radar/RadarHUD';
@@ -40,28 +40,15 @@ export default function ThreatRadar() {
     setRefreshing(true);
     setToast({ kind: 'ok', msg: 'Scanning external feeds...' });
     try {
-      if (IS_DATABRICKS) {
-        const { data: fetchRes } = await callFunction('threat-radar-fetch', { limit: 15 });
-        const itemsNew = (fetchRes as any)?.items_new || 0;
-        if (itemsNew > 0) {
-          setToast({ kind: 'ok', msg: `Fetched ${itemsNew} new items. Analyzing...` });
-          await callFunction('threat-radar-analyze', { limit: 50 });
-          setToast({ kind: 'ok', msg: `Running exposure probe...` });
-          await callFunction('threat-radar-probe', { limit: 50 });
-        }
-        setToast({ kind: 'ok', msg: `Scan complete: ${itemsNew} new items processed` });
-      } else {
-        const base = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-        const headers = { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' };
-        const fetchRes = await fetch(`${base}/threat-radar-fetch`, { method: 'POST', headers, body: JSON.stringify({ limit: 15 }) }).then(r => r.json());
-        if (fetchRes.items_new > 0) {
-          setToast({ kind: 'ok', msg: `Fetched ${fetchRes.items_new} new items. Analyzing...` });
-          await fetch(`${base}/threat-radar-analyze`, { method: 'POST', headers, body: JSON.stringify({ limit: 50 }) });
-          setToast({ kind: 'ok', msg: `Running exposure probe...` });
-          await fetch(`${base}/threat-radar-probe`, { method: 'POST', headers, body: JSON.stringify({ limit: 50 }) });
-        }
-        setToast({ kind: 'ok', msg: `Scan complete: ${fetchRes.items_new || 0} new, ${fetchRes.sources_ok}/${fetchRes.sources_attempted} sources OK` });
+      const { data: fetchRes } = await callFunction('threat-radar-fetch', { limit: 15 });
+      const itemsNew = (fetchRes as any)?.items_new || 0;
+      if (itemsNew > 0) {
+        setToast({ kind: 'ok', msg: `Fetched ${itemsNew} new items. Analyzing...` });
+        await callFunction('threat-radar-analyze', { limit: 50 });
+        setToast({ kind: 'ok', msg: `Running exposure probe...` });
+        await callFunction('threat-radar-probe', { limit: 50 });
       }
+      setToast({ kind: 'ok', msg: `Scan complete: ${itemsNew} new items processed` });
       await load();
     } catch (e: any) {
       setToast({ kind: 'err', msg: `Scan failed: ${e.message}` });

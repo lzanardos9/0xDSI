@@ -1,11 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
+/**
+ * Lakehouse Data Client
+ * Routes all queries through FastAPI backend -> SQL Warehouse -> Unity Catalog.
+ * Zero Supabase dependencies.
+ */
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-export const IS_DATABRICKS = import.meta.env.VITE_DATABRICKS_MODE === 'true';
-
-// ─── Lakehouse Data Client: routes queries through FastAPI → SQL Warehouse → Unity Catalog ───
+export const IS_DATABRICKS = true;
 
 type FilterEntry = { column: string; op: string; value: unknown };
 
@@ -274,24 +273,8 @@ class LakehouseDataClient {
   }
 }
 
-// ─── Export the right client based on mode ───
-
-let _clientInstance: unknown;
-
-if (IS_DATABRICKS) {
-  _clientInstance = new LakehouseDataClient();
-} else {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('Missing Supabase configuration:', {
-      hasUrl: !!supabaseUrl,
-      hasKey: !!supabaseAnonKey,
-    });
-  }
-  _clientInstance = createClient(supabaseUrl, supabaseAnonKey);
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const supabase = _clientInstance as any;
+export const supabase: any = new LakehouseDataClient();
 
 export type SecurityEvent = {
   id: string;

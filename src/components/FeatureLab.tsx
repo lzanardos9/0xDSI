@@ -5,7 +5,7 @@ import {
   Zap, FlaskConical, X, RefreshCw, Download, Copy, Check,
   CheckCircle2, FileCode, Layers, Globe, Wand2,
 } from 'lucide-react';
-import { supabase, IS_DATABRICKS } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { callFunction } from '../lib/llmGateway';
 import PlanReview from './feature-lab/PlanReview';
 import CodeViewer from './feature-lab/CodeViewer';
@@ -82,9 +82,7 @@ export default function FeatureLab() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-  const runtimeBaseUrl = IS_DATABRICKS ? '/api/feature-runtime' : `${supabaseUrl}/functions/v1/feature-runtime`;
+  const runtimeBaseUrl = '/api/feature-runtime';
 
   useEffect(() => { loadCreations(); }, []);
 
@@ -99,8 +97,6 @@ export default function FeatureLab() {
 
   const injectSupabaseVars = (html: string) => {
     const injection = `<script>
-      window.__SUPABASE_URL__ = "${supabaseUrl}";
-      window.__SUPABASE_ANON_KEY__ = "${supabaseAnonKey}";
       window.__RUNTIME_URL__ = "${runtimeBaseUrl}";
     </script>`;
     if (html.includes('<head>')) return html.replace('<head>', '<head>' + injection);
@@ -114,7 +110,7 @@ export default function FeatureLab() {
     const url = URL.createObjectURL(blob);
     iframeRef.current.src = url;
     return () => URL.revokeObjectURL(url);
-  }, [supabaseUrl, supabaseAnonKey]);
+  }, [runtimeBaseUrl]);
 
   const callEdge = async (body: any) => {
     const { data, error } = await callFunction('feature-lab', body);
