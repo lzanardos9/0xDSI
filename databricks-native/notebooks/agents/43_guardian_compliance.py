@@ -107,6 +107,13 @@ class ComplianceMonitor(BatchAgent):
             "audit_controls": "Activity logging for PHI",
             "integrity_controls": "Data integrity protections",
         },
+        "SOX": {
+            "internal_controls": "Internal controls over financial reporting (ICFR)",
+            "segregation_of_duties": "Separation of authorization, custody, and recording",
+            "change_management": "Controlled changes to financial systems",
+            "audit_trails": "Immutable audit logs for financial transactions",
+            "access_controls": "Logical access to financial systems and data",
+        },
     }
 
     def __init__(self, agent_name: str, cfg, llm, mon, spark):
