@@ -5,11 +5,11 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const IS_DATABRICKS = import.meta.env.VITE_DATABRICKS_MODE === 'true';
 
-// ─── Databricks Proxy: Supabase-compatible client that routes through FastAPI ───
+// ─── Lakehouse Data Client: routes queries through FastAPI → SQL Warehouse → Unity Catalog ───
 
 type FilterEntry = { column: string; op: string; value: unknown };
 
-class DatabricksQueryBuilder {
+class LakehouseQueryBuilder {
   private _table: string;
   private _selectCols = '*';
   private _filters: FilterEntry[] = [];
@@ -109,7 +109,7 @@ class DatabricksQueryBuilder {
   }
 }
 
-class DatabricksMutationBuilder {
+class LakehouseMutationBuilder {
   private _table: string;
   private _operation: string;
   private _data: unknown;
@@ -166,7 +166,7 @@ class DatabricksMutationBuilder {
   }
 }
 
-class DatabricksTableProxy {
+class LakehouseTableClient {
   private _table: string;
 
   constructor(table: string) {
@@ -174,28 +174,28 @@ class DatabricksTableProxy {
   }
 
   select(columns = '*', opts?: { count?: string; head?: boolean }) {
-    const qb = new DatabricksQueryBuilder(this._table);
+    const qb = new LakehouseQueryBuilder(this._table);
     return qb.select(columns, opts);
   }
 
   insert(data: unknown) {
-    return new DatabricksMutationBuilder(this._table, 'insert', data);
+    return new LakehouseMutationBuilder(this._table, 'insert', data);
   }
 
   update(data: unknown) {
-    return new DatabricksMutationBuilder(this._table, 'update', data);
+    return new LakehouseMutationBuilder(this._table, 'update', data);
   }
 
   upsert(data: unknown) {
-    return new DatabricksMutationBuilder(this._table, 'upsert', data);
+    return new LakehouseMutationBuilder(this._table, 'upsert', data);
   }
 
   delete() {
-    return new DatabricksMutationBuilder(this._table, 'delete', null);
+    return new LakehouseMutationBuilder(this._table, 'delete', null);
   }
 }
 
-class DatabricksAuthProxy {
+class LakehouseAuthClient {
   private _user: { id: string; email: string } | null = null;
 
   async getUser() {
@@ -241,20 +241,20 @@ class DatabricksAuthProxy {
   }
 }
 
-class DatabricksRealtimeProxy {
+class LakehouseRealtimeStub {
   on(_event: string, _opts: unknown, _callback: unknown) { return this; }
   subscribe() { return { unsubscribe: () => {} }; }
 }
 
-class DatabricksSupabaseProxy {
-  auth = new DatabricksAuthProxy();
+class LakehouseDataClient {
+  auth = new LakehouseAuthClient();
 
   from(table: string) {
-    return new DatabricksTableProxy(table);
+    return new LakehouseTableClient(table);
   }
 
   channel(_name: string) {
-    return new DatabricksRealtimeProxy();
+    return new LakehouseRealtimeStub();
   }
 
   async rpc(functionName: string, params?: Record<string, unknown>) {
@@ -276,10 +276,10 @@ class DatabricksSupabaseProxy {
 
 // ─── Export the right client based on mode ───
 
-let _supabaseInstance: unknown;
+let _clientInstance: unknown;
 
 if (IS_DATABRICKS) {
-  _supabaseInstance = new DatabricksSupabaseProxy();
+  _clientInstance = new LakehouseDataClient();
 } else {
   if (!supabaseUrl || !supabaseAnonKey) {
     console.error('Missing Supabase configuration:', {
@@ -287,11 +287,11 @@ if (IS_DATABRICKS) {
       hasKey: !!supabaseAnonKey,
     });
   }
-  _supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+  _clientInstance = createClient(supabaseUrl, supabaseAnonKey);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const supabase = _supabaseInstance as any;
+export const supabase = _clientInstance as any;
 
 export type SecurityEvent = {
   id: string;
