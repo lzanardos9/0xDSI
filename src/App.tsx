@@ -1,11 +1,19 @@
+import { useEffect } from 'react';
 import { useAuth } from './contexts/AuthContext';
 import Dashboard from './components/Dashboard';
+import Login from './components/Login';
 import { Loader } from 'lucide-react';
+import { installGlobalActivityTracking, ensureSession } from './lib/activityTracker';
 
 function App() {
   const { user, loading } = useAuth();
 
-  if (loading || !user) {
+  useEffect(() => {
+    installGlobalActivityTracking();
+    void ensureSession();
+  }, []);
+
+  if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="text-center">
@@ -14,6 +22,10 @@ function App() {
         </div>
       </div>
     );
+  }
+
+  if (!user) {
+    return <Login />;
   }
 
   return <Dashboard />;
