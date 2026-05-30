@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Activity, Target, Cpu, Zap, TrendingUp, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Activity, Target, Cpu, Zap, TrendingUp, Shield, AlertTriangle, CheckCircle, Flame } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import ExploitForge from './ExploitForge';
 
 interface FuzzingCampaign {
   id: string;
@@ -63,7 +64,7 @@ interface AttackChain {
 }
 
 export default function RedTeamAutomation() {
-  const [activeTab, setActiveTab] = useState<'fuzzing' | 'pentest' | 'ai_tools' | 'attack_chains'>('fuzzing');
+  const [activeTab, setActiveTab] = useState<'fuzzing' | 'pentest' | 'ai_tools' | 'attack_chains' | 'exploitforge'>('fuzzing');
   const [loading, setLoading] = useState(true);
 
   const [fuzzingCampaigns, setFuzzingCampaigns] = useState<FuzzingCampaign[]>([]);
@@ -258,6 +259,19 @@ export default function RedTeamAutomation() {
             <div className="flex items-center justify-center gap-2">
               <Activity className="w-4 h-4" />
               <span>Attack Chains</span>
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('exploitforge')}
+            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+              activeTab === 'exploitforge'
+                ? 'text-orange-400 border-b-2 border-orange-400 bg-slate-900'
+                : 'text-slate-400 hover:text-white hover:bg-slate-750'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <Flame className="w-4 h-4" />
+              <span>ExploitForge</span>
             </div>
           </button>
         </div>
@@ -492,6 +506,10 @@ export default function RedTeamAutomation() {
                 </div>
               )}
             </div>
+          )}
+
+          {activeTab === 'exploitforge' && (
+            <ExploitForge />
           )}
         </div>
       </div>

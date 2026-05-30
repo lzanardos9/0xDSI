@@ -2001,3 +2001,24 @@ resources:
               enable_allowlist: "true"
               enable_sequence: "true"
               enable_temporal: "true"
+
+    # ─────────────────────────────────────────────────────
+    # EXPLOITFORGE - AI Exploit Chain Analysis
+    # ─────────────────────────────────────────────────────
+    exploitforge_chain_analysis:
+      name: "[0xDSI] Agent 45 - ExploitForge Chain Analyzer"
+      schedule:
+        quartz_cron_expression: "0 0 */6 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: analyze_exploit_chains
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/45_exploitforge.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
