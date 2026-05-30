@@ -64,6 +64,31 @@ class SOCLLMClient:
     - Token budget tracking per run
     - Structured JSON output extraction
     - Tool call parsing (Databricks Foundation Model format)
+    - Specialized endpoint routing for psych/NLP analysis
+
+    Model Hierarchy (all hosted in-workspace, zero data egress):
+    ---------------------------------------------------------------
+    Tier 1 (Primary - General SOC reasoning):
+        databricks-meta-llama-3-1-70b-instruct
+        Use: Triage, enrichment, investigation, tool calling
+
+    Tier 2 (Fallback - Cost-effective):
+        databricks-meta-llama-3-1-8b-instruct
+        Use: Automatic fallback when Tier 1 unavailable
+
+    Tier 3 (Specialized - Psychological/NLP analysis):
+        databricks-dbrx-instruct (or fine-tuned sentiment model)
+        Use: Communication analysis, sentiment scoring, intent classification
+        Routing: Invoked explicitly via llm.analyze_communication()
+
+    Tier 4 (Embeddings - Vector similarity):
+        databricks-gte-large-en (or bge-large-en-v1.5)
+        Use: Semantic embeddings for communication baseline drift detection
+
+    Design Decision: All models hosted on Databricks Model Serving to ensure
+    sensitive communication data (emails, chats, meetings) NEVER leaves the
+    workspace perimeter. This eliminates the need for DPA/DPIA for external
+    API providers while maintaining full analytical capability.
 
     Usage:
         from _shared.llm_client import SOCLLMClient
@@ -72,13 +97,23 @@ class SOCLLMClient:
         cfg = load_config(dbutils)
         llm = SOCLLMClient(cfg)
 
+        # Standard SOC agent reasoning
         response = llm.chat(
             system="You are a SOC triage agent.",
             user="Classify this alert: ...",
             temperature=0.1,
         )
-        print(response.content)
+
+        # Psychological/communication analysis
+        psych = llm.analyze_communication(
+            text="I'm so frustrated with this company...",
+            analysis_type="sentiment",
+        )
     """
+
+    # Specialized endpoint defaults (overridable via system_settings)
+    PSYCH_ENDPOINT_DEFAULT = "databricks-dbrx-instruct"
+    EMBEDDING_ENDPOINT_DEFAULT = "databricks-gte-large-en"
 
     def __init__(self, config, deploy_client=None):
         """
@@ -90,6 +125,12 @@ class SOCLLMClient:
         self._config = config
         self._primary_endpoint = config.model_endpoint
         self._fallback_endpoint = config.model_fallback_endpoint
+        self._psych_endpoint = config.get(
+            "psych_model_endpoint", self.PSYCH_ENDPOINT_DEFAULT
+        )
+        self._embedding_endpoint = config.get(
+            "embedding_model_endpoint", self.EMBEDDING_ENDPOINT_DEFAULT
+        )
         self._budget = TokenBudget()
         self._client = deploy_client
         self._initialized = False
@@ -232,6 +273,193 @@ class SOCLLMClient:
             return response
 
         raise LLMAllEndpointsFailed("All endpoints failed for multi-turn chat")
+
+    def analyze_communication(
+        self,
+        text: str,
+        analysis_type: str = "full",
+        context: Optional[str] = None,
+        temperature: float = 0.05,
+        max_tokens: int = 1024,
+    ) -> LLMResponse:
+        """
+        Analyze communication text for psychological/behavioral signals.
+        Uses the dedicated psych endpoint (DBRX) for higher accuracy on
+        sentiment/intent tasks.
+
+        Args:
+            text: The communication text to analyze (message, email body, transcript)
+            analysis_type: One of "sentiment", "intent", "toxicity", "topics", "full"
+            context: Optional context (e.g., "slack_dm", "email_to_manager", "meeting")
+            temperature: Low by default for consistent scoring
+            max_tokens: Response budget
+
+        Returns:
+            LLMResponse containing structured JSON with scores and classifications
+
+        Response format for analysis_type="full":
+            {
+                "sentiment_score": -0.4,
+                "emotion": "frustration",
+                "toxicity_score": 0.1,
+                "intent": "venting",
+                "topics": ["workload", "management"],
+                "risk_signals": ["negative_sentiment_sustained"],
+                "exfiltration_language": false,
+                "job_search_indicators": false,
+                "confidence": 0.87
+            }
+        """
+        system_prompts = {
+            "sentiment": (
+                "You are a sentiment analysis engine for corporate communications monitoring. "
+                "Analyze the provided text and return ONLY valid JSON with these fields: "
+                "sentiment_score (float -1.0 to 1.0), emotion (primary emotion label), "
+                "confidence (0.0 to 1.0). Be precise and consistent."
+            ),
+            "intent": (
+                "You are an intent classification engine for insider threat detection. "
+                "Classify the intent behind this communication. Return ONLY valid JSON: "
+                "intent (one of: neutral, venting, planning, information_gathering, "
+                "exfiltration_related, job_search, covering_tracks, social_engineering), "
+                "confidence (0.0 to 1.0), reasoning (one sentence)."
+            ),
+            "toxicity": (
+                "You are a toxicity detection engine for workplace communications. "
+                "Score the toxicity level. Return ONLY valid JSON: "
+                "toxicity_score (0.0 to 1.0), categories (list of: hostile, threatening, "
+                "discriminatory, harassment, profanity, passive_aggressive, none), "
+                "confidence (0.0 to 1.0)."
+            ),
+            "topics": (
+                "You are a topic classification engine for corporate message monitoring. "
+                "Extract topics discussed. Return ONLY valid JSON: "
+                "topics (list of topic labels), sensitive_topics (list of any topics "
+                "related to: credentials, access, security_tools, data_movement, "
+                "resignation, legal, competitors), confidence (0.0 to 1.0)."
+            ),
+            "full": (
+                "You are a psychological analysis engine for an insider threat detection "
+                "program (UEBA). Analyze the communication text for behavioral signals. "
+                "Return ONLY valid JSON with ALL of these fields:\n"
+                "- sentiment_score: float -1.0 (very negative) to 1.0 (very positive)\n"
+                "- emotion: primary emotion (neutral, joy, frustration, anger, fear, "
+                "sadness, disgust, surprise, contempt)\n"
+                "- toxicity_score: float 0.0 to 1.0\n"
+                "- intent: one of (neutral, venting, planning, information_gathering, "
+                "exfiltration_related, job_search, covering_tracks, social_engineering)\n"
+                "- topics: list of topic labels\n"
+                "- risk_signals: list of detected signals (empty if none)\n"
+                "- exfiltration_language: boolean\n"
+                "- job_search_indicators: boolean\n"
+                "- confidence: float 0.0 to 1.0\n"
+                "Be precise. Do not over-flag benign communications."
+            ),
+        }
+
+        system = system_prompts.get(analysis_type, system_prompts["full"])
+        user_msg = text
+        if context:
+            user_msg = f"[Context: {context}]\n\n{text}"
+
+        self._ensure_client()
+
+        # Use psych endpoint first, fall back to primary
+        response = self._call_with_retry(
+            endpoint=self._psych_endpoint,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=None,
+        )
+
+        if response is not None:
+            return response
+
+        # Fall back to primary general-purpose model
+        logger.warning(
+            f"Psych endpoint '{self._psych_endpoint}' unavailable, "
+            f"falling back to primary '{self._primary_endpoint}'"
+        )
+        response = self._call_with_retry(
+            endpoint=self._primary_endpoint,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=None,
+        )
+
+        if response is not None:
+            response.fallback_used = True
+            return response
+
+        raise LLMAllEndpointsFailed(
+            f"Psych analysis failed on both '{self._psych_endpoint}' and '{self._primary_endpoint}'"
+        )
+
+    def embed_text(self, text: str) -> Optional[list]:
+        """
+        Generate text embedding for semantic similarity comparisons.
+        Used to detect communication baseline drift (cosine distance from
+        a user's historical communication embedding centroid).
+
+        Args:
+            text: Text to embed (max ~512 tokens for gte-large)
+
+        Returns:
+            List of floats (embedding vector) or None on failure
+        """
+        self._ensure_client()
+
+        try:
+            response = self._client.predict(
+                endpoint=self._embedding_endpoint,
+                inputs={"input": text},
+            )
+            # Databricks embedding response format
+            data = response.get("data", [])
+            if data:
+                return data[0].get("embedding")
+            return None
+        except Exception as e:
+            logger.warning(f"Embedding call failed: {type(e).__name__}: {e}")
+            return None
+
+    def batch_embed(self, texts: list, batch_size: int = 16) -> list:
+        """
+        Batch embed multiple texts efficiently.
+
+        Args:
+            texts: List of texts to embed
+            batch_size: Number of texts per API call
+
+        Returns:
+            List of embedding vectors (None entries for failures)
+        """
+        self._ensure_client()
+        all_embeddings = []
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            try:
+                response = self._client.predict(
+                    endpoint=self._embedding_endpoint,
+                    inputs={"input": batch},
+                )
+                data = response.get("data", [])
+                for item in data:
+                    all_embeddings.append(item.get("embedding"))
+            except Exception as e:
+                logger.warning(f"Batch embedding failed at offset {i}: {e}")
+                all_embeddings.extend([None] * len(batch))
+
+        return all_embeddings
 
     def extract_json(self, response: LLMResponse) -> Optional[dict]:
         """

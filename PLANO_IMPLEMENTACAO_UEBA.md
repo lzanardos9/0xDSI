@@ -4,6 +4,80 @@
 
 ---
 
+## Decisao de Arquitetura: Modelos de LLM
+
+### Principio Fundamental
+**ZERO DATA EGRESS** -- Todos os modelos de LLM sao hospedados dentro do proprio workspace Databricks. Dados de comunicacao (emails, chats, transcricoes de reunioes) NUNCA saem do perimetro do cliente. Isso elimina necessidade de DPA com terceiros e simplifica compliance com LGPD.
+
+### Hierarquia de Modelos
+
+| Tier | Modelo | Hospedagem | Uso | Latencia | Custo/1K tokens |
+|------|--------|------------|-----|----------|-----------------|
+| 1 (Primary) | Meta Llama 3.1 70B Instruct | Databricks Model Serving | Raciocinio de agentes SOC, triagem, investigacao, tool calling | ~2-5s | ~$0.003 |
+| 2 (Fallback) | Meta Llama 3.1 8B Instruct | Databricks Model Serving | Fallback automatico quando Tier 1 indisponivel | ~0.5-1s | ~$0.0005 |
+| 3 (Psych/NLP) | DBRX Instruct | Databricks Model Serving | Analise psicologica, sentiment, intent classification | ~1-3s | ~$0.002 |
+| 4 (Embeddings) | GTE-Large-EN | Databricks Model Serving | Embeddings para drift de baseline comunicacional | ~100ms | ~$0.0001 |
+
+### Justificativa da Escolha
+
+**Por que NAO usar Claude/GPT-4 como primary:**
+1. Dados de comunicacao sao EXTREMAMENTE sensiveis (emails, chats, meetings)
+2. Enviar para API externa exige: DPA assinado, DPIA aprovada, clausula contratual
+3. Latencia de rede adicionada (100-300ms) em chamadas de alta frequencia
+4. Custo 10-20x maior que modelos hospedados
+5. Risco de rate limiting em picos de volume
+
+**Por que DBRX para analise psicologica:**
+1. Treinado pela Databricks, melhor integracao com o ecossistema
+2. Excelente em tarefas de classificacao e structured output
+3. Pode ser fine-tuned com exemplos do cliente sem sair do workspace
+4. Performance comparavel a GPT-3.5 em tarefas de NLP
+5. Custo fixo (provisionado), sem surpresas de billing
+
+**Por que GTE-Large para embeddings:**
+1. State-of-the-art em embeddings de texto em ingles
+2. Dimensao 1024 -- bom equilibrio entre qualidade e storage
+3. Suporta batch de ate 512 textos por chamada
+4. Latencia extremamente baixa (< 100ms para batch de 16)
+5. Essencial para deteccao de drift comunicacional
+
+### Evolucao Planejada
+
+| Fase | Acao | Trigger |
+|------|------|---------|
+| Mes 1-2 | Usar modelos Foundation (zero fine-tuning) | Go-live |
+| Mes 3 | Fine-tune DBRX com exemplos do cliente para sentiment PT-BR | 10K+ labels coletadas |
+| Mes 4 | Avaliar Llama 3.1 405B para casos complexos de investigacao | Se 70B tiver recall < 80% |
+| Mes 6 | Considerar Claude via API apenas para sumarizacao de investigacoes (dados ja anonimizados) | Se qualidade de resumo for insuficiente |
+
+### Configuracao de Endpoints (system_settings)
+
+```sql
+INSERT INTO system_settings (setting_key, setting_value) VALUES
+('model_endpoint', 'databricks-meta-llama-3-1-70b-instruct'),
+('model_fallback_endpoint', 'databricks-meta-llama-3-1-8b-instruct'),
+('psych_model_endpoint', 'databricks-dbrx-instruct'),
+('embedding_model_endpoint', 'databricks-gte-large-en');
+```
+
+### Custos Estimados de Model Serving
+
+| Endpoint | GPU | Provisioned Throughput | Custo/hora | Custo/mes (24/7) |
+|----------|-----|----------------------|------------|------------------|
+| Llama 3.1 70B | 4x A100 80GB | 200 tokens/s | ~$12/hr | ~$8,640 |
+| Llama 3.1 8B | 1x A10G | 500 tokens/s | ~$2/hr | ~$1,440 |
+| DBRX Instruct | 4x A100 80GB | 300 tokens/s | ~$12/hr | ~$8,640 |
+| GTE-Large | 1x T4 | 1000 texts/s | ~$0.50/hr | ~$360 |
+
+**Total Model Serving: ~$19,080/mes**
+
+**Otimizacoes de custo:**
+- Llama 8B e GTE-Large podem usar spot/preemptible (interrupcao toleravel)
+- DBRX pode ser scale-to-zero fora do horario comercial (80% das analises sao 8h-20h)
+- Com scale-to-zero inteligente: **custo real estimado ~$12,000-15,000/mes**
+
+---
+
 ## Fase 0: Pre-Requisitos e Setup (Semana 1-2)
 
 ### Semana 1: Infraestrutura

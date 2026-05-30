@@ -235,18 +235,37 @@ Esta e uma das fontes mais ricas e sensíveis para deteccao de insider threats. 
 
 #### 3.9.4 Modelos de NLP/LLM Aplicados
 
+**Infraestrutura de Modelos (100% in-workspace, zero data egress):**
+
+| Tier | Modelo Hospedado | Funcao | Latencia |
+|------|------------------|--------|----------|
+| Alto Volume (95% trafego) | DBRX Instruct (Databricks) | Sentiment, intent, toxicity, topics | 1-3s |
+| Embeddings | GTE-Large-EN (Databricks) | Baseline drift, similarity detection | < 100ms |
+| Analise Profunda (5% escalado) | Llama 3.1 70B (Databricks) | Sumarizacao contextual, raciocinio complexo | 2-5s |
+| Fine-tuned (Mes 3+) | DeBERTa-v3 fine-tuned | Sentiment PT-BR de alta precisao | < 50ms |
+
+**Justificativa:** Emails, chats e transcricoes de reunioes sao dados EXTREMAMENTE sensiveis. Enviar para APIs externas (OpenAI, Anthropic) exige DPA, DPIA, e aprovacao juridica. Mantendo tudo no Databricks Model Serving, eliminamos esse risco regulatorio completamente.
+
+**Tarefas por modelo:**
+
 | Modelo | Aplicacao | Output |
 |--------|-----------|--------|
-| Sentiment Analysis (BERT/RoBERTa) | Classificar tom emocional de cada mensagem | Score -1.0 a +1.0 |
-| Topic Classification (Zero-shot) | Categorizar assuntos discutidos | Labels: work, complaint, job_search, tech_tools, exfiltration_related |
-| Named Entity Recognition (NER) | Extrair entidades mencionadas (IPs, dominios, nomes, projetos) | Entities + tipos |
-| Toxicity Detection | Detectar linguagem hostil/agressiva | Score 0.0 a 1.0 |
-| Intent Classification | Classificar intencao de mensagens suspeitas | Labels: curiosity, planning, execution, covering_tracks |
-| Summarization (LLM) | Resumir threads longas para investigadores | Resumo contextual |
-| Embedding + Similarity | Detectar assuntos anomalos vs historico | Cosine distance do baseline |
-| Emotion Detection (GoEmotions) | Granularidade emocional (raiva, medo, desgosto, surpresa) | Multi-label scores |
-| Language Style Analysis | Detectar mudanca de estilo (pessoa diferente usando a conta) | Perplexity score |
-| Keyword Alerting (Regex + ML) | Detectar termos criticos: "senha", "root", "deletar tudo" | Boolean + contexto |
+| DBRX (Sentiment) | Classificar tom emocional de cada mensagem | Score -1.0 a +1.0 |
+| DBRX (Zero-shot) | Categorizar assuntos discutidos | Labels: work, complaint, job_search, tech_tools, exfiltration_related |
+| Llama 70B (NER) | Extrair entidades mencionadas (IPs, dominios, nomes, projetos) | Entities + tipos |
+| DBRX (Toxicity) | Detectar linguagem hostil/agressiva | Score 0.0 a 1.0 |
+| DBRX (Intent) | Classificar intencao de mensagens suspeitas | Labels: curiosity, planning, execution, covering_tracks |
+| Llama 70B (Summarization) | Resumir threads longas para investigadores | Resumo contextual |
+| GTE-Large (Embeddings) | Detectar assuntos anomalos vs historico | Cosine distance do baseline |
+| DeBERTa fine-tuned (Emotion) | Granularidade emocional (raiva, medo, desgosto, surpresa) | Multi-label scores |
+| DeBERTa fine-tuned (Style) | Detectar mudanca de estilo (outra pessoa usando a conta) | Perplexity score |
+| Regex + DBRX (Alerting) | Detectar termos criticos: "senha", "root", "deletar tudo" | Boolean + contexto |
+
+**Evolucao planejada:**
+- Mes 1-2: Modelos Foundation sem fine-tuning (cold start)
+- Mes 3: Fine-tune DeBERTa com 10K+ labels coletados do cliente para PT-BR
+- Mes 4: Avaliar Llama 405B se recall da investigacao for < 80%
+- Mes 6: Considerar Claude API apenas para sumarizacao de dados JA anonimizados
 
 #### 3.9.5 Perfil Psicologico Continuo
 
