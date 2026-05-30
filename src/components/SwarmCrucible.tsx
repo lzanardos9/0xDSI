@@ -2,8 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Swords, Flame, ShieldCheck, Zap, Brain, Download, Play, Pause, RotateCcw,
   Crown, Dna, Sparkles, Activity, Crosshair, Network, FileCode2, BookOpen,
-  CircuitBoard, Gauge, Layers, Binary, Radar, Target,
+  CircuitBoard, Gauge, Layers, Binary, Radar, Target, FlaskConical,
 } from 'lucide-react';
+import {
+  PatchValidatorPanel,
+  CWEHeatmapPanel,
+  TokenCostPanel,
+  RaceTimelinePanel,
+  DefenseScoringPanel,
+} from './swarm/CAIPanels';
 import { supabase } from '../lib/supabase';
 import {
   BattlefieldSelector,
@@ -151,6 +158,7 @@ export default function SwarmCrucible() {
   const [selectedChampion, setSelectedChampion] = useState<ChampionDetail | null>(null);
   const [battlefield, setBattlefield] = useState<Battlefield | null>(null);
   const [artifactOpen, setArtifactOpen] = useState(false);
+  const [caiView, setCaiView] = useState<'simulation' | 'patches' | 'cwe' | 'tokens' | 'races' | 'scoring'>('simulation');
 
   useEffect(() => {
     const parts = { red: [] as Particle[], blue: [] as Particle[] };
@@ -584,6 +592,44 @@ export default function SwarmCrucible() {
         </div>
       </div>
 
+      {/* CAI Analysis Tabs */}
+      <div className="px-6 py-2 border-b border-slate-800 bg-slate-900/80 flex items-center gap-1 overflow-x-auto">
+        {([
+          { key: 'simulation', label: 'Simulation', icon: Swords },
+          { key: 'patches', label: 'Patch Validator', icon: ShieldCheck },
+          { key: 'cwe', label: 'CWE Heatmap', icon: Target },
+          { key: 'tokens', label: 'Token Costs', icon: Zap },
+          { key: 'races', label: 'Race Timeline', icon: Activity },
+          { key: 'scoring', label: 'Defense Scoring', icon: Gauge },
+        ] as const).map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setCaiView(tab.key)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all whitespace-nowrap ${
+              caiView === tab.key
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent'
+            }`}
+          >
+            <tab.icon className="w-3.5 h-3.5" />
+            {tab.label}
+          </button>
+        ))}
+        <div className="ml-auto flex items-center gap-1.5">
+          <FlaskConical className="w-3.5 h-3.5 text-amber-500/60" />
+          <span className="text-[9px] font-mono text-slate-500">CAI Research Enhancements</span>
+        </div>
+      </div>
+
+      {caiView !== 'simulation' ? (
+        <div className="p-6 max-h-[calc(100vh-290px)] overflow-y-auto custom-scrollbar">
+          {caiView === 'patches' && <PatchValidatorPanel />}
+          {caiView === 'cwe' && <CWEHeatmapPanel />}
+          {caiView === 'tokens' && <TokenCostPanel />}
+          {caiView === 'races' && <RaceTimelinePanel />}
+          {caiView === 'scoring' && <DefenseScoringPanel />}
+        </div>
+      ) : (
       <div className="p-6 grid grid-cols-12 gap-4">
         <div className="col-span-12 xl:col-span-8 space-y-4">
           <div className="relative rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden">
@@ -621,6 +667,7 @@ export default function SwarmCrucible() {
           <SeedsPanel rules={rulesSeed} micros={microPatterns} />
         </div>
       </div>
+      )}
       {selectedChampion && (
         <ChampionDetailModal
           champion={selectedChampion}
