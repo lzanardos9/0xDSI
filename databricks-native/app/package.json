@@ -2,8 +2,11 @@
   "name": "0xdsi-agentic-soc-app",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "echo 'Pre-built frontend served by FastAPI - no build step needed'"
+    "build": "cd ../.. && npx vite build --outDir databricks-native/app/dist --emptyOutDir",
+    "build:local": "cd ../.. && npx vite build --outDir databricks-native/app/dist --emptyOutDir",
+    "preview": "cd ../.. && npx vite preview --outDir databricks-native/app/dist"
   },
   "dependencies": {}
 }

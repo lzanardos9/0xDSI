@@ -401,7 +401,7 @@ cat <<'EOF'
     ║                                                                          ║
     ║         Governed Lakehouse Security Operations Are Now Online             ║
     ║                                                                          ║
-    ║         • 43 Autonomous Agents Scheduled                                 ║
+    ║         • 46 Autonomous Agents Scheduled                                 ║
     ║         • 10 Correlation Engines Active                                  ║
     ║         • Lakebase CDC Sync for Session/Active Lists                     ║
     ║         • Vector Threat Hunting Memory Initialized                       ║
@@ -1091,7 +1091,7 @@ AGENT_EXPERIMENTS=(
   vector_scoring ai_correlation connector_version stateful_backdoor_defense vibe_connector_builder
   vector_search_index glasswing_ingest glasswing_dedup glasswing_reachability glasswing_blast_radius
   glasswing_auto_patch session_list_manager active_list_manager llm_risk_profiler glasswing_scanner
-  knowledge_store guardian_compliance
+  knowledge_store guardian_compliance ot_protocol_security exploitforge communication_analyzer
 )
 
 exp_created=0

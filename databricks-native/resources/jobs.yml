@@ -2022,3 +2022,30 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+
+    # ─────────────────────────────────────────────────────
+    # COMMUNICATION ANALYZER - Psychological Profiling
+    # Analyzes emails, Slack, Teams, meetings for insider
+    # threat behavioral signals using in-workspace LLMs.
+    # ─────────────────────────────────────────────────────
+    communication_analyzer:
+      name: "[0xDSI] Agent 46 - Communication Analyzer (UEBA)"
+      schedule:
+        quartz_cron_expression: "0 0 */4 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: analyze_communications
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/46_communication_analyzer.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+              batch_size: "50"
+              min_messages_for_profile: "10"
+              embedding_sample_rate: "0.2"

@@ -527,7 +527,26 @@ CREATE TABLE IF NOT EXISTS psychological_profiles (
     risk_indicators ARRAY<STRING>,
     behavioral_score DOUBLE DEFAULT 0.0,
     assessment_date TIMESTAMP DEFAULT current_timestamp(),
-    data_sources ARRAY<STRING>
+    data_sources ARRAY<STRING>,
+    sentiment_score_current DOUBLE DEFAULT 0.0,
+    sentiment_volatility DOUBLE DEFAULT 0.0,
+    toxicity_score_current DOUBLE DEFAULT 0.0,
+    dominant_emotion STRING DEFAULT 'neutral',
+    dominant_intent STRING DEFAULT 'neutral',
+    communication_risk_score DOUBLE DEFAULT 0.0,
+    exfiltration_language_ratio DOUBLE DEFAULT 0.0,
+    job_search_indicator_ratio DOUBLE DEFAULT 0.0,
+    risk_signals STRING,
+    top_topics STRING,
+    messages_analyzed INT DEFAULT 0,
+    channel_breakdown STRING,
+    sentiment_trend_7d DOUBLE,
+    sentiment_trend_14d DOUBLE,
+    sentiment_trend_30d DOUBLE,
+    toxicity_trend_7d DOUBLE,
+    toxicity_incidents_30d INT DEFAULT 0,
+    analysis_window_hours INT DEFAULT 24,
+    last_analyzed_at TIMESTAMP
 )
 USING DELTA
 """)
@@ -536,15 +555,72 @@ spark.sql("""
 CREATE TABLE IF NOT EXISTS behavioral_indicators (
     id STRING DEFAULT uuid(),
     user_id STRING NOT NULL,
-    indicator_type STRING,
+    indicator_type STRING NOT NULL,
+    indicator_name STRING,
+    severity STRING DEFAULT 'low',
+    score DOUBLE DEFAULT 0.0,
     value DOUBLE,
     context STRING,
-    detected_at TIMESTAMP DEFAULT current_timestamp()
+    evidence STRING,
+    detected_at TIMESTAMP DEFAULT current_timestamp(),
+    source STRING DEFAULT 'manual'
 )
 USING DELTA
 """)
 
+spark.sql("""
+CREATE TABLE IF NOT EXISTS bronze_communications (
+    message_id STRING DEFAULT uuid(),
+    user_id STRING NOT NULL,
+    channel_type STRING NOT NULL,
+    message_body STRING,
+    subject STRING,
+    sent_at TIMESTAMP DEFAULT current_timestamp(),
+    recipient_count INT DEFAULT 1,
+    is_external BOOLEAN DEFAULT false,
+    analyzed BOOLEAN DEFAULT false,
+    analyzed_at TIMESTAMP,
+    source_system STRING,
+    metadata MAP<STRING, STRING>
+)
+USING DELTA
+PARTITIONED BY (channel_type)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS communication_baselines (
+    id STRING DEFAULT uuid(),
+    user_id STRING NOT NULL,
+    baseline_embedding STRING,
+    messages_in_baseline INT DEFAULT 0,
+    avg_sentiment_at_baseline DOUBLE DEFAULT 0.0,
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS psychological_profiles_history (
+    id STRING DEFAULT uuid(),
+    user_id STRING NOT NULL,
+    sentiment_score_current DOUBLE,
+    sentiment_volatility DOUBLE,
+    toxicity_score_current DOUBLE,
+    dominant_emotion STRING,
+    dominant_intent STRING,
+    communication_risk_score DOUBLE,
+    exfiltration_language_ratio DOUBLE,
+    job_search_indicator_ratio DOUBLE,
+    messages_analyzed INT,
+    analysis_window_hours INT DEFAULT 24,
+    analyzed_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (user_id)
+""")
+
 print("User & behavior tables created")
+print("Communication analysis tables created (bronze_communications, baselines, history)")
 
 # COMMAND ----------
 
