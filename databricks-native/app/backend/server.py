@@ -470,6 +470,121 @@ async def user_risk_scores(limit: int = 20):
 
 
 # ──────────────────────────────────────────────
+# Psychological / Communication Profiles
+# ──────────────────────────────────────────────
+
+@app.get("/api/psychological-profiles")
+async def psychological_profiles(limit: int = 50, min_risk: float = 0.0):
+    """Get all psychological profiles with optional risk filter."""
+    sql = f"""
+        SELECT pp.user_id, up.display_name, up.email, up.department,
+               pp.sentiment_score_current, pp.sentiment_volatility,
+               pp.toxicity_score_current, pp.dominant_emotion,
+               pp.dominant_intent, pp.communication_risk_score,
+               pp.exfiltration_language_ratio, pp.job_search_indicator_ratio,
+               pp.risk_signals, pp.top_topics,
+               pp.messages_analyzed, pp.channel_breakdown,
+               pp.sentiment_trend_7d, pp.sentiment_trend_14d, pp.sentiment_trend_30d,
+               pp.toxicity_trend_7d, pp.toxicity_incidents_30d,
+               pp.last_analyzed_at
+        FROM {fqn('psychological_profiles')} pp
+        LEFT JOIN {fqn('user_profiles')} up ON pp.user_id = up.id
+        WHERE pp.communication_risk_score >= {min_risk}
+        ORDER BY pp.communication_risk_score DESC
+        LIMIT {limit}
+    """
+    try:
+        results = query(sql)
+        return JSONResponse(content=results)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/psychological-profiles/{user_id}")
+async def psychological_profile_detail(user_id: str):
+    """Get detailed psychological profile for a specific user."""
+    try:
+        profile = query(f"""
+            SELECT * FROM {fqn('psychological_profiles')}
+            WHERE user_id = :user_id
+        """, {"user_id": user_id})
+
+        indicators = query(f"""
+            SELECT indicator_type, indicator_name, severity, score,
+                   evidence, detected_at, source
+            FROM {fqn('behavioral_indicators')}
+            WHERE user_id = :user_id
+            ORDER BY detected_at DESC
+            LIMIT 50
+        """, {"user_id": user_id})
+
+        baseline = query(f"""
+            SELECT messages_in_baseline, avg_sentiment_at_baseline, updated_at
+            FROM {fqn('communication_baselines')}
+            WHERE user_id = :user_id
+        """, {"user_id": user_id})
+
+        return {
+            "profile": profile[0] if profile else None,
+            "indicators": indicators,
+            "baseline": baseline[0] if baseline else None,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/psychological-profiles/trends/{user_id}")
+async def psychological_trends(user_id: str, days: int = 30):
+    """Get historical sentiment/risk trends for a user."""
+    try:
+        trends = query(f"""
+            SELECT DATE(analyzed_at) as date,
+                   sentiment_score_current as sentiment,
+                   toxicity_score_current as toxicity,
+                   communication_risk_score as risk_score,
+                   messages_analyzed
+            FROM {fqn('psychological_profiles_history')}
+            WHERE user_id = :user_id
+            AND analyzed_at > current_timestamp() - INTERVAL {days} DAYS
+            ORDER BY analyzed_at ASC
+        """, {"user_id": user_id})
+        return JSONResponse(content=trends)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/behavioral-indicators/summary")
+async def behavioral_indicators_summary():
+    """Aggregate summary of all behavioral indicators across users."""
+    try:
+        summary = query(f"""
+            SELECT indicator_type,
+                   severity,
+                   COUNT(*) as count,
+                   AVG(score) as avg_score
+            FROM {fqn('behavioral_indicators')}
+            WHERE detected_at > current_timestamp() - INTERVAL 7 DAYS
+            GROUP BY indicator_type, severity
+            ORDER BY avg_score DESC
+        """)
+        top_risk_users = query(f"""
+            SELECT bi.user_id, up.display_name, up.email, up.department,
+                   COUNT(*) as indicator_count,
+                   MAX(bi.score) as max_score,
+                   COLLECT_SET(bi.indicator_type) as indicator_types
+            FROM {fqn('behavioral_indicators')} bi
+            LEFT JOIN {fqn('user_profiles')} up ON bi.user_id = up.id
+            WHERE bi.detected_at > current_timestamp() - INTERVAL 7 DAYS
+            GROUP BY bi.user_id, up.display_name, up.email, up.department
+            ORDER BY max_score DESC
+            LIMIT 20
+        """)
+        return {"summary": summary, "top_risk_users": top_risk_users}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
 # Phase 1: Entity Spine & Knowledge Store
 # ──────────────────────────────────────────────
 

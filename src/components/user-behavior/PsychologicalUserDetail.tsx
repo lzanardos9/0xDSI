@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Brain, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Brain, AlertTriangle, AlertCircle, TrendingDown, TrendingUp, MessageSquare, Mail, Video, Activity } from 'lucide-react';
 
 interface Props {
   userEmail: string;
@@ -36,6 +36,27 @@ interface PsychProfile {
   confidence_score: number;
 }
 
+interface CommProfile {
+  sentiment_score_current: number;
+  sentiment_volatility: number;
+  toxicity_score_current: number;
+  dominant_emotion: string;
+  dominant_intent: string;
+  communication_risk_score: number;
+  exfiltration_language_ratio: number;
+  job_search_indicator_ratio: number;
+  risk_signals: string;
+  top_topics: string;
+  messages_analyzed: number;
+  channel_breakdown: string;
+  sentiment_trend_7d: number | null;
+  sentiment_trend_14d: number | null;
+  sentiment_trend_30d: number | null;
+  toxicity_trend_7d: number | null;
+  toxicity_incidents_30d: number | null;
+  last_analyzed_at: string;
+}
+
 interface RiskFactor {
   id: string;
   factor_type: string;
@@ -66,8 +87,52 @@ const Trait = ({ label, score, danger = false }: { label: string; score: number;
   );
 };
 
+function MiniSparkline({ values, color = 'text-blue-400' }: { values: number[]; color?: string }) {
+  if (!values.length) return <span className="text-xs text-slate-600">No data</span>;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const height = 24;
+  const width = 80;
+  const points = values.map((v, i) => {
+    const x = (i / (values.length - 1 || 1)) * width;
+    const y = height - ((v - min) / range) * height;
+    return `${x},${y}`;
+  }).join(' ');
+  return (
+    <svg width={width} height={height} className={`inline-block ${color}`}>
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TrendBadge({ value, label }: { value: number | null; label: string }) {
+  if (value === null || value === undefined) {
+    return (
+      <div className="text-center">
+        <div className="text-[10px] text-slate-500 uppercase">{label}</div>
+        <div className="text-xs text-slate-600">--</div>
+      </div>
+    );
+  }
+  const isNeg = value < -0.1;
+  const isPos = value > 0.1;
+  return (
+    <div className="text-center">
+      <div className="text-[10px] text-slate-500 uppercase">{label}</div>
+      <div className={`text-sm font-bold flex items-center justify-center gap-0.5 ${
+        isNeg ? 'text-red-400' : isPos ? 'text-emerald-400' : 'text-slate-300'
+      }`}>
+        {isNeg ? <TrendingDown className="w-3 h-3" /> : isPos ? <TrendingUp className="w-3 h-3" /> : null}
+        {value.toFixed(2)}
+      </div>
+    </div>
+  );
+}
+
 export function PsychologicalUserDetail({ userEmail }: Props) {
   const [profile, setProfile] = useState<PsychProfile | null>(null);
+  const [commProfile, setCommProfile] = useState<CommProfile | null>(null);
   const [factors, setFactors] = useState<RiskFactor[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -86,18 +151,21 @@ export function PsychologicalUserDetail({ userEmail }: Props) {
 
       if (!llmRow) {
         setProfile(null);
+        setCommProfile(null);
         setFactors([]);
         setLoading(false);
         return;
       }
 
-      const [psychRes, factorsRes] = await Promise.all([
+      const [psychRes, factorsRes, commRes] = await Promise.all([
         supabase.from('user_psychological_profiles').select('*').eq('user_id', llmRow.user_id).maybeSingle(),
         supabase.from('psychological_risk_factors').select('*').eq('user_id', llmRow.user_id).order('severity', { ascending: false }),
+        supabase.from('psychological_profiles').select('*').eq('user_id', llmRow.user_id).maybeSingle(),
       ]);
 
       if (cancelled) return;
       setProfile(psychRes.data as PsychProfile | null);
+      setCommProfile(commRes.data as CommProfile | null);
       setFactors((factorsRes.data as RiskFactor[]) || []);
       setLoading(false);
     })();
@@ -119,8 +187,139 @@ export function PsychologicalUserDetail({ userEmail }: Props) {
     );
   }
 
+  const channelBreakdown = commProfile?.channel_breakdown ? JSON.parse(commProfile.channel_breakdown) : null;
+  const riskSignals = commProfile?.risk_signals ? JSON.parse(commProfile.risk_signals) : [];
+  const topTopics = commProfile?.top_topics ? JSON.parse(commProfile.top_topics) : [];
+
   return (
     <div className="space-y-4">
+      {/* Communication Trends Section */}
+      {commProfile && (
+        <div className="bg-slate-800/60 border border-cyan-500/20 rounded-lg p-4">
+          <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <Activity className="w-3.5 h-3.5" /> Communication Analysis (Rolling)
+          </h4>
+
+          {/* Sentiment Trends */}
+          <div className="grid grid-cols-5 gap-3 mb-4">
+            <TrendBadge value={commProfile.sentiment_score_current} label="Current" />
+            <TrendBadge value={commProfile.sentiment_trend_7d} label="7 Day" />
+            <TrendBadge value={commProfile.sentiment_trend_14d} label="14 Day" />
+            <TrendBadge value={commProfile.sentiment_trend_30d} label="30 Day" />
+            <div className="text-center">
+              <div className="text-[10px] text-slate-500 uppercase">Volatility</div>
+              <div className={`text-sm font-bold ${
+                commProfile.sentiment_volatility > 0.4 ? 'text-red-400' :
+                commProfile.sentiment_volatility > 0.2 ? 'text-orange-400' : 'text-slate-300'
+              }`}>{commProfile.sentiment_volatility.toFixed(2)}</div>
+            </div>
+          </div>
+
+          {/* Risk Metrics Row */}
+          <div className="grid grid-cols-4 gap-3 mb-4">
+            <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+              <div className="text-[10px] text-slate-500 uppercase">Comm Risk</div>
+              <div className={`text-xl font-bold ${
+                commProfile.communication_risk_score > 0.6 ? 'text-red-400' :
+                commProfile.communication_risk_score > 0.3 ? 'text-orange-400' : 'text-emerald-400'
+              }`}>{(commProfile.communication_risk_score * 100).toFixed(0)}</div>
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+              <div className="text-[10px] text-slate-500 uppercase">Toxicity</div>
+              <div className={`text-xl font-bold ${
+                commProfile.toxicity_score_current > 0.4 ? 'text-red-400' :
+                commProfile.toxicity_score_current > 0.2 ? 'text-orange-400' : 'text-emerald-400'
+              }`}>{(commProfile.toxicity_score_current * 100).toFixed(0)}</div>
+              {commProfile.toxicity_incidents_30d !== null && (
+                <div className="text-[9px] text-slate-500">{commProfile.toxicity_incidents_30d} incidents/30d</div>
+              )}
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+              <div className="text-[10px] text-slate-500 uppercase">Exfil Lang</div>
+              <div className={`text-xl font-bold ${
+                commProfile.exfiltration_language_ratio > 0.2 ? 'text-red-400' :
+                commProfile.exfiltration_language_ratio > 0.05 ? 'text-orange-400' : 'text-emerald-400'
+              }`}>{(commProfile.exfiltration_language_ratio * 100).toFixed(0)}%</div>
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-2 text-center">
+              <div className="text-[10px] text-slate-500 uppercase">Job Search</div>
+              <div className={`text-xl font-bold ${
+                commProfile.job_search_indicator_ratio > 0.2 ? 'text-orange-400' :
+                commProfile.job_search_indicator_ratio > 0.05 ? 'text-yellow-400' : 'text-emerald-400'
+              }`}>{(commProfile.job_search_indicator_ratio * 100).toFixed(0)}%</div>
+            </div>
+          </div>
+
+          {/* Channel Breakdown + Intent */}
+          <div className="flex items-center gap-4 mb-3">
+            {channelBreakdown && (
+              <div className="flex items-center gap-3 text-xs text-slate-400">
+                {channelBreakdown.email && (
+                  <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{channelBreakdown.email}</span>
+                )}
+                {channelBreakdown.slack && (
+                  <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3" />{channelBreakdown.slack}</span>
+                )}
+                {channelBreakdown.teams && (
+                  <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3 text-blue-400" />{channelBreakdown.teams}</span>
+                )}
+                {channelBreakdown.meeting && (
+                  <span className="flex items-center gap-1"><Video className="w-3 h-3" />{channelBreakdown.meeting}</span>
+                )}
+              </div>
+            )}
+            <div className="ml-auto text-xs text-slate-500">
+              {commProfile.messages_analyzed} msgs analyzed
+            </div>
+          </div>
+
+          {/* Dominant Intent + Emotion */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${
+              commProfile.dominant_intent === 'neutral' ? 'bg-slate-700 text-slate-300' :
+              commProfile.dominant_intent === 'venting' ? 'bg-orange-500/20 text-orange-300' :
+              commProfile.dominant_intent === 'exfiltration_related' ? 'bg-red-500/20 text-red-300' :
+              commProfile.dominant_intent === 'job_search' ? 'bg-yellow-500/20 text-yellow-300' :
+              'bg-blue-500/20 text-blue-300'
+            }`}>
+              Intent: {commProfile.dominant_intent.replace(/_/g, ' ')}
+            </span>
+            <span className="text-[11px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 capitalize">
+              Emotion: {commProfile.dominant_emotion}
+            </span>
+          </div>
+
+          {/* Risk Signals */}
+          {riskSignals.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {riskSignals.slice(0, 6).map((signal: string) => (
+                <span key={signal} className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/20">
+                  {signal.replace(/_/g, ' ')}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Topics */}
+          {topTopics.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {topTopics.slice(0, 8).map((topic: string) => (
+                <span key={topic} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">
+                  {topic}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {commProfile.last_analyzed_at && (
+            <div className="text-[10px] text-slate-600 mt-2 text-right">
+              Last analyzed: {new Date(commProfile.last_analyzed_at).toLocaleString()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Overall Risk Header */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 grid grid-cols-3 gap-4">
         <div>
           <div className="text-xs text-slate-400 uppercase tracking-wide">Overall Risk</div>
