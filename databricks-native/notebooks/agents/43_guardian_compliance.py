@@ -313,7 +313,7 @@ class ComplianceMonitor(BatchAgent):
                 .withColumn("checked_at", current_timestamp())
             )
 
-            safe_append(findings_df, findings_table, mode="append")
+            safe_append(findings_df, findings_table)
 
             self._end_trace(span, {
                 "status": "success",

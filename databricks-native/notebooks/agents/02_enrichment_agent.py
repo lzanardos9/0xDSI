@@ -556,7 +556,7 @@ Generate enrichment narrative with risk assessment."""
                 .withColumn("enriched_at", current_timestamp())
             )
 
-            safe_append(df, enrichments_table, mode="append")
+            safe_append(df, enrichments_table)
 
             self._end_trace(
                 span,

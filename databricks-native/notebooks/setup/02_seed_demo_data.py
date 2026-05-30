@@ -3,6 +3,10 @@
 # MAGIC # 0xDSI - Seed Demo Data
 # MAGIC Populates all tables with realistic security operations data for demonstration.
 # MAGIC Run AFTER `01_create_catalog_schema`.
+# MAGIC
+# MAGIC **Note:** This notebook does NOT use `_shared/bootstrap` because it populates the
+# MAGIC data that bootstrap-dependent notebooks consume. It operates at the infrastructure
+# MAGIC level using direct widget-based configuration.
 
 # COMMAND ----------
 

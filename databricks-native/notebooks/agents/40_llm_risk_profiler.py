@@ -320,7 +320,7 @@ class LLMRiskProfiler(BatchAgent):
                 .withColumn("profiled_at", current_timestamp())
             )
 
-            safe_append(profiles_df, profiles_table, mode="append")
+            safe_append(profiles_df, profiles_table)
 
             self._end_trace(span, {
                 "status": "success",

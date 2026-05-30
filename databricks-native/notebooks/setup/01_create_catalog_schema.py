@@ -3,6 +3,10 @@
 # MAGIC # 0xDSI Agentic SOC - Unity Catalog Setup
 # MAGIC Creates the catalog, schema, and all tables required by the SOC platform.
 # MAGIC Run this notebook ONCE to initialize your environment.
+# MAGIC
+# MAGIC **Note:** This notebook does NOT use `_shared/bootstrap` because it CREATES the
+# MAGIC infrastructure (catalog, schema, tables) that bootstrap depends on. It must operate
+# MAGIC independently using widget-based configuration.
 
 # COMMAND ----------
 
@@ -2390,6 +2394,281 @@ TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 print("Phase 4 tables created: Typed Bronze (2), MUSE (3), GUARDIAN (3), Edge Collector (4)")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Phase 5: Missing Pipeline Tables
+# MAGIC Tables referenced by ML training, analytics, and correlation notebooks that need
+# MAGIC to exist before pipelines run.
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS enriched_security_events (
+    id STRING DEFAULT uuid(),
+    event_id STRING NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    event_type STRING NOT NULL,
+    source STRING,
+    user_id STRING,
+    username STRING,
+    source_ip STRING,
+    dest_ip STRING,
+    hostname STRING,
+    action STRING,
+    outcome STRING,
+    severity STRING DEFAULT 'low',
+    confidence DOUBLE DEFAULT 0.5,
+    geo_country STRING,
+    geo_city STRING,
+    asn STRING,
+    asn_org STRING,
+    ip_reputation_score DOUBLE DEFAULT 0.0,
+    threat_intel_match BOOLEAN DEFAULT false,
+    matched_iocs ARRAY<STRING>,
+    mitre_techniques ARRAY<STRING>,
+    user_risk_score DOUBLE DEFAULT 0.0,
+    asset_criticality STRING DEFAULT 'medium',
+    enrichment_sources ARRAY<STRING>,
+    raw_event STRING,
+    enriched_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (event_type, DATE(timestamp))
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS user_sessions (
+    id STRING DEFAULT uuid(),
+    session_id STRING NOT NULL,
+    user_id STRING NOT NULL,
+    username STRING,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP,
+    source_ip STRING,
+    device_fingerprint STRING,
+    device_type STRING,
+    os STRING,
+    browser STRING,
+    geo_country STRING,
+    geo_city STRING,
+    events_count BIGINT DEFAULT 0,
+    bytes_transferred BIGINT DEFAULT 0,
+    risk_score DOUBLE DEFAULT 0.0,
+    anomaly_flags ARRAY<STRING>,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (DATE(start_time))
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS correlation_baselines (
+    id STRING DEFAULT uuid(),
+    rule_id STRING NOT NULL,
+    baseline_key STRING NOT NULL,
+    metric_name STRING NOT NULL,
+    metric_value DOUBLE NOT NULL,
+    sample_count BIGINT DEFAULT 0,
+    mean DOUBLE DEFAULT 0.0,
+    stddev DOUBLE DEFAULT 0.0,
+    p95 DOUBLE DEFAULT 0.0,
+    p99 DOUBLE DEFAULT 0.0,
+    last_updated TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS temporal_baselines (
+    id STRING DEFAULT uuid(),
+    entity_type STRING NOT NULL,
+    entity_id STRING NOT NULL,
+    metric_name STRING NOT NULL,
+    hour_of_day INT,
+    day_of_week INT,
+    mean DOUBLE DEFAULT 0.0,
+    stddev DOUBLE DEFAULT 0.0,
+    p95 DOUBLE DEFAULT 0.0,
+    sample_count BIGINT DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS threat_intel_matches (
+    id STRING DEFAULT uuid(),
+    event_id STRING NOT NULL,
+    ioc_id STRING NOT NULL,
+    ioc_type STRING NOT NULL,
+    ioc_value STRING NOT NULL,
+    feed_name STRING,
+    confidence DOUBLE DEFAULT 0.0,
+    severity STRING DEFAULT 'medium',
+    matched_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS trend_graph_nodes (
+    id STRING DEFAULT uuid(),
+    node_type STRING NOT NULL,
+    node_id STRING NOT NULL,
+    label STRING,
+    properties STRING,
+    score DOUBLE DEFAULT 0.0,
+    first_seen TIMESTAMP DEFAULT current_timestamp(),
+    last_seen TIMESTAMP DEFAULT current_timestamp(),
+    event_count BIGINT DEFAULT 0
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS trend_graph_edges (
+    id STRING DEFAULT uuid(),
+    source_node_id STRING NOT NULL,
+    target_node_id STRING NOT NULL,
+    edge_type STRING NOT NULL,
+    weight DOUBLE DEFAULT 1.0,
+    properties STRING,
+    first_seen TIMESTAMP DEFAULT current_timestamp(),
+    last_seen TIMESTAMP DEFAULT current_timestamp(),
+    event_count BIGINT DEFAULT 0
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS trend_runtime_metrics (
+    id STRING DEFAULT uuid(),
+    metric_name STRING NOT NULL,
+    metric_value DOUBLE NOT NULL,
+    dimension STRING,
+    dimension_value STRING,
+    timestamp TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (DATE(timestamp))
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS investigations (
+    id STRING DEFAULT uuid(),
+    case_id STRING,
+    alert_id STRING,
+    title STRING NOT NULL,
+    description STRING,
+    status STRING DEFAULT 'open',
+    priority STRING DEFAULT 'medium',
+    assigned_to STRING,
+    findings STRING,
+    mitre_techniques ARRAY<STRING>,
+    affected_assets ARRAY<STRING>,
+    timeline STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp(),
+    updated_at TIMESTAMP DEFAULT current_timestamp(),
+    closed_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS correlation_matches (
+    id STRING DEFAULT uuid(),
+    rule_id STRING NOT NULL,
+    rule_name STRING,
+    matched_events ARRAY<STRING>,
+    matched_at TIMESTAMP DEFAULT current_timestamp(),
+    confidence DOUBLE DEFAULT 0.0,
+    severity STRING DEFAULT 'medium',
+    entity_type STRING,
+    entity_id STRING,
+    context STRING,
+    promoted_to_alert BOOLEAN DEFAULT false,
+    alert_id STRING
+)
+USING DELTA
+PARTITIONED BY (DATE(matched_at))
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS user_profiles (
+    id STRING DEFAULT uuid(),
+    user_id STRING NOT NULL,
+    username STRING,
+    email STRING,
+    department STRING,
+    title STRING,
+    manager STRING,
+    location STRING,
+    hire_date DATE,
+    risk_score DOUBLE DEFAULT 0.0,
+    risk_level STRING DEFAULT 'low',
+    peer_group STRING,
+    access_level STRING DEFAULT 'standard',
+    last_activity TIMESTAMP,
+    baseline_json STRING,
+    anomaly_count_30d BIGINT DEFAULT 0,
+    is_privileged BOOLEAN DEFAULT false,
+    is_on_notice BOOLEAN DEFAULT false,
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS health_alerts (
+    id STRING DEFAULT uuid(),
+    component STRING NOT NULL,
+    alert_type STRING NOT NULL,
+    severity STRING DEFAULT 'warning',
+    message STRING NOT NULL,
+    details STRING,
+    acknowledged BOOLEAN DEFAULT false,
+    resolved BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT current_timestamp(),
+    resolved_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS code_runtime_events (
+    id STRING DEFAULT uuid(),
+    user_id STRING NOT NULL,
+    repo_name STRING,
+    file_path STRING,
+    action STRING NOT NULL,
+    language STRING,
+    lines_changed INT DEFAULT 0,
+    secrets_detected BOOLEAN DEFAULT false,
+    code_quality_score DOUBLE,
+    timestamp TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+print("Phase 5 tables created: enriched_security_events, user_sessions, correlation_baselines,")
+print("  temporal_baselines, threat_intel_matches, trend_graph_nodes/edges, trend_runtime_metrics,")
+print("  investigations, correlation_matches, user_profiles, health_alerts, code_runtime_events")
 
 # COMMAND ----------
 

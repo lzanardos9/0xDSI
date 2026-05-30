@@ -364,7 +364,7 @@ class SessionListManager(BatchAgent):
                 .withColumn("detected_at", current_timestamp())
             )
 
-            safe_append(anomalies_df, session_anomalies_table, mode="append")
+            safe_append(anomalies_df, session_anomalies_table)
 
             self._end_trace(span, {
                 "status": "success",
@@ -419,11 +419,8 @@ class SessionListManager(BatchAgent):
                 state_df = spark.createDataFrame(state_records, schema=schema)
                 safe_merge(
                     spark, state_df, session_state_table,
-                    on_keys=["session_id"],
-                    updates={
-                        "last_activity": state_df.last_activity,
-                        "risk_score": state_df.risk_score,
-                    }
+                    merge_keys=["session_id"],
+                    update_columns=["last_activity", "risk_score"]
                 )
 
             self._end_trace(span, {"status": "success"})

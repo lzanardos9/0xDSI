@@ -321,7 +321,7 @@ class ActiveListManager(BatchAgent):
                 .withColumn("changed_at", current_timestamp())
             )
 
-            safe_append(changes_df, changes_table, mode="append")
+            safe_append(changes_df, changes_table)
 
             self._end_trace(span, {
                 "status": "success",

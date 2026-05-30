@@ -537,7 +537,7 @@ Current Execution Mode: {self._config.environment}
                 .withColumn("completed_at", current_timestamp())
             )
 
-            safe_append(df, table, mode="append")
+            safe_append(df, table)
 
             self._end_trace(
                 span,

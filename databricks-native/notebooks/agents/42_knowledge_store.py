@@ -350,7 +350,7 @@ class KnowledgeStore(BatchAgent):
                 .withColumn("indexed_at", current_timestamp())
             )
 
-            safe_append(entries_df, entries_table, mode="append")
+            safe_append(entries_df, entries_table)
 
             self._end_trace(span, {
                 "status": "success",

@@ -342,7 +342,7 @@ class ScannerOrchestrator(BatchAgent):
                 .withColumn("discovered_at", current_timestamp())
             )
 
-            safe_append(findings_df, findings_table, mode="append")
+            safe_append(findings_df, findings_table)
 
             self._end_trace(span, {
                 "status": "success",
@@ -372,7 +372,7 @@ class ScannerOrchestrator(BatchAgent):
         ])
 
         log_df = spark.createDataFrame(scan_results, schema=schema)
-        safe_append(log_df, scan_log_table, mode="append")
+        safe_append(log_df, scan_log_table)
 
     def _log_metrics(self):
         """Log metrics to MLflow."""

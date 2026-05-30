@@ -7,6 +7,10 @@
 # MAGIC
 # MAGIC **Run AFTER:** `01_create_catalog_schema` and `02_seed_demo_data`
 # MAGIC
+# MAGIC **Note:** This notebook does NOT use `_shared/bootstrap` because it populates the
+# MAGIC data that bootstrap-dependent notebooks consume. It operates at the infrastructure
+# MAGIC level using direct widget-based configuration.
+# MAGIC
 # MAGIC **Tables seeded here (22):**
 # MAGIC 1. system_settings - Platform configuration
 # MAGIC 2. workflows - Automation workflows (n8n-style)

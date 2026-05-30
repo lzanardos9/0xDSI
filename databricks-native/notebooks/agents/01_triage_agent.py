@@ -419,7 +419,7 @@ Respond with JSON:
             )
 
             # Write to triage results table
-            safe_append(results_df, triage_table, mode="append")
+            safe_append(results_df, triage_table)
 
             # Auto-close high-confidence false positives
             auto_close_ids = [
@@ -435,8 +435,8 @@ Respond with JSON:
                     spark,
                     ids_df,
                     alerts_table,
-                    on_keys=["id"],
-                    updates={"status": "closed", "false_positive": True},
+                    merge_keys=["id"],
+                    update_columns=["status", "false_positive"],
                 )
 
             self._end_trace(
