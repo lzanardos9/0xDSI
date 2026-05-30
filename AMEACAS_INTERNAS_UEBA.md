@@ -164,6 +164,138 @@ Ameacas internas (Insider Threats) representam um dos vetores de ataque mais des
 | Travel system | Viagens aprovadas (para validar geolocalizacao) | API |
 | Badge photo | Foto oficial para reconhecimento facial | LDAP / API |
 
+### 3.9 Comunicacoes e Analise Psicologica (NLP/LLM)
+
+Esta e uma das fontes mais ricas e sensíveis para deteccao de insider threats. A analise de comunicacoes permite construir um **perfil psicologico continuo** de cada usuario, detectando mudancas de humor, insatisfacao crescente, intencao maliciosa e sinais pre-exfiltracao.
+
+#### 3.9.1 Fontes de Mensagens e Chat
+
+| Fonte | Dados Coletados | Protocolo/Formato |
+|-------|-----------------|-------------------|
+| Microsoft Teams | Mensagens 1:1, grupos, reacoes, presenca, calls metadata | Microsoft Graph API / Compliance API |
+| Slack | Mensagens em canais/DMs, threads, reacoes, edits, deletes | Discovery API / Compliance Exports |
+| Google Chat | Mensagens, spaces, reacoes | Google Workspace Events API |
+| Zoom Chat | Mensagens in-meeting, mensagens persistentes | Zoom Compliance API |
+| WhatsApp Business | Mensagens corporativas (quando gerenciado) | WhatsApp Business API |
+| Webex | Mensagens, spaces, mention patterns | Webex Compliance API |
+
+**Sinais extraidos de mensagens:**
+- Sentiment score por mensagem e media movel (janela 7/14/30 dias)
+- Topicos discutidos (classificacao automatica)
+- Mencoes a insatisfacao, demissao, reclamacao, injustica
+- Mencoes a ferramentas/tecnicas de exfiltracao
+- Linguagem agressiva ou hostil (toxicity score)
+- Mudanca abrupta de volume de comunicacao (isolamento)
+- Comunicacao fora do horario com entidades externas
+- Delecao massiva de mensagens (anti-forense)
+- Mudanca de idioma (comunicacao em idioma incomum para ocultar conteudo)
+
+#### 3.9.2 Fontes de Email
+
+| Fonte | Dados Coletados | Protocolo/Formato |
+|-------|-----------------|-------------------|
+| Microsoft Exchange / M365 | Headers, corpo, anexos, destinatarios, BCC | Graph API / EWS / Compliance |
+| Google Workspace Gmail | Metadata, labels, delegacao, encaminhamentos | Gmail API / Vault API |
+| Proofpoint / Mimecast | Email gateway logs, DLP matches, URLs clicadas | API / Syslog |
+| Email Archive (Veritas, Global Relay) | Historico completo para compliance | API / SFTP |
+
+**Sinais extraidos de emails:**
+- Volume de emails para dominios externos (baseline vs anomalia)
+- Novos destinatarios nunca contatados antes
+- Auto-forward rules criadas (exfiltracao passiva)
+- BCC para enderecos pessoais
+- Anexos com dados sensiveis (classificacao DLP)
+- Horario de envio vs baseline do usuario
+- Sentiment em emails enviados para gestao (frustacao, raiva)
+- Padroes de resposta (demora crescente = desengajamento)
+- Tamanho de anexos (picos = possivel exfiltracao)
+- Encryption de emails para dominios suspeitos
+
+#### 3.9.3 Gravacoes de Reunioes (Meeting Intelligence)
+
+| Fonte | Dados Coletados | Protocolo/Formato |
+|-------|-----------------|-------------------|
+| Microsoft Teams Recordings | Transcricoes automaticas, speakers, timestamps | Graph API / Stream |
+| Zoom Cloud Recordings | Transcricao, audio, video, chat in-meeting | Zoom API / Webhooks |
+| Google Meet | Transcricoes (com Gemini), attendance | Google Workspace API |
+| Webex Recordings | Transcricao, highlights, action items | Webex API |
+| Gong / Chorus / Fireflies | Transcricao enriquecida, sentiment, keywords | API REST |
+
+**Sinais extraidos de reunioes:**
+- Participacao em reunioes (declinio = desengajamento)
+- Sentiment durante falas (tom de voz, palavras escolhidas)
+- Mencoes a dados sensiveis em contextos inadequados
+- Compartilhamento de tela com conteudo restrito
+- Gravacoes locais nao-autorizadas (detectadas via EDR)
+- Ausencia em reunioes obrigatorias (skip patterns)
+- Duracoes anomalas (reunioes muito curtas = desengajamento)
+- Topicos discutidos vs role do participante (acesso indevido a informacao)
+- Participantes externos nao-aprovados em reunioes internas
+- Analise de speaker diarization: quem domina, quem se calou (mudanca de comportamento)
+
+#### 3.9.4 Modelos de NLP/LLM Aplicados
+
+| Modelo | Aplicacao | Output |
+|--------|-----------|--------|
+| Sentiment Analysis (BERT/RoBERTa) | Classificar tom emocional de cada mensagem | Score -1.0 a +1.0 |
+| Topic Classification (Zero-shot) | Categorizar assuntos discutidos | Labels: work, complaint, job_search, tech_tools, exfiltration_related |
+| Named Entity Recognition (NER) | Extrair entidades mencionadas (IPs, dominios, nomes, projetos) | Entities + tipos |
+| Toxicity Detection | Detectar linguagem hostil/agressiva | Score 0.0 a 1.0 |
+| Intent Classification | Classificar intencao de mensagens suspeitas | Labels: curiosity, planning, execution, covering_tracks |
+| Summarization (LLM) | Resumir threads longas para investigadores | Resumo contextual |
+| Embedding + Similarity | Detectar assuntos anomalos vs historico | Cosine distance do baseline |
+| Emotion Detection (GoEmotions) | Granularidade emocional (raiva, medo, desgosto, surpresa) | Multi-label scores |
+| Language Style Analysis | Detectar mudanca de estilo (pessoa diferente usando a conta) | Perplexity score |
+| Keyword Alerting (Regex + ML) | Detectar termos criticos: "senha", "root", "deletar tudo" | Boolean + contexto |
+
+#### 3.9.5 Perfil Psicologico Continuo
+
+O sistema mantem um **perfil psicologico rolling** para cada usuario baseado nas comunicacoes:
+
+```
+psychological_profile = {
+    "sentiment_trend_7d": -0.3,        // Tendencia negativa na semana
+    "sentiment_trend_30d": -0.1,       // Tendencia geral do mes
+    "engagement_score": 0.4,           // Baixo engajamento (0-1)
+    "isolation_index": 0.7,            // Alto isolamento (0-1)
+    "toxicity_incidents_30d": 3,       // Quantidade de mensagens toxicas
+    "frustration_signals": ["denied promotion", "unfair review"],
+    "job_search_indicators": 0.8,      // Probabilidade de buscar emprego
+    "exfiltration_language": 0.1,      // Mencoes a tecnicas/tools
+    "communication_volume_delta": -45%, // Reducao vs baseline
+    "off_hours_comms_ratio": 0.35,     // 35% das msgs fora do horario
+    "external_comms_anomaly": true,    // Contato incomum com externos
+    "emotional_volatility": 0.6,       // Variacao emocional alta
+    "response_time_delta": +180%,      // Demora 180% mais para responder
+    "meeting_skip_rate_30d": 0.4,      // Falta 40% das reunioes
+    "deletion_behavior": "elevated",   // Apagando mensagens acima do normal
+    "risk_classification": "high",     // Classificacao geral
+    "confidence": 0.82                 // Confianca do modelo
+}
+```
+
+**Triggers de Alerta (Compostos):**
+- sentiment_trend_7d < -0.5 AND isolation_index > 0.6 = **Investigar**
+- job_search_indicators > 0.7 AND communication_volume_delta < -30% = **Monitoramento intensivo**
+- exfiltration_language > 0.3 AND off_hours_comms_ratio > 0.4 = **Alerta critico**
+- toxicity_incidents > 5/30d AND frustration_signals.length > 2 = **Risco de sabotagem**
+- deletion_behavior == "elevated" AND external_comms_anomaly == true = **Possivel exfiltracao ativa**
+
+#### 3.9.6 Consideracoes Eticas e Legais
+
+A analise de comunicacoes e a fonte MAIS sensivel do programa UEBA:
+
+- **LGPD Art. 7**: Base legal deve ser interesse legitimo (Art. 7, IX) com RIPD obrigatorio
+- **Transparencia**: Funcionarios DEVEM ser informados que comunicacoes corporativas sao monitoradas
+- **Proporcionalidade**: Analisar metadata e sentiment, NAO ler conteudo integral por padrao
+- **Escalacao gradual**: Leitura de conteudo apenas com aprovacao juridica + motivo documentado
+- **Direito trabalhista**: Respeitar expectativa de privacidade em canais pessoais
+- **Retencao minima**: Perfis psicologicos com TTL maximo de 90 dias sem incidente
+- **Acesso restrito**: Apenas equipe UEBA senior + CISO podem ver perfis individuais
+- **Auditoria**: Todo acesso a perfis psicologicos deve ser logado e justificado
+- **Opt-out parcial**: Em jurisdicoes que exigem, permitir opt-out de analise de conteudo (nao metadata)
+- **Validacao humana**: Perfis NUNCA devem gerar acoes automaticas sem revisao humana
+
 ---
 
 ## 4. Modelos de Deteccao e Machine Learning
