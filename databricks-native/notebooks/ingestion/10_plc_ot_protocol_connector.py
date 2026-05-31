@@ -459,7 +459,7 @@ bronze_query = (
     .format("delta")
     .outputMode("append")
     .trigger(processingTime=trigger_interval)
-    .option("checkpointLocation", f"{get_checkpoint_path(cfg)}/ot_bronze")
+    .option("checkpointLocation", get_checkpoint_path(cfg, "ot_bronze"))
     .table(bronze_table)
 )
 
@@ -566,7 +566,7 @@ silver_query = (
     .format("delta")
     .outputMode("append")
     .trigger(processingTime=trigger_interval)
-    .option("checkpointLocation", f"{get_checkpoint_path(cfg)}/ot_silver_security")
+    .option("checkpointLocation", get_checkpoint_path(cfg, "ot_silver_security"))
     .table(silver_table)
 )
 
@@ -632,7 +632,7 @@ if enable_command_audit:
         .format("delta")
         .outputMode("append")
         .trigger(processingTime=trigger_interval)
-        .option("checkpointLocation", f"{get_checkpoint_path(cfg)}/ot_command_audit")
+        .option("checkpointLocation", get_checkpoint_path(cfg, "ot_command_audit"))
         .table(audit_table)
     )
 
@@ -723,7 +723,7 @@ if enable_anomaly_baseline:
         .format("delta")
         .outputMode("append")
         .trigger(processingTime="1 minute")
-        .option("checkpointLocation", f"{get_checkpoint_path(cfg)}/ot_baseline")
+        .option("checkpointLocation", get_checkpoint_path(cfg, "ot_baseline"))
         .table(baseline_table)
     )
 

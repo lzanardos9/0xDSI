@@ -1188,6 +1188,168 @@ print("Graph CEP detection and baseline tables created")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Operational & Agent Infrastructure Tables
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS streaming_queries (
+    query_id STRING,
+    query_name STRING NOT NULL,
+    notebook_path STRING,
+    checkpoint_location STRING,
+    source_table STRING,
+    sink_table STRING,
+    trigger_interval STRING,
+    status STRING DEFAULT 'active',
+    last_batch_id LONG,
+    last_progress_timestamp TIMESTAMP,
+    started_at TIMESTAMP DEFAULT current_timestamp(),
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS checkpoint_gc_log (
+    gc_id STRING DEFAULT uuid(),
+    checkpoint_path STRING NOT NULL,
+    query_name STRING,
+    files_deleted INT DEFAULT 0,
+    bytes_freed LONG DEFAULT 0,
+    gc_status STRING DEFAULT 'completed',
+    error_message STRING,
+    executed_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS analyst_feedback (
+    feedback_id STRING DEFAULT uuid(),
+    alert_id STRING,
+    case_id STRING,
+    analyst_id STRING NOT NULL,
+    feedback_type STRING NOT NULL,
+    verdict STRING,
+    confidence DOUBLE,
+    reasoning STRING,
+    corrections MAP<STRING, STRING>,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS ot_security_findings (
+    finding_id STRING DEFAULT uuid(),
+    protocol STRING NOT NULL,
+    severity STRING DEFAULT 'medium',
+    finding_type STRING,
+    device_ip STRING,
+    device_name STRING,
+    description STRING,
+    raw_payload STRING,
+    mitre_technique STRING,
+    remediation STRING,
+    status STRING DEFAULT 'open',
+    detected_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (protocol)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS gold_exploit_chains (
+    chain_id STRING DEFAULT uuid(),
+    cve_ids ARRAY<STRING>,
+    exploit_feasibility_score DOUBLE,
+    attack_complexity STRING,
+    primitive_stages STRING,
+    mitigation_bypass_score DOUBLE,
+    affected_assets ARRAY<STRING>,
+    llm_reasoning STRING,
+    status STRING DEFAULT 'analyzed',
+    analyzed_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS bronze_communications (
+    comm_id STRING DEFAULT uuid(),
+    user_id STRING NOT NULL,
+    channel STRING,
+    direction STRING,
+    recipient STRING,
+    subject STRING,
+    body_preview STRING,
+    sentiment_score DOUBLE,
+    urgency_score DOUBLE,
+    anomaly_indicators ARRAY<STRING>,
+    timestamp TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (channel)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS communication_baselines (
+    baseline_id STRING DEFAULT uuid(),
+    user_id STRING NOT NULL,
+    metric_type STRING NOT NULL,
+    metric_value DOUBLE,
+    stddev DOUBLE,
+    sample_count INT,
+    window_start TIMESTAMP,
+    window_end TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS scan_orchestration_log (
+    scan_id STRING DEFAULT uuid(),
+    scan_type STRING NOT NULL,
+    target STRING,
+    status STRING DEFAULT 'queued',
+    findings_count INT DEFAULT 0,
+    critical_count INT DEFAULT 0,
+    high_count INT DEFAULT 0,
+    scanner_version STRING,
+    duration_seconds DOUBLE,
+    initiated_by STRING,
+    started_at TIMESTAMP DEFAULT current_timestamp(),
+    completed_at TIMESTAMP
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS scan_findings (
+    finding_id STRING DEFAULT uuid(),
+    scan_id STRING NOT NULL,
+    vulnerability_id STRING,
+    severity STRING DEFAULT 'medium',
+    title STRING NOT NULL,
+    description STRING,
+    affected_component STRING,
+    remediation STRING,
+    cvss_score DOUBLE,
+    exploitability_score DOUBLE,
+    status STRING DEFAULT 'open',
+    detected_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (severity)
+""")
+
+print("Operational and agent infrastructure tables created")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Geopolitical & Temporal Tables
 
 # COMMAND ----------

@@ -357,58 +357,66 @@ if mode == "streaming":
             if batch_df.count() == 0:
                 return
 
-            # Classify each event
-            classified = batch_df.withColumn(
-                "source_type",
-                classify_udf(col("event_type"), col("source"), col("raw_log"))
-            ).withColumn(
-                "_partition_date", to_date(col("timestamp"))
-            ).withColumn(
-                "_source_connector", col("source")
-            ).withColumn(
-                "_ingested_at", current_timestamp()
-            )
-
-            # Write to each typed partition
-            for source_type in TYPED_SCHEMAS.keys():
-                typed_events = classified.filter(col("source_type") == source_type)
-                count = typed_events.count()
-                if count == 0:
-                    continue
-
-                table_path = get_table_path(cfg, f"bronze_{source_type}")
-
-                # Select only columns that exist in the typed schema
-                schema_cols = [f.name for f in TYPED_SCHEMAS[source_type].fields]
-                available = [c for c in schema_cols if c in typed_events.columns]
-                missing = [c for c in schema_cols if c not in typed_events.columns]
-
-                output = typed_events.select(
-                    *[col(c) for c in available],
-                    *[lit(None).cast(
-                        next(f.dataType for f in TYPED_SCHEMAS[source_type].fields if f.name == c)
-                    ).alias(c) for c in missing],
-                    col("_source_connector"),
-                    col("_ingested_at"),
-                    col("_partition_date"),
+            try:
+                # Classify each event
+                classified = batch_df.withColumn(
+                    "source_type",
+                    classify_udf(col("event_type"), col("source"), col("raw_log"))
+                ).withColumn(
+                    "_partition_date", to_date(col("timestamp"))
+                ).withColumn(
+                    "_source_connector", col("source")
+                ).withColumn(
+                    "_ingested_at", current_timestamp()
                 )
 
-                output.write.mode("append").option("mergeSchema", "true").saveAsTable(table_path)
+                # Write to each typed partition
+                for source_type in TYPED_SCHEMAS.keys():
+                    typed_events = classified.filter(col("source_type") == source_type)
+                    count = typed_events.count()
+                    if count == 0:
+                        continue
 
-            # Write metrics
-            metrics = (
-                classified.groupBy("source_type")
-                .agg(count("*").alias("events_received"))
-                .withColumn("metric_id", expr("uuid()"))
-                .withColumn("batch_timestamp", current_timestamp())
-                .withColumn("events_typed", col("events_received"))
-                .withColumn("events_quarantined", lit(0))
-                .withColumn("quarantine_rate", lit(0.0))
-                .withColumn("avg_parse_latency_ms", lit(0.0))
-                .withColumn("schema_version", lit("v1"))
-                .withColumn("created_at", current_timestamp())
-            )
-            metrics.write.mode("append").option("mergeSchema", "true").saveAsTable(metrics_table)
+                    table_path = get_table_path(cfg, f"bronze_{source_type}")
+
+                    # Select only columns that exist in the typed schema
+                    schema_cols = [f.name for f in TYPED_SCHEMAS[source_type].fields]
+                    available = [c for c in schema_cols if c in typed_events.columns]
+                    missing = [c for c in schema_cols if c not in typed_events.columns]
+
+                    output = typed_events.select(
+                        *[col(c) for c in available],
+                        *[lit(None).cast(
+                            next(f.dataType for f in TYPED_SCHEMAS[source_type].fields if f.name == c)
+                        ).alias(c) for c in missing],
+                        col("_source_connector"),
+                        col("_ingested_at"),
+                        col("_partition_date"),
+                    )
+
+                    output.write.mode("append").option("mergeSchema", "true").saveAsTable(table_path)
+
+                # Write metrics
+                metrics = (
+                    classified.groupBy("source_type")
+                    .agg(count("*").alias("events_received"))
+                    .withColumn("metric_id", expr("uuid()"))
+                    .withColumn("batch_timestamp", current_timestamp())
+                    .withColumn("events_typed", col("events_received"))
+                    .withColumn("events_quarantined", lit(0))
+                    .withColumn("quarantine_rate", lit(0.0))
+                    .withColumn("avg_parse_latency_ms", lit(0.0))
+                    .withColumn("schema_version", lit("v1"))
+                    .withColumn("created_at", current_timestamp())
+                )
+                metrics.write.mode("append").option("mergeSchema", "true").saveAsTable(metrics_table)
+
+            except Exception as e:
+                mon.log_event("typed_bronze_batch_failed", {
+                    "batch_id": batch_id,
+                    "error": str(e)[:500],
+                })
+                raise
 
         query = (
             events_stream

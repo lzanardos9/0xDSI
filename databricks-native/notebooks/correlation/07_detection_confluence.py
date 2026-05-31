@@ -37,12 +37,14 @@
 
 dbutils.widgets.text("fusion_window_seconds", "60", "Signal fusion window in seconds")
 dbutils.widgets.text("escalation_threshold", "0.78", "Score threshold for verdict escalation")
+dbutils.widgets.text("conflict_threshold", "0.3", "Conflict mass threshold for disagreement escalation")
 dbutils.widgets.text("max_signals_per_run", "5000", "Max signals to process per run")
 dbutils.widgets.text("mode", "batch", "Execution mode: streaming | batch")
 dbutils.widgets.text("novelty_percentile", "95", "Percentile threshold for novel escalation")
 
 fusion_window = int(dbutils.widgets.get("fusion_window_seconds"))
 escalation_threshold = float(dbutils.widgets.get("escalation_threshold"))
+conflict_threshold = float(dbutils.widgets.get("conflict_threshold"))
 max_signals = int(dbutils.widgets.get("max_signals_per_run"))
 mode = dbutils.widgets.get("mode")
 novelty_percentile = float(dbutils.widgets.get("novelty_percentile"))

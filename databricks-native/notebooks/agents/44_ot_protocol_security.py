@@ -498,3 +498,12 @@ elif result.status == AgentStatus.SKIPPED:
     print("Agent skipped: No recent OT events to analyze.")
 else:
     print(f"Agent error: {result.details}")
+
+# COMMAND ----------
+
+import json
+dbutils.notebook.exit(json.dumps({
+    "status": result.status.value,
+    "processed": result.details.get("events_analyzed", 0),
+    "findings": result.details.get("critical", 0) + result.details.get("high", 0),
+}))

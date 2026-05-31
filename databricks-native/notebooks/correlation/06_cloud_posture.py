@@ -74,12 +74,13 @@ SG_OPEN_ACTIONS = [
 ]
 
 if mode == "streaming":
-    cspm_stream = (
-        spark.readStream
-        .format("delta")
-        .option("maxFilesPerTrigger", 50)
-        .table(events_table)
+    cspm_stream, sdp_source = create_sdp_stream_with_fallback(
+        spark, secrets_mgr, cfg,
+        consumer_group="0xdsi-sdp-cloud-posture",
+        watermark="5 minutes",
+        max_offsets_per_trigger=50000,
     )
+    mon.log_event("sdp_stream_connected", {"source": sdp_source, "consumer_group": "0xdsi-sdp-cloud-posture"})
 
     def detect_cspm_batch(batch_df, batch_id):
         """Run all CSPM detections on each micro-batch."""
@@ -200,8 +201,14 @@ if mode == "streaming":
         .queryName("cspm_correlation_detector")
         .start()
     )
-    query.awaitTermination(timeout=600)
-    dbutils.notebook.exit(json.dumps({"status": "streaming_complete", "mode": "streaming"}))
+
+    try:
+        query.awaitTermination()
+    except Exception as e:
+        mon.log_error(e, context="CSPM streaming terminated")
+        raise
+    finally:
+        dbutils.notebook.exit(json.dumps({"status": "terminated", "mode": "streaming"}))
 
 # COMMAND ----------
 

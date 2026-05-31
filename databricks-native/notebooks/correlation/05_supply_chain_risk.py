@@ -55,13 +55,14 @@ events_table = cfg.get_table_path("events")
 alerts_table = cfg.get_table_path("alerts")
 
 if mode == "streaming":
-    # Streaming mode: use readStream with foreachBatch for continuous detection
-    supply_chain_stream = (
-        spark.readStream
-        .format("delta")
-        .option("maxFilesPerTrigger", 50)
-        .table(events_table)
+    # Streaming mode: read directly from ZeroBus for sub-second detection
+    supply_chain_stream, sdp_source = create_sdp_stream_with_fallback(
+        spark, secrets_mgr, cfg,
+        consumer_group="0xdsi-sdp-supply-chain",
+        watermark="5 minutes",
+        max_offsets_per_trigger=50000,
     )
+    mon.log_event("sdp_stream_connected", {"source": sdp_source, "consumer_group": "0xdsi-sdp-supply-chain"})
 
     def detect_supply_chain_batch(batch_df, batch_id):
         """Run all supply chain detections on each micro-batch."""
@@ -122,8 +123,14 @@ if mode == "streaming":
         .queryName("supply_chain_risk_detector")
         .start()
     )
-    query.awaitTermination(timeout=600)
-    dbutils.notebook.exit(json.dumps({"status": "streaming_complete", "mode": "streaming"}))
+
+    try:
+        query.awaitTermination()
+    except Exception as e:
+        mon.log_error(e, context="Supply chain streaming terminated")
+        raise
+    finally:
+        dbutils.notebook.exit(json.dumps({"status": "terminated", "mode": "streaming"}))
 
 # Batch mode continues below
 supply_chain_events = spark.sql(f"""

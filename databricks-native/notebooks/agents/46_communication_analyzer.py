@@ -641,3 +641,12 @@ with mlflow.start_run(run_name="communication_analyzer_batch"):
     })
 
 print(f"Communication Analyzer: {result.status.value} - {result.message}")
+
+# COMMAND ----------
+
+import json
+dbutils.notebook.exit(json.dumps({
+    "status": result.status.value,
+    "users_profiled": analyzer.stats.get("users_profiled", 0),
+    "indicators_found": analyzer.stats.get("indicators_found", 0),
+}))

@@ -243,6 +243,7 @@ suspicious_api_set = set(suspicious_apis_flat)
 # COMMAND ----------
 
 cutoff = datetime.utcnow() - timedelta(minutes=lookback_minutes)
+now = datetime.utcnow()
 
 with mon.time("extract_code_events"):
     # Try specialized code_runtime table first, fall back to events
