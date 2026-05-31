@@ -280,6 +280,108 @@ classified_stream = (
 # Counters for metrics
 _batch_metrics = {"total": 0, "valid": 0, "quarantined": 0, "batches": 0}
 
+_SERVICE_ACCOUNT_PATTERNS = [
+    "svc_%", "svc-%", "service_%", "sa_%", "bot_%", "ci_%",
+    "automation%", "system%", "noreply%", "daemon%", "cron%",
+]
+
+
+def _auto_discover_entities(valid_events):
+    """
+    Extract unique user/device/IP entities from a batch and MERGE into entity_spine.
+    Called on every micro-batch to passively build the UEBA entity population.
+    """
+    entity_spine_table = get_table_path(cfg, "entity_spine")
+
+    try:
+        # Extract user entities (username or user_id)
+        users = (
+            valid_events
+            .filter(col("username").isNotNull() | col("user_id").isNotNull())
+            .select(
+                coalesce(col("username"), col("user_id")).alias("canonical_name"),
+                col("user_id").alias("entity_external_id"),
+                col("source").alias("event_source"),
+                col("hostname").alias("device"),
+            )
+            .filter(col("canonical_name") != "")
+            .withColumn("entity_type", lit("user"))
+            .groupBy("canonical_name", "entity_type")
+            .agg(
+                first("entity_external_id").alias("entity_external_id"),
+                first("event_source").alias("event_source"),
+                first("device").alias("device"),
+                count("*").alias("batch_count"),
+            )
+        )
+
+        # Extract device entities (hostname)
+        devices = (
+            valid_events
+            .filter(col("hostname").isNotNull())
+            .select(col("hostname").alias("canonical_name"))
+            .filter(col("canonical_name") != "")
+            .withColumn("entity_type", lit("device"))
+            .groupBy("canonical_name", "entity_type")
+            .agg(count("*").alias("batch_count"))
+            .withColumn("entity_external_id", lit(None).cast("string"))
+            .withColumn("event_source", lit(None).cast("string"))
+            .withColumn("device", lit(None).cast("string"))
+        )
+
+        # Extract IP entities (source_ip, dest_ip)
+        src_ips = valid_events.filter(col("source_ip").isNotNull()).select(col("source_ip").alias("canonical_name"))
+        dst_ips = valid_events.filter(col("dest_ip").isNotNull()).select(col("dest_ip").alias("canonical_name"))
+        ips = (
+            src_ips.union(dst_ips)
+            .filter(col("canonical_name") != "")
+            .withColumn("entity_type", lit("ip"))
+            .groupBy("canonical_name", "entity_type")
+            .agg(count("*").alias("batch_count"))
+            .withColumn("entity_external_id", lit(None).cast("string"))
+            .withColumn("event_source", lit(None).cast("string"))
+            .withColumn("device", lit(None).cast("string"))
+        )
+
+        # Union all entity types
+        all_entities = users.unionByName(devices).unionByName(ips)
+
+        if all_entities.isEmpty():
+            return
+
+        # Detect service accounts
+        svc_condition = lit(False)
+        for pattern in _SERVICE_ACCOUNT_PATTERNS:
+            svc_condition = svc_condition | lower(col("canonical_name")).like(pattern)
+        all_entities = all_entities.withColumn("is_service_account", svc_condition)
+
+        # Create temp view and MERGE into entity_spine
+        all_entities.createOrReplaceTempView("_batch_entities")
+
+        spark.sql(f"""
+            MERGE INTO {entity_spine_table} AS target
+            USING _batch_entities AS source
+            ON target.canonical_name = source.canonical_name
+               AND target.entity_type = source.entity_type
+            WHEN MATCHED THEN UPDATE SET
+                target.last_seen = current_timestamp(),
+                target.observation_count = target.observation_count + source.batch_count,
+                target.updated_at = current_timestamp()
+            WHEN NOT MATCHED THEN INSERT (
+                entity_id, entity_type, canonical_name, display_name,
+                first_seen, last_seen, observation_count, risk_score,
+                is_service_account, is_high_value, updated_at
+            ) VALUES (
+                uuid(), source.entity_type, source.canonical_name,
+                source.canonical_name,
+                current_timestamp(), current_timestamp(), source.batch_count, 0.0,
+                source.is_service_account, false, current_timestamp()
+            )
+        """)
+
+    except Exception as e:
+        logger.warning(f"Entity auto-discovery failed (non-critical): {e}")
+
 
 def process_ingestion_batch(batch_df, batch_id):
     """Process a micro-batch: route valid events to Bronze, failures to DLQ."""
@@ -332,6 +434,11 @@ def process_ingestion_batch(batch_df, batch_id):
                 get_table_path(cfg, "events")
             )
             _batch_metrics["valid"] += valid_count
+
+            # ── UEBA Auto-Discovery ──
+            # Extract user entities from events and MERGE into entity_spine.
+            # This creates the identity baseline passively as events flow in.
+            _auto_discover_entities(valid_events)
 
         # --- Dead Letter Queue (quarantine) ---
         quarantined = (

@@ -815,6 +815,150 @@ async def entity_spine_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/entity-spine/users")
+async def entity_spine_users(
+    entity_type: str = "user",
+    limit: int = 100,
+    offset: int = 0,
+    search: str = "",
+):
+    """List all entities from the entity_spine with optional search."""
+    try:
+        where_clause = f"WHERE entity_type = '{entity_type}'"
+        if search:
+            safe_search = search.replace("'", "''")
+            where_clause += f" AND (lower(canonical_name) LIKE '%{safe_search.lower()}%' OR lower(display_name) LIKE '%{safe_search.lower()}%' OR lower(department) LIKE '%{safe_search.lower()}%')"
+
+        total = query(f"SELECT COUNT(*) as cnt FROM {fqn('entity_spine')} {where_clause}")[0]["cnt"]
+
+        entities = query(f"""
+            SELECT entity_id, entity_type, canonical_name, display_name,
+                   department, owner, is_high_value, is_service_account,
+                   risk_score, observation_count, first_seen, last_seen,
+                   tags, attributes
+            FROM {fqn('entity_spine')}
+            {where_clause}
+            ORDER BY observation_count DESC, last_seen DESC
+            LIMIT {limit} OFFSET {offset}
+        """)
+
+        by_department = query(f"""
+            SELECT COALESCE(department, 'Unknown') as department, COUNT(*) as cnt
+            FROM {fqn('entity_spine')}
+            {where_clause}
+            GROUP BY department
+            ORDER BY cnt DESC
+            LIMIT 20
+        """)
+
+        return {
+            "entities": entities,
+            "total": total,
+            "by_department": by_department,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/entity-spine/import")
+async def entity_spine_import(request: Request):
+    """
+    Bulk import entities into entity_spine.
+    Accepts JSON body with 'entities' array.
+    Each entity must have canonical_name; optional: entity_type, display_name, department, etc.
+    """
+    body = await request.json()
+    entities = body.get("entities", [])
+
+    if not entities:
+        raise HTTPException(status_code=400, detail="No entities provided")
+
+    imported = 0
+    errors = []
+
+    for entity in entities:
+        canonical_name = (entity.get("canonical_name") or "").strip()
+        if not canonical_name:
+            continue
+
+        entity_type = entity.get("entity_type", "user")
+        display_name = entity.get("display_name", canonical_name)
+        department = entity.get("department", "")
+        owner = entity.get("owner", "")
+        is_high_value = entity.get("is_high_value", False)
+        is_service_account = entity.get("is_service_account", False)
+        tags = json.dumps(entity.get("tags", []))
+        attributes = json.dumps(entity.get("attributes", {}))
+
+        try:
+            # Check if entity exists
+            existing = query(f"""
+                SELECT entity_id FROM {fqn('entity_spine')}
+                WHERE canonical_name = '{canonical_name.replace("'", "''")}'
+                  AND entity_type = '{entity_type}'
+                LIMIT 1
+            """)
+
+            if existing:
+                # Update
+                execute(f"""
+                    UPDATE {fqn('entity_spine')} SET
+                        display_name = '{display_name.replace("'", "''")}',
+                        department = '{department.replace("'", "''")}',
+                        owner = '{owner.replace("'", "''")}',
+                        is_high_value = {str(is_high_value).lower()},
+                        is_service_account = {str(is_service_account).lower()},
+                        tags = '{tags.replace("'", "''")}',
+                        attributes = '{attributes.replace("'", "''")}',
+                        updated_at = current_timestamp()
+                    WHERE entity_id = '{existing[0]["entity_id"]}'
+                """)
+            else:
+                # Insert
+                eid = str(uuid.uuid4())
+                execute(f"""
+                    INSERT INTO {fqn('entity_spine')} (
+                        entity_id, entity_type, canonical_name, display_name,
+                        department, owner, is_high_value, is_service_account,
+                        tags, attributes, first_seen, last_seen,
+                        observation_count, risk_score, updated_at
+                    ) VALUES (
+                        '{eid}', '{entity_type}',
+                        '{canonical_name.replace("'", "''")}',
+                        '{display_name.replace("'", "''")}',
+                        '{department.replace("'", "''")}',
+                        '{owner.replace("'", "''")}',
+                        {str(is_high_value).lower()},
+                        {str(is_service_account).lower()},
+                        '{tags.replace("'", "''")}',
+                        '{attributes.replace("'", "''")}',
+                        current_timestamp(), current_timestamp(),
+                        0, 0.0, current_timestamp()
+                    )
+                """)
+            imported += 1
+        except Exception as e:
+            errors.append(f"{canonical_name}: {str(e)[:100]}")
+
+    return {
+        "imported": imported,
+        "total_submitted": len(entities),
+        "errors": errors[:10],
+    }
+
+
+@app.post("/api/entity-spine/trigger-idp-sync")
+async def trigger_idp_sync(request: Request):
+    """Trigger IdP sync via the UEBA Entity Onboarding notebook."""
+    body = await request.json()
+    provider = body.get("provider", "azure_ad")
+    job_result = trigger_job("0xDSI_UEBA_Entity_Onboarding", {
+        "import_mode": "idp_sync",
+        "idp_provider": provider,
+    })
+    return {"status": "triggered", "provider": provider, "job": job_result}
+
+
 @app.get("/api/entity-spine/resolve/{identifier}")
 async def entity_spine_resolve(identifier: str):
     """Resolve an identifier (IP, user, host) to its canonical entity."""

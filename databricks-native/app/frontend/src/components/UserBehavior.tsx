@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { User, Activity, MapPin, Monitor, AlertTriangle, CheckCircle, Clock, Shield, Eye, XCircle, Network, Brain, LineChart } from 'lucide-react';
+import { User, Activity, MapPin, Monitor, AlertTriangle, CheckCircle, Clock, Shield, Eye, XCircle, Network, Brain, LineChart, UserPlus } from 'lucide-react';
 import UserEventNetwork from './UserEventNetwork';
 import MLModelExplainer from './MLModelExplainer';
 import { ML_MODELS } from '../lib/mlModelData';
@@ -8,6 +8,7 @@ import { UnifiedRiskHeader } from './user-behavior/UnifiedRiskHeader';
 import { LLMRiskUserDetail } from './user-behavior/LLMRiskUserDetail';
 import { PsychologicalUserDetail } from './user-behavior/PsychologicalUserDetail';
 import { CrossDomainStrip } from './user-behavior/CrossDomainStrip';
+import EntityOnboarding from './user-behavior/EntityOnboarding';
 
 interface UnifiedRow {
   behavior_profile_id: string;
@@ -64,7 +65,7 @@ interface Correlation {
   detected_at: string;
 }
 
-type TabId = 'timeline' | 'network' | 'llm' | 'psychology' | 'risk';
+type TabId = 'timeline' | 'network' | 'llm' | 'psychology' | 'risk' | 'onboarding';
 
 const UserBehavior = () => {
   const [users, setUsers] = useState<UnifiedRow[]>([]);
@@ -205,6 +206,7 @@ const UserBehavior = () => {
     { id: 'llm', label: 'LLM Risk', icon: Brain, disabled: !selectedUser?.has_llm_data },
     { id: 'psychology', label: 'Psychological', icon: Eye, disabled: !selectedUser?.has_psych_data },
     { id: 'risk', label: 'Risk Analysis', icon: LineChart },
+    { id: 'onboarding', label: 'Entity Onboarding', icon: UserPlus },
   ];
 
   return (
@@ -438,6 +440,10 @@ const UserBehavior = () => {
                       </div>
                     </div>
                   </div>
+                )}
+
+                {activeTab === 'onboarding' && (
+                  <EntityOnboarding />
                 )}
               </div>
             </>
