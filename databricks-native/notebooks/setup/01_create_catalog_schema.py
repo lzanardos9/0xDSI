@@ -3001,6 +3001,30 @@ print("  investigations, correlation_matches, user_profiles, health_alerts, code
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## System Audit Log
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS system_audit_log (
+    id STRING DEFAULT uuid(),
+    user_email STRING NOT NULL,
+    username STRING NOT NULL,
+    operation STRING NOT NULL,
+    table_name STRING NOT NULL,
+    detail STRING,
+    timestamp TIMESTAMP DEFAULT current_timestamp(),
+    ts STRING
+) TBLPROPERTIES (
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+print("Created: system_audit_log")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Setup Complete
 # MAGIC All tables have been created in Unity Catalog.
 

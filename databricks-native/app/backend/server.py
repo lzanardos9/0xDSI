@@ -3,13 +3,22 @@
 FastAPI server that queries Unity Catalog via SQL Warehouse.
 Serves both the API and the static frontend (SPA).
 100% Databricks-native. No external database dependencies.
+
+Security:
+- User identity extracted from Databricks App runtime headers
+- RBAC: soc_admins (full access) vs soc_analysts (read-only + limited mutations)
+- Column/identifier sanitization on all dynamic SQL
+- Audit logging for all write operations
 """
 
 import os
+import re
 import json
+import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,8 +33,108 @@ WAREHOUSE_ID = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
 LLM_ENDPOINT = os.environ.get("LLM_ENDPOINT", "databricks-meta-llama-3-1-70b-instruct")
 LLM_FALLBACK_ENDPOINT = os.environ.get("LLM_FALLBACK_ENDPOINT", "databricks-meta-llama-3-1-8b-instruct")
 EMBEDDING_ENDPOINT = os.environ.get("EMBEDDING_ENDPOINT", "databricks-bge-large-en")
+APP_DOMAIN = os.environ.get("DATABRICKS_APP_DOMAIN", "")
+
+logger = logging.getLogger("0xdsi.api")
 
 _connection = None
+
+# ──────────────────────────────────────────────
+# SQL Identifier Sanitization
+# ──────────────────────────────────────────────
+
+_SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _validate_identifier(name: str) -> str:
+    if not _SAFE_IDENTIFIER.match(name):
+        raise HTTPException(status_code=400, detail=f"Invalid identifier: '{name}'")
+    return name
+
+
+def _validate_columns(columns: str) -> str:
+    if columns == '*':
+        return '*'
+    parts = [c.strip() for c in columns.split(',')]
+    for p in parts:
+        if not _SAFE_IDENTIFIER.match(p):
+            raise HTTPException(status_code=400, detail=f"Invalid column name: '{p}'")
+    return ', '.join(parts)
+
+
+# ──────────────────────────────────────────────
+# User Identity & RBAC (Databricks App Runtime)
+# ──────────────────────────────────────────────
+
+ADMIN_TABLES = {
+    "system_settings", "agent_configs", "correlation_rules", "detection_rules",
+    "compliance_frameworks", "compliance_controls", "llm_guardrail_policies",
+    "pii_redaction_rules", "edge_collector_configs",
+}
+
+READONLY_TABLES = {
+    "user_activity_logs", "user_activity_sessions", "user_activity_events",
+    "user_activity_lineage", "system_audit_log",
+}
+
+
+def _get_user_from_request(request: Request) -> dict:
+    """
+    Extract user identity from Databricks App runtime headers.
+    Databricks Apps inject these headers for every authenticated request.
+    """
+    email = request.headers.get("X-Forwarded-Email", "")
+    user = request.headers.get("X-Forwarded-User", "")
+    preferred_username = request.headers.get("X-Forwarded-Preferred-Username", "")
+    groups_header = request.headers.get("X-Forwarded-Groups", "")
+    groups = [g.strip() for g in groups_header.split(",") if g.strip()] if groups_header else []
+
+    return {
+        "email": email,
+        "username": user or preferred_username or email.split("@")[0] if email else "unknown",
+        "display_name": request.headers.get("X-Forwarded-Display-Name", user or email),
+        "groups": groups,
+        "is_admin": "soc_admins" in groups,
+        "is_analyst": "soc_analysts" in groups or "soc_admins" in groups,
+    }
+
+
+def _require_admin(user: dict):
+    if not user["is_admin"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def _check_write_permission(user: dict, table_name: str):
+    if table_name in ADMIN_TABLES and not user["is_admin"]:
+        raise HTTPException(status_code=403, detail=f"Admin access required for table '{table_name}'")
+    if table_name in READONLY_TABLES:
+        raise HTTPException(status_code=403, detail=f"Table '{table_name}' is read-only")
+
+
+# ──────────────────────────────────────────────
+# Audit Logging
+# ──────────────────────────────────────────────
+
+def _audit_log(user: dict, operation: str, table: str, detail: str = ""):
+    logger.info(
+        "AUDIT | user=%s | op=%s | table=%s | detail=%s",
+        user.get("email", "unknown"), operation, table, detail[:500]
+    )
+    try:
+        execute_write(
+            f"INSERT INTO {fqn('system_audit_log')} (user_email, username, operation, table_name, detail, timestamp) "
+            f"VALUES (:email, :username, :op, :table_name, :detail, :ts)",
+            {
+                "email": user.get("email", "unknown"),
+                "username": user.get("username", "unknown"),
+                "op": operation,
+                "table_name": table,
+                "detail": detail[:1000],
+                "ts": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+    except Exception:
+        pass
 
 
 def get_connection():
@@ -62,11 +171,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="0xDSI Agentic SOC API", lifespan=lifespan)
 
+_allowed_origins = ["*"] if not APP_DOMAIN else [
+    f"https://{APP_DOMAIN}",
+    f"https://{APP_DOMAIN}:443",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_allowed_origins,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Client-Info"],
 )
 
 
@@ -96,6 +210,28 @@ async def ready():
             status_code=503,
             content={"status": "not_ready", "reason": str(e)[:200]},
         )
+
+
+# ──────────────────────────────────────────────
+# Auth Session (Databricks Workspace SSO)
+# ──────────────────────────────────────────────
+
+@app.get("/api/auth/session")
+async def auth_session(request: Request):
+    """Return current user identity from Databricks App runtime headers."""
+    user = _get_user_from_request(request)
+    if not user["email"] and not user["username"]:
+        return JSONResponse(status_code=401, content={"user": None, "error": "No identity headers"})
+    return {
+        "user": {
+            "id": user["email"] or user["username"],
+            "username": user["username"],
+            "display_name": user["display_name"],
+            "email": user["email"],
+            "groups": user["groups"],
+            "is_admin": user["is_admin"],
+        }
+    }
 
 
 def fqn(table: str) -> str:
@@ -158,6 +294,8 @@ ALLOWED_TABLES = [
     "compliance_posture", "compliance_violations", "sla_metrics",
     "edge_collector_registry", "edge_collector_heartbeats",
     "edge_collector_configs", "edge_collector_incidents",
+    # Audit
+    "system_audit_log",
 ]
 
 
@@ -166,7 +304,7 @@ def _parse_filters(filters: list[dict]) -> tuple[str, dict]:
     clauses = []
     params = {}
     for i, f in enumerate(filters):
-        col = f["column"]
+        col = _validate_identifier(f["column"])
         op = f["op"]
         val = f["value"]
         pkey = f"p{i}"
@@ -228,14 +366,17 @@ async def query_table(table_name: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
 
     body = await request.json()
-    columns = body.get("select", "*")
+    columns = _validate_columns(body.get("select", "*"))
     filters = body.get("filters", [])
     order = body.get("order", None)
     order_asc = body.get("ascending", False)
-    limit_val = body.get("limit", 1000)
-    offset_val = body.get("offset", 0)
+    limit_val = min(int(body.get("limit", 1000)), 10000)
+    offset_val = int(body.get("offset", 0))
     single = body.get("single", False)
     count_only = body.get("count", False)
+
+    if order:
+        order = _validate_identifier(order)
 
     where_clause, params = _parse_filters(filters)
 
@@ -279,20 +420,32 @@ async def mutate_table(table_name: str, request: Request):
     if table_name not in ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
 
+    user = _get_user_from_request(request)
+    _check_write_permission(user, table_name)
+
     body = await request.json()
     operation = body.get("operation", "insert")
     data = body.get("data", {})
     filters = body.get("filters", [])
     returning = body.get("returning", None)
 
+    if returning:
+        returning = _validate_columns(returning)
+
+    _audit_log(user, operation, table_name, json.dumps({"filters": filters, "keys": list(data.keys()) if isinstance(data, dict) else "batch"}))
+
     try:
         if operation == "insert":
             if isinstance(data, list):
                 for row in data:
+                    for k in row.keys():
+                        _validate_identifier(k)
                     cols = ", ".join(row.keys())
                     vals = ", ".join(f":{k}" for k in row.keys())
                     execute_write(f"INSERT INTO {fqn(table_name)} ({cols}) VALUES ({vals})", row)
             else:
+                for k in data.keys():
+                    _validate_identifier(k)
                 cols = ", ".join(data.keys())
                 vals = ", ".join(f":{k}" for k in data.keys())
                 execute_write(f"INSERT INTO {fqn(table_name)} ({cols}) VALUES ({vals})", data)
@@ -313,6 +466,7 @@ async def mutate_table(table_name: str, request: Request):
                 raise HTTPException(status_code=400, detail="UPDATE requires at least one filter")
             set_parts = []
             for k, v in data.items():
+                _validate_identifier(k)
                 params[f"set_{k}"] = v
                 set_parts.append(f"{k} = :set_{k}")
             sql = f"UPDATE {fqn(table_name)} SET {', '.join(set_parts)} WHERE {where_clause}"
@@ -320,6 +474,8 @@ async def mutate_table(table_name: str, request: Request):
             return JSONResponse(content={"data": data})
 
         elif operation == "upsert":
+            for k in data.keys():
+                _validate_identifier(k)
             cols = ", ".join(data.keys())
             vals = ", ".join(f":{k}" for k in data.keys())
             updates = ", ".join(f"{k} = :{k}" for k in data.keys() if k != "id")
@@ -356,8 +512,14 @@ async def mutate_table(table_name: str, request: Request):
 @app.post("/api/rpc/{function_name}")
 async def rpc_call(function_name: str, request: Request):
     """Execute a stored function / SQL function in Unity Catalog."""
+    _validate_identifier(function_name)
+    user = _get_user_from_request(request)
+    if not user["is_admin"]:
+        raise HTTPException(status_code=403, detail="RPC calls require admin access")
+
     body = await request.json()
     params = body.get("params", {})
+    _audit_log(user, "rpc", function_name, json.dumps(list(params.keys())))
     try:
         param_list = ", ".join(f":{k}" for k in params.keys()) if params else ""
         sql = f"SELECT * FROM {fqn(function_name)}({param_list})"
@@ -379,9 +541,13 @@ async def get_table(
     if table_name not in ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
 
-    columns = select if select != "*" else "*"
+    columns = _validate_columns(select)
+    if order_dir.lower() not in ("asc", "desc"):
+        raise HTTPException(status_code=400, detail="order_dir must be 'asc' or 'desc'")
+
     sql = f"SELECT {columns} FROM {fqn(table_name)}"
-    sql += f" ORDER BY {order_by} {order_dir}" if order_by else ""
+    if order_by:
+        sql += f" ORDER BY {_validate_identifier(order_by)} {order_dir}"
     sql += f" LIMIT {limit} OFFSET {offset}"
 
     try:

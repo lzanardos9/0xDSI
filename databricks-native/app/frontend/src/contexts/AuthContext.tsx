@@ -1,6 +1,7 @@
 /**
  * Databricks-Native Authentication Context
  * Uses Databricks workspace SSO (the app inherits the user's Databricks session).
+ * Identity is extracted server-side from App runtime headers.
  * Zero external auth dependencies.
  */
 
@@ -11,6 +12,8 @@ interface User {
   username: string;
   display_name: string;
   email: string;
+  groups: string[];
+  is_admin: boolean;
 }
 
 interface AuthContextType {
@@ -34,10 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkSession();
+    fetchSession();
   }, []);
 
-  async function checkSession() {
+  async function fetchSession() {
     try {
       const response = await fetch('/api/auth/session');
       if (response.ok) {
@@ -48,25 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             username: data.user.username,
             display_name: data.user.display_name || data.user.username,
             email: data.user.email || '',
+            groups: data.user.groups || [],
+            is_admin: data.user.is_admin || false,
           });
         }
-      } else {
-        // Databricks App always has an authenticated user via SSO
-        setUser({
-          id: 'databricks-sso-user',
-          username: 'analyst',
-          display_name: 'SOC Analyst',
-          email: '',
-        });
       }
     } catch {
-      // Offline/local dev fallback
-      setUser({
-        id: 'local-dev',
-        username: 'developer',
-        display_name: 'Local Developer',
-        email: 'dev@local',
-      });
+      // Network error -- leave user as null, UI will show loading/error state
     } finally {
       setLoading(false);
     }
@@ -74,7 +65,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function signOut() {
     setUser(null);
-    // In Databricks Apps, sign-out redirects to workspace
     window.location.href = '/';
   }
 

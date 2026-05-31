@@ -21,3 +21,5 @@ env:
     value: databricks-meta-llama-3-1-8b-instruct
   - name: EMBEDDING_ENDPOINT
     value: databricks-bge-large-en
+  - name: DATABRICKS_APP_DOMAIN
+    value: ""
