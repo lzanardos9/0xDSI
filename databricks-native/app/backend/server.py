@@ -266,6 +266,7 @@ ALLOWED_TABLES = [
     "financial_threat_intel", "financial_transactions",
     "insider_credential_cases", "feature_lab_features", "feature_lab_creations",
     "soc_agent_registry", "agent_implementations",
+    "agent_communications", "agent_task_queue",
     "mcp_servers", "mcp_tools", "detection_confluence_signals",
     "user_activity_logs", "user_activity_sessions", "user_activity_events",
     "user_activity_lineage", "swarm_battlefields", "trend_signals",
@@ -1721,46 +1722,134 @@ async def migrate_dashboard(request: Request):
 
 @app.post("/api/agent-orchestrator")
 async def agent_orchestrator_endpoint(request: Request):
-    """Agent orchestration: status, run cycle, get communications."""
+    """Agent orchestration: status, run cycle, get communications from real execution logs."""
     body = await request.json()
     action = body.get("action", "status")
     try:
         if action == "status":
             agents = query(f"""
-                SELECT ac.name, ac.agent_type, ac.enabled, as2.status, as2.last_heartbeat
+                SELECT ac.name, ac.agent_type, ac.enabled, as2.status, as2.last_heartbeat,
+                       as2.events_processed, as2.errors
                 FROM {fqn('agent_configs')} ac
                 LEFT JOIN {fqn('agent_status')} as2 ON ac.id = as2.agent_id
             """)
             return {"agents": agents}
 
         elif action == "run":
-            agents = query(f"SELECT id, name, agent_type, enabled FROM {fqn('agent_configs')} WHERE enabled = true")
-            agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
-            communications = _generate_agent_communications(agent_names)
+            # Trigger actual pipeline run via Databricks Jobs API
+            job_result = trigger_job("0xDSI_SOC_Pipeline")
             return {
                 "success": True,
-                "agents_executed": len(agents),
-                "tasks_created": len(communications),
-                "tasks_completed": len(communications),
-                "agent_results": {},
-                "errors": [],
-                "communications": communications,
+                "job_triggered": job_result.get("run_id") is not None,
+                "run_id": job_result.get("run_id"),
+                "message": "Pipeline triggered via Databricks Jobs API",
             }
 
         elif action == "get_communications":
-            agents = query(f"SELECT id, name, agent_type FROM {fqn('agent_configs')} WHERE enabled = true LIMIT 10")
-            agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
-            communications = _generate_agent_communications(agent_names, count=1)
-            return {"communications": communications}
+            limit = body.get("limit", 20)
+            since_minutes = body.get("since_minutes", 60)
+            comms = _fetch_real_communications(limit, since_minutes)
+            return {"communications": comms}
+
+        elif action == "get_executions":
+            limit = body.get("limit", 20)
+            executions = query(f"""
+                SELECT run_id, stage_name, status, duration_seconds, error_message, result_json, started_at
+                FROM {fqn('orchestration_runs')}
+                ORDER BY started_at DESC
+                LIMIT {limit}
+            """)
+            return {"executions": executions}
+
+        elif action == "get_task_queue":
+            tasks = query(f"""
+                SELECT id, agent_name, task_type, status, priority, created_at, completed_at
+                FROM {fqn('agent_task_queue')}
+                ORDER BY created_at DESC
+                LIMIT 30
+            """)
+            return {"tasks": tasks}
 
         elif action == "trigger":
             agent_id = body.get("agent_id")
-            return {"status": "triggered", "agent_id": agent_id}
+            agent_name = body.get("agent_name", "")
+            job_result = trigger_job(f"0xDSI_{agent_name}")
+            return {"status": "triggered", "agent_id": agent_id, "job": job_result}
 
         else:
             return {"status": "unknown_action"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _fetch_real_communications(limit: int = 20, since_minutes: int = 60) -> list:
+    """
+    Fetch real agent-to-agent communications from the agent_communications table.
+    Falls back to template generation only if table is empty.
+    """
+    try:
+        comms = query(f"""
+            SELECT id, run_id, from_agent, to_agent, message_type, subject, body,
+                   payload, alert_id, case_id, confidence, priority, status, created_at
+            FROM {fqn('agent_communications')}
+            WHERE created_at > current_timestamp() - INTERVAL {since_minutes} MINUTES
+            ORDER BY created_at DESC
+            LIMIT {limit}
+        """)
+
+        if comms:
+            return [
+                {
+                    "id": c.get("id", ""),
+                    "from": f"agent-{c.get('from_agent', '')}",
+                    "to": f"agent-{c.get('to_agent', '')}",
+                    "fromAgent": _agent_display_name(c.get("from_agent", "")),
+                    "toAgent": _agent_display_name(c.get("to_agent", "")),
+                    "message": c.get("body", ""),
+                    "subject": c.get("subject", ""),
+                    "type": c.get("message_type", "handoff"),
+                    "timestamp": int(datetime.fromisoformat(str(c.get("created_at", ""))).timestamp() * 1000) if c.get("created_at") else int(datetime.now().timestamp() * 1000),
+                    "narrative": c.get("body", ""),
+                    "severity": c.get("priority", "medium"),
+                    "actionType": c.get("message_type", "handoff"),
+                    "confidence": c.get("confidence"),
+                    "alertId": c.get("alert_id"),
+                    "caseId": c.get("case_id"),
+                    "isReal": True,
+                }
+                for c in comms
+            ]
+
+        # Fallback to templates only if no real data exists yet
+        agents = query(f"SELECT id, name, agent_type FROM {fqn('agent_configs')} WHERE enabled = true LIMIT 10")
+        agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
+        return _generate_agent_communications(agent_names, count=min(limit, 3))
+
+    except Exception:
+        # Table might not exist yet -- use templates
+        try:
+            agents = query(f"SELECT id, name, agent_type FROM {fqn('agent_configs')} WHERE enabled = true LIMIT 10")
+            agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
+            return _generate_agent_communications(agent_names, count=2)
+        except Exception:
+            return []
+
+
+_AGENT_DISPLAY_NAMES = {
+    "triage_agent": "Atlas (Triage)",
+    "enrichment_agent": "Sage (Enrichment)",
+    "threat_hunter_agent": "Nova (Threat Hunter)",
+    "nova_investigation": "Nova (Investigation)",
+    "vanguard_response": "Vanguard (Response)",
+    "orchestrator": "Orchestrator",
+    "ciso_assistant": "CISO Assistant",
+    "pattern_discovery": "Pattern Discovery",
+    "ai_correlation": "AI Correlation",
+}
+
+
+def _agent_display_name(agent_key: str) -> str:
+    return _AGENT_DISPLAY_NAMES.get(agent_key, agent_key.replace("_", " ").title())
 
 
 _COMM_TEMPLATES = {

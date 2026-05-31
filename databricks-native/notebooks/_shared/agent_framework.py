@@ -124,6 +124,7 @@ class BaseAgent(ABC):
         self._tools: list[UCTool] = []
         self._start_time: float = 0.0
         self._tracer = None
+        self._run_id: str = str(uuid.uuid4())
 
     def register_tool(self, tool: UCTool):
         """Register a UC Function tool for this agent."""
@@ -133,6 +134,130 @@ class BaseAgent(ABC):
     def tool_definitions(self) -> list[dict]:
         """Get all tool definitions in Foundation Model format."""
         return [t.to_tool_definition() for t in self._tools]
+
+    def send_communication(
+        self,
+        to_agent: str,
+        subject: str,
+        body: str,
+        message_type: str = "handoff",
+        payload: Optional[dict] = None,
+        alert_id: Optional[str] = None,
+        case_id: Optional[str] = None,
+        confidence: Optional[float] = None,
+        priority: str = "medium",
+    ):
+        """
+        Send a real communication to another agent.
+        This writes to agent_communications table and creates an auditable
+        record of inter-agent interaction.
+        """
+        try:
+            comm_id = str(uuid.uuid4())
+            payload_json = json.dumps(payload) if payload else None
+            catalog = self.cfg.catalog
+            schema = self.cfg.schema
+            self.spark.sql(f"""
+                INSERT INTO {catalog}.{schema}.agent_communications
+                (id, run_id, from_agent, to_agent, message_type, subject, body,
+                 payload, alert_id, case_id, confidence, priority, status)
+                VALUES (
+                    '{comm_id}', '{self._run_id}', '{self.agent_name}', '{to_agent}',
+                    '{message_type}', '{self._escape(subject)}', '{self._escape(body)}',
+                    '{self._escape(payload_json or "")}',
+                    {f"'{alert_id}'" if alert_id else "NULL"},
+                    {f"'{case_id}'" if case_id else "NULL"},
+                    {confidence if confidence is not None else "NULL"},
+                    '{priority}', 'delivered'
+                )
+            """)
+            logger.info(f"[COMM] {self.agent_name} -> {to_agent}: {subject}")
+        except Exception as e:
+            logger.warning(f"Failed to log communication: {e}")
+
+    def request_task(
+        self,
+        target_agent: str,
+        task_type: str,
+        input_data: dict,
+        priority: int = 5,
+    ) -> str:
+        """
+        Create a task in the agent_task_queue for another agent to pick up.
+        Returns the task_id.
+        """
+        task_id = str(uuid.uuid4())
+        try:
+            catalog = self.cfg.catalog
+            schema = self.cfg.schema
+            input_json = json.dumps(input_data)
+            self.spark.sql(f"""
+                INSERT INTO {catalog}.{schema}.agent_task_queue
+                (id, run_id, agent_name, task_type, input_data, status, priority)
+                VALUES (
+                    '{task_id}', '{self._run_id}', '{target_agent}',
+                    '{task_type}', '{self._escape(input_json)}', 'pending', {priority}
+                )
+            """)
+            self.send_communication(
+                to_agent=target_agent,
+                subject=f"Task assigned: {task_type}",
+                body=f"New {task_type} task created with priority {priority}",
+                message_type="task_assignment",
+                payload={"task_id": task_id, "task_type": task_type},
+                priority="high" if priority >= 8 else "medium",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create task: {e}")
+        return task_id
+
+    def complete_task(self, task_id: str, output_data: dict):
+        """Mark a task as completed with results."""
+        try:
+            catalog = self.cfg.catalog
+            schema = self.cfg.schema
+            output_json = json.dumps(output_data)
+            self.spark.sql(f"""
+                UPDATE {catalog}.{schema}.agent_task_queue
+                SET status = 'completed',
+                    output_data = '{self._escape(output_json)}',
+                    completed_at = current_timestamp()
+                WHERE id = '{task_id}'
+            """)
+        except Exception as e:
+            logger.warning(f"Failed to complete task: {e}")
+
+    def fetch_pending_tasks(self) -> list[dict]:
+        """Fetch pending tasks assigned to this agent."""
+        try:
+            catalog = self.cfg.catalog
+            schema = self.cfg.schema
+            rows = self.spark.sql(f"""
+                SELECT id, task_type, input_data, priority, created_at
+                FROM {catalog}.{schema}.agent_task_queue
+                WHERE agent_name = '{self.agent_name}'
+                  AND status = 'pending'
+                ORDER BY priority DESC, created_at ASC
+                LIMIT 50
+            """).collect()
+            tasks = []
+            for r in rows:
+                tasks.append({
+                    "task_id": r["id"],
+                    "task_type": r["task_type"],
+                    "input_data": json.loads(r["input_data"]) if r["input_data"] else {},
+                    "priority": r["priority"],
+                })
+            return tasks
+        except Exception:
+            return []
+
+    @staticmethod
+    def _escape(text: str) -> str:
+        """Escape single quotes for SQL insertion."""
+        if not text:
+            return ""
+        return text.replace("'", "''").replace("\\", "\\\\")
 
     def _init_tracing(self):
         """Initialize MLflow Tracing for this agent run."""

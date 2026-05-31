@@ -414,6 +414,45 @@ USING DELTA
 """)
 
 spark.sql("""
+CREATE TABLE IF NOT EXISTS agent_communications (
+    id STRING DEFAULT uuid(),
+    run_id STRING,
+    from_agent STRING NOT NULL,
+    to_agent STRING NOT NULL,
+    message_type STRING DEFAULT 'handoff',
+    subject STRING,
+    body STRING,
+    payload STRING,
+    alert_id STRING,
+    case_id STRING,
+    confidence DOUBLE,
+    priority STRING DEFAULT 'medium',
+    status STRING DEFAULT 'delivered',
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS agent_task_queue (
+    id STRING DEFAULT uuid(),
+    run_id STRING,
+    agent_name STRING NOT NULL,
+    task_type STRING NOT NULL,
+    input_data STRING,
+    output_data STRING,
+    status STRING DEFAULT 'pending',
+    priority INT DEFAULT 5,
+    created_at TIMESTAMP DEFAULT current_timestamp(),
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    error STRING
+)
+USING DELTA
+""")
+
+spark.sql("""
 CREATE TABLE IF NOT EXISTS soc_agent_registry (
     id STRING DEFAULT uuid(),
     agent_key STRING,

@@ -233,6 +233,51 @@ class ThreatHunterAgent(BatchAgent):
                 self._write_results(hunt_results)
                 logger.info(f"Wrote {len(hunt_results)} results")
 
+                # Communicate findings to response and investigation agents
+                confirmed_hunts = [r for r in hunt_results if r.get("confirmed")]
+                if confirmed_hunts:
+                    self.send_communication(
+                        to_agent="vanguard_response",
+                        subject=f"CONFIRMED: {len(confirmed_hunts)} hunt hypotheses validated",
+                        body=f"Executed {len(hunt_results)} hunts from {len(hypotheses)} hypotheses. "
+                             f"{len(confirmed_hunts)} confirmed with evidence. "
+                             f"Top finding: {confirmed_hunts[0].get('hypothesis', 'N/A')[:100]}. "
+                             f"Recommend automated response actions.",
+                        message_type="escalation",
+                        payload={
+                            "confirmed_count": len(confirmed_hunts),
+                            "hypotheses": [h.get("hypothesis", "")[:80] for h in confirmed_hunts[:5]],
+                            "evidence_counts": [h.get("evidence_count", 0) for h in confirmed_hunts[:5]],
+                        },
+                        priority="high",
+                    )
+
+                    self.send_communication(
+                        to_agent="nova_investigation",
+                        subject=f"Hunt evidence for investigation: {len(confirmed_hunts)} confirmed threats",
+                        body=f"Threat hunting confirmed {len(confirmed_hunts)} hypotheses. "
+                             f"Evidence available for deep investigation and kill chain reconstruction.",
+                        message_type="handoff",
+                        payload={
+                            "hunt_ids": [h.get("hunt_id", "") for h in confirmed_hunts[:5]],
+                        },
+                        priority="high",
+                    )
+
+                self.send_communication(
+                    to_agent="enrichment_agent",
+                    subject=f"Hunt cycle complete: {len(hypotheses)} hypotheses tested",
+                    body=f"Completed hunting cycle. {len(confirmed_hunts)} confirmed, "
+                         f"{sum(1 for r in hunt_results if r.get('refuted'))} refuted. "
+                         f"New IOCs discovered may improve enrichment scoring.",
+                    message_type="feedback",
+                    payload={
+                        "total_hunts": len(hunt_results),
+                        "confirmed": len(confirmed_hunts),
+                    },
+                    priority="medium",
+                )
+
             self._end_trace(span, {
                 "alerts": processed,
                 "hypotheses": len(hypotheses),
