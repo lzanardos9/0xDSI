@@ -552,7 +552,7 @@ Current Execution Mode: {self._config.environment}
             raise
 
     def _log_pipeline_metrics(self, results: list):
-        """Log comprehensive metrics to MLflow and sla_metrics table."""
+        """Log comprehensive metrics to MLflow."""
         try:
             successes = sum(1 for r in results if r["status"] == "success")
             failures = sum(1 for r in results if r["status"] == "failed")
@@ -575,22 +575,6 @@ Current Execution Mode: {self._config.environment}
                 "max_retries": max_retries,
                 "environment": cfg.environment,
             })
-
-            # Write pipeline latency to sla_metrics for SLA tracking
-            sla_target_seconds = 300.0  # 5 min SLA for full pipeline
-            is_within_sla = total_duration <= sla_target_seconds
-            sla_table = get_table_path(cfg, "sla_metrics")
-            spark.sql(f"""
-                INSERT INTO {sla_table}
-                (metric_id, measured_at, metric_name, metric_value, sla_target, is_within_sla, dimension, details)
-                VALUES (
-                    uuid(), current_timestamp(), 'pipeline_duration_seconds',
-                    {total_duration:.2f}, {sla_target_seconds},
-                    {str(is_within_sla).lower()},
-                    'orchestrator',
-                    '{json.dumps({"successes": successes, "failures": failures, "timeouts": timeouts})}'
-                )
-            """)
 
         except Exception as e:
             logger.warning(f"MLflow metrics logging failed: {e}")

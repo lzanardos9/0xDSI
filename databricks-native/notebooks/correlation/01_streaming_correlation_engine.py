@@ -27,8 +27,6 @@ dbutils.widgets.text("ks_alpha", "0.01", "KS significance threshold")
 dbutils.widgets.text("baseline_days", "7", "Days of history for baselines")
 dbutils.widgets.text("window_minutes", "5", "Correlation window size")
 
-require_tables("events", "correlation_rules", "alerts")
-
 checkpoint_base = dbutils.widgets.get("checkpoint_path") or cfg.get_checkpoint_path("correlation_engine")
 ks_alpha = float(dbutils.widgets.get("ks_alpha"))
 baseline_days = int(dbutils.widgets.get("baseline_days"))

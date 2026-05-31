@@ -17,8 +17,6 @@
 
 # COMMAND ----------
 
-require_tables("alerts", "sla_breaches")
-
 import json
 from pyspark.sql.functions import (
     col, lit, current_timestamp, expr, when, coalesce, count, sum as spark_sum,
@@ -185,25 +183,6 @@ try:
 
         spark.sql("DROP VIEW IF EXISTS _new_sla_breaches")
         mon.log_metric("escalations_merged", breach_count)
-
-    # ---- Notify on critical SLA breaches ----
-    critical_breaches = breached_df.filter(col("severity") == "critical")
-    critical_breach_count = critical_breaches.count()
-    if critical_breach_count > 0:
-        with mon.time("notify_critical_breaches"):
-            NOTIFICATION_TABLE = cfg.get_table_path("notification_log")
-            notif_df = critical_breaches.select(
-                expr("uuid()").alias("id"),
-                lit("pagerduty").alias("channel"),
-                lit("critical").alias("severity"),
-                expr("concat('SLA BREACH: Critical alert ', alert_id, ' not acknowledged')").alias("subject"),
-                expr("concat('Alert created at ', cast(created_at as string), ' has breached SLA. Severity: critical')").alias("body"),
-                lit("ops/03_sla_alerting").alias("source"),
-                lit("pending").alias("status"),
-                current_timestamp().alias("created_at"),
-            )
-            notif_df.write.mode("append").saveAsTable(NOTIFICATION_TABLE)
-            mon.log_warning(f"{critical_breach_count} critical SLA breaches sent to notification queue")
 
     # ---- Update alerts with sla_breached flag ----
     with mon.time("flag_breached_alerts"):

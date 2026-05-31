@@ -234,32 +234,6 @@ async def auth_session(request: Request):
     }
 
 
-@app.get("/api/system/status")
-async def system_status():
-    """Pipeline health: agent statuses, SLA compliance, circuit breaker states."""
-    try:
-        agents = query(
-            f"SELECT agent_name, status, last_heartbeat, consecutive_failures, circuit_state "
-            f"FROM {fqn('agent_status')} ORDER BY agent_name"
-        )
-        sla = query(
-            f"SELECT severity, COUNT(*) as total, "
-            f"SUM(CASE WHEN sla_breached THEN 1 ELSE 0 END) as breached "
-            f"FROM {fqn('alerts')} "
-            f"WHERE created_at > current_timestamp() - INTERVAL 24 HOURS "
-            f"GROUP BY severity"
-        )
-        open_circuits = [a for a in agents if a.get("circuit_state") == "open"]
-        return {
-            "status": "critical" if open_circuits else "healthy",
-            "agents": agents,
-            "sla_24h": sla,
-            "open_circuits": len(open_circuits),
-        }
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"status": "error", "reason": str(e)[:200]})
-
-
 def fqn(table: str) -> str:
     return f"`{CATALOG}`.`{SCHEMA}`.`{table}`"
 
@@ -330,8 +304,6 @@ ALLOWED_TABLES = [
     "discovery_profiles", "discovered_patterns",
     # Audit
     "system_audit_log",
-    # SLA
-    "sla_breaches",
 ]
 
 

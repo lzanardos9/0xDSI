@@ -46,8 +46,6 @@ hours_before = int(dbutils.widgets.get("hours_before"))
 hours_after = int(dbutils.widgets.get("hours_after"))
 new_threshold_str = dbutils.widgets.get("new_threshold")
 
-require_tables("events", "alerts", "replay_packs")
-
 # COMMAND ----------
 
 from pyspark.sql.functions import *

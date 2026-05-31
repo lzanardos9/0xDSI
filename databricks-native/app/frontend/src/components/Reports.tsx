@@ -1,5 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Calendar, Filter, TrendingUp, Shield, AlertTriangle, Users, Activity, Clock, BarChart3, PieChart, LineChart, Target, Lock, Eye, CheckCircle, XCircle, Plus, CreditCard as Edit, Trash2, Play, Save, RefreshCw, Settings, FileBarChart, Briefcase, Globe, Database, Zap, Mail, Bell } from 'lucide-react';
+import {
+  FileText,
+  Download,
+  Calendar,
+  Filter,
+  TrendingUp,
+  Shield,
+  AlertTriangle,
+  Users,
+  Activity,
+  Clock,
+  BarChart3,
+  PieChart,
+  LineChart,
+  Target,
+  Lock,
+  Eye,
+  CheckCircle,
+  XCircle,
+  Plus,
+  Edit,
+  Trash2,
+  Play,
+  Save,
+  RefreshCw,
+  Settings,
+  FileBarChart,
+  Briefcase,
+  Globe,
+  Database,
+  Zap,
+  Mail,
+  Bell
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Report {

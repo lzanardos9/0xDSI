@@ -90,11 +90,9 @@ CREATE TABLE IF NOT EXISTS alerts (
     risk_score INT DEFAULT 0,
     first_seen TIMESTAMP DEFAULT current_timestamp(),
     last_seen TIMESTAMP DEFAULT current_timestamp(),
-    acknowledged_at TIMESTAMP,
     resolved_at TIMESTAMP,
     resolution_notes STRING,
     false_positive BOOLEAN DEFAULT false,
-    sla_breached BOOLEAN DEFAULT false,
     tags ARRAY<STRING>,
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
@@ -2606,23 +2604,6 @@ CREATE TABLE IF NOT EXISTS compliance_violations (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-""")
-
-spark.sql("""
-CREATE TABLE IF NOT EXISTS sla_breaches (
-    id STRING NOT NULL,
-    alert_id STRING NOT NULL,
-    severity STRING NOT NULL,
-    breach_type STRING NOT NULL,
-    sla_ack_minutes INT,
-    sla_resolve_minutes INT,
-    alert_created_at TIMESTAMP,
-    detected_at TIMESTAMP DEFAULT current_timestamp(),
-    escalation_status STRING DEFAULT 'new'
-)
-USING DELTA
-PARTITIONED BY (severity)
 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
