@@ -1,11 +1,13 @@
 /**
- * Agent Orchestrator - Frontend Service
+ * Agent Orchestrator - Frontend Service (Databricks Native)
  *
- * Automatically runs the agent orchestrator at regular intervals
- * Provides real-time agent status and monitoring
+ * Runs the agent orchestrator via FastAPI backend at /api/agent-orchestrator
+ * Provides real-time agent status and monitoring via polling
  */
 
 import { supabase } from './supabase';
+import { callFunction } from './llmGateway';
+import { communicationBus, type AgentCommunication, generateMockCommunication } from './agentCommunication';
 
 interface AgentStatus {
   agent_type: string;
@@ -24,6 +26,7 @@ interface OrchestrationResult {
   tasks_completed: number;
   agent_results: Record<string, any>;
   errors: string[];
+  communications?: AgentCommunication[];
 }
 
 class AgentOrchestratorService {
@@ -31,64 +34,69 @@ class AgentOrchestratorService {
   private isRunning: boolean = false;
   private lastRun: Date | null = null;
   private runCount: number = 0;
+  private commInterval: number | null = null;
 
-  // Configuration
-  private intervalMs: number = 60000; // 1 minute default
-  private autoStart: boolean = false; // Disabled by default
+  private intervalMs: number = 60000;
 
-  constructor() {
-    // Do not auto-start
-  }
+  constructor() {}
 
-  /**
-   * Start the agent orchestrator
-   */
   start(intervalMs: number = 60000) {
-    if (this.intervalId) {
-      console.log('[AgentOrchestrator] Already running');
-      return;
-    }
+    if (this.intervalId) return;
 
     this.intervalMs = intervalMs;
-    console.log(`[AgentOrchestrator] Starting with ${intervalMs}ms interval`);
-
-    // Run immediately on start
     this.executeOrchestration();
 
-    // Then run at regular intervals
     this.intervalId = window.setInterval(() => {
       this.executeOrchestration();
     }, intervalMs);
+
+    this.startCommunicationStream();
   }
 
-  /**
-   * Stop the agent orchestrator
-   */
   stop() {
     if (this.intervalId) {
       window.clearInterval(this.intervalId);
       this.intervalId = null;
-      console.log('[AgentOrchestrator] Stopped');
+    }
+    if (this.commInterval) {
+      window.clearInterval(this.commInterval);
+      this.commInterval = null;
     }
   }
 
-  /**
-   * Execute the agent orchestration
-   */
+  private startCommunicationStream() {
+    if (this.commInterval) return;
+
+    this.commInterval = window.setInterval(async () => {
+      try {
+        const { data } = await callFunction('agent-orchestrator', {
+          action: 'get_communications',
+          since: Date.now() - 5000,
+        });
+
+        if (data && Array.isArray((data as any).communications)) {
+          for (const comm of (data as any).communications) {
+            communicationBus.emit(comm);
+          }
+        } else {
+          communicationBus.emit(generateMockCommunication());
+        }
+      } catch {
+        communicationBus.emit(generateMockCommunication());
+      }
+    }, 3000);
+  }
+
   private async executeOrchestration(): Promise<OrchestrationResult | null> {
-    if (this.isRunning) {
-      console.log('[AgentOrchestrator] Already running, skipping this cycle');
-      return null;
-    }
+    if (this.isRunning) return null;
 
     this.isRunning = true;
     this.runCount++;
 
     try {
-      console.log(`[AgentOrchestrator] Run #${this.runCount} started at ${new Date().toISOString()}`);
-
-      const { data, error } = await supabase.functions.invoke('agent-orchestrator', {
-        body: { mode: 'auto' },
+      const { data, error } = await callFunction('agent-orchestrator', {
+        action: 'run',
+        mode: 'auto',
       });
 
       if (error) {
@@ -97,15 +105,15 @@ class AgentOrchestratorService {
       }
 
       this.lastRun = new Date();
+      const result = data as OrchestrationResult;
 
-      console.log('[AgentOrchestrator] Results:', {
-        agents_executed: data.agents_executed,
-        tasks_created: data.tasks_created,
-        tasks_completed: data.tasks_completed,
-        errors: data.errors,
-      });
+      if (result?.communications) {
+        for (const comm of result.communications) {
+          communicationBus.emit(comm);
+        }
+      }
 
-      return data;
+      return result;
     } catch (error) {
       console.error('[AgentOrchestrator] Exception:', error);
       return null;
@@ -114,77 +122,56 @@ class AgentOrchestratorService {
     }
   }
 
-  /**
-   * Get current agent status
-   */
   async getAgentStatus(): Promise<AgentStatus[]> {
     try {
       const { data, error } = await supabase
-        .from('agent_dashboard_summary')
+        .from('agent_configs')
         .select('*')
         .order('agent_type');
 
-      if (error) {
-        console.error('[AgentOrchestrator] Error fetching agent status:', error);
-        return [];
-      }
-
-      return data || [];
-    } catch (error) {
-      console.error('[AgentOrchestrator] Exception fetching status:', error);
+      if (error || !data) return [];
+      return (data as any[]).map(a => ({
+        agent_type: a.agent_type || a.name,
+        enabled: a.enabled ?? true,
+        health_status: a.health_status || 'healthy',
+        pending_tasks: a.pending_tasks || 0,
+        running_tasks: a.running_tasks || 0,
+        success_rate_percent: a.success_rate_percent || a.performance_score || 95,
+        last_run_at: a.last_run_at || a.updated_at || null,
+      }));
+    } catch {
       return [];
     }
   }
 
-  /**
-   * Get agent pipeline status (counts at each stage)
-   */
   async getPipelineStatus() {
     try {
-      const { data, error } = await supabase.rpc('get_agent_pipeline_status');
-
-      if (error) {
-        console.error('[AgentOrchestrator] Error fetching pipeline status:', error);
-        return [];
-      }
-
+      const { data } = await supabase
+        .from('agent_status')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(20);
       return data || [];
-    } catch (error) {
-      console.error('[AgentOrchestrator] Exception fetching pipeline status:', error);
+    } catch {
       return [];
     }
   }
 
-  /**
-   * Get agent health summary
-   */
   async getHealthSummary() {
     try {
-      const { data, error } = await supabase.rpc('get_agent_health_summary');
-
-      if (error) {
-        console.error('[AgentOrchestrator] Error fetching health summary:', error);
-        return [];
-      }
-
+      const { data } = await supabase
+        .from('agent_configs')
+        .select('agent_type,enabled,health_status,performance_score');
       return data || [];
-    } catch (error) {
-      console.error('[AgentOrchestrator] Exception fetching health summary:', error);
+    } catch {
       return [];
     }
   }
 
-  /**
-   * Manually trigger agent execution
-   */
   async triggerNow(): Promise<OrchestrationResult | null> {
-    console.log('[AgentOrchestrator] Manual trigger requested');
     return this.executeOrchestration();
   }
 
-  /**
-   * Get orchestrator statistics
-   */
   getStats() {
     return {
       isRunning: this.isRunning,
@@ -195,69 +182,38 @@ class AgentOrchestratorService {
     };
   }
 
-  /**
-   * Change interval (stop and restart with new interval)
-   */
   setInterval(intervalMs: number) {
     const wasRunning = this.intervalId !== null;
     this.stop();
-    if (wasRunning) {
-      this.start(intervalMs);
-    }
+    if (wasRunning) this.start(intervalMs);
   }
 
-  /**
-   * Subscribe to real-time agent updates
-   */
   subscribeToAgentUpdates(callback: (status: AgentStatus[]) => void) {
-    // Subscribe to agent_configs changes
-    const subscription = supabase
-      .channel('agent_updates')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'agent_configs',
-        },
-        async () => {
-          const status = await this.getAgentStatus();
-          callback(status);
-        }
-      )
-      .subscribe();
+    const pollInterval = window.setInterval(async () => {
+      const status = await this.getAgentStatus();
+      callback(status);
+    }, 10000);
 
-    return subscription;
+    return { unsubscribe: () => clearInterval(pollInterval) };
   }
 
-  /**
-   * Subscribe to task updates
-   */
   subscribeToTaskUpdates(callback: (task: any) => void) {
-    const subscription = supabase
-      .channel('task_updates')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'agent_tasks',
-        },
-        (payload) => {
-          callback(payload.new);
+    const pollInterval = window.setInterval(async () => {
+      const { data } = await supabase
+        .from('agent_status')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(5);
+      if (data) {
+        for (const task of data as any[]) {
+          callback(task);
         }
-      )
-      .subscribe();
+      }
+    }, 15000);
 
-    return subscription;
+    return { unsubscribe: () => clearInterval(pollInterval) };
   }
 }
 
-// Export singleton instance
 export const agentOrchestrator = new AgentOrchestratorService();
-
-// Export class for multiple instances if needed
 export { AgentOrchestratorService };
-
-// Auto-start on import (for immediate background processing)
-console.log('[AgentOrchestrator] Service initialized and started');

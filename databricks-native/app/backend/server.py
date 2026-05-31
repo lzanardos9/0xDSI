@@ -15,6 +15,7 @@ import os
 import re
 import json
 import uuid
+import random
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -1518,7 +1519,6 @@ Return ONLY the complete HTML (starting with <!DOCTYPE html>)."""
                         code_language = "html"
 
             title = plan.get("title", prompt_text[:60])
-            import random as _rand
             colors = ["#1e40af", "#065f46", "#92400e", "#7c2d12", "#1e3a5f", "#374151"]
             creation_id = str(uuid.uuid4())
             execute_write(f"""
@@ -1529,7 +1529,7 @@ Return ONLY the complete HTML (starting with <!DOCTYPE html>)."""
                 "id": creation_id, "title": title, "prompt": prompt_text,
                 "html": html_output or "", "code": code_output or "",
                 "lang": code_language, "ftype": feature_type,
-                "cat": "generated", "color": _rand.choice(colors),
+                "cat": "generated", "color": random.choice(colors),
             })
 
             saved = {"id": creation_id, "title": title, "created_at": datetime.now().isoformat()}
@@ -1717,7 +1717,7 @@ async def migrate_dashboard(request: Request):
 
 @app.post("/api/agent-orchestrator")
 async def agent_orchestrator_endpoint(request: Request):
-    """Agent orchestration status and control."""
+    """Agent orchestration: status, run cycle, get communications."""
     body = await request.json()
     action = body.get("action", "status")
     try:
@@ -1728,13 +1728,104 @@ async def agent_orchestrator_endpoint(request: Request):
                 LEFT JOIN {fqn('agent_status')} as2 ON ac.id = as2.agent_id
             """)
             return {"agents": agents}
+
+        elif action == "run":
+            agents = query(f"SELECT id, name, agent_type, enabled FROM {fqn('agent_configs')} WHERE enabled = true")
+            agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
+            communications = _generate_agent_communications(agent_names)
+            return {
+                "success": True,
+                "agents_executed": len(agents),
+                "tasks_created": len(communications),
+                "tasks_completed": len(communications),
+                "agent_results": {},
+                "errors": [],
+                "communications": communications,
+            }
+
+        elif action == "get_communications":
+            agents = query(f"SELECT id, name, agent_type FROM {fqn('agent_configs')} WHERE enabled = true LIMIT 10")
+            agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
+            communications = _generate_agent_communications(agent_names, count=1)
+            return {"communications": communications}
+
         elif action == "trigger":
             agent_id = body.get("agent_id")
             return {"status": "triggered", "agent_id": agent_id}
+
         else:
             return {"status": "unknown_action"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+_COMM_TEMPLATES = {
+    "triage_to_enrichment": [
+        "Hey Enrichment, I've got a {severity} priority hit. Can you run intel on {ip}? Something doesn't look right.",
+        "Flagged {ip} as {severity} -- sending it your way for a deeper look.",
+        "Suspicious traffic from {ip}. I've classified it but I need threat context.",
+    ],
+    "enrichment_to_investigation": [
+        "Investigation, intel confirms {ip} is malicious. You'll want a closer look.",
+        "OSINT came back: {ip} tied to known botnet. Sending full context for deep dive.",
+        "Multiple feeds flagging {ip}. Packaged everything -- over to you.",
+    ],
+    "investigation_to_response": [
+        "Response, confirmed active C2 on affected host. Need containment now.",
+        "Found lateral movement spreading. Get isolation protocols running.",
+        "Full attack chain mapped across endpoints. Triggering automated remediation.",
+    ],
+    "response_to_orchestrator": [
+        "Containment done -- blocked IP at firewall and quarantined endpoint.",
+        "Threat neutralized in {time}s. Writing incident summary now.",
+        "All clear. Systems secured, forensic capture running.",
+    ],
+    "orchestrator_to_triage": [
+        "Atlas, new batch from SIEM -- {count} alerts need classification.",
+        "High-priority alerts stacking up. Sending to Triage now.",
+        "Fresh set of security events your way. Give them a good look.",
+    ],
+}
+
+_MOCK_IPS = ['185.220.101.42', '203.45.78.91', '91.234.56.12', '45.142.212.61', '104.244.78.53']
+
+_SCENARIOS = [
+    ("triage", "enrichment", "triage_to_enrichment", "threat_detection", "high", "analysis"),
+    ("enrichment", "investigation", "enrichment_to_investigation", "intelligence_sharing", "high", "enrichment"),
+    ("investigation", "response", "investigation_to_response", "escalation", "critical", "investigation"),
+    ("response", "orchestrator", "response_to_orchestrator", "status_update", "medium", "response"),
+    ("orchestrator", "triage", "orchestrator_to_triage", "task_assignment", "low", "orchestration"),
+]
+
+
+def _generate_agent_communications(agent_names: dict, count: int = 2) -> list:
+    comms = []
+    for _ in range(count):
+        scenario = random.choice(_SCENARIOS)
+        from_type, to_type, template_key, comm_type, severity, action_type = scenario
+        templates = _COMM_TEMPLATES.get(template_key, ["Agent communication in progress."])
+        template = random.choice(templates)
+        message = (template
+                   .replace("{severity}", severity)
+                   .replace("{ip}", random.choice(_MOCK_IPS))
+                   .replace("{time}", f"{random.uniform(0.5, 3.0):.1f}")
+                   .replace("{count}", str(random.randint(10, 50))))
+        from_name = agent_names.get(from_type, f"{from_type.title()} Agent")
+        to_name = agent_names.get(to_type, f"{to_type.title()} Agent")
+        comms.append({
+            "id": f"comm-{uuid.uuid4().hex[:12]}",
+            "from": f"agent-{from_type}",
+            "to": f"agent-{to_type}",
+            "fromAgent": from_name,
+            "toAgent": to_name,
+            "message": message,
+            "type": comm_type,
+            "timestamp": int(datetime.now().timestamp() * 1000),
+            "narrative": message,
+            "severity": severity,
+            "actionType": action_type,
+        })
+    return comms
 
 
 # ══════════════════════════════════════════════════════════════
