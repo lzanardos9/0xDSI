@@ -76,10 +76,10 @@ import { supabase } from '../lib/supabase';
 const Dashboard = () => {
   const { user, signOut } = useAuth();
   const [stats, setStats] = useState({
-    totalEvents: 24567,
-    activeSessions: 1247,
-    criticalAlerts: 8,
-    blockedThreats: 156,
+    totalEvents: 0,
+    activeSessions: 0,
+    criticalAlerts: 0,
+    blockedThreats: 0,
   });
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);

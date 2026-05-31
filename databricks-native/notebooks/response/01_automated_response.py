@@ -130,7 +130,7 @@ try:
                     a["alert_id"],
                     a["description"],
                     a["action_type"],
-                    "executed" if a["auto_approved"] else "pending_approval",
+                    "queued" if a["auto_approved"] else "pending_approval",
                     "automated_response_engine",
                 )
                 for a in all_actions
