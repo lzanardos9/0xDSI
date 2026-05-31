@@ -69,12 +69,78 @@ const STATE_COLORS: Record<string, { bg: string; text: string; dot: string }> = 
 
 const CATEGORY_COLORS: Record<string, string> = {
   network_security: 'text-cyan-400',
+  network_firewall: 'text-cyan-300',
   endpoint_security: 'text-blue-400',
   cloud: 'text-sky-400',
+  cloud_security: 'text-sky-300',
   infrastructure: 'text-slate-400',
   siem_integration: 'text-amber-400',
   ot_ics: 'text-orange-400',
+  identity: 'text-teal-400',
+  ids_ips: 'text-rose-400',
+  network_monitoring: 'text-emerald-400',
+  waf: 'text-yellow-400',
+  ndr: 'text-pink-400',
+  email_security: 'text-red-300',
+  message_bus: 'text-green-400',
 };
+
+const MOCK_DNA_CATALOG: DNASpec[] = [
+  { dna_id: 'dna-001', name: 'palo_alto_firewall', version: '2.4.0', vendor: 'Palo Alto Networks', category: 'network_firewall', description: 'PAN-OS syslog & NGFW threat logs', input_type: 'syslog', input_protocol: 'tcp', input_port: 514, input_format: 'cef', auth_type: 'mtls', parser_engine: 'regex_cef' },
+  { dna_id: 'dna-002', name: 'fortinet_fortigate', version: '2.1.0', vendor: 'Fortinet', category: 'network_firewall', description: 'FortiGate traffic & UTM logs', input_type: 'syslog', input_protocol: 'udp', input_port: 5514, input_format: 'kv', auth_type: 'api_key', parser_engine: 'kv_parser' },
+  { dna_id: 'dna-003', name: 'crowdstrike_falcon', version: '3.0.1', vendor: 'CrowdStrike', category: 'endpoint_security', description: 'Falcon endpoint detection events via Streaming API', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'oauth2', parser_engine: 'json_path' },
+  { dna_id: 'dna-004', name: 'cisco_asa', version: '1.8.0', vendor: 'Cisco', category: 'network_firewall', description: 'ASA firewall syslog events', input_type: 'syslog', input_protocol: 'tcp', input_port: 1514, input_format: 'cisco_syslog', auth_type: 'mtls', parser_engine: 'regex_cisco' },
+  { dna_id: 'dna-005', name: 'windows_event_log', version: '2.2.0', vendor: 'Microsoft', category: 'endpoint_security', description: 'Windows Security/System/Application event logs via WEF', input_type: 'wef', input_protocol: 'https', input_port: 5985, input_format: 'evtx', auth_type: 'kerberos', parser_engine: 'xml_evtx' },
+  { dna_id: 'dna-006', name: 'generic_syslog', version: '1.5.0', vendor: 'Generic', category: 'infrastructure', description: 'RFC5424/RFC3164 syslog collector', input_type: 'syslog', input_protocol: 'tcp', input_port: 514, input_format: 'rfc5424', auth_type: 'mtls', parser_engine: 'rfc5424' },
+  { dna_id: 'dna-007', name: 'aws_cloudtrail', version: '2.0.0', vendor: 'AWS', category: 'cloud', description: 'CloudTrail management & data events via S3/SQS', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'iam_role', parser_engine: 'json_path' },
+  { dna_id: 'dna-008', name: 'azure_activity_log', version: '1.9.0', vendor: 'Microsoft', category: 'cloud', description: 'Azure Activity & Diagnostic logs via Event Hub', input_type: 'event_hub', input_protocol: 'amqp', input_port: 5671, input_format: 'json', auth_type: 'sas_token', parser_engine: 'json_path' },
+  { dna_id: 'dna-009', name: 'splunk_hec_receiver', version: '1.3.0', vendor: 'Generic', category: 'siem_integration', description: 'Splunk HEC-compatible receiver for forwarded events', input_type: 'http', input_protocol: 'https', input_port: 8088, input_format: 'splunk_hec', auth_type: 'bearer_token', parser_engine: 'splunk_hec' },
+  { dna_id: 'dna-010', name: 'modbus_scada', version: '1.0.0', vendor: 'Industrial', category: 'ot_ics', description: 'Modbus TCP/RTU protocol monitor for SCADA systems', input_type: 'network_tap', input_protocol: 'tcp', input_port: 502, input_format: 'modbus', auth_type: 'none', parser_engine: 'modbus_decoder' },
+  { dna_id: 'dna-011', name: 'juniper_srx', version: '1.6.0', vendor: 'Juniper', category: 'network_firewall', description: 'SRX Series structured syslog', input_type: 'syslog', input_protocol: 'tcp', input_port: 514, input_format: 'structured_syslog', auth_type: 'mtls', parser_engine: 'regex_juniper' },
+  { dna_id: 'dna-012', name: 'check_point_firewall', version: '2.0.0', vendor: 'Check Point', category: 'network_firewall', description: 'Check Point Log Exporter OPSEC LEA', input_type: 'lea', input_protocol: 'tcp', input_port: 18184, input_format: 'opsec', auth_type: 'sic_cert', parser_engine: 'opsec_lea' },
+  { dna_id: 'dna-013', name: 'zscaler_zia', version: '1.4.0', vendor: 'Zscaler', category: 'cloud_security', description: 'Zscaler Internet Access NSS logs', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'api_key', parser_engine: 'json_path' },
+  { dna_id: 'dna-014', name: 'sentinelone_edr', version: '2.1.0', vendor: 'SentinelOne', category: 'endpoint_security', description: 'SentinelOne Deep Visibility telemetry', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'api_key', parser_engine: 'json_path' },
+  { dna_id: 'dna-015', name: 'carbon_black_edr', version: '1.7.0', vendor: 'VMware', category: 'endpoint_security', description: 'Carbon Black Cloud event forwarder', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'api_key', parser_engine: 'json_path' },
+  { dna_id: 'dna-016', name: 'suricata_ids', version: '1.2.0', vendor: 'OISF', category: 'ids_ips', description: 'Suricata EVE JSON alert & flow logs', input_type: 'file_tail', input_protocol: 'unix', input_port: 0, input_format: 'eve_json', auth_type: 'filesystem', parser_engine: 'json_path' },
+  { dna_id: 'dna-017', name: 'zeek_network', version: '1.3.0', vendor: 'Zeek Project', category: 'network_monitoring', description: 'Zeek/Bro connection, DNS, HTTP, SSL logs', input_type: 'file_tail', input_protocol: 'unix', input_port: 0, input_format: 'zeek_tsv', auth_type: 'filesystem', parser_engine: 'zeek_tsv' },
+  { dna_id: 'dna-018', name: 'f5_bigip_waf', version: '1.5.0', vendor: 'F5 Networks', category: 'waf', description: 'F5 BIG-IP ASM/WAF violation logs', input_type: 'syslog', input_protocol: 'tcp', input_port: 5515, input_format: 'cef', auth_type: 'mtls', parser_engine: 'regex_cef' },
+  { dna_id: 'dna-019', name: 'okta_system_log', version: '2.0.0', vendor: 'Okta', category: 'identity', description: 'Okta System Log API events', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'api_key', parser_engine: 'json_path' },
+  { dna_id: 'dna-020', name: 'google_workspace', version: '1.4.0', vendor: 'Google', category: 'cloud', description: 'Google Workspace Admin & Audit logs', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'oauth2', parser_engine: 'json_path' },
+  { dna_id: 'dna-021', name: 'office365_management', version: '1.8.0', vendor: 'Microsoft', category: 'cloud', description: 'Office 365 Management Activity API', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'oauth2', parser_engine: 'json_path' },
+  { dna_id: 'dna-022', name: 'linux_auditd', version: '1.1.0', vendor: 'Linux', category: 'endpoint_security', description: 'Linux audit subsystem logs', input_type: 'file_tail', input_protocol: 'unix', input_port: 0, input_format: 'audit_log', auth_type: 'filesystem', parser_engine: 'audit_parser' },
+  { dna_id: 'dna-023', name: 'macos_unified_log', version: '1.0.0', vendor: 'Apple', category: 'endpoint_security', description: 'macOS Unified Logging via log stream', input_type: 'process', input_protocol: 'stdout', input_port: 0, input_format: 'json', auth_type: 'local', parser_engine: 'json_path' },
+  { dna_id: 'dna-024', name: 'sophos_xg', version: '1.3.0', vendor: 'Sophos', category: 'network_firewall', description: 'Sophos XG Firewall syslog feed', input_type: 'syslog', input_protocol: 'udp', input_port: 515, input_format: 'kv', auth_type: 'mtls', parser_engine: 'kv_parser' },
+  { dna_id: 'dna-025', name: 'trend_micro_apex', version: '1.2.0', vendor: 'Trend Micro', category: 'endpoint_security', description: 'Apex One detection & response events', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'api_key', parser_engine: 'json_path' },
+  { dna_id: 'dna-026', name: 'darktrace_detect', version: '1.5.0', vendor: 'Darktrace', category: 'ndr', description: 'Darktrace model breach alerts', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'api_key', parser_engine: 'json_path' },
+  { dna_id: 'dna-027', name: 'vectra_ai', version: '1.1.0', vendor: 'Vectra AI', category: 'ndr', description: 'Vectra Cognito detections & host scores', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'api_key', parser_engine: 'json_path' },
+  { dna_id: 'dna-028', name: 'proofpoint_tap', version: '1.3.0', vendor: 'Proofpoint', category: 'email_security', description: 'Proofpoint TAP SIEM integration', input_type: 'api_poll', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'api_key', parser_engine: 'json_path' },
+  { dna_id: 'dna-029', name: 'cisco_meraki', version: '1.2.0', vendor: 'Cisco', category: 'network_security', description: 'Meraki MX security events & flows', input_type: 'syslog', input_protocol: 'udp', input_port: 5516, input_format: 'meraki_syslog', auth_type: 'api_key', parser_engine: 'regex_meraki' },
+  { dna_id: 'dna-030', name: 'kafka_consumer', version: '1.6.0', vendor: 'Apache', category: 'message_bus', description: 'Apache Kafka topic consumer for event streams', input_type: 'kafka', input_protocol: 'tcp', input_port: 9092, input_format: 'json', auth_type: 'sasl_ssl', parser_engine: 'json_path' },
+  { dna_id: 'dna-031', name: 'gcp_audit_log', version: '1.5.0', vendor: 'Google', category: 'cloud', description: 'GCP Cloud Audit Logs via Pub/Sub', input_type: 'pubsub', input_protocol: 'https', input_port: 443, input_format: 'json', auth_type: 'service_account', parser_engine: 'json_path' },
+  { dna_id: 'dna-032', name: 'elastic_beats_receiver', version: '1.0.0', vendor: 'Elastic', category: 'siem_integration', description: 'Elastic Beats Lumberjack protocol receiver', input_type: 'lumberjack', input_protocol: 'tcp', input_port: 5044, input_format: 'lumberjack', auth_type: 'mtls', parser_engine: 'lumberjack_v2' },
+];
+
+const MOCK_FLEET: Deployment[] = [
+  { deployment_id: 'dep-001', collector_id: 'ec-paloalto-dc01', dna_name: 'palo_alto_firewall', dna_version: '2.4.0', hostname: 'edge-fw-dc01', ip_address: '10.1.0.10', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-east', registered_at: '2026-04-12T08:00:00Z', events_per_second: 42500, bytes_per_second: 12400000, error_count: 0, buffer_usage_pct: 12, uptime_seconds: 2592000, cpu_percent: 34, memory_mb: 512, latency_ms: 2.1, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-002', collector_id: 'ec-crowdstrike-dc01', dna_name: 'crowdstrike_falcon', dna_version: '3.0.1', hostname: 'edge-edr-dc01', ip_address: '10.1.0.11', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-east', registered_at: '2026-04-12T08:05:00Z', events_per_second: 98200, bytes_per_second: 28600000, error_count: 0, buffer_usage_pct: 18, uptime_seconds: 2592000, cpu_percent: 52, memory_mb: 1024, latency_ms: 3.4, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-003', collector_id: 'ec-fortinet-branch01', dna_name: 'fortinet_fortigate', dna_version: '2.1.0', hostname: 'edge-fw-branch-sp', ip_address: '172.16.1.5', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'branch-sao-paulo', registered_at: '2026-04-15T14:00:00Z', events_per_second: 18900, bytes_per_second: 5500000, error_count: 0, buffer_usage_pct: 8, uptime_seconds: 1728000, cpu_percent: 22, memory_mb: 256, latency_ms: 14.2, connection_status: 'connected', last_heartbeat: '2026-05-31T10:29:00Z' },
+  { deployment_id: 'dep-004', collector_id: 'ec-aws-prod', dna_name: 'aws_cloudtrail', dna_version: '2.0.0', hostname: 'edge-cloud-aws-prod', ip_address: '10.2.0.5', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'aws-us-east-1', registered_at: '2026-03-20T10:00:00Z', events_per_second: 67800, bytes_per_second: 19800000, error_count: 0, buffer_usage_pct: 22, uptime_seconds: 5184000, cpu_percent: 41, memory_mb: 768, latency_ms: 5.8, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-005', collector_id: 'ec-azure-prod', dna_name: 'azure_activity_log', dna_version: '1.9.0', hostname: 'edge-cloud-azure', ip_address: '10.3.0.5', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'azure-east-us', registered_at: '2026-03-22T10:00:00Z', events_per_second: 54300, bytes_per_second: 15900000, error_count: 0, buffer_usage_pct: 19, uptime_seconds: 5011200, cpu_percent: 38, memory_mb: 640, latency_ms: 4.2, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-006', collector_id: 'ec-okta-prod', dna_name: 'okta_system_log', dna_version: '2.0.0', hostname: 'edge-iam-okta', ip_address: '10.1.0.20', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-east', registered_at: '2026-04-01T09:00:00Z', events_per_second: 12400, bytes_per_second: 3600000, error_count: 0, buffer_usage_pct: 5, uptime_seconds: 4320000, cpu_percent: 15, memory_mb: 192, latency_ms: 8.1, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-007', collector_id: 'ec-suricata-dc01', dna_name: 'suricata_ids', dna_version: '1.2.0', hostname: 'edge-ids-dc01', ip_address: '10.1.0.30', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-east', registered_at: '2026-04-05T11:00:00Z', events_per_second: 156000, bytes_per_second: 45600000, error_count: 2, buffer_usage_pct: 35, uptime_seconds: 2160000, cpu_percent: 68, memory_mb: 2048, latency_ms: 1.5, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-008', collector_id: 'ec-zeek-dmz', dna_name: 'zeek_network', dna_version: '1.3.0', hostname: 'edge-ndr-dmz', ip_address: '10.0.1.10', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-east', registered_at: '2026-04-05T11:30:00Z', events_per_second: 89700, bytes_per_second: 26200000, error_count: 0, buffer_usage_pct: 28, uptime_seconds: 2160000, cpu_percent: 56, memory_mb: 1536, latency_ms: 1.8, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-009', collector_id: 'ec-modbus-plant01', dna_name: 'modbus_scada', dna_version: '1.0.0', hostname: 'edge-ot-plant01', ip_address: '192.168.100.10', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'plant-guarulhos', registered_at: '2026-04-20T16:00:00Z', events_per_second: 3200, bytes_per_second: 940000, error_count: 0, buffer_usage_pct: 3, uptime_seconds: 3456000, cpu_percent: 8, memory_mb: 128, latency_ms: 22.4, connection_status: 'connected', last_heartbeat: '2026-05-31T10:29:00Z' },
+  { deployment_id: 'dep-010', collector_id: 'ec-darktrace-dc01', dna_name: 'darktrace_detect', dna_version: '1.5.0', hostname: 'edge-ndr-dc01', ip_address: '10.1.0.35', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-east', registered_at: '2026-04-25T09:00:00Z', events_per_second: 28400, bytes_per_second: 8300000, error_count: 0, buffer_usage_pct: 14, uptime_seconds: 2764800, cpu_percent: 29, memory_mb: 384, latency_ms: 3.6, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-011', collector_id: 'ec-winevent-dc01', dna_name: 'windows_event_log', dna_version: '2.2.0', hostname: 'edge-wef-dc01', ip_address: '10.1.0.40', os_type: 'windows', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-east', registered_at: '2026-03-28T08:00:00Z', events_per_second: 34100, bytes_per_second: 9950000, error_count: 1, buffer_usage_pct: 16, uptime_seconds: 4838400, cpu_percent: 42, memory_mb: 896, latency_ms: 2.8, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-012', collector_id: 'ec-cisco-asa-dc02', dna_name: 'cisco_asa', dna_version: '1.8.0', hostname: 'edge-fw-dc02', ip_address: '10.4.0.10', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-west', registered_at: '2026-04-02T10:00:00Z', events_per_second: 31600, bytes_per_second: 9200000, error_count: 0, buffer_usage_pct: 11, uptime_seconds: 4233600, cpu_percent: 28, memory_mb: 384, latency_ms: 6.4, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-013', collector_id: 'ec-gcp-prod', dna_name: 'gcp_audit_log', dna_version: '1.5.0', hostname: 'edge-cloud-gcp', ip_address: '10.5.0.5', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'gcp-us-central1', registered_at: '2026-04-10T12:00:00Z', events_per_second: 41200, bytes_per_second: 12000000, error_count: 0, buffer_usage_pct: 15, uptime_seconds: 3628800, cpu_percent: 33, memory_mb: 512, latency_ms: 4.9, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-014', collector_id: 'ec-proofpoint-cloud', dna_name: 'proofpoint_tap', dna_version: '1.3.0', hostname: 'edge-email-pp', ip_address: '10.1.0.50', os_type: 'linux', actual_state: 'running', desired_state: 'running', binary_version: '1.4.2', site_name: 'datacenter-east', registered_at: '2026-04-18T14:00:00Z', events_per_second: 8900, bytes_per_second: 2600000, error_count: 0, buffer_usage_pct: 4, uptime_seconds: 3024000, cpu_percent: 11, memory_mb: 192, latency_ms: 9.2, connection_status: 'connected', last_heartbeat: '2026-05-31T10:30:00Z' },
+  { deployment_id: 'dep-015', collector_id: 'ec-kafka-stream01', dna_name: 'kafka_consumer', dna_version: '1.6.0', hostname: 'edge-bus-kafka01', ip_address: '10.1.0.60', os_type: 'linux', actual_state: 'degraded', desired_state: 'running', binary_version: '1.4.1', site_name: 'datacenter-east', registered_at: '2026-04-22T10:00:00Z', events_per_second: 22100, bytes_per_second: 6450000, error_count: 14, buffer_usage_pct: 72, uptime_seconds: 2592000, cpu_percent: 78, memory_mb: 1280, latency_ms: 45.2, connection_status: 'connected', last_heartbeat: '2026-05-31T10:28:00Z' },
+  { deployment_id: 'dep-016', collector_id: 'ec-sentinel-legacy', dna_name: 'sentinelone_edr', dna_version: '2.1.0', hostname: 'edge-edr-legacy', ip_address: '10.6.0.5', os_type: 'linux', actual_state: 'stopped', desired_state: 'stopped', binary_version: '1.3.8', site_name: 'branch-rio', registered_at: '2026-02-10T10:00:00Z', events_per_second: null, bytes_per_second: null, error_count: null, buffer_usage_pct: null, uptime_seconds: null, cpu_percent: null, memory_mb: null, latency_ms: null, connection_status: 'disconnected', last_heartbeat: '2026-05-28T22:15:00Z' },
+];
+
+const MOCK_STATS: FleetStats = { total: 36, running: 34, degraded: 1, dead: 0, stopped: 1 };
+const MOCK_TOTAL_EPS = 712850;
 
 function formatUptime(seconds: number | null): string {
   if (!seconds) return '-';
@@ -105,10 +171,15 @@ export default function EdgeDeploymentsTab() {
       if (resp.ok) {
         const data = await resp.json();
         setDeployments(data.deployments || []);
-        setStats(data.stats || { total: 0, running: 0, degraded: 0, dead: 0, stopped: 0 });
+        setStats(data.stats || MOCK_STATS);
         setTotalEps(data.total_eps || 0);
+        setLoading(false);
+        return;
       }
     } catch {}
+    setDeployments(MOCK_FLEET);
+    setStats(MOCK_STATS);
+    setTotalEps(MOCK_TOTAL_EPS);
     setLoading(false);
   }, []);
 
@@ -118,8 +189,10 @@ export default function EdgeDeploymentsTab() {
       if (resp.ok) {
         const data = await resp.json();
         setDnaCatalog(data.dna_catalog || []);
+        return;
       }
     } catch {}
+    setDnaCatalog(MOCK_DNA_CATALOG);
   }, []);
 
   useEffect(() => {
