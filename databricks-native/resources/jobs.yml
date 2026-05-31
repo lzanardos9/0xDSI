@@ -623,6 +623,15 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+        - task_key: seed_correlation_rules_library
+          depends_on:
+            - task_key: create_tables
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/setup/05_seed_correlation_rules_library.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
 
     # ─────────────────────────────────────────────────────
     # ENRICHMENT & INVESTIGATION AGENTS

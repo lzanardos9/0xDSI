@@ -168,6 +168,36 @@ USING DELTA
 """)
 
 spark.sql("""
+CREATE TABLE IF NOT EXISTS correlation_rules_library (
+    id STRING,
+    rule_name STRING NOT NULL,
+    rule_description STRING,
+    category STRING NOT NULL,
+    subcategory STRING,
+    rule_type STRING DEFAULT 'threshold',
+    severity STRING DEFAULT 'medium',
+    confidence_score DOUBLE DEFAULT 0.75,
+    mitre_tactics ARRAY<STRING>,
+    mitre_techniques ARRAY<STRING>,
+    data_sources ARRAY<STRING>,
+    rule_logic STRING,
+    enabled BOOLEAN DEFAULT false,
+    tags ARRAY<STRING>,
+    conditions ARRAY<STRING>,
+    window_seconds INT DEFAULT 300,
+    threshold INT DEFAULT 5,
+    author STRING,
+    version INT DEFAULT 1,
+    trigger_count INT DEFAULT 0,
+    false_positive_rate DOUBLE DEFAULT 0.0,
+    created_at TIMESTAMP DEFAULT current_timestamp(),
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
 CREATE TABLE IF NOT EXISTS cep_patterns (
     id STRING DEFAULT uuid(),
     name STRING NOT NULL,
