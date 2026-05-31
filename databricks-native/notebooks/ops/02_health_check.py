@@ -37,6 +37,8 @@ dbutils.widgets.text("circuit_breaker_threshold", "3", "Consecutive failures to 
 staleness_minutes = int(dbutils.widgets.get("staleness_minutes"))
 circuit_breaker_threshold = int(dbutils.widgets.get("circuit_breaker_threshold"))
 
+require_tables("agent_status", "health_alerts")
+
 mon.log_info(
     f"Health check started: staleness={staleness_minutes}m, "
     f"circuit_breaker_threshold={circuit_breaker_threshold}"
@@ -194,6 +196,30 @@ try:
             alerts_df.write.mode("append").saveAsTable(HEALTH_ALERTS_TABLE)
             alerts_generated = len(alert_rows)
             mon.log_metric("alerts_generated", alerts_generated)
+
+            # Write to notification_log for downstream delivery
+            NOTIFICATION_TABLE = cfg.get_table_path("notification_log")
+            notif_rows = [{
+                "channel": "pagerduty",
+                "severity": "high",
+                "subject": f"Circuit Breaker OPEN: {a['agent_name']}",
+                "body": a["message"],
+                "source": "ops/02_health_check",
+            } for a in alert_rows]
+            notif_schema = StructType([
+                StructField("channel", StringType()),
+                StructField("severity", StringType()),
+                StructField("subject", StringType()),
+                StructField("body", StringType()),
+                StructField("source", StringType()),
+            ])
+            notif_df = (
+                spark.createDataFrame(notif_rows, schema=notif_schema)
+                .withColumn("id", expr("uuid()"))
+                .withColumn("status", lit("pending"))
+                .withColumn("created_at", current_timestamp())
+            )
+            notif_df.write.mode("append").saveAsTable(NOTIFICATION_TABLE)
 
             for alert in alert_rows:
                 mon.log_warning(alert["message"])

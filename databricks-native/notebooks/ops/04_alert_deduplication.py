@@ -29,6 +29,8 @@ dbutils.widgets.text("consolidate_stale", "true", "Auto-close stale duplicate al
 dedup_window_hours = int(dbutils.widgets.get("dedup_window_hours"))
 consolidate_stale = dbutils.widgets.get("consolidate_stale").lower() == "true"
 
+require_tables("alerts")
+
 mon.log_event("config_loaded", {
     "dedup_window_hours": dedup_window_hours,
     "consolidate_stale": consolidate_stale,
