@@ -84,8 +84,6 @@ with mon.time("absence_check"):
         expected_type = rule.expected_event_type
         rule_id = rule.id
         rule_name = rule.name
-        rule_category = getattr(rule, "category", "missing_prerequisite")
-        rule_confidence = float(getattr(rule, "confidence_base", 0.85))
 
         # Use parameterized query via safe SQL
         count_query = (
@@ -116,15 +114,11 @@ with mon.time("absence_check"):
                 detections.append({
                     "rule_id": rule_id,
                     "rule_name": rule_name,
-                    "rule_code": getattr(rule, "rule_code", ""),
-                    "category": rule_category,
                     "expected_event_type": expected_type,
                     "window_seconds": window_seconds,
                     "severity": rule.severity,
-                    "confidence": rule_confidence,
-                    "mitre_techniques": list(getattr(rule, "mitre_techniques", []) or []),
                 })
-                print(f"DETECTION [{rule_category}]: {rule_name} - No '{expected_type}' events in {window_seconds}s")
+                print(f"DETECTION: {rule_name} - No '{expected_type}' events in {window_seconds}s")
             else:
                 print(f"SUPPRESSED (dedup): {rule_name} already fired within {dedup_window}min")
 
@@ -187,11 +181,11 @@ if detections:
 
     alert_rows = [
         {
-            "title": f"Negative Correlation [{d['category']}]: {d['rule_name']}",
-            "description": f"Expected event '{d['expected_event_type']}' not seen in {d['window_seconds']}s. Category: {d['category']}. MITRE: {', '.join(d['mitre_techniques'][:3])}",
+            "title": f"Negative Correlation: {d['rule_name']}",
+            "description": f"Expected event '{d['expected_event_type']}' not seen in {d['window_seconds']}s",
             "severity": d["severity"],
             "source": "negative_correlation_engine",
-            "confidence_score": d["confidence"],
+            "confidence_score": 0.85,
         }
         for d in detections_capped
     ]
