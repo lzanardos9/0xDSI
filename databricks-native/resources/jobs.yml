@@ -614,6 +614,15 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+        - task_key: register_model_serving
+          depends_on:
+            - task_key: create_tables
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/setup/04_register_model_serving.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
 
     # ─────────────────────────────────────────────────────
     # ENRICHMENT & INVESTIGATION AGENTS

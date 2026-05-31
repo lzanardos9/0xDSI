@@ -466,11 +466,15 @@ Keep response under 200 words. Be specific to industrial environments."""
 
 agent = OTProtocolSecurityAgent(
     agent_name="ot_protocol_security_monitor",
-    config={
-        "lookback_minutes": 15,
-        "schedule": "every_5_minutes",
-    }
+    cfg=cfg,
+    llm=llm,
+    mon=mon,
+    spark=spark,
 )
+agent.config = {
+    "lookback_minutes": 15,
+    "schedule": "every_5_minutes",
+}
 
 result = agent.run()
 mon.log_info(f"Agent result: {result.status.value}", extra=result.details)

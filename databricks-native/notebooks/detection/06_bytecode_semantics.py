@@ -326,6 +326,13 @@ with mon.time("extract_features"):
         .withColumn("api_diversity_ratio",
             col("unique_apis").cast("double") / greatest(col("api_call_count").cast("double"), lit(1.0))
         )
+        .withColumn("entropy_score",
+            when(col("api_call_count") <= 1, lit(0.0))
+            .otherwise(
+                -1.0 * (col("unique_apis").cast("double") / col("api_call_count").cast("double"))
+                * log2(greatest(col("unique_apis").cast("double") / col("api_call_count").cast("double"), lit(0.001)))
+            )
+        )
     )
 
 # COMMAND ----------
