@@ -47,6 +47,7 @@ risk_threshold = float(dbutils.widgets.get("risk_threshold"))
 velocity_window_minutes = int(dbutils.widgets.get("velocity_window_minutes"))
 mode = dbutils.widgets.get("mode")
 fraud_model_name = dbutils.widgets.get("fraud_model_name")
+require_tables("financial_transactions")
 
 mlflow.set_experiment("/Shared/0xDSI/experiments/financial_threat_intel")
 

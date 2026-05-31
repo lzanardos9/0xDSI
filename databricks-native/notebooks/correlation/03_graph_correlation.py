@@ -31,6 +31,8 @@ min_hops = int(dbutils.widgets.get("min_hops"))
 min_weight = int(dbutils.widgets.get("min_weight"))
 max_alerts = int(dbutils.widgets.get("max_alerts"))
 
+require_tables("events", "alerts", "graph_streaming_nodes")
+
 mon.log_event("config_loaded", {
     "lookback_hours": lookback_hours,
     "min_hops": min_hops,

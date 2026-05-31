@@ -37,6 +37,7 @@ dbutils.widgets.text("staleness_days", "7", "Days before model is considered sta
 ks_alpha = float(dbutils.widgets.get("ks_alpha"))
 psi_threshold = float(dbutils.widgets.get("psi_threshold"))
 staleness_days = int(dbutils.widgets.get("staleness_days"))
+require_tables("ml_model_monitoring")
 
 # COMMAND ----------
 

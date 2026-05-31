@@ -43,6 +43,7 @@ max_nodes = int(dbutils.widgets.get("max_nodes"))
 max_edges = int(dbutils.widgets.get("max_edges"))
 lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 embedding_model = dbutils.widgets.get("embedding_model")
+require_tables("chronoweave_timelines", "chronoweave_branches")
 
 mlflow.set_experiment("/Shared/0xDSI/experiments/chronoweave")
 

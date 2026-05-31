@@ -43,6 +43,8 @@ similarity_threshold = float(dbutils.widgets.get("similarity_threshold"))
 max_items = int(dbutils.widgets.get("max_items"))
 embedding_model = dbutils.widgets.get("embedding_model")
 
+require_tables("alerts", "knowledge_store", "ks_recall_signals")
+
 # COMMAND ----------
 
 from pyspark.sql.functions import *

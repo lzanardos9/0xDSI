@@ -40,6 +40,7 @@ window_seconds = int(dbutils.widgets.get("window_seconds"))
 max_hops = int(dbutils.widgets.get("max_hops"))
 min_score = float(dbutils.widgets.get("min_score"))
 mode = dbutils.widgets.get("mode")
+require_tables("events", "trend_signals")
 
 mlflow.set_experiment("/Shared/0xDSI/experiments/trend_engine_cet")
 

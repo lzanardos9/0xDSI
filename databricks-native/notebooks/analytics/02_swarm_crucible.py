@@ -44,6 +44,7 @@ generations = int(dbutils.widgets.get("generations"))
 mutation_rate = float(dbutils.widgets.get("mutation_rate"))
 tick_interval_ms = int(dbutils.widgets.get("tick_interval_ms"))
 crossover_rate = float(dbutils.widgets.get("crossover_rate"))
+require_tables("correlation_rules", "swarm_battlefields")
 
 mlflow.set_experiment("/Shared/0xDSI/experiments/swarm_crucible")
 

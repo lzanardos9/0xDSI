@@ -31,6 +31,8 @@ checkpoint_base = dbutils.widgets.get("checkpoint_path") or cfg.get_checkpoint_p
 ks_alpha = float(dbutils.widgets.get("ks_alpha"))
 baseline_days = int(dbutils.widgets.get("baseline_days"))
 
+require_tables("events", "temporal_baselines", "alerts")
+
 mon.log_event("config_loaded", {
     "ks_alpha": ks_alpha,
     "baseline_days": baseline_days,

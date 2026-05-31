@@ -48,6 +48,7 @@ conflict_threshold = float(dbutils.widgets.get("conflict_threshold"))
 max_signals = int(dbutils.widgets.get("max_signals_per_run"))
 mode = dbutils.widgets.get("mode")
 novelty_percentile = float(dbutils.widgets.get("novelty_percentile"))
+require_tables("alerts", "confluence_verdicts", "confluence_lens_weights")
 
 mon.log_event("config_loaded", {
     "fusion_window": fusion_window,

@@ -50,6 +50,7 @@ mode = dbutils.widgets.get("mode")
 heartbeat_timeout = int(dbutils.widgets.get("heartbeat_timeout_seconds"))
 max_backpressure = int(dbutils.widgets.get("max_backpressure_events"))
 collector_id_param = dbutils.widgets.get("collector_id")
+require_tables("edge_collector_registry", "edge_collector_heartbeats")
 
 # COMMAND ----------
 

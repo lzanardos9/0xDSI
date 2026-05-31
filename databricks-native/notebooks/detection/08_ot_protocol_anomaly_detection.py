@@ -35,6 +35,8 @@ enable_temporal = dbutils.widgets.get("enable_temporal").lower() == "true"
 maint_start = dbutils.widgets.get("maintenance_window_start")
 maint_end = dbutils.widgets.get("maintenance_window_end")
 
+require_tables("silver_ot_security_events")
+
 # COMMAND ----------
 
 from pyspark.sql import functions as F

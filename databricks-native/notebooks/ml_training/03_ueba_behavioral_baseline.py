@@ -47,6 +47,7 @@ baseline_days = int(dbutils.widgets.get("baseline_days"))
 detection_days = int(dbutils.widgets.get("detection_days"))
 ks_alpha = float(dbutils.widgets.get("ks_alpha"))
 cluster_outlier_percentile = int(dbutils.widgets.get("cluster_outlier_percentile"))
+require_tables("enriched_security_events", "user_behavior_anomalies")
 
 # COMMAND ----------
 

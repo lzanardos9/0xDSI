@@ -78,6 +78,7 @@ trigger_interval = dbutils.widgets.get("trigger_interval")
 enable_anomaly_baseline = dbutils.widgets.get("enable_anomaly_baseline").lower() == "true"
 enable_command_audit = dbutils.widgets.get("enable_command_audit").lower() == "true"
 max_offsets = int(dbutils.widgets.get("max_offsets_per_trigger"))
+require_tables("bronze_ot_events")
 
 # COMMAND ----------
 

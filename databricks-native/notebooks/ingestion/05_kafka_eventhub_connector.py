@@ -41,6 +41,7 @@ trigger_interval = dbutils.widgets.get("trigger_interval")
 adaptive_backpressure = dbutils.widgets.get("enable_adaptive_backpressure").lower() == "true"
 parse_format = dbutils.widgets.get("parse_format")
 failover_source = dbutils.widgets.get("failover_source")
+require_tables("events")
 
 # COMMAND ----------
 

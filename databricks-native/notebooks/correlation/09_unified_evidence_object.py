@@ -50,6 +50,7 @@ window_seconds = int(dbutils.widgets.get("window_seconds"))
 lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 decay_half_life = int(dbutils.widgets.get("decay_half_life_minutes"))
 min_signals = int(dbutils.widgets.get("min_signals_for_ueo"))
+require_tables("unified_evidence_objects", "alerts", "entity_spine")
 
 # COMMAND ----------
 

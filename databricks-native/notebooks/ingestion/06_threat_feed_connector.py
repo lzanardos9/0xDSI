@@ -34,6 +34,7 @@ lookback_days = int(dbutils.widgets.get("lookback_days"))
 max_iocs = int(dbutils.widgets.get("max_iocs_per_feed"))
 confidence_decay_days = int(dbutils.widgets.get("confidence_decay_days"))
 expiry_days = int(dbutils.widgets.get("expiry_days"))
+require_tables("threat_feeds", "ioc_entries")
 
 # Read enabled feeds from the control plane (threat_feeds table in Unity Catalog)
 feeds = []

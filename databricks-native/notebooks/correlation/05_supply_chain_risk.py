@@ -31,6 +31,8 @@ baseline_days = int(dbutils.widgets.get("baseline_days"))
 max_alerts = int(dbutils.widgets.get("max_alerts"))
 mode = dbutils.widgets.get("mode")
 
+require_tables("events", "alerts")
+
 mon.log_event("config_loaded", {
     "lookback_minutes": lookback_minutes,
     "baseline_days": baseline_days,

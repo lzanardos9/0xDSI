@@ -43,6 +43,8 @@ drift_threshold = float(dbutils.widgets.get("drift_threshold"))
 min_baseline_events = int(dbutils.widgets.get("min_baseline_events"))
 max_entities = int(dbutils.widgets.get("max_entities"))
 
+require_tables("events", "entity_drift_scores", "entity_spine")
+
 # COMMAND ----------
 
 from pyspark.sql.functions import *

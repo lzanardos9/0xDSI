@@ -33,6 +33,7 @@ dbutils.widgets.text("proximity_radius_km", "500", "Max proximity radius for exp
 
 correlation_window_hours = int(dbutils.widgets.get("correlation_window_hours"))
 proximity_radius_km = int(dbutils.widgets.get("proximity_radius_km"))
+require_tables("geopolitical_events", "alerts")
 
 # COMMAND ----------
 

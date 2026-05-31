@@ -52,6 +52,8 @@ min_score_threshold = int(dbutils.widgets.get("min_score_threshold"))
 velocity_window_hours = int(dbutils.widgets.get("velocity_window_hours"))
 max_entities = int(dbutils.widgets.get("max_entities"))
 
+require_tables("alerts", "events", "asset_registry")
+
 mon.log_event("config_loaded", {
     "lookback_minutes": lookback_minutes,
     "min_score_threshold": min_score_threshold,

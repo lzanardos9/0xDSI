@@ -44,6 +44,7 @@ dbutils.widgets.text("compute_centrality", "true", "Compute graph centrality met
 lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 max_entities = int(dbutils.widgets.get("max_entities_per_batch"))
 compute_centrality = dbutils.widgets.get("compute_centrality").lower() == "true"
+require_tables("entity_spine", "entity_edges", "events")
 
 # COMMAND ----------
 

@@ -26,6 +26,7 @@ from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler
 
 dbutils.widgets.text("training_days", "90", "Training Window (days)")
 training_days = int(dbutils.widgets.get("training_days"))
+require_tables("enriched_security_events")
 
 # COMMAND ----------
 

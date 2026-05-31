@@ -28,6 +28,7 @@ dbutils.widgets.text("inference_table_prefix", "", "Inference table name prefix 
 
 lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 inference_table_prefix = dbutils.widgets.get("inference_table_prefix")
+require_tables("llm_usage_logs")
 
 mon.log_event("config_loaded", {"lookback_minutes": lookback_minutes})
 

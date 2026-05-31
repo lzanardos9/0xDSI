@@ -48,6 +48,8 @@ lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 anomaly_threshold = float(dbutils.widgets.get("anomaly_threshold"))
 max_artifacts = int(dbutils.widgets.get("max_artifacts"))
 
+require_tables("bytecode_analysis", "code_behavioral_features", "code_runtime_events")
+
 # COMMAND ----------
 
 from pyspark.sql.functions import *

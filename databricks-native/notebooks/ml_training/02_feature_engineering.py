@@ -18,6 +18,7 @@ from datetime import datetime
 
 dbutils.widgets.text("lookback_days", "30", "Feature Lookback Window (days)")
 lookback_days = int(dbutils.widgets.get("lookback_days"))
+require_tables("enriched_security_events")
 
 # COMMAND ----------
 

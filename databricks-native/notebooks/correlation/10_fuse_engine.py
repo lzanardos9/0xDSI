@@ -43,6 +43,7 @@ max_ueos = int(dbutils.widgets.get("max_ueos_per_run"))
 decay_half_life = int(dbutils.widgets.get("decay_half_life_minutes"))
 conflict_threshold = float(dbutils.widgets.get("conflict_threshold"))
 min_independence = float(dbutils.widgets.get("min_independence_score"))
+require_tables("fuse_results", "unified_evidence_objects")
 
 # COMMAND ----------
 

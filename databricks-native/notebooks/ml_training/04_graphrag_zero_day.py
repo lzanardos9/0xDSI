@@ -20,6 +20,7 @@ from datetime import datetime
 from collections import defaultdict
 
 mlflow.set_experiment("/Shared/0xDSI/experiments/graphrag_zero_day_detection")
+require_tables("alerts", "ioc_entries")
 
 # COMMAND ----------
 

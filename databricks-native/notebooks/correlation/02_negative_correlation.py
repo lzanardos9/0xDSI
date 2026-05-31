@@ -27,6 +27,8 @@ dbutils.widgets.text("max_alerts_per_run", "50", "Max alerts generated per execu
 dedup_window = int(dbutils.widgets.get("dedup_window_minutes"))
 max_alerts = int(dbutils.widgets.get("max_alerts_per_run"))
 
+require_tables("events", "negative_correlation_rules", "alerts")
+
 # COMMAND ----------
 
 from pyspark.sql.functions import *

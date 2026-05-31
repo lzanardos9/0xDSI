@@ -27,6 +27,8 @@ checkpoint_base = dbutils.widgets.get("checkpoint_path") or cfg.get_checkpoint_p
 min_confidence = float(dbutils.widgets.get("min_confidence"))
 dedup_hours = int(dbutils.widgets.get("dedup_window_hours"))
 
+require_tables("events", "ioc_entries", "alerts")
+
 mon.log_event("config_loaded", {
     "min_confidence": min_confidence,
     "dedup_hours": dedup_hours,

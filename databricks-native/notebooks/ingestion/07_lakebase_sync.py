@@ -38,6 +38,7 @@ dbutils.widgets.text("trigger_interval", "10 seconds", "Streaming trigger interv
 mode = dbutils.widgets.get("mode")
 max_streams = int(dbutils.widgets.get("max_concurrent_streams"))
 trigger_interval = dbutils.widgets.get("trigger_interval")
+require_tables("events")
 
 # Optional external JDBC target (not required -- Delta serving is the default)
 JDBC_TARGET_ENABLED = False

@@ -41,6 +41,8 @@ lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 min_confidence_threshold = float(dbutils.widgets.get("min_confidence_threshold"))
 calibration_days = int(dbutils.widgets.get("calibration_days"))
 
+require_tables("alerts", "slm_classifications")
+
 mon.log_event("config_loaded", {
     "batch_size": batch_size,
     "lookback_minutes": lookback_minutes,

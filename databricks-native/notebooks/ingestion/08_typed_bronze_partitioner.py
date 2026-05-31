@@ -37,6 +37,7 @@ dbutils.widgets.text("quarantine_threshold", "0.3", "Fraction of bad fields to q
 mode = dbutils.widgets.get("mode")
 trigger_seconds = int(dbutils.widgets.get("trigger_seconds"))
 quarantine_threshold = float(dbutils.widgets.get("quarantine_threshold"))
+require_tables("events", "typed_bronze_quarantine")
 
 # COMMAND ----------
 
