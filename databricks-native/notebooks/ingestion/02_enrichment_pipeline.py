@@ -277,11 +277,11 @@ def enrich_batch(batch_df, batch_id):
 # Read un-enriched events from the events table
 events_stream = (
     spark.readStream
-    .format("delta")
-    .option("ignoreChanges", "true")
-    .option("maxFilesPerTrigger", str(batch_size))
     .table(get_table_path(cfg, "events"))
+    .option("maxFilesPerTrigger", str(batch_size))
     .filter(col("enrichments").isNull())
+    .filter(col("source_ip").isNotNull())  # Ensure source_ip is not null for asset join
+    .filter(col("user_id").isNotNull())    # Ensure user_id is not null for user profile join
     .select("id", "source_ip", "dest_ip", "user_id", "hostname")
 )
 

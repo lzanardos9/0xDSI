@@ -20,6 +20,7 @@ import re
 import time
 from datetime import datetime, timezone, timedelta
 from pyspark.sql import functions as F
+import mlflow
 
 from agent_framework import BatchAgent, AgentResult, AgentStatus, create_soc_tools
 
@@ -121,16 +122,15 @@ MODEL OUTPUT:
                 safe_append(violations_df, violations_table)
 
                 # Log to MLflow
-                if self._tracer:
-                    with self._tracer.start_run(run_name=f"{self.agent_name}_{int(time.time())}"):
-                        self._tracer.log_metrics({
-                            "violations_detected": len(violations),
-                            "blocked_count": sum(1 for v in violations if v["blocked"]),
-                        })
-                        self._tracer.log_params({
-                            "agent_name": self.agent_name,
-                            "scan_window_minutes": 30,
-                        })
+                with mlflow.start_run(run_name="guardrails_scan", nested=True):
+                    mlflow.log_metrics({
+                        "violations_detected": len(violations),
+                        "blocked_count": sum(1 for v in violations if v["blocked"]),
+                    })
+                    mlflow.log_params({
+                        "agent_name": self.agent_name,
+                        "scan_window_minutes": 30,
+                    })
 
             # Mark interactions as scanned
             scanned_ids = [iid for iid in [r["interaction_id"] for r in interactions]]

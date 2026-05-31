@@ -35,7 +35,7 @@ def gold_hourly_metrics():
             window(col("timestamp"), "1 hour").alias("time_window"),
             col("event_type"),
             col("severity"),
-            col("ocsf_category"),
+            col("ocsf_category_name"),
         )
         .agg(
             count("*").alias("event_count"),
@@ -74,7 +74,7 @@ def gold_alert_summary():
         )
         .agg(
             count("*").alias("alert_count"),
-            avg("confidence_score").alias("avg_confidence"),
+            avg(coalesce(col("confidence_score"), lit(0.5))).alias("avg_confidence"),
             avg("response_time_seconds").alias("avg_response_time_sec"),
             percentile_approx("response_time_seconds", 0.5).alias("median_response_time_sec"),
             percentile_approx("response_time_seconds", 0.95).alias("p95_response_time_sec"),
@@ -168,11 +168,14 @@ def gold_user_risk_scores():
 def gold_mitre_coverage():
     return (
         dlt.read("silver_alerts")
-        .filter(col("mitre_tactic").isNotNull())
-        .groupBy("mitre_tactic", "mitre_technique")
+        .filter(coalesce(col("mitre_tactic"), lit("")).isNotNull() & (col("mitre_tactic") != ""))
+        .groupBy(
+            coalesce(col("mitre_tactic"), lit("unknown")).alias("mitre_tactic"),
+            coalesce(col("mitre_technique"), lit("unknown")).alias("mitre_technique")
+        )
         .agg(
             count("*").alias("detection_count"),
-            avg("confidence_score").alias("avg_confidence"),
+            avg(coalesce(col("confidence_score"), lit(0.5))).alias("avg_confidence"),
             min("created_at").alias("first_detection"),
             max("created_at").alias("last_detection"),
             countDistinct("source").alias("detection_sources"),
