@@ -19,7 +19,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: ingest_events
           environment_key: default
@@ -39,7 +42,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: enrich_events
           environment_key: default
@@ -67,7 +73,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: correlate_events
           environment_key: default
@@ -85,7 +94,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: check_absences
           environment_key: default
@@ -106,7 +118,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: detect_anomalies
           environment_key: default
@@ -125,7 +140,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: match_iocs
           environment_key: default
@@ -143,7 +161,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: classify_alerts
           environment_key: default
@@ -163,7 +184,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: score_entities
           environment_key: default
@@ -186,7 +210,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: execute_responses
           environment_key: default
@@ -205,7 +232,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: manage_cases
           environment_key: default
@@ -226,7 +256,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: profile_llm_usage
           environment_key: default
@@ -245,7 +278,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: scan_assets
           environment_key: default
@@ -264,7 +300,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: generate_operational
           environment_key: default
@@ -298,7 +337,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: train_model
           environment_key: default
@@ -320,7 +362,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: graph_correlate
           environment_key: default
@@ -339,7 +384,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: temporal_correlate
           environment_key: default
@@ -360,7 +408,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: enforce_schema
           environment_key: default
@@ -378,7 +429,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: handle_quarantine
           environment_key: default
@@ -399,7 +453,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: triage_alerts
           environment_key: default
@@ -419,7 +476,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: enrich_alerts
           environment_key: default
@@ -438,7 +498,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: hunt_threats
           environment_key: default
@@ -458,7 +521,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: orchestrate
           environment_key: default
@@ -481,7 +547,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: compute_features
           environment_key: default
@@ -500,7 +569,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: create_tables
           environment_key: default
@@ -530,7 +602,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: sage_enrich
           environment_key: default
@@ -548,7 +623,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: nova_investigate
           environment_key: default
@@ -566,7 +644,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: vanguard_respond
           environment_key: default
@@ -587,7 +668,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: cti_attribute
           environment_key: default
@@ -605,7 +689,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: discover_patterns
           environment_key: default
@@ -623,7 +710,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: embed_alerts
           environment_key: default
@@ -644,7 +734,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: red_team_sim
           environment_key: default
@@ -662,7 +755,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: blue_team_audit
           environment_key: default
@@ -680,7 +776,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: forensic_analysis
           environment_key: default
@@ -698,7 +797,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: honeypot_check
           environment_key: default
@@ -719,7 +821,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: daily_briefing
           environment_key: default
@@ -737,7 +842,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: generate_playbooks
           environment_key: default
@@ -755,7 +863,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: summarize_incidents
           environment_key: default
@@ -773,7 +884,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: analyze_docs
           environment_key: default
@@ -791,7 +905,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: analyze_malware
           environment_key: default
@@ -812,7 +929,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: scan_llm_interactions
           environment_key: default
@@ -830,7 +950,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: check_model_integrity
           environment_key: default
@@ -848,7 +971,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: simulate_campaign
           environment_key: default
@@ -866,7 +992,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: normalize_feeds
           environment_key: default
@@ -884,7 +1013,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: fetch_and_correlate
           environment_key: default
@@ -902,7 +1034,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: process_feedback
           environment_key: default
@@ -925,7 +1060,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: graph_cep_detect
           environment_key: default
@@ -947,7 +1085,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: vector_score
           environment_key: default
@@ -965,7 +1106,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: ai_correlate
           environment_key: default
@@ -986,7 +1130,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: supply_chain_check
           environment_key: default
@@ -1004,7 +1151,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: cspm_check
           environment_key: default
@@ -1022,7 +1172,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: build_baseline
           environment_key: default
@@ -1040,7 +1193,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: zero_day_scan
           environment_key: default
@@ -1061,7 +1217,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: fuse_signals
           environment_key: default
@@ -1081,7 +1240,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: stream_ingest
           environment_key: default
@@ -1101,7 +1263,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: pull_feeds
           environment_key: default
@@ -1121,7 +1286,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: embed_and_sync
           environment_key: default
@@ -1142,7 +1310,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: dispatch_notifications
           environment_key: default
@@ -1161,7 +1332,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: sync_tickets
           environment_key: default
@@ -1181,7 +1355,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: check_connectors
           environment_key: default
@@ -1199,7 +1376,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: backdoor_scan
           environment_key: default
@@ -1217,7 +1397,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: check_models
           environment_key: default
@@ -1242,7 +1425,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         # Stage 1: Detection (parallel)
         - task_key: behavioral_detection
@@ -1414,7 +1600,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: resolve_entities
           environment_key: default
@@ -1434,7 +1623,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: ingest_ks
           environment_key: default
@@ -1454,7 +1646,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: gc_ks
           environment_key: default
@@ -1473,7 +1668,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: build_ueos
           environment_key: default
@@ -1494,7 +1692,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: run_cet
           environment_key: default
@@ -1515,7 +1716,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: compute_drift
           environment_key: default
@@ -1536,7 +1740,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: analyze_code
           environment_key: default
@@ -1556,7 +1763,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: fuse_evidence
           environment_key: default
@@ -1576,7 +1786,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: ks_recall
           environment_key: default
@@ -1596,7 +1809,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: generate_learning
           environment_key: default
@@ -1620,7 +1836,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: capture_llm_usage
           environment_key: default
@@ -1642,7 +1861,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: deduplicate
           environment_key: default
@@ -1664,7 +1886,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: ingest_findings
           environment_key: default
@@ -1733,7 +1958,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: partition_events
           environment_key: default
@@ -1753,7 +1981,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: suppression_loop
           environment_key: default
@@ -1810,7 +2041,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: compliance_check
           environment_key: default
@@ -1831,7 +2065,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: check_heartbeats
           environment_key: default
@@ -1852,7 +2089,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: sync_configs
           environment_key: default
@@ -1871,7 +2111,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: confluence_sweep
           environment_key: default
@@ -1895,7 +2138,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: stream_session_lists
           environment_key: default
@@ -1949,7 +2195,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: full_sync_all
           environment_key: default
@@ -1972,7 +2221,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: stream_ot_events
           environment_key: default
@@ -1995,7 +2247,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: monitor_ot_security
           environment_key: default
@@ -2013,7 +2268,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: detect_ot_anomalies
           environment_key: default
@@ -2038,7 +2296,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: analyze_exploit_chains
           environment_key: default
@@ -2061,7 +2322,10 @@ resources:
       environments:
         - environment_key: default
           spec:
-            client: "1"
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
       tasks:
         - task_key: analyze_communications
           environment_key: default
@@ -2074,3 +2338,77 @@ resources:
               batch_size: "50"
               min_messages_for_profile: "10"
               embedding_sample_rate: "0.2"
+
+    # ─────────────────────────────────────────────────────
+    # AUTONOMOUS RESPONSE LEARNER (RL-based defense)
+    # Training loop runs every 6h, inference every 2min.
+    # ─────────────────────────────────────────────────────
+    autonomous_response_training:
+      name: "[0xDSI] Agent 47 - Autonomous Response Learner (Training)"
+      schedule:
+        quartz_cron_expression: "0 0 */6 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            dependencies:
+              - scipy
+              - scikit-learn
+              - networkx
+              - numpy
+              - mlflow
+      tasks:
+        - task_key: train_arl
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/47_autonomous_response_learner.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "training"
+              training_episodes: "1000"
+              noise_injection_rate: "0.15"
+
+    autonomous_response_inference:
+      name: "[0xDSI] Agent 47 - Autonomous Response Learner (Inference)"
+      schedule:
+        quartz_cron_expression: "0 */2 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            dependencies:
+              - numpy
+              - mlflow
+      tasks:
+        - task_key: arl_decide
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/47_autonomous_response_learner.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "inference"
+              confidence_threshold: "0.7"
+              lookback_minutes: "10"
+
+    autonomous_response_eval:
+      name: "[0xDSI] Agent 47 - ARL Simulation Evaluation (Daily)"
+      schedule:
+        quartz_cron_expression: "0 0 7 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            dependencies:
+              - numpy
+              - mlflow
+      tasks:
+        - task_key: arl_eval
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/47_autonomous_response_learner.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              mode: "simulation"

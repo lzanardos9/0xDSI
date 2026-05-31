@@ -9,3 +9,9 @@ env:
     value: soc_platform
   - name: UNITY_SCHEMA
     value: agentic_soc
+  - name: LLM_ENDPOINT
+    value: databricks-meta-llama-3-1-70b-instruct
+  - name: LLM_FALLBACK_ENDPOINT
+    value: databricks-meta-llama-3-1-8b-instruct
+  - name: EMBEDDING_ENDPOINT
+    value: databricks-bge-large-en

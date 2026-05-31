@@ -89,9 +89,9 @@ def load_config(dbutils, spark=None) -> SOCConfig:
         spark.sql(f"USE CATALOG {cfg.catalog}")
         spark.sql(f"USE SCHEMA {cfg.schema}")
     """
-    # Register widgets with defaults (idempotent)
-    dbutils.widgets.text("catalog", "oxdsi_soc", "Unity Catalog")
-    dbutils.widgets.text("schema", "security", "Schema")
+    # Register widgets with defaults (aligned with databricks.yml variables)
+    dbutils.widgets.text("catalog", "soc_platform", "Unity Catalog")
+    dbutils.widgets.text("schema", "agentic_soc", "Schema")
     dbutils.widgets.text("secret_scope", "soc-secrets", "Secret Scope")
     dbutils.widgets.text("model_endpoint", "databricks-meta-llama-3-1-70b-instruct", "LLM Endpoint")
     dbutils.widgets.text("model_fallback_endpoint", "databricks-meta-llama-3-1-8b-instruct", "Fallback LLM")

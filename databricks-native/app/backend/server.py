@@ -70,6 +70,34 @@ app.add_middleware(
 )
 
 
+# ──────────────────────────────────────────────
+# Health & Readiness probes
+# ──────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    """Liveness probe - returns 200 if process is alive."""
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness probe - checks SQL Warehouse connectivity."""
+    if not WAREHOUSE_ID:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "reason": "DATABRICKS_WAREHOUSE_ID not configured"},
+        )
+    try:
+        get_connection()
+        return {"status": "ready", "catalog": CATALOG, "schema": SCHEMA}
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "reason": str(e)[:200]},
+        )
+
+
 def fqn(table: str) -> str:
     return f"`{CATALOG}`.`{SCHEMA}`.`{table}`"
 
