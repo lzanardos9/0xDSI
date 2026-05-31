@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Network, Server, Database, Shield, Globe, Cloud, HardDrive, Layers, Cpu, Zap, Wind, Thermometer, Power, Camera, AlertTriangle, User } from 'lucide-react';
+import { Network, Server, Database, Shield, Globe, Cloud, HardDrive, Layers, Cpu, Zap, Wind, Thermometer, Power, Camera, AlertTriangle, User, Upload, Plus, FileText, Trash2, Check, X, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { startMockPersonnelMovement } from '../lib/mockPhysicalSecurity';
+import { callFunction } from '../lib/llmGateway';
 import DPIInspection from './DPIInspection';
 
 const NetworkTopology = () => {
-  const [view, setView] = useState<'logical' | 'physical' | 'dpi'>('logical');
+  const [view, setView] = useState<'logical' | 'physical' | 'dpi' | 'manage'>('logical');
   const [assets, setAssets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [personnel, setPersonnel] = useState<any[]>([]);
@@ -17,49 +17,16 @@ const NetworkTopology = () => {
 
   useEffect(() => {
     loadAssets();
+    const interval = setInterval(loadAssets, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
-    const assetsSubscription = supabase
-      .channel('assets_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'asset_registry' }, (payload) => {
-        console.log('🔄 Asset change detected:', payload);
-        loadAssets();
-      })
-      .subscribe();
-
-    const vulnsSubscription = supabase
-      .channel('vulnerabilities_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'asset_vulnerabilities' }, (payload) => {
-        console.log('🚨 Vulnerability change detected:', payload);
-        loadAssets();
-      })
-      .subscribe();
-
+  useEffect(() => {
     if (view === 'physical') {
       loadPhysicalSecurity();
-      const cleanupMovement = startMockPersonnelMovement();
-      const interval = setInterval(loadPhysicalSecurity, 2000);
-
-      const physicalEventsSubscription = supabase
-        .channel('physical_events_changes')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'physical_security_events' }, (payload) => {
-          console.log('🚪 Physical security event:', payload);
-          loadPhysicalSecurity();
-        })
-        .subscribe();
-
-      return () => {
-        clearInterval(interval);
-        cleanupMovement();
-        assetsSubscription.unsubscribe();
-        vulnsSubscription.unsubscribe();
-        physicalEventsSubscription.unsubscribe();
-      };
+      const interval = setInterval(loadPhysicalSecurity, 5000);
+      return () => clearInterval(interval);
     }
-
-    return () => {
-      assetsSubscription.unsubscribe();
-      vulnsSubscription.unsubscribe();
-    };
   }, [view]);
 
   const loadAssets = async () => {
@@ -74,11 +41,6 @@ const NetworkTopology = () => {
         .select('*')
         .order('cvss_score', { ascending: false })
     ]);
-
-    console.log('Assets loaded:', assetsData.data?.length, 'assets');
-    console.log('Vulnerabilities loaded:', vulnsData.data?.length, 'vulnerabilities');
-    console.log('Sample vulnerability:', vulnsData.data?.[0]);
-    console.log('Vulnerability errors:', vulnsData.error);
 
     setAssets(assetsData.data || []);
     setVulnerabilities(vulnsData.data || []);
@@ -195,12 +157,23 @@ const NetworkTopology = () => {
             >
               DPI / DLP
             </button>
+            <button
+              onClick={() => setView('manage')}
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                view === 'manage'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-slate-800 text-slate-400 hover:text-white'
+              }`}
+            >
+              <span className="flex items-center space-x-1"><Plus className="w-4 h-4" /><span>Manage Assets</span></span>
+            </button>
           </div>
         </div>
 
         {view === 'logical' && <LogicalTopology assets={groupedAssets} getAssetIcon={getAssetIcon} getCriticalityColor={getCriticalityColor} vulnerabilities={vulnerabilities} />}
         {view === 'physical' && <PhysicalTopology assets={groupedAssets} getAssetIcon={getAssetIcon} getCriticalityColor={getCriticalityColor} personnel={personnel} cameras={cameras} securityEvents={securityEvents} zones={zones} physicalVulns={physicalVulns} />}
         {view === 'dpi' && <DPIInspection />}
+        {view === 'manage' && <AssetManager assets={assets} zones={zones} cameras={cameras} personnel={personnel} onRefresh={() => { loadAssets(); loadPhysicalSecurity(); }} />}
       </div>
     </div>
   );
@@ -214,12 +187,7 @@ const LogicalTopology = ({ assets, getAssetIcon, getCriticalityColor, vulnerabil
   const officeAssets = assets['Office'] || [];
 
   const getAssetVulns = (assetId: string) => {
-    const vulns = vulnerabilities.filter((v: any) => v.asset_id === assetId);
-    console.log('Checking asset ID:', assetId, 'Found vulns:', vulns.length);
-    if (vulns.length > 0) {
-      console.log('Asset vulns:', vulns);
-    }
-    return vulns;
+    return vulnerabilities.filter((v: any) => v.asset_id === assetId);
   };
 
   const getTotalVulns = (assetList: any[]) => {
@@ -1395,6 +1363,322 @@ const AssetCard = ({ asset, getAssetIcon, getCriticalityColor, vulnerabilities }
           )}
         </div>
       </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════
+// ASSET MANAGER - Dynamic CRUD + Document Import
+// ═══════════════════════════════════════════════════════════════
+
+const AssetManager = ({ assets, zones, cameras, personnel, onRefresh }: any) => {
+  const [tab, setTab] = useState<'import' | 'add' | 'inventory'>('inventory');
+  const [importMode, setImportMode] = useState<'document' | 'json' | 'csv'>('document');
+  const [importCategory, setImportCategory] = useState('network');
+  const [importText, setImportText] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+  const [addForm, setAddForm] = useState<Record<string, string>>({});
+  const [addCategory, setAddCategory] = useState('network');
+  const [saving, setSaving] = useState(false);
+
+  const handleImport = async () => {
+    if (!importText.trim()) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      let items: any[] = [];
+      let sourceType = importMode;
+
+      if (importMode === 'json') {
+        items = JSON.parse(importText);
+        if (!Array.isArray(items)) items = [items];
+        sourceType = 'json';
+      } else if (importMode === 'csv') {
+        const lines = importText.trim().split('\n');
+        const headers = lines[0].split(',').map(h => h.trim());
+        items = lines.slice(1).map(line => {
+          const values = line.split(',').map(v => v.trim());
+          const obj: any = {};
+          headers.forEach((h, i) => { obj[h] = values[i] || ''; });
+          return obj;
+        });
+        sourceType = 'json';
+      }
+
+      const { data, error } = await callFunction('import-assets', {
+        source_type: sourceType,
+        asset_category: importCategory,
+        items: sourceType !== 'document' ? items : [],
+        source_text: importMode === 'document' ? importText : '',
+        source_label: `${importMode}_import_${new Date().toISOString().split('T')[0]}`,
+      });
+
+      if (error) {
+        setImportResult({ success: false, error: String(error) });
+      } else {
+        setImportResult(data);
+        if ((data as any)?.success) {
+          onRefresh();
+        }
+      }
+    } catch (e: any) {
+      setImportResult({ success: false, error: e.message });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleManualAdd = async () => {
+    setSaving(true);
+    try {
+      const { data, error } = await callFunction('import-assets', {
+        source_type: 'json',
+        asset_category: addCategory,
+        items: [addForm],
+        source_label: 'manual_add',
+      });
+      if (!error && (data as any)?.success) {
+        setAddForm({});
+        onRefresh();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (table: string, id: string) => {
+    await supabase.from(table).update({ is_active: false }).eq('id', id);
+    onRefresh();
+  };
+
+  const categoryFields: Record<string, string[]> = {
+    network: ['hostname', 'ip_address', 'mac_address', 'asset_type', 'os', 'criticality', 'zone', 'location', 'owner', 'department'],
+    physical_zone: ['zone_name', 'zone_type', 'security_level', 'floor', 'building', 'max_occupancy'],
+    camera: ['camera_id', 'camera_name', 'zone_name', 'camera_type', 'resolution', 'ip_address'],
+    personnel: ['person_name', 'clearance_level', 'badge_type', 'department', 'title'],
+    rack: ['rack_id', 'rack_name', 'row_label', 'total_units', 'power_capacity_kw'],
+    segment: ['segment_name', 'segment_type', 'vlan_id', 'cidr', 'gateway', 'zone', 'security_level'],
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Sub-tabs */}
+      <div className="flex items-center space-x-3 border-b border-slate-700 pb-3">
+        {[
+          { key: 'inventory', label: 'Current Inventory', icon: Server },
+          { key: 'import', label: 'Import from Document', icon: Upload },
+          { key: 'add', label: 'Add Manually', icon: Plus },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key as any)}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+              tab === t.key ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <t.icon className="w-4 h-4" />
+            <span className="text-sm font-medium">{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* INVENTORY TAB */}
+      {tab === 'inventory' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-blue-400">{assets.length}</div>
+              <div className="text-slate-400 text-xs mt-1">Network Assets</div>
+            </div>
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-emerald-400">{zones.length}</div>
+              <div className="text-slate-400 text-xs mt-1">Physical Zones</div>
+            </div>
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-cyan-400">{cameras.length}</div>
+              <div className="text-slate-400 text-xs mt-1">CCTV Cameras</div>
+            </div>
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-amber-400">{personnel.length}</div>
+              <div className="text-slate-400 text-xs mt-1">Personnel Tracked</div>
+            </div>
+          </div>
+
+          <div className="bg-slate-900/50 border border-slate-700 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-800/80">
+                <tr className="text-slate-300">
+                  <th className="px-4 py-3 text-left font-medium">Asset</th>
+                  <th className="px-4 py-3 text-left font-medium">Type</th>
+                  <th className="px-4 py-3 text-left font-medium">IP</th>
+                  <th className="px-4 py-3 text-left font-medium">Zone</th>
+                  <th className="px-4 py-3 text-left font-medium">Criticality</th>
+                  <th className="px-4 py-3 text-left font-medium">Source</th>
+                  <th className="px-4 py-3 text-left font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {assets.slice(0, 30).map((asset: any) => (
+                  <tr key={asset.id} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="px-4 py-3 text-white font-medium">{asset.hostname || asset.asset_name || '-'}</td>
+                    <td className="px-4 py-3 text-slate-300">{asset.asset_type || '-'}</td>
+                    <td className="px-4 py-3 text-slate-400 font-mono text-xs">{asset.ip_address || '-'}</td>
+                    <td className="px-4 py-3 text-slate-300">{asset.zone || asset.location || '-'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        asset.criticality === 'critical' || asset.criticality === 'very_high' ? 'bg-red-500/20 text-red-400' :
+                        asset.criticality === 'high' ? 'bg-orange-500/20 text-orange-400' :
+                        asset.criticality === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                        'bg-blue-500/20 text-blue-400'
+                      }`}>{asset.criticality || 'medium'}</span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 text-xs">{asset.imported_from || 'seed'}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => handleDelete('asset_registry', asset.id)} className="text-red-400/60 hover:text-red-400 transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {assets.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">No assets yet. Import from a document or add manually.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* IMPORT TAB */}
+      {tab === 'import' && (
+        <div className="space-y-4">
+          <div className="bg-slate-900/50 border border-slate-700 rounded-xl p-6">
+            <h3 className="text-white font-semibold mb-4 flex items-center space-x-2">
+              <FileText className="w-5 h-5 text-emerald-400" />
+              <span>Import Assets from Document</span>
+            </h3>
+            <p className="text-slate-400 text-sm mb-4">
+              Paste a CMDB export, network diagram description, Excel/CSV data, or any infrastructure document.
+              The AI will extract and structure asset information automatically.
+            </p>
+
+            <div className="flex items-center space-x-3 mb-4">
+              <label className="text-slate-300 text-sm">Format:</label>
+              {(['document', 'json', 'csv'] as const).map(m => (
+                <button key={m} onClick={() => setImportMode(m)}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                    importMode === m ? 'bg-emerald-600/30 text-emerald-400 border border-emerald-500/50' : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}>{m.toUpperCase()}</button>
+              ))}
+              <div className="w-px h-6 bg-slate-700" />
+              <label className="text-slate-300 text-sm">Category:</label>
+              <select value={importCategory} onChange={e => setImportCategory(e.target.value)}
+                className="bg-slate-800 border border-slate-700 text-white text-sm rounded px-3 py-1.5">
+                <option value="network">Network Devices</option>
+                <option value="physical_zone">Physical Zones</option>
+                <option value="camera">CCTV Cameras</option>
+                <option value="personnel">Personnel</option>
+                <option value="rack">Datacenter Racks</option>
+                <option value="segment">Network Segments</option>
+              </select>
+            </div>
+
+            <textarea
+              value={importText}
+              onChange={e => setImportText(e.target.value)}
+              placeholder={importMode === 'document'
+                ? "Paste your infrastructure document here...\n\nExample:\nOur datacenter has 4 racks in Row A.\n- Rack A01: Core switch (10.0.1.1), 2x web servers (10.0.1.10, 10.0.1.11)\n- Rack A02: Database cluster (10.0.2.1-3), running PostgreSQL on Ubuntu 22.04\n- Firewall: Palo Alto PA-5250 at 10.0.0.1 (DMZ facing)\n..."
+                : importMode === 'csv'
+                ? "hostname,ip_address,asset_type,os,criticality,zone\nweb-prod-01,10.0.1.10,server,Ubuntu 22.04,high,Production\ndb-master,10.0.2.1,database,PostgreSQL 15,critical,Internal\n..."
+                : '[{"hostname": "web-prod-01", "ip_address": "10.0.1.10", "asset_type": "server", "os": "Ubuntu 22.04", "criticality": "high", "zone": "Production"}]'}
+              className="w-full h-48 bg-slate-950 border border-slate-700 rounded-lg p-4 text-white text-sm font-mono placeholder:text-slate-600 focus:border-emerald-500/50 focus:outline-none resize-none"
+            />
+
+            <div className="flex items-center justify-between mt-4">
+              <div className="text-slate-500 text-xs">
+                {importMode === 'document' && 'AI will extract structured assets from freeform text'}
+                {importMode === 'json' && 'Provide a JSON array of asset objects'}
+                {importMode === 'csv' && 'First row must be headers'}
+              </div>
+              <button onClick={handleImport} disabled={importing || !importText.trim()}
+                className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg font-medium text-sm transition-colors">
+                {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                <span>{importing ? 'Importing...' : 'Import Assets'}</span>
+              </button>
+            </div>
+
+            {importResult && (
+              <div className={`mt-4 p-4 rounded-lg border ${importResult.success ? 'bg-emerald-900/20 border-emerald-500/40' : 'bg-red-900/20 border-red-500/40'}`}>
+                {importResult.success ? (
+                  <div className="flex items-center space-x-2">
+                    <Check className="w-5 h-5 text-emerald-400" />
+                    <span className="text-emerald-300 font-medium">
+                      Successfully imported {importResult.imported} of {importResult.total_submitted} assets
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <X className="w-5 h-5 text-red-400" />
+                    <span className="text-red-300">{importResult.error || 'Import failed'}</span>
+                  </div>
+                )}
+                {importResult.errors?.length > 0 && (
+                  <div className="mt-2 text-xs text-red-400">
+                    {importResult.errors.map((e: any, i: number) => <div key={i}>{e.item}: {e.error}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ADD MANUALLY TAB */}
+      {tab === 'add' && (
+        <div className="bg-slate-900/50 border border-slate-700 rounded-xl p-6">
+          <h3 className="text-white font-semibold mb-4 flex items-center space-x-2">
+            <Plus className="w-5 h-5 text-blue-400" />
+            <span>Add Asset Manually</span>
+          </h3>
+
+          <div className="flex items-center space-x-3 mb-6">
+            <label className="text-slate-300 text-sm">Asset Type:</label>
+            <select value={addCategory} onChange={e => { setAddCategory(e.target.value); setAddForm({}); }}
+              className="bg-slate-800 border border-slate-700 text-white text-sm rounded px-3 py-2">
+              <option value="network">Network Device</option>
+              <option value="physical_zone">Physical Zone</option>
+              <option value="camera">CCTV Camera</option>
+              <option value="personnel">Personnel</option>
+              <option value="rack">Datacenter Rack</option>
+              <option value="segment">Network Segment</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            {(categoryFields[addCategory] || []).map(field => (
+              <div key={field}>
+                <label className="text-slate-400 text-xs font-medium block mb-1">{field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
+                <input
+                  type="text"
+                  value={addForm[field] || ''}
+                  onChange={e => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
+                  className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-white text-sm focus:border-blue-500/50 focus:outline-none"
+                  placeholder={field === 'criticality' ? 'critical/high/medium/low' : field === 'zone' ? 'External/DMZ/Production/Internal/Office' : ''}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end mt-6">
+            <button onClick={handleManualAdd} disabled={saving}
+              className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white rounded-lg font-medium text-sm transition-colors">
+              {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              <span>{saving ? 'Saving...' : 'Add Asset'}</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

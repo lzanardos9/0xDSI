@@ -304,6 +304,10 @@ ALLOWED_TABLES = [
     "health_alerts", "case_comments", "case_timeline",
     "session_list_entries", "session_list_rules", "session_correlations",
     "discovery_profiles", "discovered_patterns",
+    # Network & Physical Security
+    "physical_zones", "cctv_cameras", "personnel_tracking",
+    "network_segments", "datacenter_racks",
+    "physical_security_events", "physical_asset_vulnerabilities",
     # Audit
     "system_audit_log",
     # Ops
@@ -1844,6 +1848,218 @@ def execute_write(sql: str, params: Optional[dict] = None):
         cursor.execute(sql, params)
     finally:
         cursor.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# ASSET MANAGEMENT: Import & CRUD for Network + Physical
+# ══════════════════════════════════════════════════════════════
+
+@app.post("/api/import-assets")
+async def import_assets(request: Request):
+    """
+    Import assets from structured data (CSV rows, JSON array, or document text).
+    Supports: network devices, physical zones, cameras, personnel, racks, segments.
+    If 'source_text' is provided, uses LLM to extract structured asset data.
+    """
+    body = await request.json()
+    source_type = body.get("source_type", "json")  # json | csv | document
+    asset_category = body.get("asset_category", "network")  # network | physical_zone | camera | personnel | rack | segment
+    items = body.get("items", [])
+    source_text = body.get("source_text", "")
+    source_label = body.get("source_label", "manual_import")
+
+    try:
+        if source_type == "document" and source_text:
+            items = await _parse_document_to_assets(source_text, asset_category)
+            if not items:
+                return {"success": False, "error": "Could not extract assets from document", "imported": 0}
+
+        imported = 0
+        errors = []
+
+        for item in items:
+            try:
+                if asset_category == "network":
+                    _insert_network_asset(item, source_label)
+                elif asset_category == "physical_zone":
+                    _insert_physical_zone(item, source_label)
+                elif asset_category == "camera":
+                    _insert_camera(item, source_label)
+                elif asset_category == "personnel":
+                    _insert_personnel(item, source_label)
+                elif asset_category == "rack":
+                    _insert_rack(item, source_label)
+                elif asset_category == "segment":
+                    _insert_segment(item, source_label)
+                imported += 1
+            except Exception as e:
+                errors.append({"item": item.get("hostname") or item.get("zone_name") or item.get("camera_id") or str(item), "error": str(e)})
+
+        return {"success": True, "imported": imported, "errors": errors, "total_submitted": len(items)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _parse_document_to_assets(text: str, category: str) -> list:
+    """Use LLM to extract structured asset data from freeform document text."""
+    schema_hints = {
+        "network": "hostname, ip_address, mac_address, asset_type (server/switch/router/firewall/workstation/printer/iot), os, criticality (critical/high/medium/low), location, zone (External/DMZ/Production/Internal/Office), exposed_ports, owner, department",
+        "physical_zone": "zone_name, zone_type (restricted/controlled/public/critical), security_level (level-1 to level-4), floor, building, max_occupancy",
+        "camera": "camera_id, camera_name, zone_name, camera_type (fixed/ptz/dome/thermal), resolution, has_night_vision, has_facial_recognition, ip_address",
+        "personnel": "person_id, person_name, clearance_level (level-1 to level-4), badge_type (employee/contractor/visitor), department, title",
+        "rack": "rack_id, rack_name, row_label, position, total_units, power_capacity_kw, cooling_zone",
+        "segment": "segment_name, segment_type (external/dmz/production/internal/office), vlan_id, cidr, gateway, security_level",
+    }
+
+    prompt = f"""Extract structured asset data from the following document. Return ONLY a JSON array of objects.
+Each object should have these fields: {schema_hints.get(category, '')}
+Only include fields that are clearly stated or can be confidently inferred.
+Document:
+---
+{text[:8000]}
+---
+Return ONLY valid JSON array, no markdown, no explanation."""
+
+    try:
+        from databricks.sdk import WorkspaceClient
+        w = WorkspaceClient()
+        response = w.serving_endpoints.query(
+            name="databricks-meta-llama-3-3-70b-instruct",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=4000,
+            temperature=0.1,
+        )
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
+        return json.loads(content)
+    except Exception:
+        return []
+
+
+def _insert_network_asset(item: dict, source: str):
+    asset_id = str(uuid.uuid4())
+    execute_write(f"""
+        INSERT INTO {fqn('asset_registry')}
+        (id, hostname, asset_name, ip_address, mac_address, asset_type, os, criticality,
+         owner, department, environment, location, zone, rack_id, rack_position,
+         is_active, imported_from)
+        VALUES (:id, :hostname, :asset_name, :ip, :mac, :atype, :os, :crit,
+                :owner, :dept, :env, :loc, :zone, :rack, :rpos, true, :src)
+    """, {
+        "id": asset_id,
+        "hostname": item.get("hostname", ""),
+        "asset_name": item.get("asset_name") or item.get("hostname", ""),
+        "ip": item.get("ip_address", ""),
+        "mac": item.get("mac_address", ""),
+        "atype": item.get("asset_type", "server"),
+        "os": item.get("os", ""),
+        "crit": item.get("criticality", "medium"),
+        "owner": item.get("owner", ""),
+        "dept": item.get("department", ""),
+        "env": item.get("environment", "production"),
+        "loc": item.get("location", ""),
+        "zone": item.get("zone", "Internal"),
+        "rack": item.get("rack_id", ""),
+        "rpos": item.get("rack_position"),
+        "src": source,
+    })
+
+
+def _insert_physical_zone(item: dict, source: str):
+    zone_id = str(uuid.uuid4())
+    execute_write(f"""
+        INSERT INTO {fqn('physical_zones')}
+        (id, zone_name, zone_type, security_level, floor, building, max_occupancy, is_active, imported_from)
+        VALUES (:id, :name, :ztype, :slevel, :floor, :bldg, :max_occ, true, :src)
+    """, {
+        "id": zone_id,
+        "name": item.get("zone_name", ""),
+        "ztype": item.get("zone_type", "controlled"),
+        "slevel": item.get("security_level", "level-2"),
+        "floor": item.get("floor", "1"),
+        "bldg": item.get("building", "Main"),
+        "max_occ": item.get("max_occupancy", 20),
+        "src": source,
+    })
+
+
+def _insert_camera(item: dict, source: str):
+    cam_id = str(uuid.uuid4())
+    execute_write(f"""
+        INSERT INTO {fqn('cctv_cameras')}
+        (id, camera_id, camera_name, zone_id, camera_type, resolution,
+         has_night_vision, has_facial_recognition, ip_address, status, imported_from)
+        VALUES (:id, :cam_id, :cam_name, :zone, :ctype, :res, :nv, :fr, :ip, 'operational', :src)
+    """, {
+        "id": cam_id,
+        "cam_id": item.get("camera_id", f"CAM-{cam_id[:8]}"),
+        "cam_name": item.get("camera_name", ""),
+        "zone": item.get("zone_id") or item.get("zone_name", ""),
+        "ctype": item.get("camera_type", "fixed"),
+        "res": item.get("resolution", "4K"),
+        "nv": item.get("has_night_vision", True),
+        "fr": item.get("has_facial_recognition", False),
+        "ip": item.get("ip_address", ""),
+        "src": source,
+    })
+
+
+def _insert_personnel(item: dict, source: str):
+    pid = str(uuid.uuid4())
+    execute_write(f"""
+        INSERT INTO {fqn('personnel_tracking')}
+        (id, person_id, person_name, clearance_level, badge_type, department, title, is_active, imported_from)
+        VALUES (:id, :pid, :name, :clevel, :btype, :dept, :title, true, :src)
+    """, {
+        "id": pid,
+        "pid": item.get("person_id", f"EMP-{pid[:6]}"),
+        "name": item.get("person_name", ""),
+        "clevel": item.get("clearance_level", "level-1"),
+        "btype": item.get("badge_type", "employee"),
+        "dept": item.get("department", ""),
+        "title": item.get("title", ""),
+        "src": source,
+    })
+
+
+def _insert_rack(item: dict, source: str):
+    rid = str(uuid.uuid4())
+    execute_write(f"""
+        INSERT INTO {fqn('datacenter_racks')}
+        (id, rack_id, rack_name, row_label, position, total_units, power_capacity_kw, cooling_zone, status, imported_from)
+        VALUES (:id, :rack_id, :rack_name, :row, :pos, :units, :power, :cooling, 'operational', :src)
+    """, {
+        "id": rid,
+        "rack_id": item.get("rack_id", f"RACK-{rid[:6]}"),
+        "rack_name": item.get("rack_name", ""),
+        "row": item.get("row_label", "A"),
+        "pos": item.get("position", 1),
+        "units": item.get("total_units", 42),
+        "power": item.get("power_capacity_kw", 10.0),
+        "cooling": item.get("cooling_zone", "Zone-A"),
+        "src": source,
+    })
+
+
+def _insert_segment(item: dict, source: str):
+    sid = str(uuid.uuid4())
+    execute_write(f"""
+        INSERT INTO {fqn('network_segments')}
+        (id, segment_name, segment_type, vlan_id, cidr, gateway, zone, security_level, description, is_active, imported_from)
+        VALUES (:id, :name, :stype, :vlan, :cidr, :gw, :zone, :slevel, :desc, true, :src)
+    """, {
+        "id": sid,
+        "name": item.get("segment_name", ""),
+        "stype": item.get("segment_type", "internal"),
+        "vlan": item.get("vlan_id"),
+        "cidr": item.get("cidr", ""),
+        "gw": item.get("gateway", ""),
+        "zone": item.get("zone", "Internal"),
+        "slevel": item.get("security_level", "standard"),
+        "desc": item.get("description", ""),
+        "src": source,
+    })
 
 
 def resolve_job_id(job_name_prefix: str) -> Optional[int]:
