@@ -16,9 +16,9 @@ import dlt
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 
-# Pipeline configuration (set in DLT pipeline settings)
-CATALOG = spark.conf.get("catalog", "oxdsi_soc")
-SCHEMA = spark.conf.get("schema", "security")
+# Pipeline configuration (set in DLT pipeline settings or bundle variables)
+CATALOG = spark.conf.get("catalog", "soc_platform")
+SCHEMA = spark.conf.get("schema", "agentic_soc")
 LANDING_PATH = spark.conf.get("landing_path", f"/Volumes/{CATALOG}/{SCHEMA}/landing")
 
 # COMMAND ----------

@@ -7,7 +7,13 @@ resources:
       config:
         command:
           - python
-          - backend/server.py
+          - -m
+          - uvicorn
+          - backend.server:app
+          - --host
+          - "0.0.0.0"
+          - --port
+          - "${DATABRICKS_APP_PORT:-8000}"
         env:
           - name: DATABRICKS_WAREHOUSE_ID
             value: ${var.warehouse_id}
