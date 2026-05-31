@@ -160,8 +160,8 @@ with mon.time("clustering"):
         anomaly_candidates = clustered.filter(col("cluster") == anomaly_cluster)
         normal_population = clustered.filter(col("cluster") != anomaly_cluster)
 
-        normal_data = normal_population.select(*feature_cols).toPandas()
-        anomaly_data = anomaly_candidates.select("user_id", *feature_cols).toPandas()
+        normal_data = normal_population.select(*feature_cols).limit(50000).toPandas()
+        anomaly_data = anomaly_candidates.select("user_id", *feature_cols).limit(10000).toPandas()
 
         ks_validated_anomalies = []
 
@@ -234,8 +234,13 @@ with mon.time("clustering"):
 # COMMAND ----------
 
 with mon.time("isolation_forest"):
-    # Convert to pandas for sklearn IsolationForest
-    features_pd = scaled.select("user_id", *feature_cols).toPandas()
+    # Limit to prevent OOM on driver for IsolationForest
+    MAX_IFOREST_SAMPLES = 100000
+    iforest_input = scaled.select("user_id", *feature_cols)
+    if iforest_input.count() > MAX_IFOREST_SAMPLES:
+        iforest_input = iforest_input.sample(fraction=MAX_IFOREST_SAMPLES / iforest_input.count(), seed=42)
+
+    features_pd = iforest_input.toPandas()
     feature_matrix = features_pd[feature_cols].values
 
     iforest = IsolationForest(

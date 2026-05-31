@@ -85,9 +85,16 @@ def bronze_kafka_events():
     """Ingest from Kafka. Requires kafka_brokers and kafka_topics pipeline settings."""
     kafka_brokers = spark.conf.get("kafka_brokers", "")
     kafka_topics = spark.conf.get("kafka_topics", "security-events")
+    environment = spark.conf.get("environment", "development")
 
     if not kafka_brokers:
-        # Return empty DataFrame with schema if Kafka not configured
+        if environment == "production":
+            raise ValueError(
+                "kafka_brokers is REQUIRED in production. "
+                "Set the 'kafka_brokers' pipeline configuration parameter. "
+                "Pipeline cannot appear healthy without a data source."
+            )
+        # Development: return empty DataFrame with schema
         return spark.createDataFrame([], StructType([
             StructField("id", StringType()), StructField("event_type", StringType()),
             StructField("timestamp", TimestampType()), StructField("raw_value", StringType()),

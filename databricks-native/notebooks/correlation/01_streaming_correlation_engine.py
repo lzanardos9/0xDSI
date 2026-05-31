@@ -211,7 +211,7 @@ threshold_correlations = (
     )
     .agg(
         count("*").alias("event_count"),
-        collect_list("id").alias("event_ids"),
+        slice(collect_list("id"), 1, 100).alias("event_ids"),
         max("severity").alias("max_severity")
     )
     .filter(col("event_count") >= 5)
@@ -240,7 +240,7 @@ sequence_events = (
     .agg(
         collect_set("event_type").alias("attack_stages"),
         count("*").alias("event_count"),
-        collect_list("id").alias("event_ids")
+        slice(collect_list("id"), 1, 100).alias("event_ids")
     )
     .filter(size(col("attack_stages")) >= 3)
 )
@@ -317,20 +317,39 @@ def write_correlation_matches(batch_df, batch_id):
         matches_table = cfg.get_table_path("cep_pattern_matches")
         matches.write.mode("append").saveAsTable(matches_table)
 
-        # Generate alerts for high-confidence detections
+        # Generate alerts for high-confidence detections (with dedup)
         alert_candidates = [r for r in validated_rows if r["ks_confidence"] > 0.9]
         if alert_candidates:
             alerts_table = cfg.get_table_path("alerts")
+
+            # Dedup: skip alerts for same source_ip + rule in last hour
+            recent_alert_keys = set()
+            try:
+                recent = spark.sql(f"""
+                    SELECT title FROM {alerts_table}
+                    WHERE source = 'correlation_engine_ks'
+                      AND created_at > current_timestamp() - INTERVAL 1 HOUR
+                """).collect()
+                recent_alert_keys = {r.title for r in recent}
+            except Exception:
+                pass
+
             alert_rows = []
             for r in alert_candidates:
+                title = f"KS Correlation: {r['event_type']} surge from {r['source_ip']}"
+                if title in recent_alert_keys:
+                    continue
                 alert_rows.append({
-                    "title": f"KS Correlation: {r['event_type']} surge from {r['source_ip']}",
+                    "title": title,
                     "description": f"Detected {r['event_count']} events in {window_minutes}min window (KS confidence: {r['ks_confidence']:.3f})",
                     "severity": r["severity"],
                     "status": "new",
                     "source": "correlation_engine_ks",
                     "confidence_score": r["ks_confidence"],
                 })
+
+            if not alert_rows:
+                return
 
             alert_schema = StructType([
                 StructField("title", StringType()),
@@ -349,8 +368,8 @@ def write_correlation_matches(batch_df, batch_id):
             alert_df.write.mode("append").saveAsTable(alerts_table)
 
             mon.log_detection("ks_threshold_alert", {
-                "count": len(alert_candidates),
-                "severities": [r["severity"] for r in alert_candidates],
+                "count": len(alert_rows),
+                "severities": [r["severity"] for r in alert_rows],
             })
 
 # COMMAND ----------

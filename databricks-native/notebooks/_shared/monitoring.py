@@ -123,6 +123,30 @@ class Monitor:
             details=details_str,
         )
         self._flush()
+        self.report_health("healthy", events_processed=rows_processed)
+
+    def report_health(self, status: str = "healthy", events_processed: int = 0, error_message: str = ""):
+        """Update pipeline_health table with current status."""
+        try:
+            health_table = f"`{self._cfg.catalog}`.`{self._cfg.schema}`.pipeline_health"
+            from pyspark.sql.functions import current_timestamp, lit, expr
+            self._spark.sql(f"""
+                MERGE INTO {health_table} AS target
+                USING (SELECT '{self._notebook_path}' AS pipeline_name) AS source
+                ON target.pipeline_name = source.pipeline_name
+                WHEN MATCHED THEN UPDATE SET
+                    status = '{status}',
+                    {"last_success_at = current_timestamp()," if status == "healthy" else ""}
+                    {"last_failure_at = current_timestamp()," if status == "error" else ""}
+                    events_processed_last_hour = {events_processed},
+                    events_processed_total = events_processed_total + {events_processed},
+                    error_message = {"'" + error_message.replace("'", "''")[:500] + "'" if error_message else "NULL"},
+                    updated_at = current_timestamp()
+                WHEN NOT MATCHED THEN INSERT (id, pipeline_name, status, {"last_success_at," if status == "healthy" else ""} {"last_failure_at," if status == "error" else ""} events_processed_last_hour, events_processed_total, error_message, updated_at)
+                VALUES (uuid(), '{self._notebook_path}', '{status}', {"current_timestamp()," if status == "healthy" else ""} {"current_timestamp()," if status == "error" else ""} {events_processed}, {events_processed}, {"'" + error_message.replace("'", "''")[:500] + "'" if error_message else "NULL"}, current_timestamp())
+            """)
+        except Exception:
+            pass
 
     def log_error(self, error: Exception, context: str = ""):
         """Log an error with full traceback."""

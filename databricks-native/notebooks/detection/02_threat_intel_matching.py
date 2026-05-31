@@ -190,6 +190,66 @@ all_matches = source_ip_matches.unionByName(dest_ip_matches)
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## IOC Matching: Domain (DNS queries, URL hostnames)
+
+# COMMAND ----------
+
+domain_matches = (
+    events_stream
+    .filter(col("event_type").isin("dns_query", "http_request", "proxy_log", "url_access"))
+    .withColumn("extracted_domain",
+        coalesce(
+            col("dest_domain"),
+            col("hostname"),
+            regexp_extract(col("url"), r"https?://([^/:]+)", 1),
+        )
+    )
+    .filter(col("extracted_domain").isNotNull() & (col("extracted_domain") != ""))
+    .join(domain_iocs_bc, col("extracted_domain") == domain_iocs_bc.ioc_value, "inner")
+    .withColumn("match_type", lit("domain"))
+    .withColumn("matched_indicator", col("extracted_domain"))
+    .select(
+        col("id").alias("event_id"),
+        "match_type", "matched_indicator", "threat_type",
+        "confidence", "ioc_source",
+        "source_ip", "dest_ip", "user_id", "event_type", "timestamp",
+    )
+)
+
+all_matches = all_matches.unionByName(domain_matches)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## IOC Matching: File Hashes (process creation, file events)
+
+# COMMAND ----------
+
+hash_iocs_bc = broadcast(hash_iocs.drop("hash_type"))
+
+hash_matches = (
+    events_stream
+    .filter(col("event_type").isin("process_start", "file_create", "file_modify", "download"))
+    .withColumn("extracted_hash",
+        coalesce(col("file_hash"), col("process_hash"), col("sha256"))
+    )
+    .filter(col("extracted_hash").isNotNull() & (col("extracted_hash") != ""))
+    .join(hash_iocs_bc, col("extracted_hash") == hash_iocs_bc.ioc_value, "inner")
+    .withColumn("match_type", lit("file_hash"))
+    .withColumn("matched_indicator", col("extracted_hash"))
+    .select(
+        col("id").alias("event_id"),
+        "match_type", "matched_indicator", "threat_type",
+        "confidence", "ioc_source",
+        "source_ip", "dest_ip", "user_id", "event_type", "timestamp",
+    )
+)
+
+all_matches = all_matches.unionByName(hash_matches)
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Generate Threat Intel Alerts (Deduplicated)
 
 # COMMAND ----------

@@ -3029,6 +3029,54 @@ print("Created: system_audit_log")
 
 # COMMAND ----------
 
+spark.sql("""
+CREATE TABLE IF NOT EXISTS agent_triage_results (
+    id STRING DEFAULT uuid(),
+    alert_id STRING NOT NULL,
+    agent_name STRING DEFAULT 'triage',
+    severity_assessed STRING,
+    confidence DOUBLE,
+    classification STRING,
+    recommended_action STRING,
+    reasoning STRING,
+    false_positive BOOLEAN DEFAULT false,
+    auto_closed BOOLEAN DEFAULT false,
+    processing_time_ms DOUBLE,
+    trace_id STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+print("Created: agent_triage_results")
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS pipeline_health (
+    id STRING DEFAULT uuid(),
+    pipeline_name STRING NOT NULL,
+    last_success_at TIMESTAMP,
+    last_failure_at TIMESTAMP,
+    status STRING DEFAULT 'unknown',
+    events_processed_total BIGINT DEFAULT 0,
+    events_processed_last_hour BIGINT DEFAULT 0,
+    error_message STRING,
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+print("Created: pipeline_health")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Setup Complete
 # MAGIC All tables have been created in Unity Catalog.

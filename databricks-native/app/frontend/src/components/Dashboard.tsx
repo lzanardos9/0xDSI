@@ -149,6 +149,7 @@ const Dashboard = () => {
   useEffect(() => {
     loadStats();
     loadRecentActivities();
+    loadThreatGeoData();
 
     const alertsSubscription = supabase
       .channel('alerts_changes')
@@ -223,6 +224,20 @@ const Dashboard = () => {
     }
   };
 
+  const loadThreatGeoData = async () => {
+    try {
+      const response = await fetch('/api/threat-globe');
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setThreatGeoData(data);
+        }
+      }
+    } catch (error) {
+      // Globe will be empty until real geo data exists
+    }
+  };
+
   const loadRecentActivities = async () => {
     try {
       const [alerts, events, cases, agents, users] = await Promise.all([
@@ -247,7 +262,7 @@ const Dashboard = () => {
     }
   };
 
-  const [threatGeoData] = useState<Array<{ source: { lat: number; lon: number }; target: { lat: number; lon: number }; severity: 'critical' | 'high' | 'medium' }>>([]);
+  const [threatGeoData, setThreatGeoData] = useState<Array<{ source: { lat: number; lon: number }; target: { lat: number; lon: number }; severity: 'critical' | 'high' | 'medium' }>>([]);
 
   // Simplified Navigation Structure
   const navigationStructure = [

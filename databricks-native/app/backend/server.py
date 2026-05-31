@@ -304,6 +304,8 @@ ALLOWED_TABLES = [
     "discovery_profiles", "discovered_patterns",
     # Audit
     "system_audit_log",
+    # Ops
+    "pipeline_health", "agent_triage_results",
 ]
 
 
@@ -1480,6 +1482,60 @@ async def geopolitical_risk():
         return {"events": events, "risk_scores": scores}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/threat-globe")
+async def threat_globe_data():
+    """Return geographic threat data from recent critical/high events for globe visualization."""
+    try:
+        rows = query(f"""
+            SELECT
+                geo_location.lat AS src_lat,
+                geo_location.lon AS src_lon,
+                severity
+            FROM {fqn('events')}
+            WHERE geo_location.lat IS NOT NULL
+              AND geo_location.lon IS NOT NULL
+              AND severity IN ('critical', 'high', 'medium')
+              AND timestamp > current_timestamp() - INTERVAL 24 HOURS
+            ORDER BY timestamp DESC
+            LIMIT 50
+        """)
+        target_lat, target_lon = 37.7749, -122.4194
+        threats = [
+            {
+                "source": {"lat": r["src_lat"], "lon": r["src_lon"]},
+                "target": {"lat": target_lat, "lon": target_lon},
+                "severity": r["severity"],
+            }
+            for r in rows
+            if r.get("src_lat") and r.get("src_lon")
+        ]
+        return threats
+    except Exception as e:
+        return []
+
+
+@app.get("/api/ops/pipeline-health")
+async def pipeline_health_status(request: Request):
+    """Return health status of all pipelines for operations monitoring."""
+    user = _get_user_from_request(request)
+    if not user.get("is_analyst"):
+        raise HTTPException(status_code=403, detail="Analyst access required")
+    try:
+        rows = query(f"""
+            SELECT pipeline_name, status, last_success_at, last_failure_at,
+                   events_processed_total, events_processed_last_hour, error_message, updated_at
+            FROM {fqn('pipeline_health')}
+            ORDER BY updated_at DESC
+        """)
+        stale_threshold_minutes = 15
+        for r in rows:
+            if r.get("updated_at"):
+                pass
+        return {"pipelines": rows, "stale_threshold_minutes": stale_threshold_minutes}
+    except Exception as e:
+        return {"pipelines": [], "error": str(e)}
 
 
 @app.post("/api/feature-lab/run")
