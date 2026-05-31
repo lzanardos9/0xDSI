@@ -245,9 +245,9 @@ const Dashboard = () => {
         ...(alerts.data || []).map((a: any) => ({ ...a, source: 'Alerts', type: a.severity })),
         ...(events.data || []).map((e: any) => ({ ...e, source: 'Events', type: e.severity, created_at: e.created_at })),
         ...(cases.data || []).map((c: any) => ({ ...c, source: 'Cases', type: c.priority })),
-        ...(agents.data || []).map((a: any) => ({ ...a, source: 'Agents', type: a.status, title: a.task_type })),
-        ...(users.data || []).map((u: any) => ({ ...u, source: 'Users', type: u.anomaly_score > 70 ? 'critical' : u.anomaly_score > 40 ? 'high' : 'medium', created_at: u.timestamp })),
-      ].sort((a, b) => new Date(b.created_at || b.timestamp).getTime() - new Date(a.created_at || a.timestamp).getTime()).slice(0, 12);
+        ...(agents.data || []).map((a: any) => ({ ...a, source: 'Agents', type: a.status, title: a.agent_name || a.status })),
+        ...(users.data || []).map((u: any) => ({ ...u, source: 'Users', type: u.risk_score > 70 ? 'critical' : u.risk_score > 40 ? 'high' : 'medium', created_at: u.detected_at })),
+      ].sort((a, b) => new Date(b.created_at || b.detected_at || 0).getTime() - new Date(a.created_at || a.detected_at || 0).getTime()).slice(0, 12);
 
       setRecentActivities(activities);
     } catch (error) {
@@ -1233,7 +1233,7 @@ const ActivityItemDynamic = ({ activity }: { activity: any }) => {
     if (activity.source === 'Alerts') return activity.title || 'Alert detected';
     if (activity.source === 'Events') return `${activity.event_type?.replace(/_/g, ' ')} event detected`;
     if (activity.source === 'Cases') return activity.title || 'New case created';
-    if (activity.source === 'Agents') return `Agent ${activity.title || activity.task_type?.replace(/_/g, ' ')}`;
+    if (activity.source === 'Agents') return `Agent ${activity.title || activity.status || 'active'}`;
     if (activity.source === 'Users') return `User ${activity.event_type?.replace(/_/g, ' ')} activity`;
     return 'System activity';
   };

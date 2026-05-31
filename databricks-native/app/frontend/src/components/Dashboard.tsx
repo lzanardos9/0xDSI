@@ -237,9 +237,9 @@ const Dashboard = () => {
         ...(alerts.data || []).map((a: any) => ({ ...a, source: 'Alerts', type: a.severity })),
         ...(events.data || []).map((e: any) => ({ ...e, source: 'Events', type: e.severity, created_at: e.created_at })),
         ...(cases.data || []).map((c: any) => ({ ...c, source: 'Cases', type: c.priority })),
-        ...(agents.data || []).map((a: any) => ({ ...a, source: 'Agents', type: a.status, title: a.task_type })),
-        ...(users.data || []).map((u: any) => ({ ...u, source: 'Users', type: u.anomaly_score > 70 ? 'critical' : u.anomaly_score > 40 ? 'high' : 'medium', created_at: u.timestamp })),
-      ].sort((a, b) => new Date(b.created_at || b.timestamp).getTime() - new Date(a.created_at || a.timestamp).getTime()).slice(0, 12);
+        ...(agents.data || []).map((a: any) => ({ ...a, source: 'Agents', type: a.status, title: a.agent_name || a.status })),
+        ...(users.data || []).map((u: any) => ({ ...u, source: 'Users', type: u.risk_score > 70 ? 'critical' : u.risk_score > 40 ? 'high' : 'medium', created_at: u.detected_at })),
+      ].sort((a, b) => new Date(b.created_at || b.detected_at || 0).getTime() - new Date(a.created_at || a.detected_at || 0).getTime()).slice(0, 12);
 
       setRecentActivities(activities);
     } catch (error) {
@@ -247,18 +247,7 @@ const Dashboard = () => {
     }
   };
 
-  const mockThreats = [
-    { source: { lat: 40.7128, lon: -74.0060 }, target: { lat: 37.7749, lon: -122.4194 }, severity: 'critical' as const },
-    { source: { lat: 51.5074, lon: -0.1278 }, target: { lat: 35.6762, lon: 139.6503 }, severity: 'high' as const },
-    { source: { lat: -33.8688, lon: 151.2093 }, target: { lat: 1.3521, lon: 103.8198 }, severity: 'medium' as const },
-    { source: { lat: 55.7558, lon: 37.6173 }, target: { lat: 40.7128, lon: -74.0060 }, severity: 'critical' as const },
-    { source: { lat: 39.9042, lon: 116.4074 }, target: { lat: 51.5074, lon: -0.1278 }, severity: 'high' as const },
-    { source: { lat: 19.4326, lon: -99.1332 }, target: { lat: 1.3521, lon: 103.8198 }, severity: 'medium' as const },
-    { source: { lat: -23.5505, lon: -46.6333 }, target: { lat: 52.5200, lon: 13.4050 }, severity: 'high' as const },
-    { source: { lat: 28.6139, lon: 77.2090 }, target: { lat: -33.8688, lon: 151.2093 }, severity: 'medium' as const },
-    { source: { lat: 35.6762, lon: 139.6503 }, target: { lat: 37.5665, lon: 126.9780 }, severity: 'critical' as const },
-    { source: { lat: 25.2048, lon: 55.2708 }, target: { lat: 22.3193, lon: 114.1694 }, severity: 'high' as const },
-  ];
+  const [threatGeoData] = useState<Array<{ source: { lat: number; lon: number }; target: { lat: number; lon: number }; severity: 'critical' | 'high' | 'medium' }>>([]);
 
   // Simplified Navigation Structure
   const navigationStructure = [
@@ -634,7 +623,7 @@ const Dashboard = () => {
                   </div>
                 </div>
                 <div className="h-[500px]">
-                  <ThreatGlobe threats={mockThreats} />
+                  <ThreatGlobe threats={threatGeoData} />
                 </div>
               </div>
 
