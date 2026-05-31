@@ -128,6 +128,20 @@ class OrchestratorAgent(SupervisorAgent):
             "description": "Automated response action coordination",
             "critical": False,
         },
+        {
+            "name": "case_management",
+            "notebook": "../response/02_case_management",
+            "parallel_group": 5,
+            "description": "Group related alerts into cases",
+            "critical": False,
+        },
+        {
+            "name": "notifications",
+            "notebook": "../response/03_notification_integrations",
+            "parallel_group": 5,
+            "description": "Route alerts to PagerDuty, Slack, Teams, Email",
+            "critical": False,
+        },
     ]
 
     def __init__(self, agent_name: str, cfg, llm, mon, spark, dbutils):

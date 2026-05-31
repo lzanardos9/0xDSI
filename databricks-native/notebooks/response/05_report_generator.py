@@ -29,6 +29,8 @@ dbutils.widgets.text("lookback_hours", "24", "Data window for report")
 report_type = dbutils.widgets.get("report_type")
 lookback_hours = int(dbutils.widgets.get("lookback_hours"))
 
+require_tables("reports", "alerts", "cases", "events", "agent_status")
+
 mon.log_event("config_loaded", {"report_type": report_type, "lookback_hours": lookback_hours})
 
 # COMMAND ----------

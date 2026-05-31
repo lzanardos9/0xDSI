@@ -31,6 +31,8 @@ ticketing_system = dbutils.widgets.get("ticketing_system")
 sync_direction = dbutils.widgets.get("sync_direction")
 batch_size = int(dbutils.widgets.get("batch_size"))
 
+require_tables("cases", "ticket_sync_log")
+
 # Table paths
 CASES_TABLE = get_table_path(cfg, "cases")
 TICKET_SYNC_LOG_TABLE = get_table_path(cfg, "ticket_sync_log")

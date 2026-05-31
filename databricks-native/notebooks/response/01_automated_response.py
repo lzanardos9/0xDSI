@@ -27,6 +27,8 @@ from pyspark.sql.types import (
 dbutils.widgets.text("auto_respond_threshold", "0.9", "Auto-respond confidence threshold")
 threshold = float(dbutils.widgets.get("auto_respond_threshold"))
 
+require_tables("alerts", "response_actions", "response_approvals")
+
 # Table paths
 ALERTS_TABLE = get_table_path(cfg, "alerts")
 RESPONSE_ACTIONS_TABLE = get_table_path(cfg, "response_actions")

@@ -28,6 +28,8 @@ dbutils.widgets.text("dry_run", "false", "Dry run mode")
 notification_batch_size = int(dbutils.widgets.get("notification_batch_size"))
 dry_run = dbutils.widgets.get("dry_run").lower() == "true"
 
+require_tables("alerts", "notification_log")
+
 # Table paths
 ALERTS_TABLE = get_table_path(cfg, "alerts")
 NOTIFICATION_LOG_TABLE = get_table_path(cfg, "notification_log")
@@ -302,6 +304,59 @@ try:
 except Exception as e:
     mon.log_error(e, context="notification_integrations")
     result = {"status": "error", "error": str(e)[:1000], "dry_run": dry_run}
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Process Pending Notification Queue
+# MAGIC Ops notebooks (health_check, sla_alerting) write to notification_log with status='pending'.
+# MAGIC Deliver those and mark as sent.
+
+# COMMAND ----------
+
+try:
+    with mon.time("process_notification_queue"):
+        pending_queue = spark.sql(f"""
+            SELECT id, channel, severity, subject, body, source
+            FROM {NOTIFICATION_LOG_TABLE}
+            WHERE status = 'pending'
+            ORDER BY created_at
+            LIMIT {notification_batch_size}
+        """).collect()
+
+        queue_sent = 0
+        for notif in pending_queue:
+            alert_like = {
+                "id": notif.id,
+                "title": notif.subject,
+                "description": notif.body,
+                "severity": notif.severity,
+                "source": notif.source,
+            }
+            channel = notif.channel
+            sender = CHANNEL_SENDERS.get(channel)
+            if sender:
+                try:
+                    send_result = sender(alert_like, notif.severity.upper())
+                    if send_result.get("status") in ("sent", "dry_run"):
+                        queue_sent += 1
+                except Exception:
+                    pass
+
+        # Mark processed entries
+        if pending_queue:
+            ids_list = ",".join(f"'{n.id}'" for n in pending_queue)
+            spark.sql(f"""
+                UPDATE {NOTIFICATION_LOG_TABLE}
+                SET status = 'sent'
+                WHERE id IN ({ids_list})
+            """)
+
+        mon.log_metric("queue_processed", len(pending_queue))
+        mon.log_metric("queue_sent", queue_sent)
+
+except Exception as e:
+    mon.log_warning(f"Notification queue processing failed: {e}")
 
 # COMMAND ----------
 

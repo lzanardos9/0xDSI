@@ -26,6 +26,8 @@ from pyspark.sql.types import StructType, StructField, StringType
 dbutils.widgets.text("correlation_window_minutes", "60", "Alert grouping window")
 window_minutes = int(dbutils.widgets.get("correlation_window_minutes"))
 
+require_tables("alerts", "cases")
+
 # Table paths
 ALERTS_TABLE = get_table_path(cfg, "alerts")
 CASES_TABLE = get_table_path(cfg, "cases")

@@ -34,6 +34,8 @@ dbutils.widgets.text("dry_run", "false", "Dry run mode (true/false)")
 retention_days = int(dbutils.widgets.get("retention_days"))
 dry_run = dbutils.widgets.get("dry_run").lower() == "true"
 
+require_tables("streaming_queries", "checkpoint_gc_log")
+
 mon.log_info(f"Checkpoint GC started: retention={retention_days}d, dry_run={dry_run}")
 
 # COMMAND ----------
