@@ -52,6 +52,8 @@ batch_size = int(dbutils.widgets.get("batch_size"))
 lookback_hours = int(dbutils.widgets.get("lookback_hours"))
 auto_close_confidence = float(dbutils.widgets.get("auto_close_confidence"))
 
+require_tables("alerts")
+
 mon.log_event("triage_config_loaded", {
     "batch_size": batch_size,
     "lookback_hours": lookback_hours,

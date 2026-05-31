@@ -31,6 +31,8 @@ dbutils.widgets.text("min_events", "5", "Minimum events per user to analyze")
 dbutils.widgets.text("iforest_contamination", "0.05", "Isolation Forest contamination fraction")
 dbutils.widgets.text("iforest_n_estimators", "200", "Isolation Forest number of trees")
 
+require_tables("events", "user_behavior_anomalies", "alerts")
+
 lookback_hours = int(dbutils.widgets.get("lookback_hours"))
 ks_alpha = float(dbutils.widgets.get("ks_alpha"))
 k_clusters = int(dbutils.widgets.get("k_clusters"))

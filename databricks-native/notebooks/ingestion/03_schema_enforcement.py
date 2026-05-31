@@ -19,6 +19,8 @@
 dbutils.widgets.text("lookback_minutes", "60", "Process events from last N minutes")
 dbutils.widgets.text("batch_limit", "10000", "Max events per batch")
 
+require_tables("events")
+
 lookback_minutes = int(dbutils.widgets.get("lookback_minutes"))
 batch_limit = int(dbutils.widgets.get("batch_limit"))
 

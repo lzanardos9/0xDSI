@@ -19,6 +19,8 @@ dbutils.widgets.text("max_recovery_batch", "500", "Max events to attempt recover
 dbutils.widgets.text("ttl_days", "7", "Days to keep unrecoverable quarantined events")
 dbutils.widgets.text("enable_llm_recovery", "true", "Use LLM for ambiguous record parsing")
 
+require_tables("events")
+
 max_recovery_batch = int(dbutils.widgets.get("max_recovery_batch"))
 ttl_days = int(dbutils.widgets.get("ttl_days"))
 enable_llm_recovery = dbutils.widgets.get("enable_llm_recovery").lower() == "true"

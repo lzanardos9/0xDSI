@@ -304,6 +304,8 @@ ALLOWED_TABLES = [
     "discovery_profiles", "discovered_patterns",
     # Audit
     "system_audit_log",
+    # SLA
+    "sla_breaches",
 ]
 
 

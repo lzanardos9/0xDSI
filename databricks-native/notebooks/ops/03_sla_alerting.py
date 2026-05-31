@@ -17,6 +17,8 @@
 
 # COMMAND ----------
 
+require_tables("alerts", "sla_breaches")
+
 import json
 from pyspark.sql.functions import (
     col, lit, current_timestamp, expr, when, coalesce, count, sum as spark_sum,
