@@ -1,0 +1,47 @@
+name: azure_activity_log
+version: "1.8.0"
+vendor: Microsoft Azure
+category: cloud
+description: Azure Activity & Diagnostic logs via Event Hub
+
+input:
+  type: eventhub
+  protocol: amqp
+  port: 5671
+  format: json
+
+auth:
+  type: sas_token
+  key_env: AZURE_EVENTHUB_CONNECTION_STRING
+
+parser:
+  engine: json_path
+  timestamp_field: time
+  json_paths:
+    operation_name: operationName
+    category: category
+    result_type: resultType
+    caller: caller
+    resource_id: resourceId
+    correlation_id: correlationId
+    level: level
+    properties: properties
+
+ocsf_mapping:
+  event_class: 6003
+  fields:
+    api.operation: operation_name
+    api.response.code: result_type
+    actor.user.name: caller
+    cloud.resource_uid: resource_id
+
+output:
+  buffer_size: 5000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 20000
+  disk_buffer_mb: 500

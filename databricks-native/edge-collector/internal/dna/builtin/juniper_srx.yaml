@@ -1,0 +1,42 @@
+name: juniper_srx
+version: "1.5.0"
+vendor: Juniper Networks
+category: network_firewall
+description: Juniper SRX series firewall logs via structured syslog
+
+input:
+  type: syslog
+  protocol: udp
+  port: 514
+  format: structured_syslog
+
+auth:
+  type: none
+
+parser:
+  engine: kv_pairs
+  timestamp_field: RT
+  kv_delimiter: "="
+  pair_delimiter: " "
+
+ocsf_mapping:
+  event_class: 4001
+  fields:
+    src_endpoint.ip: source-address
+    src_endpoint.port: source-port
+    dst_endpoint.ip: destination-address
+    dst_endpoint.port: destination-port
+    network.protocol: protocol-id
+    metadata.product.name: "'Juniper SRX'"
+    connection_info.direction: inbound-bytes
+
+output:
+  buffer_size: 8000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 30000
+  disk_buffer_mb: 500

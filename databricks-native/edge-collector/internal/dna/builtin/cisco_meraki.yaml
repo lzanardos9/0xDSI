@@ -1,0 +1,42 @@
+name: cisco_meraki
+version: "1.5.0"
+vendor: Cisco Meraki
+category: network_firewall
+description: Cisco Meraki MX appliance and MR access point syslog events
+
+input:
+  type: syslog
+  protocol: udp
+  port: 514
+  format: meraki_syslog
+
+auth:
+  type: none
+
+parser:
+  engine: regex
+  timestamp_field: timestamp
+  patterns:
+    - '(?P<timestamp>\d+\.\d+)\s+(?P<device>\S+)\s+(?P<log_type>\w+)\s+(?P<message>.*)'
+
+ocsf_mapping:
+  event_class: 4001
+  fields:
+    device.hostname: device
+    metadata.log_name: log_type
+    src_endpoint.ip: src_ip
+    dst_endpoint.ip: dst_ip
+    dst_endpoint.port: dst_port
+    network.protocol: protocol
+    metadata.product.name: "'Cisco Meraki'"
+
+output:
+  buffer_size: 8000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 15000
+  disk_buffer_mb: 400

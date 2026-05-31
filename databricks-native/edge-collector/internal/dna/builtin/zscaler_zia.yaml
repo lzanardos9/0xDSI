@@ -1,0 +1,50 @@
+name: zscaler_zia
+version: "2.0.0"
+vendor: Zscaler
+category: cloud_security
+description: Zscaler Internet Access web/firewall logs via Nanolog Streaming Service
+
+input:
+  type: api_stream
+  protocol: https
+  port: 443
+  format: nss_json
+
+auth:
+  type: api_key
+  key_env: ZSCALER_API_KEY
+  secret_env: ZSCALER_API_SECRET
+
+parser:
+  engine: json_path
+  timestamp_field: datetime
+  json_paths:
+    action: action
+    user: login
+    url: url
+    department: department
+    location: location
+    threat_name: threatname
+    dlp_dictionaries: dlpdict
+    bytes_in: requestsize
+    bytes_out: responsesize
+
+ocsf_mapping:
+  event_class: 6002
+  fields:
+    actor.user.name: user
+    http.url: url
+    network.http.method: requestmethod
+    dst_endpoint.domain: hostname
+    metadata.product.name: "'Zscaler ZIA'"
+
+output:
+  buffer_size: 10000
+  flush_interval: "3s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 50000
+  disk_buffer_mb: 800

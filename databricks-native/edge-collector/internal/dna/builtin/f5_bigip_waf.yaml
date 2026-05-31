@@ -1,0 +1,41 @@
+name: f5_bigip_waf
+version: "1.1.0"
+vendor: F5 Networks
+category: waf
+description: F5 BIG-IP ASM/AWF web application firewall logs via syslog
+
+input:
+  type: syslog
+  protocol: tcp
+  port: 1514
+  format: cef
+
+auth:
+  type: none
+
+parser:
+  engine: cef
+  timestamp_field: rt
+
+ocsf_mapping:
+  event_class: 6002
+  fields:
+    src_endpoint.ip: src
+    dst_endpoint.ip: dst
+    http.url: request
+    http.method: requestMethod
+    http.response.code: response_code
+    network.http.user_agent: requestClientApplication
+    metadata.product.name: deviceProduct
+    finding.title: attack_type
+
+output:
+  buffer_size: 5000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 20000
+  disk_buffer_mb: 400

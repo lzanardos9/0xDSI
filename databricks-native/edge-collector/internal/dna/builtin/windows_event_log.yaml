@@ -1,0 +1,45 @@
+name: windows_event_log
+version: "2.0.0"
+vendor: Microsoft
+category: endpoint_security
+description: Windows Event Logs via WEF/WinRM collection
+
+input:
+  type: wmi
+  protocol: tcp
+  port: 5985
+  format: evtx
+
+auth:
+  type: kerberos
+  realm: ""
+
+parser:
+  engine: json_path
+  timestamp_field: TimeCreated.SystemTime
+  json_paths:
+    event_id: System.EventID
+    computer: System.Computer
+    provider: System.Provider.Name
+    level: System.Level
+    user_sid: System.Security.UserID
+    channel: System.Channel
+
+ocsf_mapping:
+  event_class: 3001
+  fields:
+    device.hostname: computer
+    metadata.event_code: event_id
+    actor.user.uid: user_sid
+    metadata.product.name: provider
+
+output:
+  buffer_size: 5000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 20000
+  disk_buffer_mb: 500

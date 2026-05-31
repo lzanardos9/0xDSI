@@ -1,0 +1,38 @@
+name: modbus_scada
+version: "1.0.0"
+vendor: Generic OT
+category: ot_ics
+description: Modbus TCP/RTU protocol monitor for SCADA/ICS environments
+
+input:
+  type: pcap
+  protocol: tcp
+  port: 502
+  format: modbus
+
+auth:
+  type: none
+
+parser:
+  engine: protocol_decode
+  timestamp_field: capture_time
+
+ocsf_mapping:
+  event_class: 4001
+  fields:
+    src_endpoint.ip: src_ip
+    dst_endpoint.ip: dst_ip
+    dst_endpoint.port: dst_port
+    network.protocol: protocol
+    metadata.raw_data: raw_bytes
+
+output:
+  buffer_size: 5000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 10000
+  disk_buffer_mb: 200

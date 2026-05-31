@@ -1,0 +1,54 @@
+name: proofpoint_tap
+version: "1.3.0"
+vendor: Proofpoint
+category: email_security
+description: Proofpoint Targeted Attack Protection (TAP) click and message events
+
+input:
+  type: api_poll
+  protocol: https
+  port: 443
+  format: json
+  poll_interval: "60s"
+
+auth:
+  type: basic
+  key_env: PROOFPOINT_SERVICE_PRINCIPAL
+  secret_env: PROOFPOINT_SECRET
+
+parser:
+  engine: json_path
+  timestamp_field: messageTime
+  json_paths:
+    sender: sender
+    recipient: recipient
+    subject: subject
+    threat_url: threatsInfoMap[0].threat
+    threat_status: threatsInfoMap[0].threatStatus
+    classification: threatsInfoMap[0].classification
+    click_ip: clickIP
+    sender_ip: senderIP
+    message_id: messageID
+    campaign_id: campaignId
+
+ocsf_mapping:
+  event_class: 4011
+  fields:
+    email.from: sender
+    email.to: recipient
+    email.subject: subject
+    src_endpoint.ip: sender_ip
+    finding.title: classification
+    finding.uid: campaign_id
+    metadata.product.name: "'Proofpoint TAP'"
+
+output:
+  buffer_size: 2000
+  flush_interval: "15s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 3000
+  disk_buffer_mb: 200

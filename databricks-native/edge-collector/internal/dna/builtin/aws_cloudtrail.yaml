@@ -1,0 +1,53 @@
+name: aws_cloudtrail
+version: "2.2.0"
+vendor: Amazon Web Services
+category: cloud
+description: AWS CloudTrail via S3 bucket polling + SQS notifications
+
+input:
+  type: s3_poll
+  protocol: https
+  port: 443
+  format: json
+  poll_interval: "30s"
+
+auth:
+  type: aws_iam
+  key_env: AWS_ACCESS_KEY_ID
+  secret_env: AWS_SECRET_ACCESS_KEY
+
+parser:
+  engine: json_path
+  timestamp_field: eventTime
+  json_paths:
+    event_name: eventName
+    event_source: eventSource
+    source_ip: sourceIPAddress
+    user_identity: userIdentity.arn
+    user_agent: userAgent
+    region: awsRegion
+    account_id: recipientAccountId
+    request_parameters: requestParameters
+    response_elements: responseElements
+
+ocsf_mapping:
+  event_class: 6003
+  fields:
+    api.operation: event_name
+    api.service.name: event_source
+    src_endpoint.ip: source_ip
+    actor.user.uid: user_identity
+    http.user_agent: user_agent
+    cloud.region: region
+    cloud.account.uid: account_id
+
+output:
+  buffer_size: 5000
+  flush_interval: "10s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 10000
+  disk_buffer_mb: 1000

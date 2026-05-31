@@ -1,0 +1,43 @@
+name: sophos_xg
+version: "1.2.0"
+vendor: Sophos
+category: network_firewall
+description: Sophos XG/XGS Firewall logs via syslog in key-value format
+
+input:
+  type: syslog
+  protocol: udp
+  port: 514
+  format: kv_pairs
+
+auth:
+  type: none
+
+parser:
+  engine: kv_pairs
+  timestamp_field: date_time
+  kv_delimiter: "="
+  pair_delimiter: " "
+
+ocsf_mapping:
+  event_class: 4001
+  fields:
+    src_endpoint.ip: src_ip
+    src_endpoint.port: src_port
+    dst_endpoint.ip: dst_ip
+    dst_endpoint.port: dst_port
+    network.protocol: protocol
+    actor.user.name: user_name
+    metadata.product.name: "'Sophos XG'"
+    network.bytes: sent_bytes
+
+output:
+  buffer_size: 8000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 25000
+  disk_buffer_mb: 500

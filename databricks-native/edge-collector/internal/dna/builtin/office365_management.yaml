@@ -1,0 +1,52 @@
+name: office365_management
+version: "2.0.0"
+vendor: Microsoft
+category: cloud
+description: Office 365 Management Activity API (Exchange, SharePoint, Azure AD, DLP)
+
+input:
+  type: api_poll
+  protocol: https
+  port: 443
+  format: json
+  poll_interval: "60s"
+
+auth:
+  type: oauth2
+  key_env: O365_CLIENT_ID
+  secret_env: O365_CLIENT_SECRET
+
+parser:
+  engine: json_path
+  timestamp_field: CreationTime
+  json_paths:
+    operation: Operation
+    user_id: UserId
+    workload: Workload
+    client_ip: ClientIP
+    result_status: ResultStatus
+    object_id: ObjectId
+    item_type: ItemType
+    site_url: SiteUrl
+    source_file: SourceFileName
+
+ocsf_mapping:
+  event_class: 6003
+  fields:
+    actor.user.email_addr: user_id
+    api.operation: operation
+    api.service.name: workload
+    src_endpoint.ip: client_ip
+    api.response.code: result_status
+    metadata.product.name: "'Microsoft 365'"
+
+output:
+  buffer_size: 5000
+  flush_interval: "10s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 10000
+  disk_buffer_mb: 500

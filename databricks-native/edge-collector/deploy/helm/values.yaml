@@ -1,0 +1,73 @@
+# Default values for 0xDSI Edge Collector
+replicaCount: 1
+
+image:
+  repository: 0xdsi/edge-collector
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+# Connector DNA to load
+dna:
+  name: "generic_syslog"
+  # Custom DNA YAML (overrides name if provided)
+  custom: ""
+
+# Control plane configuration
+controlPlane:
+  url: ""
+  token: ""
+
+# Output configuration (Kafka or HTTPS)
+output:
+  kafkaBrokers: ""
+  httpURL: ""
+  topic: "security-events"
+
+# Resource limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi
+
+# Service ports
+service:
+  type: ClusterIP
+  syslogUDP: 514
+  syslogTCP: 514
+  httpListener: 8088
+
+# Site/environment metadata
+site:
+  name: "default"
+  environment: "production"
+
+# Persistence for disk buffer
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+
+# Pod scheduling
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# DaemonSet mode (deploy one per node)
+daemonSet:
+  enabled: false
+
+# Autoscaling (only for Deployment mode)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetEPS: 50000

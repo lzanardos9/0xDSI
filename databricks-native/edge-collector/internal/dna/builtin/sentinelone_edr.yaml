@@ -1,0 +1,51 @@
+name: sentinelone_edr
+version: "1.4.0"
+vendor: SentinelOne
+category: endpoint_security
+description: SentinelOne Deep Visibility telemetry via API streaming
+
+input:
+  type: api_stream
+  protocol: https
+  port: 443
+  format: json
+  poll_interval: "10s"
+
+auth:
+  type: api_key
+  key_env: SENTINELONE_API_TOKEN
+
+parser:
+  engine: json_path
+  timestamp_field: createdAt
+  json_paths:
+    threat_name: threatInfo.threatName
+    classification: threatInfo.classification
+    confidence: threatInfo.confidenceLevel
+    agent_name: agentRealtimeInfo.agentComputerName
+    agent_os: agentRealtimeInfo.agentOsType
+    file_path: threatInfo.filePath
+    sha256: threatInfo.sha256
+    process_name: threatInfo.originatorProcess
+
+ocsf_mapping:
+  event_class: 1002
+  fields:
+    device.hostname: agent_name
+    device.os.name: agent_os
+    file.path: file_path
+    file.hashes.sha256: sha256
+    process.name: process_name
+    malware.name: threat_name
+    malware.classification: classification
+
+output:
+  buffer_size: 5000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 15000
+  disk_buffer_mb: 500

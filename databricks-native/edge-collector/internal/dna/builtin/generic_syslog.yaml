@@ -1,0 +1,36 @@
+name: generic_syslog
+version: "1.0.0"
+vendor: Generic
+category: infrastructure
+description: Universal syslog receiver (RFC 5424/3164)
+
+input:
+  type: syslog
+  protocol: udp
+  port: 514
+  format: rfc5424
+
+auth:
+  type: none
+
+parser:
+  engine: syslog
+  timestamp_field: timestamp
+
+ocsf_mapping:
+  event_class: 6003
+  fields:
+    message: message
+    device.hostname: hostname
+    severity: severity
+
+output:
+  buffer_size: 10000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 100000
+  disk_buffer_mb: 500

@@ -1,0 +1,51 @@
+name: crowdstrike_falcon
+version: "3.0.0"
+vendor: CrowdStrike
+category: endpoint_security
+description: CrowdStrike Falcon via Streaming API (NDJSON)
+
+input:
+  type: api_stream
+  protocol: https
+  port: 443
+  format: ndjson
+  endpoint: "https://firehose.crowdstrike.com/sensors/entities/datafeed/v2"
+  poll_interval: "1s"
+
+auth:
+  type: oauth2
+  token_url: "https://api.crowdstrike.com/oauth2/token"
+  client_id: ""
+  client_secret: ""
+
+parser:
+  engine: json_path
+  timestamp_field: metadata.eventCreationTime
+  json_paths:
+    event_type: metadata.eventType
+    sensor_id: event.SensorId
+    computer_name: event.ComputerName
+    user_name: event.UserName
+    sha256: event.SHA256HashData
+    command_line: event.CommandLine
+    parent_process: event.ParentImageFileName
+
+ocsf_mapping:
+  event_class: 1001
+  fields:
+    device.hostname: computer_name
+    actor.user.name: user_name
+    process.file.hashes.SHA-256: sha256
+    process.cmd_line: command_line
+    process.parent_process.file.path: parent_process
+
+output:
+  buffer_size: 5000
+  flush_interval: "3s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 100000
+  disk_buffer_mb: 1000

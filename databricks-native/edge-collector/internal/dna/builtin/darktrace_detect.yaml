@@ -1,0 +1,53 @@
+name: darktrace_detect
+version: "1.1.0"
+vendor: Darktrace
+category: ndr
+description: Darktrace Enterprise Immune System model breaches and AI anomaly alerts
+
+input:
+  type: api_poll
+  protocol: https
+  port: 443
+  format: json
+  poll_interval: "20s"
+
+auth:
+  type: api_key
+  key_env: DARKTRACE_PUBLIC_TOKEN
+  secret_env: DARKTRACE_PRIVATE_TOKEN
+
+parser:
+  engine: json_path
+  timestamp_field: time
+  json_paths:
+    model_name: model.name
+    score: score
+    device_label: device.label
+    device_ip: device.ip
+    device_mac: device.macaddress
+    category: model.tags
+    description: model.description
+    breach_id: pbid
+    mitre_tactics: model.mitre.tactics
+
+ocsf_mapping:
+  event_class: 2001
+  fields:
+    device.hostname: device_label
+    device.ip: device_ip
+    device.mac: device_mac
+    finding.title: model_name
+    finding.uid: breach_id
+    severity: score
+    metadata.product.name: "'Darktrace'"
+
+output:
+  buffer_size: 3000
+  flush_interval: "10s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 5000
+  disk_buffer_mb: 300

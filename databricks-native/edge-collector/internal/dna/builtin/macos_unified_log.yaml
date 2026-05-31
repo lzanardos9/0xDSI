@@ -1,0 +1,49 @@
+name: macos_unified_log
+version: "1.0.0"
+vendor: Apple
+category: endpoint_security
+description: macOS Unified Logging System via log stream command
+
+input:
+  type: file_tail
+  protocol: file
+  port: 0
+  format: ndjson
+  file_path: /var/log/system.log
+
+auth:
+  type: none
+
+parser:
+  engine: json_path
+  timestamp_field: timestamp
+  json_paths:
+    process: processImagePath
+    pid: processID
+    subsystem: subsystem
+    category: category
+    message: eventMessage
+    sender: senderImagePath
+    activity_id: activityIdentifier
+    log_type: messageType
+
+ocsf_mapping:
+  event_class: 1001
+  fields:
+    process.name: process
+    process.pid: pid
+    metadata.log_name: subsystem
+    metadata.event_code: category
+    message: message
+    metadata.product.name: "'macOS Unified Log'"
+
+output:
+  buffer_size: 5000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 10000
+  disk_buffer_mb: 300

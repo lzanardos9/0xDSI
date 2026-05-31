@@ -1,0 +1,46 @@
+name: palo_alto_firewall
+version: "2.1.0"
+vendor: Palo Alto Networks
+category: network_security
+description: Palo Alto NGFW via syslog (CEF format)
+
+input:
+  type: syslog
+  protocol: udp
+  port: 514
+  format: cef
+
+auth:
+  type: none
+
+parser:
+  engine: cef
+  timestamp_field: rt
+  timestamp_format: "MMM dd yyyy HH:mm:ss"
+  severity_map:
+    "10": critical
+    "7": high
+    "4": medium
+    "1": low
+
+ocsf_mapping:
+  event_class: 4001
+  fields:
+    src_endpoint.ip: src
+    dst_endpoint.ip: dst
+    dst_endpoint.port: dpt
+    activity_name: act
+    actor.user.name: suser
+    http.url: request
+    network.direction: deviceDirection
+
+output:
+  buffer_size: 10000
+  flush_interval: "5s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 50000
+  disk_buffer_mb: 500

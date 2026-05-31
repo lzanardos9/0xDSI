@@ -1,0 +1,53 @@
+name: vectra_ai
+version: "1.2.0"
+vendor: Vectra AI
+category: ndr
+description: Vectra Cognito Detect AI-driven network threat detections
+
+input:
+  type: api_poll
+  protocol: https
+  port: 443
+  format: json
+  poll_interval: "15s"
+
+auth:
+  type: api_key
+  key_env: VECTRA_API_TOKEN
+
+parser:
+  engine: json_path
+  timestamp_field: last_detection_timestamp
+  json_paths:
+    detection_type: detection_type
+    category: category
+    src_ip: src_ip
+    threat_score: threat
+    certainty_score: certainty
+    host_name: src_host.name
+    tags: tags
+    grouped_details: grouped_details
+    state: state
+    is_triaged: is_triaged
+
+ocsf_mapping:
+  event_class: 2001
+  fields:
+    src_endpoint.ip: src_ip
+    device.hostname: host_name
+    finding.title: detection_type
+    finding.type: category
+    risk_score: threat_score
+    confidence: certainty_score
+    metadata.product.name: "'Vectra AI'"
+
+output:
+  buffer_size: 3000
+  flush_interval: "10s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 5000
+  disk_buffer_mb: 300

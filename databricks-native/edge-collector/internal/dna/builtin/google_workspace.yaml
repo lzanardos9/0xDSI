@@ -1,0 +1,47 @@
+name: google_workspace
+version: "1.5.0"
+vendor: Google
+category: identity
+description: Google Workspace Admin SDK activity reports via push notifications
+
+input:
+  type: api_poll
+  protocol: https
+  port: 443
+  format: json
+  poll_interval: "30s"
+
+auth:
+  type: oauth2
+  key_env: GOOGLE_SERVICE_ACCOUNT_JSON
+
+parser:
+  engine: json_path
+  timestamp_field: id.time
+  json_paths:
+    actor_email: actor.email
+    event_name: events[0].name
+    event_type: events[0].type
+    ip_address: ipAddress
+    application: id.applicationName
+    parameters: events[0].parameters
+
+ocsf_mapping:
+  event_class: 3002
+  fields:
+    actor.user.email_addr: actor_email
+    src_endpoint.ip: ip_address
+    api.operation: event_name
+    api.service.name: application
+    metadata.product.name: "'Google Workspace'"
+
+output:
+  buffer_size: 3000
+  flush_interval: "15s"
+  compression: zstd
+  format: ocsf_json
+
+health:
+  heartbeat_interval: "30s"
+  max_eps_warning: 3000
+  disk_buffer_mb: 200
