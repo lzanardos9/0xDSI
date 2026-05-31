@@ -1345,7 +1345,67 @@ USING DELTA
 PARTITIONED BY (severity)
 """)
 
+# --- Agent 47: Autonomous Response Learner tables ---
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS arl_q_tables (
+    model_id STRING NOT NULL,
+    q_table_json STRING,
+    status STRING DEFAULT 'active',
+    training_episodes INT DEFAULT 0,
+    avg_reward DOUBLE DEFAULT 0.0,
+    loss_rate DOUBLE DEFAULT 0.0,
+    states_visited INT DEFAULT 0,
+    blacklisted_pairs INT DEFAULT 0,
+    noise_rate DOUBLE DEFAULT 0.15,
+    gamma DOUBLE DEFAULT 0.015,
+    learning_rate DOUBLE DEFAULT 0.2,
+    feedback_corrections INT DEFAULT 0,
+    trained_at TIMESTAMP DEFAULT current_timestamp(),
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS arl_decisions (
+    decision_id STRING NOT NULL,
+    state_tuple STRING,
+    action_name STRING,
+    q_value DOUBLE,
+    confidence DOUBLE,
+    autonomous BOOLEAN DEFAULT false,
+    status STRING DEFAULT 'pending',
+    observation_json STRING,
+    outcome STRING,
+    reward_received DOUBLE,
+    analyst_override STRING,
+    decided_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (action_name)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS arl_training_runs (
+    run_id STRING NOT NULL,
+    mlflow_run_id STRING,
+    episodes INT,
+    avg_reward DOUBLE,
+    loss_rate DOUBLE,
+    states_visited INT,
+    blacklisted_pairs INT,
+    noise_profile STRING,
+    topology_variety STRING,
+    training_duration_seconds DOUBLE,
+    model_version INT DEFAULT 1,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
 print("Operational and agent infrastructure tables created")
+print("Agent 47 (Autonomous Response Learner) tables created")
 
 # COMMAND ----------
 

@@ -1,6 +1,6 @@
 # 0xDSI Agentic SOC Platform - Databricks Native
 
-Production-grade Security Operations Center running entirely within Databricks. 111 notebooks, 46 autonomous agents, 10 correlation engines, 8 detection models, real-time streaming from ZeroBus (Kafka), and LLM-powered investigation -- all orchestrated through Unity Catalog, Workflows, and Foundation Model APIs.
+Production-grade Security Operations Center running entirely within Databricks. 112 notebooks, 47 autonomous agents, 10 correlation engines, 8 detection models, real-time streaming from ZeroBus (Kafka), and LLM-powered investigation -- all orchestrated through Unity Catalog, Workflows, and Foundation Model APIs.
 
 Zero external dependencies. Zero egress. Full data sovereignty.
 
@@ -10,8 +10,8 @@ Zero external dependencies. Zero egress. Full data sovereignty.
 
 | Metric | Count |
 |--------|-------|
-| Total Notebooks | 111 |
-| Autonomous Agents | 46 |
+| Total Notebooks | 112 |
+| Autonomous Agents | 47 |
 | Correlation Engines | 10 |
 | Detection Models | 8 |
 | Delta Lake Tables | 130+ |
@@ -269,6 +269,66 @@ Every notebook runs `%run ../_shared/bootstrap` to initialize core services:
 | 44 | OT Protocol Security | Batch | ICS/SCADA protocol anomaly detection |
 | 45 | ExploitForge | Batch | AI-driven exploit chain analysis |
 | 46 | Communication Analyzer | Batch | Communication pattern profiling |
+| 47 | Autonomous Response Learner | Batch | RL-based response decision (Q-Learning, paper-informed) |
+
+---
+
+## Agent 47: Autonomous Response Learner (Research-Driven)
+
+Based on Apple's AISec '22 paper ["Bridging Automated to Autonomous Cyber Defense"](https://doi.org/10.1145/3560830.3563732).
+
+### Design Decisions (Paper-Informed)
+
+| Component | Choice | Paper Evidence |
+|-----------|--------|---------------|
+| State Encoding | Percentile buckets (5^4 = 625 states) | Best transfer learning: 167-213% vs baseline (Table 4, Rows 22-30) |
+| Action Space | Feature-based (4 abstract actions) | Reduces Q-matrix from O(n+c) to O(4) per state (Sec 4.2) |
+| Update Function | High-Avoidance | 7% loss rate vs 40% baseline (Table 3, Row 15) |
+| Training | 3-phase (70% explore, 25% greedy, 5% exploit) | Convergence guarantee with epsilon-greedy (Sec 4.3) |
+| Noise | Inject 1.5x expected production noise | Training under Low noise transfers -20% vs -91% (Rows 31-33) |
+| Reward | Modified blue reward (availability - compromise + defense bonus) | Sec 3.2.3 |
+
+### Operating Modes
+
+| Mode | Schedule | Purpose |
+|------|----------|---------|
+| `training` | Every 6 hours | Train Q-table in simulation (1000 episodes) |
+| `inference` | Every 2 minutes | Observe network, choose action, dispatch/queue |
+| `simulation` | Daily | Evaluate against baselines (random, zapper) |
+
+### Safety: Autonomous vs. Human-Approved
+
+```
+                    ┌─────────────────┐
+                    │  Observe State  │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  Q-Table Lookup │
+                    │  Best Action +  │
+                    │  Confidence     │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │                             │
+     confidence >= 0.7              confidence < 0.7
+     action NOT critical            OR action is critical
+              │                             │
+              ▼                             ▼
+     ┌────────────────┐          ┌────────────────────┐
+     │ AUTONOMOUS     │          │ HUMAN APPROVAL     │
+     │ Execute via    │          │ Queue for analyst  │
+     │ Vanguard (07)  │          │ via ALHF (25)      │
+     └────────────────┘          └────────────────────┘
+```
+
+### Delta Tables
+
+| Table | Purpose |
+|-------|---------|
+| `arl_q_tables` | Versioned Q-table storage (active/archived) |
+| `arl_decisions` | Full audit trail of every decision |
+| `arl_training_runs` | Training run metrics and MLflow links |
 
 ---
 
