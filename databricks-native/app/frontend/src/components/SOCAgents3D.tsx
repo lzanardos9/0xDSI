@@ -156,6 +156,7 @@ export default function SOCAgents3D() {
 
   useEffect(() => {
     let cancelled = false;
+    let lastCount = 0;
     const load = async () => {
       const { data } = await supabase
         .from('soc_agent_registry')
@@ -165,55 +166,37 @@ export default function SOCAgents3D() {
       if (cancelled) return;
       if (data && data.length > 0) {
         const mapped: AgentDef[] = data.map((row: any) => ({
-          id: row.agent_key,
+          id: row.agent_key || row.id,
           name: row.name,
-          role: row.role,
-          type: row.agent_type,
-          color: row.color,
-          hex: hexToNumber(row.color),
+          role: row.role || row.agent_class,
+          type: row.agent_type || row.agent_class,
+          color: row.color || '#10b981',
+          hex: hexToNumber(row.color || '#10b981'),
           status: (row.status || 'active') as AgentDef['status'],
-          task: row.task,
+          task: row.task || row.description || '',
           metrics: {
             accuracy: Number(row.accuracy) || 95,
             throughput: Number(row.throughput) || 100,
             tasksCompleted: Number(row.tasks_completed) || 0,
           },
         }));
+        if (mapped.length > lastCount && lastCount > 0) {
+          const newest = mapped[mapped.length - 1];
+          setNewAgentFlash(newest.name);
+          setTimeout(() => setNewAgentFlash(null), 6000);
+        }
+        lastCount = mapped.length;
         setRoster(mapped);
       }
       setRosterLoaded(true);
     };
     load();
 
-    const channel = supabase
-      .channel('soc_agent_registry_changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'soc_agent_registry' }, (payload: any) => {
-        const row = payload.new;
-        if (!row) return;
-        const newDef: AgentDef = {
-          id: row.agent_key,
-          name: row.name,
-          role: row.role,
-          type: row.agent_type,
-          color: row.color,
-          hex: hexToNumber(row.color),
-          status: (row.status || 'active') as AgentDef['status'],
-          task: row.task,
-          metrics: {
-            accuracy: Number(row.accuracy) || 95,
-            throughput: Number(row.throughput) || 100,
-            tasksCompleted: Number(row.tasks_completed) || 0,
-          },
-        };
-        setRoster(prev => prev.some(a => a.id === newDef.id) ? prev : [...prev, newDef]);
-        setNewAgentFlash(newDef.name);
-        setTimeout(() => setNewAgentFlash(null), 6000);
-      })
-      .subscribe();
+    const pollInterval = setInterval(load, 8000);
 
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
+      clearInterval(pollInterval);
     };
   }, []);
 

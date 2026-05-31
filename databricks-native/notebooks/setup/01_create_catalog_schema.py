@@ -416,10 +416,21 @@ USING DELTA
 spark.sql("""
 CREATE TABLE IF NOT EXISTS soc_agent_registry (
     id STRING DEFAULT uuid(),
+    agent_key STRING,
     name STRING NOT NULL,
     agent_class STRING,
+    agent_type STRING,
+    role STRING,
     description STRING,
+    task STRING,
+    color STRING DEFAULT '#10b981',
+    system_prompt STRING,
     capabilities ARRAY<STRING>,
+    accuracy DOUBLE DEFAULT 95.0,
+    throughput INT DEFAULT 100,
+    tasks_completed INT DEFAULT 0,
+    is_custom BOOLEAN DEFAULT false,
+    source_creation_id STRING,
     status STRING DEFAULT 'registered',
     version STRING DEFAULT '1.0.0',
     created_at TIMESTAMP DEFAULT current_timestamp()
