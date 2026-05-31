@@ -1,39 +1,23 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Ingestion 09: Edge Collector Framework
+# MAGIC # Edge Collector Ingestion Framework
 # MAGIC
-# MAGIC Manages lightweight edge collectors that forward events from remote sites,
-# MAGIC IoT/OT networks, cloud VPCs, and air-gapped enclaves into the SOC platform.
+# MAGIC Receives OCSF-normalized events from the Edge Mesh fleet and writes to Delta Lake.
 # MAGIC
-# MAGIC **Edge Collector Architecture:**
+# MAGIC ## Data Flow
 # MAGIC ```
-# MAGIC  [Remote Site]     [Cloud VPC]     [OT/SCADA]    [Container]
-# MAGIC       │                 │               │              │
-# MAGIC  ┌────▼────┐      ┌────▼────┐    ┌────▼────┐   ┌────▼────┐
-# MAGIC  │Collector│      │Collector│    │Collector│   │Collector│
-# MAGIC  │  Agent  │      │  Agent  │    │  Agent  │   │  Agent  │
-# MAGIC  └────┬────┘      └────┬────┘    └────┬────┘   └────┬────┘
-# MAGIC       │ gRPC/HTTPS      │ Kafka        │ MQTT        │ stdout
-# MAGIC       └────────────┬────┴──────────┬───┘─────────────┘
-# MAGIC              ┌─────▼──────────────▼───┐
-# MAGIC              │  Edge Collector Hub     │  ← this notebook manages
-# MAGIC              │  (Ingest + Route)       │
-# MAGIC              └─────────┬──────────────┘
-# MAGIC                        │
-# MAGIC              ┌─────────▼──────────────┐
-# MAGIC              │  Bronze Events Table    │
-# MAGIC              └────────────────────────┘
+# MAGIC Edge Collectors → HTTPS/Kafka → This Notebook → Bronze Delta Table
+# MAGIC                                       ↓
+# MAGIC                           Entity Spine (auto-discovery)
+# MAGIC                                       ↓
+# MAGIC                           Telemetry Metrics (per-collector)
 # MAGIC ```
 # MAGIC
-# MAGIC **Responsibilities:**
-# MAGIC 1. **Registry** — Track all collectors, their health, config versions
-# MAGIC 2. **Heartbeat Monitoring** — Detect offline/degraded collectors
-# MAGIC 3. **Config Distribution** — Push filter rules, sampling rates, buffer policies
-# MAGIC 4. **Backpressure Management** — Detect and handle collector saturation
-# MAGIC 5. **Bandwidth Optimization** — Manage compression, batching, dedup at edge
-# MAGIC 6. **Certificate Rotation** — Track mTLS cert expiration for collectors
-# MAGIC
-# MAGIC **Scheduling:** Every 2 minutes (heartbeat check), hourly (config sync)
+# MAGIC ## Modes
+# MAGIC - **stream** - Structured Streaming from Kafka topic `edge-events`
+# MAGIC - **batch** - Process batch uploads from disk buffer flush
+# MAGIC - **replay** - Replay events from a specific collector within time range
+# MAGIC - **metrics** - Compute and store ingestion metrics
 
 # COMMAND ----------
 
@@ -41,412 +25,455 @@
 
 # COMMAND ----------
 
-dbutils.widgets.text("mode", "heartbeat", "Mode: heartbeat | config_sync | register | decommission")
-dbutils.widgets.text("heartbeat_timeout_seconds", "300", "Seconds before collector is considered offline")
-dbutils.widgets.text("max_backpressure_events", "100000", "Queue depth before backpressure alert")
-dbutils.widgets.text("collector_id", "", "Collector ID (for register/decommission modes)")
+import json
+from datetime import datetime, timedelta
+from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    StructType, StructField, StringType, IntegerType,
+    LongType, DoubleType, TimestampType, MapType, ArrayType
+)
+
+# COMMAND ----------
+
+dbutils.widgets.text("mode", "stream", "Mode: stream | batch | replay | metrics")
+dbutils.widgets.text("collector_id", "", "Filter by collector ID (optional)")
+dbutils.widgets.text("replay_start", "", "Replay start time (ISO8601)")
+dbutils.widgets.text("replay_end", "", "Replay end time (ISO8601)")
 
 mode = dbutils.widgets.get("mode")
-heartbeat_timeout = int(dbutils.widgets.get("heartbeat_timeout_seconds"))
-max_backpressure = int(dbutils.widgets.get("max_backpressure_events"))
-collector_id_param = dbutils.widgets.get("collector_id")
-require_tables("edge_collector_registry", "edge_collector_heartbeats")
-
-# COMMAND ----------
-
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
-from datetime import datetime, timedelta
-import json
+collector_id_filter = dbutils.widgets.get("collector_id")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Ensure Collector Tables
+# MAGIC ## Schema Definitions
 
 # COMMAND ----------
 
-registry_table = get_table_path(cfg, "edge_collector_registry")
-heartbeats_table = get_table_path(cfg, "edge_collector_heartbeats")
-config_table = get_table_path(cfg, "edge_collector_configs")
-incidents_table = get_table_path(cfg, "edge_collector_incidents")
+OCSF_EVENT_SCHEMA = StructType([
+    StructField("event_id", StringType(), False),
+    StructField("collector_id", StringType(), False),
+    StructField("dna_name", StringType(), False),
+    StructField("site_name", StringType(), True),
+    StructField("timestamp", TimestampType(), False),
+    StructField("ingested_at", TimestampType(), False),
+    StructField("event_class", IntegerType(), False),
+    StructField("category_uid", IntegerType(), True),
+    StructField("severity", IntegerType(), True),
+    StructField("message", StringType(), True),
+    StructField("src_endpoint_ip", StringType(), True),
+    StructField("src_endpoint_port", IntegerType(), True),
+    StructField("dst_endpoint_ip", StringType(), True),
+    StructField("dst_endpoint_port", IntegerType(), True),
+    StructField("actor_user_name", StringType(), True),
+    StructField("actor_user_uid", StringType(), True),
+    StructField("device_hostname", StringType(), True),
+    StructField("device_ip", StringType(), True),
+    StructField("process_name", StringType(), True),
+    StructField("process_pid", IntegerType(), True),
+    StructField("network_protocol", StringType(), True),
+    StructField("http_url", StringType(), True),
+    StructField("file_path", StringType(), True),
+    StructField("file_hash_sha256", StringType(), True),
+    StructField("finding_title", StringType(), True),
+    StructField("finding_uid", StringType(), True),
+    StructField("api_operation", StringType(), True),
+    StructField("api_service_name", StringType(), True),
+    StructField("cloud_region", StringType(), True),
+    StructField("cloud_account_uid", StringType(), True),
+    StructField("metadata_product_name", StringType(), True),
+    StructField("metadata_event_code", StringType(), True),
+    StructField("raw_event", StringType(), True),
+    StructField("enrichment_tags", ArrayType(StringType()), True),
+    StructField("ocsf_extensions", MapType(StringType(), StringType()), True),
+])
 
-spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {registry_table} (
-    collector_id STRING NOT NULL,
-    collector_name STRING NOT NULL,
-    collector_type STRING NOT NULL,
-    -- Location
-    site_name STRING,
-    region STRING,
-    environment STRING,
-    network_zone STRING,
-    -- Capabilities
-    transport_protocol STRING NOT NULL,
-    supported_sources ARRAY<STRING>,
-    max_eps INT DEFAULT 10000,
-    compression STRING DEFAULT 'zstd',
-    -- Security
-    mtls_cert_fingerprint STRING,
-    mtls_cert_expires TIMESTAMP,
-    api_key_hash STRING,
-    -- State
-    status STRING DEFAULT 'registered',
-    version STRING,
-    config_version INT DEFAULT 1,
-    last_heartbeat TIMESTAMP,
-    last_config_sync TIMESTAMP,
-    events_forwarded_total BIGINT DEFAULT 0,
-    events_forwarded_24h BIGINT DEFAULT 0,
-    -- Metadata
-    registered_at TIMESTAMP DEFAULT current_timestamp(),
-    updated_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-TBLPROPERTIES (
-    'delta.enableChangeDataFeed' = 'true',
-    'delta.autoOptimize.optimizeWrite' = 'true'
-)
-""")
-
-spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {heartbeats_table} (
-    heartbeat_id STRING NOT NULL,
-    collector_id STRING NOT NULL,
-    received_at TIMESTAMP NOT NULL,
-    -- Health metrics
-    cpu_percent DOUBLE,
-    memory_percent DOUBLE,
-    disk_percent DOUBLE,
-    queue_depth BIGINT DEFAULT 0,
-    events_per_second DOUBLE DEFAULT 0.0,
-    bytes_per_second DOUBLE DEFAULT 0.0,
-    -- Connectivity
-    latency_ms DOUBLE,
-    dropped_events BIGINT DEFAULT 0,
-    retry_count INT DEFAULT 0,
-    -- Errors
-    error_count INT DEFAULT 0,
-    last_error STRING,
-    -- Version info
-    agent_version STRING,
-    config_version INT
-)
-USING DELTA
-PARTITIONED BY (collector_id)
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-""")
-
-spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {config_table} (
-    config_id STRING NOT NULL,
-    collector_id STRING,
-    config_scope STRING NOT NULL,
-    -- Configuration
-    filter_rules STRING,
-    sampling_rate DOUBLE DEFAULT 1.0,
-    batch_size INT DEFAULT 1000,
-    batch_interval_ms INT DEFAULT 5000,
-    buffer_max_bytes BIGINT DEFAULT 104857600,
-    compression STRING DEFAULT 'zstd',
-    -- Source routing
-    source_includes ARRAY<STRING>,
-    source_excludes ARRAY<STRING>,
-    -- Rate limiting
-    max_eps INT DEFAULT 10000,
-    throttle_on_backpressure BOOLEAN DEFAULT true,
-    -- Version
-    version INT NOT NULL,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-""")
-
-spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {incidents_table} (
-    incident_id STRING NOT NULL,
-    collector_id STRING NOT NULL,
-    incident_type STRING NOT NULL,
-    severity STRING NOT NULL,
-    title STRING NOT NULL,
-    description STRING,
-    -- Impact
-    events_at_risk BIGINT DEFAULT 0,
-    data_loss_estimated BOOLEAN DEFAULT false,
-    -- Resolution
-    auto_resolved BOOLEAN DEFAULT false,
-    resolved_at TIMESTAMP,
-    resolution STRING,
-    created_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
-""")
+# Table paths
+bronze_events = get_table_path(cfg, "bronze_edge_events")
+ingestion_metrics = get_table_path(cfg, "edge_ingestion_metrics")
+entity_spine = get_table_path(cfg, "entity_spine")
+deployments_table = get_table_path(cfg, "connector_deployments")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Heartbeat Mode: Monitor Collector Health
+# MAGIC ## Streaming Ingestion (Kafka)
 
 # COMMAND ----------
 
-if mode == "heartbeat":
-    with mon.time("heartbeat_check"):
-        now = datetime.utcnow()
-        timeout_cutoff = now - timedelta(seconds=heartbeat_timeout)
+def start_streaming_ingestion():
+    """
+    Structured Streaming from Kafka topic where edge collectors publish events.
+    Auto-scales with cluster, provides exactly-once via checkpointing.
+    """
+    kafka_bootstrap = cfg.get("kafka_bootstrap_servers", "kafka:9092")
+    topic = cfg.get("edge_events_topic", "0xdsi.edge.events.ocsf")
 
-        # Get all registered collectors
-        collectors = spark.sql(f"""
-            SELECT collector_id, collector_name, site_name, status,
-                   last_heartbeat, max_eps, collector_type
-            FROM {registry_table}
-            WHERE status NOT IN ('decommissioned', 'disabled')
-        """)
+    raw_stream = (
+        spark.readStream
+        .format("kafka")
+        .option("kafka.bootstrap.servers", kafka_bootstrap)
+        .option("subscribe", topic)
+        .option("startingOffsets", "latest")
+        .option("maxOffsetsPerTrigger", 500000)
+        .option("kafka.security.protocol", "SASL_SSL")
+        .load()
+    )
 
-        total_collectors = collectors.count()
-        if total_collectors == 0:
-            print("No registered collectors")
-            dbutils.notebook.exit(json.dumps({"status": "no_collectors"}))
-
-        # Identify offline collectors
-        offline = collectors.filter(
-            (col("last_heartbeat") < lit(timeout_cutoff)) |
-            col("last_heartbeat").isNull()
+    parsed_stream = (
+        raw_stream
+        .select(
+            F.from_json(F.col("value").cast("string"), OCSF_EVENT_SCHEMA).alias("event"),
+            F.col("timestamp").alias("kafka_timestamp"),
+            F.col("partition"),
+            F.col("offset"),
         )
-        offline_count = offline.count()
-
-        # Check for backpressure
-        recent_heartbeats = spark.sql(f"""
-            SELECT collector_id, queue_depth, events_per_second,
-                   error_count, dropped_events, cpu_percent, memory_percent
-            FROM {heartbeats_table}
-            WHERE received_at > '{(now - timedelta(minutes=5)).isoformat()}'
-        """)
-
-        backpressured = recent_heartbeats.filter(col("queue_depth") > max_backpressure)
-        bp_count = backpressured.count()
-
-        # Check for high error rates
-        erroring = recent_heartbeats.filter(col("error_count") > 10)
-        error_count = erroring.count()
-
-        # Check for resource exhaustion
-        exhausted = recent_heartbeats.filter(
-            (col("cpu_percent") > 90) | (col("memory_percent") > 90) | (col("disk_percent") > 90)
+        .select("event.*", "kafka_timestamp", "partition", "offset")
+        .withColumn("ingestion_lag_ms",
+            (F.col("kafka_timestamp").cast("long") - F.col("timestamp").cast("long")) * 1000
         )
-        exhausted_count = exhausted.count() if "disk_percent" in recent_heartbeats.columns else 0
+        .withColumn("ingestion_date", F.to_date("timestamp"))
+        .withColumn("ingestion_hour", F.hour("timestamp"))
+    )
 
-        # Update status for offline collectors
-        if offline_count > 0:
-            offline_ids = [r.collector_id for r in offline.collect()]
-            for cid in offline_ids:
-                spark.sql(f"""
-                    UPDATE {registry_table}
-                    SET status = 'offline', updated_at = current_timestamp()
-                    WHERE collector_id = '{cid}' AND status != 'offline'
-                """)
+    checkpoint_path = f"{cfg['checkpoint_base']}/edge_collector_ingestion"
 
-                # Create incident
-                spark.createDataFrame([{
-                    "incident_id": f"offline_{cid}_{now.strftime('%Y%m%d%H%M')}",
-                    "collector_id": cid,
-                    "incident_type": "collector_offline",
-                    "severity": "high",
-                    "title": f"Collector offline: {cid}",
-                    "description": f"No heartbeat received in {heartbeat_timeout}s",
-                    "events_at_risk": 0,
-                    "data_loss_estimated": True,
-                    "auto_resolved": False,
-                }]).withColumn("created_at", current_timestamp()).withColumn(
-                    "resolved_at", lit(None).cast("timestamp")
-                ).withColumn("resolution", lit(None).cast("string")).write.mode(
-                    "append"
-                ).option("mergeSchema", "true").saveAsTable(incidents_table)
+    query = (
+        parsed_stream.writeStream
+        .format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", checkpoint_path)
+        .partitionBy("ingestion_date", "dna_name")
+        .trigger(processingTime="10 seconds")
+        .foreachBatch(lambda df, epoch_id: _process_micro_batch(df, epoch_id))
+        .start(bronze_events)
+    )
 
-        # Backpressure incidents
-        if bp_count > 0:
-            for row in backpressured.collect():
-                spark.createDataFrame([{
-                    "incident_id": f"bp_{row.collector_id}_{now.strftime('%H%M')}",
-                    "collector_id": row.collector_id,
-                    "incident_type": "backpressure",
-                    "severity": "medium",
-                    "title": f"Backpressure on {row.collector_id}",
-                    "description": f"Queue depth: {row.queue_depth} (threshold: {max_backpressure})",
-                    "events_at_risk": int(row.queue_depth),
-                    "data_loss_estimated": False,
-                    "auto_resolved": False,
-                }]).withColumn("created_at", current_timestamp()).withColumn(
-                    "resolved_at", lit(None).cast("timestamp")
-                ).withColumn("resolution", lit(None).cast("string")).write.mode(
-                    "append"
-                ).option("mergeSchema", "true").saveAsTable(incidents_table)
+    print(f"[STREAMING] Edge collector ingestion started")
+    print(f"  Topic: {topic}")
+    print(f"  Checkpoint: {checkpoint_path}")
+    print(f"  Partitions: ingestion_date, dna_name")
 
-        # Update online collectors
-        online_count = total_collectors - offline_count
-        spark.sql(f"""
-            UPDATE {registry_table}
-            SET status = 'healthy', updated_at = current_timestamp()
-            WHERE status = 'offline'
-              AND last_heartbeat > '{timeout_cutoff.isoformat()}'
-        """)
+    return query
 
-        print(f"\nEdge Collector Fleet Status:")
-        print(f"  Total: {total_collectors}")
-        print(f"  Online: {online_count}")
-        print(f"  Offline: {offline_count}")
-        print(f"  Backpressured: {bp_count}")
-        print(f"  Erroring: {error_count}")
+
+def _process_micro_batch(batch_df, epoch_id):
+    """Process each micro-batch: write to bronze, extract entities, compute metrics."""
+    if batch_df.isEmpty():
+        return
+
+    batch_count = batch_df.count()
+
+    (
+        batch_df.write
+        .format("delta")
+        .mode("append")
+        .partitionBy("ingestion_date", "dna_name")
+        .save(bronze_events)
+    )
+
+    _auto_discover_entities(batch_df)
+    _compute_batch_metrics(batch_df, epoch_id, batch_count)
+
+    print(f"[BATCH {epoch_id}] Processed {batch_count} events")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Config Sync Mode: Push Configuration Updates
+# MAGIC ## Entity Auto-Discovery
 
 # COMMAND ----------
 
-if mode == "config_sync":
-    with mon.time("config_sync"):
-        # Find collectors with outdated configs
-        outdated = spark.sql(f"""
-            SELECT r.collector_id, r.config_version as current_version,
-                   c.version as latest_version, c.config_id
-            FROM {registry_table} r
-            JOIN {config_table} c ON (c.collector_id = r.collector_id OR c.config_scope = 'global')
-              AND c.is_active = true
-            WHERE r.config_version < c.version
-              AND r.status IN ('healthy', 'degraded')
-        """)
+def _auto_discover_entities(df):
+    """Extract unique users, devices, and IPs from ingested events into entity spine."""
 
-        sync_count = outdated.count()
-        if sync_count > 0:
-            for row in outdated.collect():
-                spark.sql(f"""
-                    UPDATE {registry_table}
-                    SET config_version = {row.latest_version},
-                        last_config_sync = current_timestamp(),
-                        updated_at = current_timestamp()
-                    WHERE collector_id = '{row.collector_id}'
-                """)
-            print(f"Synced config to {sync_count} collectors")
-        else:
-            print("All collectors have latest config")
+    users_df = (
+        df.filter(F.col("actor_user_name").isNotNull())
+        .select(
+            F.col("actor_user_name").alias("entity_name"),
+            F.col("actor_user_uid").alias("entity_uid"),
+            F.lit("user").alias("entity_type"),
+            F.col("dna_name").alias("first_seen_source"),
+            F.col("timestamp").alias("first_seen_at"),
+        )
+        .distinct()
+    )
 
-# COMMAND ----------
+    devices_df = (
+        df.filter(F.col("device_hostname").isNotNull())
+        .select(
+            F.col("device_hostname").alias("entity_name"),
+            F.col("device_ip").alias("entity_uid"),
+            F.lit("device").alias("entity_type"),
+            F.col("dna_name").alias("first_seen_source"),
+            F.col("timestamp").alias("first_seen_at"),
+        )
+        .distinct()
+    )
 
-# MAGIC %md
-# MAGIC ## Register Mode: Add New Collector
+    ips_df = (
+        df.filter(
+            (F.col("src_endpoint_ip").isNotNull()) &
+            (~F.col("src_endpoint_ip").startswith("10.")) &
+            (~F.col("src_endpoint_ip").startswith("172.16.")) &
+            (~F.col("src_endpoint_ip").startswith("192.168.")) &
+            (F.col("src_endpoint_ip") != "127.0.0.1")
+        )
+        .select(
+            F.col("src_endpoint_ip").alias("entity_name"),
+            F.col("src_endpoint_ip").alias("entity_uid"),
+            F.lit("ip_address").alias("entity_type"),
+            F.col("dna_name").alias("first_seen_source"),
+            F.col("timestamp").alias("first_seen_at"),
+        )
+        .distinct()
+    )
 
-# COMMAND ----------
+    entities = users_df.union(devices_df).union(ips_df)
 
-if mode == "register" and collector_id_param:
-    with mon.time("register_collector"):
-        existing = spark.sql(f"SELECT COUNT(*) FROM {registry_table} WHERE collector_id = '{collector_id_param}'").first()[0]
+    if entities.isEmpty():
+        return
 
-        if existing > 0:
-            print(f"Collector {collector_id_param} already registered")
-        else:
-            new_collector = spark.createDataFrame([{
-                "collector_id": collector_id_param,
-                "collector_name": collector_id_param,
-                "collector_type": "generic",
-                "site_name": "default",
-                "region": "unknown",
-                "environment": "production",
-                "network_zone": "dmz",
-                "transport_protocol": "https",
-                "supported_sources": ["syslog", "json", "cef"],
-                "max_eps": 10000,
-                "compression": "zstd",
-                "status": "registered",
-                "version": "1.0.0",
-                "config_version": 1,
-                "events_forwarded_total": 0,
-                "events_forwarded_24h": 0,
-            }])
-            new_collector.withColumn("registered_at", current_timestamp()).withColumn(
-                "updated_at", current_timestamp()
-            ).withColumn("last_heartbeat", lit(None).cast("timestamp")).withColumn(
-                "last_config_sync", lit(None).cast("timestamp")
-            ).withColumn("mtls_cert_fingerprint", lit(None).cast("string")).withColumn(
-                "mtls_cert_expires", lit(None).cast("timestamp")
-            ).withColumn("api_key_hash", lit(None).cast("string")).write.mode(
-                "append"
-            ).option("mergeSchema", "true").saveAsTable(registry_table)
-            print(f"Registered collector: {collector_id_param}")
+    entities.createOrReplaceTempView("new_entities")
+    spark.sql(f"""
+        MERGE INTO {entity_spine} AS target
+        USING new_entities AS source
+        ON target.entity_uid = source.entity_uid AND target.entity_type = source.entity_type
+        WHEN NOT MATCHED THEN INSERT (
+            entity_id, entity_name, entity_uid, entity_type,
+            first_seen_source, first_seen_at, last_seen_at, status
+        ) VALUES (
+            uuid(), source.entity_name, source.entity_uid, source.entity_type,
+            source.first_seen_source, source.first_seen_at, source.first_seen_at, 'active'
+        )
+        WHEN MATCHED THEN UPDATE SET
+            target.last_seen_at = source.first_seen_at
+    """)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Decommission Mode
+# MAGIC ## Ingestion Metrics
 
 # COMMAND ----------
 
-if mode == "decommission" and collector_id_param:
-    with mon.time("decommission"):
-        spark.sql(f"""
-            UPDATE {registry_table}
-            SET status = 'decommissioned', updated_at = current_timestamp()
-            WHERE collector_id = '{collector_id_param}'
-        """)
-        print(f"Decommissioned collector: {collector_id_param}")
+def _compute_batch_metrics(df, epoch_id, total_count):
+    """Compute per-collector ingestion metrics for observability."""
 
-# COMMAND ----------
+    metrics_df = (
+        df.groupBy("collector_id", "dna_name", "site_name")
+        .agg(
+            F.count("*").alias("event_count"),
+            F.avg("ingestion_lag_ms").alias("avg_lag_ms"),
+            F.max("ingestion_lag_ms").alias("max_lag_ms"),
+            F.min("timestamp").alias("window_start"),
+            F.max("timestamp").alias("window_end"),
+            F.countDistinct("src_endpoint_ip").alias("unique_sources"),
+            F.countDistinct("actor_user_name").alias("unique_users"),
+            F.sum(F.when(F.col("severity") >= 7, 1).otherwise(0)).alias("high_severity_count"),
+        )
+        .withColumn("epoch_id", F.lit(epoch_id))
+        .withColumn("computed_at", F.current_timestamp())
+        .withColumn("events_per_second",
+            F.col("event_count") / F.greatest(
+                (F.col("window_end").cast("long") - F.col("window_start").cast("long")),
+                F.lit(1)
+            )
+        )
+    )
 
-# MAGIC %md
-# MAGIC ## Certificate Expiration Check
-
-# COMMAND ----------
-
-if mode == "heartbeat":
-    with mon.time("cert_check"):
-        expiring_soon = spark.sql(f"""
-            SELECT collector_id, collector_name, mtls_cert_expires
-            FROM {registry_table}
-            WHERE mtls_cert_expires IS NOT NULL
-              AND mtls_cert_expires < current_timestamp() + INTERVAL 7 DAYS
-              AND status NOT IN ('decommissioned', 'disabled')
-        """)
-
-        expiring_count = expiring_soon.count()
-        if expiring_count > 0:
-            for row in expiring_soon.collect():
-                spark.createDataFrame([{
-                    "incident_id": f"cert_{row.collector_id}_{datetime.utcnow().strftime('%Y%m%d')}",
-                    "collector_id": row.collector_id,
-                    "incident_type": "cert_expiring",
-                    "severity": "high",
-                    "title": f"mTLS cert expiring: {row.collector_name}",
-                    "description": f"Certificate expires {row.mtls_cert_expires}. Rotate immediately.",
-                    "events_at_risk": 0,
-                    "data_loss_estimated": False,
-                    "auto_resolved": False,
-                }]).withColumn("created_at", current_timestamp()).withColumn(
-                    "resolved_at", lit(None).cast("timestamp")
-                ).withColumn("resolution", lit(None).cast("string")).write.mode(
-                    "append"
-                ).option("mergeSchema", "true").saveAsTable(incidents_table)
-            print(f"  Certificates expiring soon: {expiring_count}")
+    (
+        metrics_df.write
+        .format("delta")
+        .mode("append")
+        .save(ingestion_metrics)
+    )
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Summary
+# MAGIC ## Batch Ingestion (disk buffer uploads)
 
 # COMMAND ----------
 
-total_collectors = spark.sql(f"SELECT COUNT(*) FROM {registry_table} WHERE status != 'decommissioned'").first()[0]
-healthy = spark.sql(f"SELECT COUNT(*) FROM {registry_table} WHERE status = 'healthy'").first()[0]
-open_incidents = spark.sql(f"SELECT COUNT(*) FROM {incidents_table} WHERE auto_resolved = false AND resolved_at IS NULL").first()[0]
+def batch_ingest(path: str = None):
+    """Process batch uploads from edge collectors that flushed disk buffers."""
+    upload_path = path or f"{cfg['landing_zone']}/edge_uploads/"
 
-result = {
-    "notebook": "09_edge_collector_framework",
-    "mode": mode,
-    "status": "completed",
-    "total_collectors": total_collectors,
-    "healthy_collectors": healthy,
-    "open_incidents": open_incidents,
-}
-mon.log_complete(details=result)
-dbutils.notebook.exit(json.dumps(result))
+    raw_df = (
+        spark.read
+        .format("json")
+        .schema(OCSF_EVENT_SCHEMA)
+        .load(upload_path)
+    )
+
+    if raw_df.isEmpty():
+        print("[BATCH] No files to process")
+        return {"processed": 0}
+
+    enriched = (
+        raw_df
+        .withColumn("ingested_at", F.current_timestamp())
+        .withColumn("ingestion_date", F.to_date("timestamp"))
+        .withColumn("ingestion_hour", F.hour("timestamp"))
+        .withColumn("ingestion_lag_ms",
+            (F.current_timestamp().cast("long") - F.col("timestamp").cast("long")) * 1000
+        )
+    )
+
+    count = enriched.count()
+
+    (
+        enriched.write
+        .format("delta")
+        .mode("append")
+        .partitionBy("ingestion_date", "dna_name")
+        .save(bronze_events)
+    )
+
+    _auto_discover_entities(enriched)
+
+    dbutils.fs.mv(upload_path, f"{cfg['archive_zone']}/edge_uploads/{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}/", True)
+
+    print(f"[BATCH] Processed {count} events from disk buffer uploads")
+    return {"processed": count}
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Replay
+
+# COMMAND ----------
+
+def replay_events():
+    """Replay events for a specific collector within a time range for investigation."""
+    replay_start = dbutils.widgets.get("replay_start")
+    replay_end = dbutils.widgets.get("replay_end")
+
+    if not collector_id_filter or not replay_start or not replay_end:
+        return {"error": "collector_id, replay_start, and replay_end are required"}
+
+    replayed = spark.sql(f"""
+        SELECT * FROM {bronze_events}
+        WHERE collector_id = '{collector_id_filter}'
+          AND timestamp BETWEEN '{replay_start}' AND '{replay_end}'
+        ORDER BY timestamp ASC
+    """)
+
+    count = replayed.count()
+
+    replay_table = get_table_path(cfg, "edge_replay_events")
+    (
+        replayed
+        .withColumn("replayed_at", F.current_timestamp())
+        .withColumn("replay_reason", F.lit("manual_investigation"))
+        .write
+        .format("delta")
+        .mode("append")
+        .save(replay_table)
+    )
+
+    print(f"[REPLAY] Replayed {count} events for collector {collector_id_filter}")
+    return {"replayed": count, "collector_id": collector_id_filter}
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Metrics Dashboard Queries
+
+# COMMAND ----------
+
+def compute_fleet_metrics():
+    """Compute fleet-wide ingestion metrics for the observability dashboard."""
+
+    current_throughput = spark.sql(f"""
+        SELECT
+            m.collector_id, m.dna_name, m.site_name, d.hostname,
+            m.event_count, m.events_per_second, m.avg_lag_ms,
+            m.unique_sources, m.high_severity_count, m.computed_at
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY collector_id ORDER BY computed_at DESC) as rn
+            FROM {ingestion_metrics}
+            WHERE computed_at > current_timestamp() - INTERVAL 10 MINUTES
+        ) m
+        JOIN {deployments_table} d ON m.collector_id = d.collector_id
+        WHERE m.rn = 1
+        ORDER BY m.events_per_second DESC
+    """)
+
+    fleet_agg = spark.sql(f"""
+        SELECT
+            COUNT(DISTINCT collector_id) as active_collectors,
+            SUM(event_count) as total_events_10min,
+            AVG(avg_lag_ms) as fleet_avg_lag_ms,
+            MAX(max_lag_ms) as fleet_max_lag_ms,
+            SUM(high_severity_count) as total_high_severity,
+            SUM(unique_sources) as total_unique_sources
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY collector_id ORDER BY computed_at DESC) as rn
+            FROM {ingestion_metrics}
+            WHERE computed_at > current_timestamp() - INTERVAL 10 MINUTES
+        ) WHERE rn = 1
+    """)
+
+    hourly_volume = spark.sql(f"""
+        SELECT
+            date_trunc('hour', computed_at) as hour,
+            SUM(event_count) as events,
+            AVG(avg_lag_ms) as avg_lag,
+            COUNT(DISTINCT collector_id) as active_collectors
+        FROM {ingestion_metrics}
+        WHERE computed_at > current_timestamp() - INTERVAL 24 HOURS
+        GROUP BY 1
+        ORDER BY 1
+    """)
+
+    dna_breakdown = spark.sql(f"""
+        SELECT
+            dna_name,
+            COUNT(DISTINCT collector_id) as collectors,
+            SUM(event_count) as total_events,
+            AVG(events_per_second) as avg_eps,
+            AVG(avg_lag_ms) as avg_lag_ms
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY collector_id ORDER BY computed_at DESC) as rn
+            FROM {ingestion_metrics}
+            WHERE computed_at > current_timestamp() - INTERVAL 10 MINUTES
+        ) WHERE rn = 1
+        GROUP BY dna_name
+        ORDER BY total_events DESC
+    """)
+
+    return {
+        "current_throughput": current_throughput,
+        "fleet_agg": fleet_agg,
+        "hourly_volume": hourly_volume,
+        "dna_breakdown": dna_breakdown,
+    }
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Execute
+
+# COMMAND ----------
+
+if mode == "stream":
+    query = start_streaming_ingestion()
+    query.awaitTermination()
+elif mode == "batch":
+    result = batch_ingest()
+    print(json.dumps(result, default=str))
+elif mode == "replay":
+    result = replay_events()
+    print(json.dumps(result, default=str))
+elif mode == "metrics":
+    metrics = compute_fleet_metrics()
+    metrics["current_throughput"].display()
+    metrics["fleet_agg"].display()
+    metrics["hourly_volume"].display()
+    metrics["dna_breakdown"].display()
+else:
+    print(f"Unknown mode: {mode}")
+
+dbutils.notebook.exit(json.dumps({"mode": mode, "status": "completed"}, default=str))
