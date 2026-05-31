@@ -228,11 +228,22 @@ spark.sql("""
 CREATE TABLE IF NOT EXISTS negative_correlation_rules (
     id STRING DEFAULT uuid(),
     name STRING NOT NULL,
+    rule_code STRING,
+    category STRING DEFAULT 'missing_prerequisite',
     description STRING,
-    expected_event_type STRING NOT NULL,
+    observed_event STRING,
+    expected_event STRING,
+    expected_event_type STRING,
     absence_window_seconds INT DEFAULT 3600,
+    constraint_logic STRING,
+    constraint_query STRING,
     severity STRING DEFAULT 'high',
+    confidence_base DOUBLE DEFAULT 0.85,
+    mitre_techniques ARRAY<STRING>,
+    false_positive_notes STRING,
     enabled BOOLEAN DEFAULT true,
+    detection_count INT DEFAULT 0,
+    last_fired_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
@@ -242,11 +253,17 @@ spark.sql("""
 CREATE TABLE IF NOT EXISTS negative_correlation_detections (
     id STRING DEFAULT uuid(),
     rule_id STRING NOT NULL,
-    detected_at TIMESTAMP DEFAULT current_timestamp(),
+    rule_name STRING,
+    detection_type STRING,
+    expected_event_type STRING,
+    window_seconds INT,
+    severity STRING,
     context MAP<STRING, STRING>,
-    severity STRING
+    evidence STRING,
+    detected_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+PARTITIONED BY (DATE(detected_at))
 """)
 
 spark.sql("""

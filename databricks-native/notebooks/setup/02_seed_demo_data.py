@@ -396,16 +396,227 @@ print(f"Seeded {len(agents_data)} agent configurations")
 # COMMAND ----------
 
 neg_rules = [
-    Row(name="Missing EDR Heartbeat", expected_event_type="edr_heartbeat", absence_window_seconds=600, severity="high", enabled=True),
-    Row(name="Missing Backup Confirmation", expected_event_type="backup_complete", absence_window_seconds=86400, severity="medium", enabled=True),
-    Row(name="Missing Auth Token Refresh", expected_event_type="token_refresh", absence_window_seconds=3600, severity="medium", enabled=True),
-    Row(name="Missing Vulnerability Scan", expected_event_type="vulnerability_scan_complete", absence_window_seconds=604800, severity="low", enabled=True),
+    # -- Missing Prerequisite (5 rules) --
+    Row(name="Ghost Command Execution", rule_code="NC-001", category="missing_prerequisite",
+        description="Shell commands executed on a server, but no SSH, RDP, console login, or jump-host session was established within the expected time window.",
+        observed_event="Process execution events (bash, cmd, powershell) on target host with valid UID",
+        expected_event="SSH/RDP/Console login event from same UID to same host within preceding 24h",
+        expected_event_type="session_login", absence_window_seconds=86400, severity="critical",
+        confidence_base=0.92, mitre_techniques=["T1059", "T1078", "T1021"],
+        constraint_logic="IF process_exec(host=H, user=U) EXISTS AND session_login(host=H, user=U, time > now-24h) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: cron jobs, systemd services running as user accounts, container exec sessions not logged to central SIEM",
+        enabled=True, detection_count=847),
+
+    Row(name="Silent Privilege Escalation", rule_code="NC-002", category="missing_prerequisite",
+        description="A user was granted elevated privileges but no corresponding change request, approval workflow, or PAM checkout event exists.",
+        observed_event="User privilege elevation event (group membership change, sudo grant, role assignment)",
+        expected_event="Change request approval or PAM session checkout within preceding 48h",
+        expected_event_type="change_request_approval", absence_window_seconds=172800, severity="critical",
+        confidence_base=0.95, mitre_techniques=["T1078.002", "T1098", "T1548"],
+        constraint_logic="IF privilege_grant(user=U, privilege=P) EXISTS AND (change_request(user=U, approved=true) OR pam_checkout(user=U)) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Emergency break-glass procedures, automated provisioning systems with separate approval tracking",
+        enabled=True, detection_count=234),
+
+    Row(name="Orphan Process Chain", rule_code="NC-003", category="missing_prerequisite",
+        description="A process tree detected where the root process has no traceable parent chain leading to a legitimate session manager.",
+        observed_event="Running process with broken parent chain (ppid=0 or ppid points to dead/unknown process)",
+        expected_event="Valid process ancestry chain from session manager to current process",
+        expected_event_type="process_ancestry", absence_window_seconds=60, severity="high",
+        confidence_base=0.88, mitre_techniques=["T1055", "T1106", "T1014"],
+        constraint_logic="IF process(pid=P, ppid=PP) EXISTS AND process(pid=PP) NOT EXISTS AND P.ppid != 1 THEN ALERT",
+        false_positive_notes="Possible FP: Process exited between collection intervals, kernel threads, containerized processes with PID namespace isolation",
+        enabled=True, detection_count=1205),
+
+    Row(name="Shadow Database Query", rule_code="NC-004", category="missing_prerequisite",
+        description="Database queries executed against production tables, but no application-layer authentication event preceded the database session.",
+        observed_event="SQL query execution event on production database with valid credentials",
+        expected_event="Application authentication event for same service account within preceding 1h",
+        expected_event_type="app_authentication", absence_window_seconds=3600, severity="critical",
+        confidence_base=0.90, mitre_techniques=["T1078", "T1190", "T1213"],
+        constraint_logic="IF db_query(db=D, user=U, src_ip=IP) EXISTS AND app_auth(service=S, src_ip=IP, time > now-1h) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Database admin tools with direct connections, monitoring systems, backup agents",
+        enabled=True, detection_count=156),
+
+    Row(name="Invisible Account Creation", rule_code="NC-005", category="missing_prerequisite",
+        description="A new user account appeared in AD/IAM, but no provisioning workflow, HR onboarding event, or admin action log entry exists.",
+        observed_event="New user account creation event in AD/IAM",
+        expected_event="HR onboarding ticket, provisioning workflow execution, or admin CLI/console action log",
+        expected_event_type="hr_onboarding", absence_window_seconds=604800, severity="critical",
+        confidence_base=0.96, mitre_techniques=["T1136.001", "T1136.002", "T1098"],
+        constraint_logic="IF account_create(user=U) EXISTS AND (hr_onboard(user=U) OR provision_workflow(user=U) OR admin_action(target=U)) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Automated service account creation by IaC pipelines, break-glass account creation during outages",
+        enabled=True, detection_count=42),
+
+    # -- Impossible Coexistence (4 rules) --
+    Row(name="Quantum Presence Paradox", rule_code="NC-006", category="impossible_coexistence",
+        description="User has active VPN session from external IP while simultaneously badging into a secure facility. One identity is compromised.",
+        observed_event="Active VPN session from external IP AND physical badge swipe at secure facility",
+        expected_event="These events should be mutually exclusive unless user terminated VPN before entering building",
+        expected_event_type="vpn_badge_conflict", absence_window_seconds=600, severity="critical",
+        confidence_base=0.97, mitre_techniques=["T1078", "T1133", "T1078.004"],
+        constraint_logic="IF vpn_session(user=U, status=active, src_ip=EXTERNAL) EXISTS AND badge_swipe(user=U, location=L, time=T) EXISTS AND vpn_session.last_activity > badge_swipe.time - 10min THEN ALERT",
+        false_positive_notes="Possible FP: User forgot to disconnect VPN, VPN session keepalive after disconnect, shared accounts",
+        enabled=True, detection_count=89),
+
+    Row(name="Dual-Session Bilocation", rule_code="NC-007", category="impossible_coexistence",
+        description="Same user authenticated in two interactive sessions on hosts in physically isolated network segments. No remote bridging exists.",
+        observed_event="Active interactive sessions on two hosts in physically isolated network segments",
+        expected_event="At most one active session in physically isolated segments (no bridging possible)",
+        expected_event_type="airgap_violation", absence_window_seconds=120, severity="critical",
+        confidence_base=0.98, mitre_techniques=["T1078", "T1021", "T1550"],
+        constraint_logic="IF session(user=U, host=H1, segment=S1) EXISTS AND session(user=U, host=H2, segment=S2) EXISTS AND S1 != S2 AND segments_are_airgapped(S1, S2) THEN ALERT",
+        false_positive_notes="Possible FP: Network segmentation misconfiguration allowing unexpected routing, maintenance windows with temporary bridges",
+        enabled=True, detection_count=12),
+
+    Row(name="Dead User Walking", rule_code="NC-008", category="impossible_coexistence",
+        description="Account generating active authentication events while account status shows disabled/locked/terminated.",
+        observed_event="Authentication success event from a disabled/locked/terminated account",
+        expected_event="Account should NOT be able to authenticate when status is disabled/locked/terminated",
+        expected_event_type="disabled_account_auth", absence_window_seconds=0, severity="critical",
+        confidence_base=0.99, mitre_techniques=["T1078.001", "T1078.002", "T1098"],
+        constraint_logic="IF auth_success(user=U) EXISTS AND account_status(user=U, status IN (disabled, locked, terminated)) EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Replication lag between IAM and authentication infrastructure, cached Kerberos tickets not yet expired",
+        enabled=True, detection_count=67),
+
+    Row(name="Encryption Without Keys", rule_code="NC-009", category="impossible_coexistence",
+        description="Encrypted data written to storage, but no key generation, key retrieval, or KMS API call exists. Data encrypted without observable key management.",
+        observed_event="Encrypted data write event (detected via entropy analysis) to storage service",
+        expected_event="KMS GetKey, GenerateDataKey, or key rotation event for same service identity within 1h",
+        expected_event_type="kms_api_call", absence_window_seconds=3600, severity="high",
+        confidence_base=0.85, mitre_techniques=["T1486", "T1027", "T1560"],
+        constraint_logic="IF encrypted_write(service=S, entropy > 7.8) EXISTS AND kms_api_call(service=S) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Client-side encryption with cached keys, HSM-based encryption not logged to central KMS",
+        enabled=True, detection_count=31),
+
+    # -- Missing Consequence (3 rules) --
+    Row(name="Phantom File Transfer", rule_code="NC-010", category="missing_consequence",
+        description="App logs show large file transfer completed (100MB+), but network monitoring recorded no corresponding flow of that size.",
+        observed_event="Application-level file transfer completion event (>100MB reported size)",
+        expected_event="Network flow record with matching src/dst and comparable byte count within same time window",
+        expected_event_type="netflow_record", absence_window_seconds=300, severity="critical",
+        confidence_base=0.93, mitre_techniques=["T1048", "T1041", "T1071"],
+        constraint_logic="IF file_transfer(app=A, size > 100MB, status=complete) EXISTS AND netflow(src=A.src, dst=A.dst, bytes > 80MB) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Encrypted tunnels aggregated differently in netflow, compression reducing actual bytes",
+        enabled=True, detection_count=78),
+
+    Row(name="Silent Deployment", rule_code="NC-011", category="missing_consequence",
+        description="CI/CD pipeline reports successful production deployment, but no container restart, service reload, or binary change detected on target.",
+        observed_event="CI/CD pipeline completion event with status=success and target=production",
+        expected_event="Container restart, service reload, or file hash change on deployment target within 15min",
+        expected_event_type="deployment_artifact_change", absence_window_seconds=900, severity="high",
+        confidence_base=0.87, mitre_techniques=["T1195.002", "T1059", "T1072"],
+        constraint_logic="IF deploy_event(pipeline=P, status=success, target=production) EXISTS AND (container_restart OR service_reload OR file_change) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Blue/green deployments where traffic switch happens later, canary deployments affecting subset of hosts",
+        enabled=True, detection_count=45),
+
+    Row(name="Backup Black Hole", rule_code="NC-012", category="missing_consequence",
+        description="Backup job reports success with expected data volume, but no I/O spike on storage subsystem and no new objects in backup target.",
+        observed_event="Backup completion event with status=success and reported size > 0",
+        expected_event="Storage I/O spike on backup target AND new objects/files in backup destination",
+        expected_event_type="backup_io_spike", absence_window_seconds=600, severity="high",
+        confidence_base=0.84, mitre_techniques=["T1490", "T1485", "T1561"],
+        constraint_logic="IF backup_complete(job=J, status=success, size > 0) EXISTS AND storage_io_spike NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Deduplication reducing actual I/O, backup to tape with different monitoring, incremental backups",
+        enabled=True, detection_count=23),
+
+    # -- Temporal Impossibility (3 rules) --
+    Row(name="Human Speed Violation", rule_code="NC-013", category="temporal_impossibility",
+        description="User performed a code review+approval+merge sequence in timeframe too short for human to have meaningfully reviewed content.",
+        observed_event="Code review approval followed by merge with <30s gap for 500+ changed lines",
+        expected_event="Minimum human review time based on lines changed (est. 2 lines/second for senior dev)",
+        expected_event_type="human_review_time", absence_window_seconds=30, severity="high",
+        confidence_base=0.91, mitre_techniques=["T1195.002", "T1059", "T1199"],
+        constraint_logic="IF code_review_approve(user=U, lines > 500, time=T1) EXISTS AND merge(user=U, time=T2) EXISTS AND (T2-T1) < 30s THEN ALERT",
+        false_positive_notes="Possible FP: Auto-generated code changes (dependency bumps), re-review of previously reviewed code, bot accounts",
+        enabled=True, detection_count=167),
+
+    Row(name="Teleportation Anomaly", rule_code="NC-014", category="temporal_impossibility",
+        description="User authenticated from two geolocations physically impossible to travel between in elapsed time (speed > 1000 km/h).",
+        observed_event="Two auth events from same user with geolocation gap exceeding travel possibility",
+        expected_event="Minimum travel time between geolocations must be respected (speed < 1000 km/h)",
+        expected_event_type="geo_travel_time", absence_window_seconds=0, severity="critical",
+        confidence_base=0.96, mitre_techniques=["T1078", "T1078.004", "T1550.001"],
+        constraint_logic="IF auth(user=U, geo=G1, time=T1) EXISTS AND auth(user=U, geo=G2, time=T2) EXISTS AND distance(G1,G2)/(T2-T1) > 1000km/h THEN ALERT",
+        false_positive_notes="Possible FP: VPN exit nodes in different countries, corporate proxy chains, IPv4 geolocation inaccuracy for mobile carriers",
+        enabled=True, detection_count=234),
+
+    Row(name="Retroactive Timestamp Manipulation", rule_code="NC-015", category="temporal_impossibility",
+        description="Events arrived with timestamps predating the creation timestamp of their source host. Someone is backdating logs.",
+        observed_event="Events with timestamps predating the creation/first-boot of their source host",
+        expected_event="All event timestamps should be >= source host creation timestamp",
+        expected_event_type="host_creation_time", absence_window_seconds=0, severity="high",
+        confidence_base=0.89, mitre_techniques=["T1070.006", "T1070", "T1036"],
+        constraint_logic="IF event(source=H, timestamp=T) EXISTS AND host_creation(host=H, created_at=C) EXISTS AND T < C THEN ALERT",
+        false_positive_notes="Possible FP: VM clones inheriting parent timestamps, timezone misconfiguration, NTP sync issues on first boot",
+        enabled=True, detection_count=56),
+
+    # -- Physics Violation (3 rules) --
+    Row(name="Midnight Badge Paradox", rule_code="NC-016", category="physics_violation",
+        description="Employee badged into secure floor at 3AM, but no vehicle entry, taxi drop-off, or lobby door sensor entry detected. Appeared without entering building.",
+        observed_event="Badge swipe on secure floor access point during off-hours (10PM-6AM)",
+        expected_event="Parking garage entry OR lobby door sensor OR elevator call from ground floor within 30min",
+        expected_event_type="building_entry", absence_window_seconds=1800, severity="critical",
+        confidence_base=0.94, mitre_techniques=["T1200", "T1078.001", "T1556"],
+        constraint_logic="IF badge_swipe(user=U, floor=secure, time=OFF_HOURS) EXISTS AND (parking_entry OR lobby_sensor OR elevator_call) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Employee stayed overnight, tailgating through parking gate, maintenance entrances with separate sensors",
+        enabled=True, detection_count=18),
+
+    Row(name="USB Data Telekinesis", rule_code="NC-017", category="physics_violation",
+        description="DLP detected sensitive data written to USB device, but endpoint agent reports no USB device insertion event. Data moved to device never physically connected.",
+        observed_event="DLP alert for sensitive data written to removable storage on endpoint",
+        expected_event="USB device insertion event from endpoint agent for same host within preceding session",
+        expected_event_type="usb_device_connected", absence_window_seconds=7200, severity="critical",
+        confidence_base=0.91, mitre_techniques=["T1052", "T1091", "T1025"],
+        constraint_logic="IF dlp_alert(host=H, destination=USB) EXISTS AND usb_insert(host=H) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Network-mapped drives misclassified as removable, virtual USB devices for VM passthrough",
+        enabled=True, detection_count=7),
+
+    Row(name="Invisible Network Hop", rule_code="NC-018", category="physics_violation",
+        description="Lateral movement detected between two hosts, but no router, switch, or firewall in the path logged any traffic. Packets traversed without trace.",
+        observed_event="Lateral movement event (RDP, SMB, WMI) between hosts on different subnets",
+        expected_event="Firewall/router/switch flow log for traffic between source and destination subnets",
+        expected_event_type="network_flow_log", absence_window_seconds=120, severity="critical",
+        confidence_base=0.97, mitre_techniques=["T1021", "T1071", "T1572"],
+        constraint_logic="IF lateral_movement(src=H1, dst=H2, subnets_differ=true) EXISTS AND (fw_log OR switch_flow) NOT EXISTS THEN ALERT",
+        false_positive_notes="Possible FP: Direct L2 adjacency not traversing monitored infrastructure, monitoring gaps during device reboots",
+        enabled=True, detection_count=34),
 ]
 
-neg_df = spark.createDataFrame(neg_rules)
-neg_df = neg_df.withColumn("id", expr("uuid()")).withColumn("created_at", current_timestamp())
-neg_df.write.mode("overwrite").saveAsTable("negative_correlation_rules")
-print(f"Seeded {len(neg_rules)} negative correlation rules")
+from pyspark.sql.types import StructType, StructField, StringType, BooleanType, IntegerType, DoubleType, ArrayType
+
+neg_schema = StructType([
+    StructField("name", StringType()),
+    StructField("rule_code", StringType()),
+    StructField("category", StringType()),
+    StructField("description", StringType()),
+    StructField("observed_event", StringType()),
+    StructField("expected_event", StringType()),
+    StructField("expected_event_type", StringType()),
+    StructField("absence_window_seconds", IntegerType()),
+    StructField("severity", StringType()),
+    StructField("confidence_base", DoubleType()),
+    StructField("mitre_techniques", ArrayType(StringType())),
+    StructField("constraint_logic", StringType()),
+    StructField("false_positive_notes", StringType()),
+    StructField("enabled", BooleanType()),
+    StructField("detection_count", IntegerType()),
+])
+
+neg_rows = [(
+    r.name, r.rule_code, r.category, r.description, r.observed_event,
+    r.expected_event, r.expected_event_type, r.absence_window_seconds,
+    r.severity, r.confidence_base, r.mitre_techniques, r.constraint_logic,
+    r.false_positive_notes, r.enabled, r.detection_count,
+) for r in neg_rules]
+
+neg_df = spark.createDataFrame(neg_rows, schema=neg_schema)
+neg_df = (neg_df
+    .withColumn("id", expr("uuid()"))
+    .withColumn("created_at", current_timestamp())
+    .withColumn("last_fired_at", current_timestamp() - expr(f"INTERVAL {random.randint(10, 3600)} SECONDS"))
+)
+neg_df.write.mode("overwrite").saveAsTable(get_table_path(cfg, "negative_correlation_rules"))
+print(f"Seeded {len(neg_rules)} negative correlation rules (5 missing_prerequisite, 4 impossible_coexistence, 3 missing_consequence, 3 temporal_impossibility, 3 physics_violation)")
 
 # COMMAND ----------
 
