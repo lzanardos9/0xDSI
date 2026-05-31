@@ -82,7 +82,7 @@ export default function FeatureLab() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  const supabaseUrl = IS_DATABRICKS ? window.location.origin : (import.meta.env.VITE_SUPABASE_URL || '');
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
   const runtimeBaseUrl = IS_DATABRICKS ? '/api/feature-runtime' : `${supabaseUrl}/functions/v1/feature-runtime`;
 
@@ -98,7 +98,14 @@ export default function FeatureLab() {
   };
 
   const injectSupabaseVars = (html: string) => {
-    const injection = `<script>
+    const injection = IS_DATABRICKS
+      ? `<script>
+      window.__SUPABASE_URL__ = "${window.location.origin}";
+      window.__SUPABASE_ANON_KEY__ = "databricks-native";
+      window.__RUNTIME_URL__ = "${runtimeBaseUrl}";
+      window.__IS_DATABRICKS__ = true;
+    </script>`
+      : `<script>
       window.__SUPABASE_URL__ = "${supabaseUrl}";
       window.__SUPABASE_ANON_KEY__ = "${supabaseAnonKey}";
       window.__RUNTIME_URL__ = "${runtimeBaseUrl}";

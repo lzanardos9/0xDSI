@@ -14,6 +14,7 @@ Security:
 import os
 import re
 import json
+import uuid
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -262,7 +263,7 @@ ALLOWED_TABLES = [
     "glasswing_vulnerabilities", "llm_guardrail_policies",
     "llm_guardrail_violations", "pii_redaction_rules",
     "financial_threat_intel", "financial_transactions",
-    "insider_credential_cases", "feature_lab_features",
+    "insider_credential_cases", "feature_lab_features", "feature_lab_creations",
     "soc_agent_registry", "agent_implementations",
     "mcp_servers", "mcp_tools", "detection_confluence_signals",
     "user_activity_logs", "user_activity_sessions", "user_activity_events",
@@ -1411,20 +1412,138 @@ async def geopolitical_risk_fetch(request: Request):
 
 @app.post("/api/feature-lab")
 async def feature_lab_alias(request: Request):
-    """Feature Lab execution (alias with Edge Function naming)."""
+    """Feature Lab: plan, execute (generate code), promote lifecycle stages."""
     body = await request.json()
-    feature_id = body.get("feature_id", "")
     action = body.get("action", "run")
+    feature_id = body.get("feature_id", body.get("id", ""))
     try:
         if action == "promote" or action == "lifecycle":
             stage = body.get("stage", "")
             execute_write(f"""
-                UPDATE {fqn('feature_lab_features')}
-                SET lifecycle_stage = :stage
+                UPDATE {fqn('feature_lab_creations')}
+                SET status = :stage
                 WHERE id = :id
             """, {"stage": stage, "id": feature_id})
             return {"status": "promoted", "feature_id": feature_id, "stage": stage}
-        features = query(f"SELECT * FROM {fqn('feature_lab_features')} WHERE id = :id", {"id": feature_id})
+
+        if action == "plan":
+            prompt_text = body.get("prompt", "")
+            force_type = body.get("force_feature_type", "auto")
+            w = WorkspaceClient()
+            system_prompt = """You are the Feature Lab architect. Given a user's feature request, produce a JSON plan with:
+{
+  "title": "short title",
+  "feature_type": "app" or "backend",
+  "code_language": "python" or "typescript" or "html",
+  "description": "what it does",
+  "architecture": ["component1", "component2"],
+  "databricks_products": ["Unity Catalog", "MLflow", etc],
+  "wow_factor": "what makes it impressive",
+  "steps": ["step1", "step2", "step3"]
+}
+Return ONLY valid JSON."""
+            if force_type != "auto":
+                system_prompt += f"\nForce feature_type to '{force_type}'."
+            response = w.serving_endpoints.query(
+                name=LLM_ENDPOINT,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt_text}
+                ],
+                max_tokens=1500,
+                temperature=0.7
+            )
+            plan_text = response.choices[0].message.content
+            try:
+                plan = json.loads(plan_text.strip().strip("`").removeprefix("json"))
+            except json.JSONDecodeError:
+                plan = {"title": prompt_text[:60], "feature_type": "app", "code_language": "html",
+                        "description": plan_text, "architecture": [], "steps": []}
+            return {"plan": plan}
+
+        if action == "execute":
+            prompt_text = body.get("prompt", "")
+            plan = body.get("plan", {})
+            feature_type = plan.get("feature_type", "app")
+            w = WorkspaceClient()
+
+            if feature_type == "backend":
+                system_prompt = """Generate a complete Databricks notebook in Python. The notebook should:
+- Use Unity Catalog tables
+- Include proper schema definitions
+- Have DLT expectations where relevant
+- Include MLflow tracking
+- Be production-ready
+Return the notebook code as a single Python code block."""
+            else:
+                system_prompt = """Generate a complete self-contained HTML page with embedded CSS and JavaScript.
+Requirements:
+- Use Tailwind CSS via CDN
+- Use Chart.js for any visualizations
+- Dark theme (slate-900 background)
+- Responsive design
+- Include realistic mock data
+- Make it visually impressive with animations
+- Use lucide icons via CDN if needed
+Return ONLY the complete HTML (starting with <!DOCTYPE html>)."""
+
+            response = w.serving_endpoints.query(
+                name=LLM_ENDPOINT,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Feature: {plan.get('title', prompt_text)}\nDescription: {plan.get('description', '')}\nArchitecture: {json.dumps(plan.get('architecture', []))}\nSteps: {json.dumps(plan.get('steps', []))}"}
+                ],
+                max_tokens=8000,
+                temperature=0.5
+            )
+            generated = response.choices[0].message.content
+
+            html_output = None
+            code_output = generated
+            code_language = plan.get("code_language", "python")
+
+            if feature_type == "app":
+                if "<!DOCTYPE" in generated or "<html" in generated:
+                    start = generated.find("<!DOCTYPE")
+                    if start == -1:
+                        start = generated.find("<html")
+                    html_output = generated[start:] if start >= 0 else generated
+                    code_output = html_output
+                    code_language = "html"
+                else:
+                    code_blocks = generated.split("```")
+                    if len(code_blocks) >= 3:
+                        html_output = code_blocks[1].removeprefix("html").strip()
+                        code_output = html_output
+                        code_language = "html"
+
+            title = plan.get("title", prompt_text[:60])
+            import random as _rand
+            colors = ["#1e40af", "#065f46", "#92400e", "#7c2d12", "#1e3a5f", "#374151"]
+            creation_id = str(uuid.uuid4())
+            execute_write(f"""
+                INSERT INTO {fqn('feature_lab_creations')}
+                (id, title, prompt, generated_html, generated_code, code_language, feature_type, category, is_pinned, view_count, created_by, status, thumbnail_color)
+                VALUES (:id, :title, :prompt, :html, :code, :lang, :ftype, :cat, false, 0, 'analyst', 'active', :color)
+            """, {
+                "id": creation_id, "title": title, "prompt": prompt_text,
+                "html": html_output or "", "code": code_output or "",
+                "lang": code_language, "ftype": feature_type,
+                "cat": "generated", "color": _rand.choice(colors),
+            })
+
+            saved = {"id": creation_id, "title": title, "created_at": datetime.now().isoformat()}
+            return {
+                "html": html_output,
+                "generated_code": code_output,
+                "code_language": code_language,
+                "feature_type": feature_type,
+                "title": title,
+                "saved": saved,
+            }
+
+        # Default: fetch a feature
+        features = query(f"SELECT * FROM {fqn('feature_lab_creations')} WHERE id = :id", {"id": feature_id})
         return {"feature": features[0] if features else None, "status": "executed"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1544,10 +1663,43 @@ async def feature_lab_run(request: Request):
     body = await request.json()
     feature_id = body.get("feature_id", "")
     try:
-        features = query(f"SELECT * FROM {fqn('feature_lab_features')} WHERE id = :id", {"id": feature_id})
+        features = query(f"SELECT * FROM {fqn('feature_lab_creations')} WHERE id = :id", {"id": feature_id})
         return {"feature": features[0] if features else None, "status": "executed"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/feature-runtime")
+async def feature_runtime(request: Request):
+    """Runtime endpoint for Feature Lab generated apps to query data."""
+    body = await request.json()
+    action = body.get("action", "query")
+    table = body.get("table", "")
+    try:
+        if action == "query" and table:
+            if table not in ALLOWED_TABLES:
+                return JSONResponse(content={"data": [], "error": f"Table '{table}' not allowed"})
+            filters = body.get("filters", {})
+            limit_val = min(int(body.get("limit", 100)), 1000)
+            sql = f"SELECT * FROM {fqn(table)} LIMIT {limit_val}"
+            results = query(sql)
+            return {"data": results, "error": None}
+        if action == "llm":
+            prompt_text = body.get("prompt", "")
+            w = WorkspaceClient()
+            response = w.serving_endpoints.query(
+                name=LLM_ENDPOINT,
+                messages=[
+                    {"role": "system", "content": body.get("system", "You are a helpful assistant.")},
+                    {"role": "user", "content": prompt_text}
+                ],
+                max_tokens=int(body.get("max_tokens", 1000)),
+                temperature=float(body.get("temperature", 0.7))
+            )
+            return {"response": response.choices[0].message.content, "error": None}
+        return {"data": None, "error": "Unknown action"}
+    except Exception as e:
+        return JSONResponse(content={"data": None, "error": str(e)}, status_code=200)
 
 
 @app.post("/api/migrate-dashboard")

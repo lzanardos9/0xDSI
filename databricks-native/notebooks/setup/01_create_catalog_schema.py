@@ -1122,6 +1122,31 @@ USING DELTA
 """)
 
 spark.sql("""
+CREATE TABLE IF NOT EXISTS feature_lab_creations (
+    id STRING DEFAULT uuid(),
+    title STRING NOT NULL,
+    prompt STRING,
+    generated_html STRING,
+    generated_code STRING,
+    code_language STRING DEFAULT 'typescript',
+    feature_type STRING DEFAULT 'app',
+    category STRING DEFAULT 'general',
+    tags ARRAY<STRING>,
+    thumbnail_color STRING DEFAULT '#1e40af',
+    is_pinned BOOLEAN DEFAULT false,
+    view_count INT DEFAULT 0,
+    created_by STRING DEFAULT 'analyst',
+    architecture_plan STRING,
+    databricks_features ARRAY<STRING>,
+    status STRING DEFAULT 'active',
+    share_token STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
 CREATE TABLE IF NOT EXISTS glasswing_scans (
     id STRING DEFAULT uuid(),
     target STRING NOT NULL,
