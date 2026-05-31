@@ -913,10 +913,15 @@ resources:
               schema: ${var.schema}
 
     realtime_graph_cep:
-      name: "[0xDSI] Agent 26 - Realtime Graph CEP"
-      schedule:
-        quartz_cron_expression: "0 */5 * ? * *"
-        timezone_id: "UTC"
+      name: "[0xDSI] Agent 26 - Realtime Graph CEP (Streaming NetworkX)"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 86400
       environments:
         - environment_key: default
           spec:
@@ -929,6 +934,10 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+              trigger_interval: "30 seconds"
+              edge_ttl_hours: "24"
+              anomaly_threshold: "0.70"
+              fan_out_threshold: "15"
 
     vector_scoring:
       name: "[0xDSI] Agent 27 - Vector Augmented Scoring"

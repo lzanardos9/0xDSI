@@ -757,3 +757,22 @@ print(f"""
 ║  Baseline: {'ENABLED' if enable_anomaly_baseline else 'DISABLED'}                                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 """)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Monitor Until Termination
+
+# COMMAND ----------
+
+try:
+    spark.streams.awaitAnyTermination()
+except Exception as e:
+    mon.log_error(e, context="OT protocol streaming terminated unexpectedly")
+    raise
+finally:
+    mon.log_event("ot_protocol_streaming_terminated", {
+        "protocols": len(OT_PROTOCOLS),
+        "active_queries": len(spark.streams.active),
+    })
+    dbutils.notebook.exit(json_lib.dumps({"status": "terminated"}))

@@ -1153,7 +1153,37 @@ CREATE TABLE IF NOT EXISTS graph_streaming_edges (
 USING DELTA
 """)
 
+spark.sql("""
+CREATE TABLE IF NOT EXISTS graph_cep_detections (
+    pattern_id STRING,
+    batch_id LONG,
+    affected_entities ARRAY<STRING>,
+    pattern_type STRING,
+    subgraph_hash STRING,
+    anomaly_score DOUBLE,
+    description STRING,
+    graph_snapshot STRING,
+    detected_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+PARTITIONED BY (pattern_type)
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS graph_cep_baseline (
+    batch_id LONG,
+    node_count INT,
+    edge_count INT,
+    component_count INT,
+    top_centrality STRING,
+    metrics_json STRING,
+    snapshot_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
 print("Advanced analytics tables created")
+print("Graph CEP detection and baseline tables created")
 
 # COMMAND ----------
 
