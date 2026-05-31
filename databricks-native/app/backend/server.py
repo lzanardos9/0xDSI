@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -1732,6 +1732,234 @@ async def threat_radar_fetch():
         items = query(f"SELECT * FROM {fqn('threat_radar_items')} ORDER BY last_updated DESC LIMIT 50")
         sources = query(f"SELECT * FROM {fqn('threat_radar_sources')} WHERE enabled = true")
         return {"items": items, "sources": sources}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Edge Connector Control Plane API ───
+
+@app.get("/api/edge-connectors/fleet")
+async def edge_fleet_overview():
+    """Fleet overview: all deployments with latest telemetry."""
+    try:
+        deployments = query(f"""
+            SELECT d.*, t.events_per_second, t.bytes_per_second, t.error_count,
+                   t.buffer_usage_pct, t.uptime_seconds, t.cpu_percent, t.memory_mb,
+                   t.connection_status, t.latency_ms, t.timestamp as last_heartbeat
+            FROM {fqn('connector_deployments')} d
+            LEFT JOIN (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY collector_id ORDER BY timestamp DESC) as rn
+                FROM {fqn('connector_telemetry')}
+            ) t ON d.collector_id = t.collector_id AND t.rn = 1
+            ORDER BY d.registered_at DESC
+            LIMIT 200
+        """)
+
+        stats = query(f"""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN actual_state = 'running' THEN 1 ELSE 0 END) as running,
+                SUM(CASE WHEN actual_state = 'degraded' THEN 1 ELSE 0 END) as degraded,
+                SUM(CASE WHEN actual_state = 'dead' THEN 1 ELSE 0 END) as dead,
+                SUM(CASE WHEN actual_state = 'stopped' THEN 1 ELSE 0 END) as stopped
+            FROM {fqn('connector_deployments')}
+        """)
+
+        eps_total = query(f"""
+            SELECT COALESCE(SUM(events_per_second), 0) as total_eps
+            FROM (
+                SELECT collector_id, events_per_second,
+                       ROW_NUMBER() OVER (PARTITION BY collector_id ORDER BY timestamp DESC) as rn
+                FROM {fqn('connector_telemetry')}
+                WHERE timestamp > current_timestamp() - INTERVAL 5 MINUTES
+            ) WHERE rn = 1
+        """)
+
+        return {
+            "deployments": deployments,
+            "stats": stats[0] if stats else {},
+            "total_eps": eps_total[0]["total_eps"] if eps_total else 0,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/edge-connectors/dna-catalog")
+async def dna_catalog():
+    """List all available Connector DNA specs."""
+    try:
+        dnas = query(f"""
+            SELECT dna_id, name, version, vendor, category, description,
+                   input_type, input_protocol, input_port, input_format,
+                   auth_type, parser_engine, ocsf_event_class, is_builtin,
+                   created_at
+            FROM {fqn('connector_dna_registry')}
+            ORDER BY category, name
+        """)
+        return {"dna_catalog": dnas}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/edge-connectors/generate-token")
+async def generate_edge_token(request: Request):
+    """Generate a one-time install token for deploying an edge collector."""
+    body = await request.json()
+    dna_name = body.get("dna_name", "generic_syslog")
+    site_name = body.get("site_name", "default")
+    expires_hours = body.get("expires_hours", 24)
+
+    token = f"0xdsi-{uuid.uuid4().hex[:16]}"
+    expires_at = datetime.utcnow() + timedelta(hours=expires_hours)
+
+    try:
+        execute(f"""
+            INSERT INTO {fqn('connector_install_tokens')} (
+                token_id, token, dna_name, site_name, created_by, expires_at
+            ) VALUES (
+                '{str(uuid.uuid4())}', '{token}', '{dna_name}',
+                '{site_name}', 'ui_admin',
+                '{expires_at.strftime("%Y-%m-%d %H:%M:%S")}'
+            )
+        """)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "token": token,
+        "dna_name": dna_name,
+        "site_name": site_name,
+        "expires_at": expires_at.isoformat(),
+        "install_commands": {
+            "linux": f"curl -sL https://install.0xdsi.io | sh -s -- --token={token} --dna={dna_name}",
+            "docker": f"docker run -d --name 0xdsi-{dna_name} -e TOKEN={token} -e DNA={dna_name} 0xdsi/edge-collector:latest",
+            "kubernetes": f"helm install {dna_name} 0xdsi/edge-collector --set token={token} --set dna={dna_name} --set site={site_name}",
+            "windows": f"Invoke-WebRequest -Uri https://install.0xdsi.io/win | Invoke-Expression; Install-0xDSI -Token {token} -DNA {dna_name}",
+        },
+    }
+
+
+@app.post("/api/edge-connectors/register")
+async def register_edge_collector(request: Request):
+    """Called by edge collectors on first boot to register with control plane."""
+    body = await request.json()
+    token = body.get("token", "")
+    hostname = body.get("hostname", "unknown")
+    ip_address = body.get("ip_address", "")
+    os_type = body.get("os_type", "linux")
+    os_version = body.get("os_version", "")
+    binary_version = body.get("binary_version", "1.0.0")
+
+    # Validate token
+    token_rows = query(f"""
+        SELECT token_id, dna_name, site_name FROM {fqn('connector_install_tokens')}
+        WHERE token = '{token.replace("'", "''")}'
+          AND used = false
+          AND (expires_at IS NULL OR expires_at > current_timestamp())
+        LIMIT 1
+    """)
+
+    if not token_rows:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    t = token_rows[0]
+    collector_id = str(uuid.uuid4())
+
+    execute(f"""
+        INSERT INTO {fqn('connector_deployments')} (
+            deployment_id, collector_id, dna_name, dna_version,
+            hostname, ip_address, os_type, os_version,
+            install_method, actual_state, binary_version,
+            registration_token, site_name
+        ) VALUES (
+            '{str(uuid.uuid4())}', '{collector_id}', '{t["dna_name"]}', '1.0.0',
+            '{hostname.replace("'", "''")}', '{ip_address}', '{os_type}', '{os_version}',
+            'token', 'running', '{binary_version}',
+            '{token}', '{t.get("site_name", "default")}'
+        )
+    """)
+
+    execute(f"""
+        UPDATE {fqn('connector_install_tokens')}
+        SET used = true, used_by_collector = '{collector_id}', used_at = current_timestamp()
+        WHERE token_id = '{t["token_id"]}'
+    """)
+
+    return {"collector_id": collector_id, "dna_name": t["dna_name"], "status": "registered"}
+
+
+@app.post("/api/edge-connectors/heartbeat")
+async def edge_heartbeat(request: Request):
+    """Receive heartbeat from an edge collector."""
+    body = await request.json()
+    collector_id = body.get("collector_id", "")
+
+    if not collector_id:
+        raise HTTPException(status_code=400, detail="collector_id required")
+
+    try:
+        execute(f"""
+            INSERT INTO {fqn('connector_telemetry')} (
+                telemetry_id, collector_id, events_per_second, bytes_per_second,
+                error_count, buffer_usage_pct, uptime_seconds, cpu_percent,
+                memory_mb, disk_buffer_mb, connection_status, latency_ms, last_event_at
+            ) VALUES (
+                '{str(uuid.uuid4())}', '{collector_id}',
+                {body.get('eps', 0)}, {body.get('bps', 0)},
+                {body.get('errors', 0)}, {body.get('buffer_pct', 0)},
+                {body.get('uptime', 0)}, {body.get('cpu', 0)},
+                {body.get('memory_mb', 0)}, {body.get('disk_buffer_mb', 0)},
+                '{body.get('status', 'connected')}', {body.get('latency_ms', 0)},
+                current_timestamp()
+            )
+        """)
+
+        # Update deployment state
+        execute(f"""
+            UPDATE {fqn('connector_deployments')}
+            SET actual_state = 'running', last_config_sync = current_timestamp(), updated_at = current_timestamp()
+            WHERE collector_id = '{collector_id}'
+        """)
+
+        # Return desired config (so collector can reconcile)
+        config = query(f"""
+            SELECT desired_state, desired_dna_version, custom_params
+            FROM {fqn('connector_deployments')}
+            WHERE collector_id = '{collector_id}'
+            LIMIT 1
+        """)
+
+        return {"ack": True, "config": config[0] if config else {}}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/edge-connectors/action")
+async def edge_connector_action(request: Request):
+    """Perform an action on a collector (stop, restart, upgrade, decommission)."""
+    body = await request.json()
+    collector_id = body.get("collector_id", "")
+    action = body.get("action", "")
+
+    if not collector_id or not action:
+        raise HTTPException(status_code=400, detail="collector_id and action required")
+
+    try:
+        if action == "stop":
+            execute(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'stopped', updated_at = current_timestamp() WHERE collector_id = '{collector_id}'")
+        elif action == "restart":
+            execute(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'restarting', updated_at = current_timestamp() WHERE collector_id = '{collector_id}'")
+        elif action == "upgrade":
+            version = body.get("version", "latest")
+            execute(f"UPDATE {fqn('connector_deployments')} SET desired_dna_version = '{version}', updated_at = current_timestamp() WHERE collector_id = '{collector_id}'")
+        elif action == "decommission":
+            execute(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'decommissioned', actual_state = 'decommissioned', updated_at = current_timestamp() WHERE collector_id = '{collector_id}'")
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+
+        return {"status": "ok", "action": action, "collector_id": collector_id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

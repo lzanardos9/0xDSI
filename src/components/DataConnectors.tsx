@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Database, Cloud, Server, Code, Eye, Network, AlertTriangle, CheckCircle, TrendingUp, Layers, FileCode, GitBranch, FileText, Brain, BarChart3, BookOpen, Cpu, Wand2 } from 'lucide-react';
+import { Database, Cloud, Server, Code, Eye, Network, AlertTriangle, CheckCircle, TrendingUp, Layers, FileCode, GitBranch, FileText, Brain, BarChart3, BookOpen, Cpu, Wand2, Radio } from 'lucide-react';
 import DPIInspection from './DPIInspection';
 import NetworkTapsTab from './connectors/NetworkTapsTab';
 import CloudAPIsTab from './connectors/CloudAPIsTab';
@@ -7,6 +7,7 @@ import SIEMIntegrationTab from './connectors/SIEMIntegrationTab';
 import ConnectorCatalog from './connectors/ConnectorCatalog';
 import ConnectorVersionAgent from './connectors/ConnectorVersionAgent';
 import ConnectorVibeBuilder from './connectors/ConnectorVibeBuilder';
+import EdgeDeploymentsTab from './connectors/EdgeDeploymentsTab';
 
 const MOCK_CONNECTORS = [
   { id: '1', connector_name: 'Main DPI Engine', connector_type: 'dpi', connector_category: 'network', status: 'active', health_status: 'healthy', events_per_second: '8234.56', data_rate_mbps: '67.89', uptime_percent: '99.98' },
@@ -113,7 +114,7 @@ const MOCK_AI_INSIGHTS = [
 ];
 
 export default function DataConnectors() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'catalog' | 'dpi' | 'bytecode' | 'network' | 'cloud' | 'siem' | 'ai-analysis' | 'version-agent' | 'vibe-builder'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'catalog' | 'dpi' | 'bytecode' | 'network' | 'cloud' | 'siem' | 'ai-analysis' | 'version-agent' | 'vibe-builder' | 'edge-mesh'>('overview');
   const connectors = MOCK_CONNECTORS;
   const [selectedConnector, setSelectedConnector] = useState(MOCK_CONNECTORS[0]);
   const bytecodeInstrumentation = MOCK_BYTECODE_INSTRUMENTATION;
@@ -601,7 +602,8 @@ export default function DataConnectors() {
               { id: 'cloud', label: 'Cloud APIs', icon: Cloud },
               { id: 'siem', label: 'SIEM Integration', icon: Layers },
               { id: 'version-agent', label: 'Version Agent', icon: Cpu },
-              { id: 'vibe-builder', label: 'Vibe Builder', icon: Wand2 }
+              { id: 'vibe-builder', label: 'Vibe Builder', icon: Wand2 },
+              { id: 'edge-mesh', label: 'Edge Mesh', icon: Radio }
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -633,6 +635,7 @@ export default function DataConnectors() {
           {activeTab === 'siem' && <SIEMIntegrationTab />}
           {activeTab === 'version-agent' && <ConnectorVersionAgent />}
           {activeTab === 'vibe-builder' && <ConnectorVibeBuilder />}
+          {activeTab === 'edge-mesh' && <EdgeDeploymentsTab />}
         </div>
       </div>
     </div>

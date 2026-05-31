@@ -1958,6 +1958,97 @@ CREATE TABLE IF NOT EXISTS connector_schema_history (
 USING DELTA
 """)
 
+# ─── Edge Connector Control Plane Tables ───
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS connector_dna_registry (
+    dna_id STRING DEFAULT uuid(),
+    name STRING NOT NULL,
+    version STRING NOT NULL,
+    vendor STRING,
+    category STRING,
+    description STRING,
+    input_type STRING,
+    input_protocol STRING,
+    input_port INT,
+    input_format STRING,
+    auth_type STRING,
+    parser_engine STRING,
+    ocsf_event_class INT,
+    ocsf_mapping STRING,
+    output_format STRING DEFAULT 'ocsf_json',
+    dna_yaml STRING,
+    is_builtin BOOLEAN DEFAULT true,
+    created_by STRING,
+    created_at TIMESTAMP DEFAULT current_timestamp(),
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS connector_deployments (
+    deployment_id STRING DEFAULT uuid(),
+    collector_id STRING NOT NULL,
+    dna_name STRING NOT NULL,
+    dna_version STRING NOT NULL,
+    hostname STRING,
+    ip_address STRING,
+    os_type STRING,
+    os_version STRING,
+    install_method STRING,
+    desired_state STRING DEFAULT 'running',
+    actual_state STRING DEFAULT 'pending',
+    desired_dna_version STRING,
+    binary_version STRING,
+    registration_token STRING,
+    registered_at TIMESTAMP DEFAULT current_timestamp(),
+    last_config_sync TIMESTAMP,
+    custom_params STRING,
+    tags STRING DEFAULT '[]',
+    site_name STRING,
+    environment STRING DEFAULT 'production',
+    updated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS connector_telemetry (
+    telemetry_id STRING DEFAULT uuid(),
+    collector_id STRING NOT NULL,
+    timestamp TIMESTAMP DEFAULT current_timestamp(),
+    events_per_second DOUBLE DEFAULT 0,
+    bytes_per_second DOUBLE DEFAULT 0,
+    error_count INT DEFAULT 0,
+    buffer_usage_pct DOUBLE DEFAULT 0,
+    uptime_seconds BIGINT DEFAULT 0,
+    cpu_percent DOUBLE DEFAULT 0,
+    memory_mb DOUBLE DEFAULT 0,
+    disk_buffer_mb DOUBLE DEFAULT 0,
+    last_event_at TIMESTAMP,
+    connection_status STRING DEFAULT 'unknown',
+    latency_ms DOUBLE DEFAULT 0
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS connector_install_tokens (
+    token_id STRING DEFAULT uuid(),
+    token STRING NOT NULL,
+    dna_name STRING NOT NULL,
+    site_name STRING,
+    created_by STRING,
+    expires_at TIMESTAMP,
+    used BOOLEAN DEFAULT false,
+    used_by_collector STRING,
+    used_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
 spark.sql("""
 CREATE TABLE IF NOT EXISTS quarantine_events (
     id STRING DEFAULT uuid(),
