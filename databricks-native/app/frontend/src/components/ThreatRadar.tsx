@@ -51,16 +51,14 @@ export default function ThreatRadar() {
         }
         setToast({ kind: 'ok', msg: `Scan complete: ${itemsNew} new items processed` });
       } else {
-        const base = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-        const headers = { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' };
-        const fetchRes = await fetch(`${base}/threat-radar-fetch`, { method: 'POST', headers, body: JSON.stringify({ limit: 15 }) }).then(r => r.json());
-        if (fetchRes.items_new > 0) {
+        const fetchRes = await callFunction('threat-radar-fetch', { limit: 15 }).then(r => r.data as any);
+        if (fetchRes?.items_new > 0) {
           setToast({ kind: 'ok', msg: `Fetched ${fetchRes.items_new} new items. Analyzing...` });
-          await fetch(`${base}/threat-radar-analyze`, { method: 'POST', headers, body: JSON.stringify({ limit: 50 }) });
+          await callFunction('threat-radar-analyze', { limit: 50 });
           setToast({ kind: 'ok', msg: `Running exposure probe...` });
-          await fetch(`${base}/threat-radar-probe`, { method: 'POST', headers, body: JSON.stringify({ limit: 50 }) });
+          await callFunction('threat-radar-probe', { limit: 50 });
         }
-        setToast({ kind: 'ok', msg: `Scan complete: ${fetchRes.items_new || 0} new, ${fetchRes.sources_ok}/${fetchRes.sources_attempted} sources OK` });
+        setToast({ kind: 'ok', msg: `Scan complete: ${fetchRes?.items_new || 0} new, ${fetchRes?.sources_ok}/${fetchRes?.sources_attempted} sources OK` });
       }
       await load();
     } catch (e: any) {

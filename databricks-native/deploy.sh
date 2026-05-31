@@ -1178,11 +1178,8 @@ if [ ! -d "node_modules" ] || [ ! -x "node_modules/.bin/vite" ]; then
 fi
 
 # Set VITE_DATABRICKS_MODE=true so the build uses the LakehouseDataClient
-# and bypasses Supabase auth entirely. Dummy Supabase vars prevent build
-# warnings; they are never used at runtime in Databricks mode.
+# and routes all API calls through FastAPI backend.
 VITE_DATABRICKS_MODE=true \
-VITE_SUPABASE_URL=https://unused.supabase.co \
-VITE_SUPABASE_ANON_KEY=unused \
 npm run build
 
 # Validate frontend was built successfully

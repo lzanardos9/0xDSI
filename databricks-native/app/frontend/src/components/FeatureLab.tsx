@@ -82,9 +82,9 @@ export default function FeatureLab() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const supabaseUrl = IS_DATABRICKS ? window.location.origin : (import.meta.env.VITE_SUPABASE_URL || '');
-  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-  const runtimeBaseUrl = IS_DATABRICKS ? '/api/feature-runtime' : `${supabaseUrl}/functions/v1/feature-runtime`;
+  const supabaseUrl = window.location.origin;
+  const supabaseAnonKey = '';
+  const runtimeBaseUrl = '/api/feature-runtime';
 
   useEffect(() => { loadCreations(); }, []);
 

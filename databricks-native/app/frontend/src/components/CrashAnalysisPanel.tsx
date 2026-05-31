@@ -83,11 +83,10 @@ export default function CrashAnalysisPanel() {
   const submitCrashAnalysis = async (formData: CrashSubmitForm) => {
     setAnalyzing(true);
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/crash-analyze`;
+      const apiUrl = `/api/crash-analyze`;
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),

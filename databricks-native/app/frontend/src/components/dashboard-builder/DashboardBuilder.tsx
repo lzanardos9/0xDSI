@@ -28,8 +28,8 @@ export default function DashboardBuilder({ initialDashboard, dashboardId, onSave
   const [tagInput, setTagInput] = useState('');
   const [showDatabricksExport, setShowDatabricksExport] = useState(false);
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = window.location.origin;
+  const supabaseKey = '';
 
   const handleAddWidget = useCallback((widgetType: WidgetType, chartType: ChartType) => {
     const maxY = widgets.reduce((max, w) => Math.max(max, w.position.y + w.position.h), 0);

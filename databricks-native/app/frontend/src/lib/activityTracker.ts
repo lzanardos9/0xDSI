@@ -366,10 +366,9 @@ export function installGlobalActivityTracking() {
     const sid = cachedSessionId;
     if (!sid) return;
     try {
-      const url = `${(import.meta as any).env.VITE_SUPABASE_URL}/rest/v1/user_activity_sessions?id=eq.${sid}`;
-      const body = JSON.stringify({ ended_at: new Date().toISOString(), is_active: false, last_active_at: new Date().toISOString() });
+      const body = JSON.stringify({ id: sid, ended_at: new Date().toISOString(), is_active: false, last_active_at: new Date().toISOString() });
       const blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon?.(url + `&apikey=${(import.meta as any).env.VITE_SUPABASE_ANON_KEY}`, blob);
+      navigator.sendBeacon?.(`/api/activity/end-session`, blob);
     } catch { /* ignore */ }
   });
 }
