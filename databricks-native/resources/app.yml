@@ -33,62 +33,15 @@ resources:
         - level: CAN_USE
           group_name: "soc_analysts"
 
-  # Interactive Agent Model Serving Endpoints
-  model_serving_endpoints:
-    ciso_assistant:
-      name: "0xdsi-ciso-assistant"
-      config:
-        served_entities:
-          - entity_name: "${var.catalog}.${var.schema}.0xdsi_ciso_assistant"
-            entity_version: "1"
-            workload_size: "Small"
-            scale_to_zero_enabled: true
-        auto_capture_config:
-          catalog_name: ${var.catalog}
-          schema_name: ${var.schema}
-          table_name_prefix: "ciso_assistant_inference"
-
-    sage_enrichment:
-      name: "0xdsi-sage-enrichment"
-      config:
-        served_entities:
-          - entity_name: "${var.catalog}.${var.schema}.0xdsi_sage_enrichment"
-            entity_version: "1"
-            workload_size: "Small"
-            scale_to_zero_enabled: true
-
-    nova_investigation:
-      name: "0xdsi-nova-investigation"
-      config:
-        served_entities:
-          - entity_name: "${var.catalog}.${var.schema}.0xdsi_nova_investigation"
-            entity_version: "1"
-            workload_size: "Small"
-            scale_to_zero_enabled: true
-
-    vanguard_response:
-      name: "0xdsi-vanguard-response"
-      config:
-        served_entities:
-          - entity_name: "${var.catalog}.${var.schema}.0xdsi_vanguard_response"
-            entity_version: "1"
-            workload_size: "Small"
-            scale_to_zero_enabled: true
-
-    threat_simulator:
-      name: "0xdsi-threat-simulator"
-      config:
-        served_entities:
-          - entity_name: "${var.catalog}.${var.schema}.0xdsi_threat_simulator"
-            entity_version: "1"
-            workload_size: "Small"
-            scale_to_zero_enabled: true
-
-    threat_radar:
-      name: "0xdsi-threat-radar"
-      config:
-        served_entities:
-          - entity_name: "${var.catalog}.${var.schema}.0xdsi_threat_radar"
-            entity_version: "1"
-            workload_size: "Small"
-            scale_to_zero_enabled: true
+  # NOTE: Custom model serving endpoints are disabled until UC models are registered.
+  # To enable, uncomment and ensure models exist in the catalog:
+  #   databricks models get <catalog>.<schema>.0xdsi_ciso_assistant
+  # model_serving_endpoints:
+  #   ciso_assistant:
+  #     name: "0xdsi-ciso-assistant"
+  #     config:
+  #       served_entities:
+  #         - entity_name: "${var.catalog}.${var.schema}.0xdsi_ciso_assistant"
+  #           entity_version: "1"
+  #           workload_size: "Small"
+  #           scale_to_zero_enabled: true

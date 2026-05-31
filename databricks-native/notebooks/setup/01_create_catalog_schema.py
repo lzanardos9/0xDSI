@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS events (
     ocsf_class_name STRING,
     enrichments MAP<STRING, STRING>,
     enrichment_risk_score DOUBLE,
-    geo_location STRUCT<country: STRING, city: STRING, lat: DOUBLE, lon: DOUBLE>,
+    geo_location STRUCT<country: STRING, city: STRING, lat: DOUBLE, lon: DOUBLE, asn: STRING>,
     ingested_at TIMESTAMP DEFAULT current_timestamp(),
     _rescued_data STRING
 )
@@ -481,6 +481,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     display_name STRING,
     email STRING,
     username STRING,
+    title STRING,
     department STRING,
     role STRING DEFAULT 'analyst',
     risk_level STRING DEFAULT 'low',

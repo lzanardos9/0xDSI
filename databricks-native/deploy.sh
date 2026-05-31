@@ -1185,6 +1185,11 @@ VITE_SUPABASE_URL=https://unused.supabase.co \
 VITE_SUPABASE_ANON_KEY=unused \
 npm run build
 
+# Validate frontend was built successfully
+if [ ! -f "dist/index.html" ]; then
+  die "Frontend build failed: dist/index.html not found. Cannot deploy without frontend."
+fi
+
 log_ok "Frontend built -> dist/ (Databricks mode, Supabase disabled)"
 printf "\n"
 

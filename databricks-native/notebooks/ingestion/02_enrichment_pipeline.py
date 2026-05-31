@@ -240,6 +240,8 @@ def enrich_batch(batch_df, batch_id):
                 struct(
                     coalesce(col("country_code"), lit("unknown")).alias("country"),
                     coalesce(col("city"), lit("unknown")).alias("city"),
+                    lit(None).cast("double").alias("lat"),
+                    lit(None).cast("double").alias("lon"),
                     coalesce(col("asn"), lit("unknown")).alias("asn"),
                 ).alias("geo_location"),
             )

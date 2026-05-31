@@ -2600,7 +2600,7 @@ async def genie_executive_briefing(request: Request):
 
 DIST_DIR = Path(__file__).parent.parent / "dist"
 
-if DIST_DIR.exists():
+if DIST_DIR.exists() and (DIST_DIR / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="static-assets")
 
     @app.get("/{full_path:path}")
@@ -2610,6 +2610,13 @@ if DIST_DIR.exists():
         if file_path.exists() and file_path.is_file():
             return FileResponse(str(file_path))
         return FileResponse(str(DIST_DIR / "index.html"))
+else:
+    logger.error(
+        "Frontend not built: %s/index.html not found. "
+        "Run 'npm run build' in the project root before deploying. "
+        "API endpoints will work but UI will not load.",
+        DIST_DIR,
+    )
 
 
 # ──────────────────────────────────────────────

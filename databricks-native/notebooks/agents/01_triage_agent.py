@@ -430,7 +430,11 @@ Respond with JSON:
             ]
 
             if auto_close_ids:
-                ids_df = spark.createDataFrame([(i,) for i in auto_close_ids], ["id"])
+                ids_df = (
+                    spark.createDataFrame([(i,) for i in auto_close_ids], ["id"])
+                    .withColumn("status", lit("resolved"))
+                    .withColumn("false_positive", lit(True))
+                )
                 safe_merge(
                     spark,
                     ids_df,
