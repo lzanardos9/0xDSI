@@ -188,18 +188,10 @@ const Dashboard = () => {
       })
       .subscribe();
 
-    // Real-time metrics updates every 100ms with realistic fluctuations
+    // Poll for fresh metrics every 30 seconds from the backend
     const metricsInterval = setInterval(() => {
-      setStats(prevStats => ({
-        totalEvents: prevStats.totalEvents + Math.floor(Math.random() * 5) + 1,
-        activeSessions: Math.max(800, prevStats.activeSessions + (Math.random() > 0.5 ? Math.floor(Math.random() * 3) : -Math.floor(Math.random() * 2))),
-        criticalAlerts: Math.max(0, Math.min(25, prevStats.criticalAlerts + (Math.random() > 0.7 ? 1 : Math.random() > 0.4 ? 0 : -1))),
-        blockedThreats: prevStats.blockedThreats + (Math.random() > 0.6 ? Math.floor(Math.random() * 3) + 1 : 0),
-      }));
-    }, 100);
-
-    // Removed periodic loadStats to prevent overwriting live metrics
-    // Live metrics are now driven entirely by the metricsInterval
+      loadStats();
+    }, 30000);
 
     return () => {
       clearInterval(metricsInterval);
@@ -217,7 +209,7 @@ const Dashboard = () => {
         supabase.from('events').select('id', { count: 'exact', head: true }),
         supabase.from('user_sessions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
         supabase.from('alerts').select('id', { count: 'exact', head: true }).eq('severity', 'critical').eq('status', 'new'),
-        supabase.from('response_actions').select('id', { count: 'exact', head: true }).in('status', ['success', 'completed']),
+        supabase.from('response_actions').select('id', { count: 'exact', head: true }).in('status', ['success', 'completed', 'executed']),
       ]);
 
       setStats({

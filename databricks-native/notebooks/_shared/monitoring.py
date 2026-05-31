@@ -87,19 +87,40 @@ class Monitor:
         self._events: list = []
         self._enabled = config.enable_monitoring
 
+    def log_event(self, event_type: str, details=None, severity: str = "info"):
+        """Log a named event with optional structured details."""
+        import json as _json
+        if isinstance(details, dict):
+            details_str = _json.dumps(details, default=str)
+            message = f"{event_type}: {details_str}"
+        elif details is None:
+            details_str = ""
+            message = event_type
+        else:
+            details_str = str(details)
+            message = f"{event_type}: {details_str}"
+        self._log_event(event_type, severity, message, details=details_str)
+
     def log_start(self):
         """Log notebook execution start."""
         self._start_time = time.time()
         self._log_event("notebook_start", "info", "Notebook execution started")
 
-    def log_complete(self, rows_processed: int = 0):
+    def log_complete(self, rows_processed: int = 0, details=None):
         """Log successful notebook completion with summary metrics."""
+        import json as _json
         elapsed = (time.time() - self._start_time) * 1000
+        details_str = ""
+        if isinstance(details, dict):
+            details_str = _json.dumps(details, default=str)
+        elif details is not None:
+            details_str = str(details)
         self._log_event(
             "notebook_complete", "info",
             f"Notebook completed in {elapsed:.0f}ms, {rows_processed} rows processed",
             duration_ms=elapsed,
             row_count=rows_processed,
+            details=details_str,
         )
         self._flush()
 
@@ -129,16 +150,29 @@ class Monitor:
     def log_detection(
         self,
         detection_type: str,
-        entity: str,
-        confidence: float,
+        entity_or_details=None,
+        confidence: float = 0.0,
         details: str = "",
     ):
-        """Log a detection event (alert generated, anomaly found, etc.)."""
-        message = f"Detection: {detection_type} on entity '{entity}' (confidence={confidence:.2f})"
+        """Log a detection event (alert generated, anomaly found, etc.).
+
+        Supports both signatures:
+            mon.log_detection("type", "entity", 0.95, "details")
+            mon.log_detection("type", {"count": 5})
+        """
+        import json as _json
+        if isinstance(entity_or_details, dict):
+            details_str = _json.dumps(entity_or_details, default=str)
+            entity = detection_type
+            message = f"Detection: {detection_type} {details_str}"
+        else:
+            entity = entity_or_details or detection_type
+            details_str = details if isinstance(details, str) else _json.dumps(details, default=str) if details else ""
+            message = f"Detection: {detection_type} on entity '{entity}' (confidence={confidence:.2f})"
         self._log_event(
             "detection", "warning" if confidence > 0.7 else "info",
             message,
-            details=details,
+            details=details_str,
         )
 
     def log_agent_decision(

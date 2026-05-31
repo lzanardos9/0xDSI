@@ -148,18 +148,15 @@ try:
 
             # Create approval requests for actions requiring human review
             if approval_needed:
-                approvals_schema = StructType([
-                    StructField("action_id", StringType(), False),
-                    StructField("status", StringType(), False),
-                ])
-                approval_data = [("placeholder", "pending") for _ in approval_needed]
-                approvals_df = spark.createDataFrame(approval_data, schema=approvals_schema)
-                approvals_df = (
-                    approvals_df
+                pending_actions_df = (
+                    actions_df
+                    .filter(col("status") == "pending_approval")
+                    .select(col("id").alias("action_id"))
+                    .withColumn("status", lit("pending"))
                     .withColumn("id", expr("uuid()"))
                     .withColumn("requested_at", current_timestamp())
                 )
-                approvals_df.write.mode("append").saveAsTable(RESPONSE_APPROVALS_TABLE)
+                pending_actions_df.write.mode("append").saveAsTable(RESPONSE_APPROVALS_TABLE)
 
             # Update alert statuses via MERGE (safe -- no SQL injection)
             alert_ids_to_update = [a["alert_id"] for a in all_actions]

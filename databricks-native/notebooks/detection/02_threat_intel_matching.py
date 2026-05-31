@@ -57,7 +57,7 @@ with mon.time("ioc_load"):
         )
         # Confidence decay: older IOCs get lower effective confidence
         .withColumn("age_days",
-            datediff(current_date(), to_date(coalesce(col("last_seen"), col("created_at"))))
+            datediff(current_date(), to_date(coalesce(col("last_seen"), col("first_seen"))))
         )
         .withColumn("decay_factor",
             when(col("age_days") < 7, lit(1.0))

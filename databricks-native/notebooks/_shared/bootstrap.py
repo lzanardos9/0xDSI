@@ -74,6 +74,23 @@ def require_enabled(agent_name: str):
         dbutils.notebook.exit(json.dumps({"status": "skipped", "reason": f"{agent_name} disabled"}))
 
 
+def require_tables(*table_names: str):
+    """
+    Validate that required tables exist before proceeding.
+    Raises RuntimeError listing missing tables so the notebook fails fast.
+    """
+    missing = []
+    for t in table_names:
+        full_path = get_table_path(cfg, t)
+        try:
+            spark.table(full_path).limit(0).collect()
+        except Exception:
+            missing.append(t)
+    if missing:
+        mon.log_event("missing_required_tables", {"tables": missing}, severity="error")
+        raise RuntimeError(f"Required tables missing: {missing}. Run setup notebook first.")
+
+
 # COMMAND ----------
 
 # MAGIC %md

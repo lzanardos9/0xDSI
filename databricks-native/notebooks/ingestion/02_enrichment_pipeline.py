@@ -45,7 +45,7 @@ with mon.time("load_reference_data"):
         .filter(col("active") == True)
         .select(
             col("value").alias("ioc_value"),
-            col("type").alias("ioc_type"),
+            col("indicator_type").alias("ioc_type"),
             col("threat_type").alias("ioc_threat_type"),
             col("confidence").alias("ioc_confidence"),
             col("source_feed").alias("ioc_source"),
