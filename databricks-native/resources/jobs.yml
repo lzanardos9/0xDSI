@@ -2,12 +2,20 @@ resources:
   jobs:
     # ─────────────────────────────────────────────────────
     # INGESTION AGENTS (Streaming - Long-running)
+    # These jobs run CONTINUOUSLY with restart-on-failure.
+    # They use awaitTermination() internally and should
+    # never terminate unless an unrecoverable error occurs.
     # ─────────────────────────────────────────────────────
     raw_event_ingestion:
-      name: "[0xDSI] Agent 01 - Raw Event Ingestion"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      name: "[0xDSI] Agent 01 - Raw Event Ingestion (Streaming)"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 86400
       environments:
         - environment_key: default
           spec:
@@ -21,12 +29,13 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
               source_type: "kafka"
+              trigger_interval: "10 seconds"
 
     enrichment_pipeline:
-      name: "[0xDSI] Agent 02 - Enrichment Pipeline"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      name: "[0xDSI] Agent 02 - Enrichment Pipeline (Streaming)"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
       environments:
         - environment_key: default
           spec:
@@ -42,12 +51,19 @@ resources:
 
     # ─────────────────────────────────────────────────────
     # CORRELATION AGENTS (Streaming + Scheduled)
+    # Streaming correlation runs continuously alongside
+    # ingestion. Batch correlators run on short intervals.
     # ─────────────────────────────────────────────────────
     streaming_correlation:
-      name: "[0xDSI] Agent 05 - Streaming Correlation Engine"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      name: "[0xDSI] Agent 05 - Streaming Correlation Engine (Continuous)"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
+      health:
+        rules:
+          - metric: RUN_DURATION_SECONDS
+            op: GREATER_THAN
+            value: 86400
       environments:
         - environment_key: default
           spec:
@@ -102,10 +118,10 @@ resources:
               lookback_hours: "24"
 
     threat_intel_matching:
-      name: "[0xDSI] Agent 12 - Threat Intel Matching"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      name: "[0xDSI] Agent 12 - Threat Intel Matching (Streaming)"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
       environments:
         - environment_key: default
           spec:
@@ -316,10 +332,10 @@ resources:
               lookback_hours: "24"
 
     temporal_window_correlator:
-      name: "[0xDSI] Agent 09 - Temporal Window Correlator"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      name: "[0xDSI] Agent 09 - Temporal Window Correlator (Streaming)"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
       environments:
         - environment_key: default
           spec:
@@ -1049,10 +1065,10 @@ resources:
               escalation_threshold: "0.78"
 
     kafka_ingestion:
-      name: "[0xDSI] Ingestion 05 - Kafka/EventHub Connector"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      name: "[0xDSI] Ingestion 05 - Kafka/EventHub Connector (Streaming)"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
       environments:
         - environment_key: default
           spec:
@@ -1702,9 +1718,9 @@ resources:
     # ─────────────────────────────────────────────────────
     typed_bronze_partitioner:
       name: "[0xDSI] Ingestion 08 - Typed Bronze Partitioner (Streaming)"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
       environments:
         - environment_key: default
           spec:
@@ -1864,9 +1880,9 @@ resources:
     # ─────────────────────────────────────────────────────
     lakebase_sync_streaming:
       name: "[0xDSI] Ingestion 07 - Lakebase Sync (Streaming CDC)"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
       environments:
         - environment_key: default
           spec:
@@ -1941,9 +1957,9 @@ resources:
     # ─────────────────────────────────────────────────────
     ot_protocol_ingestion:
       name: "[0xDSI] Ingestion 10 - PLC/OT Protocol Connector (Streaming)"
-      schedule:
-        quartz_cron_expression: "0 0 0 * * ?"
-        timezone_id: "UTC"
+      continuous:
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
       environments:
         - environment_key: default
           spec:
