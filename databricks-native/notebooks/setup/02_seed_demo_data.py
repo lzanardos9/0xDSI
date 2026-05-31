@@ -170,28 +170,127 @@ print(f"Seeded {len(cases_data)} cases")
 # COMMAND ----------
 
 rules_data = [
-    Row(name="Brute Force Detection", rule_type="threshold", severity="high", enabled=True, window_seconds=300, threshold=10, mitre_tactic="TA0001", mitre_technique="T1110", confidence_score=0.9),
-    Row(name="Credential Stuffing", rule_type="threshold", severity="critical", enabled=True, window_seconds=600, threshold=20, mitre_tactic="TA0001", mitre_technique="T1110.004", confidence_score=0.85),
-    Row(name="Lateral Movement Chain", rule_type="sequence", severity="critical", enabled=True, window_seconds=1800, threshold=3, mitre_tactic="TA0008", mitre_technique="T1021", confidence_score=0.8),
-    Row(name="Data Exfiltration Volume", rule_type="threshold", severity="high", enabled=True, window_seconds=3600, threshold=5, mitre_tactic="TA0010", mitre_technique="T1048", confidence_score=0.75),
-    Row(name="DNS Tunneling", rule_type="statistical", severity="high", enabled=True, window_seconds=900, threshold=100, mitre_tactic="TA0010", mitre_technique="T1071.004", confidence_score=0.7),
-    Row(name="Privilege Escalation Sequence", rule_type="sequence", severity="critical", enabled=True, window_seconds=600, threshold=2, mitre_tactic="TA0004", mitre_technique="T1068", confidence_score=0.85),
-    Row(name="Off-Hours Admin Activity", rule_type="temporal", severity="medium", enabled=True, window_seconds=3600, threshold=3, mitre_tactic="TA0003", mitre_technique="T1078", confidence_score=0.65),
-    Row(name="Port Scanning Detection", rule_type="threshold", severity="medium", enabled=True, window_seconds=300, threshold=20, mitre_tactic="TA0007", mitre_technique="T1046", confidence_score=0.9),
-    Row(name="C2 Beacon Pattern", rule_type="periodic", severity="critical", enabled=True, window_seconds=7200, threshold=10, mitre_tactic="TA0011", mitre_technique="T1071.001", confidence_score=0.8),
-    Row(name="Supply Chain Compromise", rule_type="sequence", severity="critical", enabled=True, window_seconds=86400, threshold=2, mitre_tactic="TA0001", mitre_technique="T1195", confidence_score=0.6),
+    # -- Initial Access (TA0001) --
+    Row(name="Brute Force Detection", rule_type="threshold", severity="high", enabled=True, window_seconds=300, threshold=10, mitre_tactic="TA0001", mitre_technique="T1110", confidence_score=0.9, conditions=["authentication_failure"], tags=["credential"], data_sources=["auth_logs"]),
+    Row(name="Credential Stuffing", rule_type="threshold", severity="critical", enabled=True, window_seconds=600, threshold=20, mitre_tactic="TA0001", mitre_technique="T1110.004", confidence_score=0.85, conditions=["authentication_failure"], tags=["credential", "automated"], data_sources=["auth_logs"]),
+    Row(name="Password Spraying", rule_type="statistical", severity="high", enabled=True, window_seconds=900, threshold=5, mitre_tactic="TA0001", mitre_technique="T1110.003", confidence_score=0.8, conditions=["authentication_failure"], tags=["credential"], data_sources=["auth_logs"]),
+    Row(name="Supply Chain Compromise", rule_type="sequence", severity="critical", enabled=True, window_seconds=86400, threshold=2, mitre_tactic="TA0001", mitre_technique="T1195", confidence_score=0.6, conditions=["software_install", "outbound_connection"], tags=["supply_chain"], data_sources=["endpoint"]),
+    Row(name="Phishing Link Click", rule_type="threshold", severity="high", enabled=True, window_seconds=300, threshold=3, mitre_tactic="TA0001", mitre_technique="T1566.002", confidence_score=0.75, conditions=["url_click", "email_link"], tags=["phishing"], data_sources=["email", "proxy"]),
+    Row(name="Valid Account Login from New Country", rule_type="temporal", severity="high", enabled=True, window_seconds=3600, threshold=1, mitre_tactic="TA0001", mitre_technique="T1078", confidence_score=0.7, conditions=["authentication_success"], tags=["geo_anomaly"], data_sources=["auth_logs"]),
+
+    # -- Execution (TA0002) --
+    Row(name="PowerShell Encoded Command", rule_type="threshold", severity="high", enabled=True, window_seconds=300, threshold=3, mitre_tactic="TA0002", mitre_technique="T1059.001", confidence_score=0.85, conditions=["process_creation", "script_execution"], tags=["powershell"], data_sources=["endpoint"]),
+    Row(name="WMI Remote Execution", rule_type="threshold", severity="medium", enabled=True, window_seconds=600, threshold=5, mitre_tactic="TA0002", mitre_technique="T1047", confidence_score=0.7, conditions=["process_creation"], tags=["wmi", "remote"], data_sources=["endpoint"]),
+    Row(name="Scheduled Task Creation", rule_type="threshold", severity="medium", enabled=True, window_seconds=3600, threshold=3, mitre_tactic="TA0002", mitre_technique="T1053.005", confidence_score=0.65, conditions=["scheduled_task_creation"], tags=["persistence"], data_sources=["endpoint"]),
+
+    # -- Persistence (TA0003) --
+    Row(name="Off-Hours Admin Activity", rule_type="temporal", severity="medium", enabled=True, window_seconds=3600, threshold=3, mitre_tactic="TA0003", mitre_technique="T1078", confidence_score=0.65, conditions=["admin_login"], tags=["temporal"], data_sources=["auth_logs"]),
+    Row(name="Registry Run Key Modification", rule_type="threshold", severity="high", enabled=True, window_seconds=600, threshold=2, mitre_tactic="TA0003", mitre_technique="T1547.001", confidence_score=0.8, conditions=["registry_modification"], tags=["persistence", "autorun"], data_sources=["endpoint"]),
+    Row(name="New Service Creation", rule_type="threshold", severity="medium", enabled=True, window_seconds=1800, threshold=3, mitre_tactic="TA0003", mitre_technique="T1543.003", confidence_score=0.7, conditions=["service_creation"], tags=["persistence"], data_sources=["endpoint"]),
+
+    # -- Privilege Escalation (TA0004) --
+    Row(name="Privilege Escalation Sequence", rule_type="sequence", severity="critical", enabled=True, window_seconds=600, threshold=2, mitre_tactic="TA0004", mitre_technique="T1068", confidence_score=0.85, conditions=["privilege_escalation", "token_manipulation"], tags=["privesc"], data_sources=["endpoint"]),
+    Row(name="Token Impersonation", rule_type="threshold", severity="high", enabled=True, window_seconds=300, threshold=2, mitre_tactic="TA0004", mitre_technique="T1134.001", confidence_score=0.8, conditions=["token_manipulation"], tags=["privesc"], data_sources=["endpoint"]),
+    Row(name="Sudo Abuse Pattern", rule_type="threshold", severity="high", enabled=True, window_seconds=600, threshold=5, mitre_tactic="TA0004", mitre_technique="T1548.003", confidence_score=0.75, conditions=["privilege_escalation"], tags=["linux", "privesc"], data_sources=["endpoint"]),
+
+    # -- Defense Evasion (TA0005) --
+    Row(name="Log Clearing Detected", rule_type="threshold", severity="critical", enabled=True, window_seconds=300, threshold=1, mitre_tactic="TA0005", mitre_technique="T1070.001", confidence_score=0.95, conditions=["log_clear", "audit_log_clear"], tags=["evasion"], data_sources=["endpoint", "siem"]),
+    Row(name="Timestomp Activity", rule_type="threshold", severity="high", enabled=True, window_seconds=600, threshold=3, mitre_tactic="TA0005", mitre_technique="T1070.006", confidence_score=0.8, conditions=["file_modification"], tags=["evasion", "timestomp"], data_sources=["endpoint"]),
+    Row(name="Process Injection", rule_type="threshold", severity="critical", enabled=True, window_seconds=300, threshold=2, mitre_tactic="TA0005", mitre_technique="T1055", confidence_score=0.9, conditions=["process_injection"], tags=["evasion", "injection"], data_sources=["endpoint"]),
+
+    # -- Credential Access (TA0006) --
+    Row(name="LSASS Memory Dump", rule_type="threshold", severity="critical", enabled=True, window_seconds=60, threshold=1, mitre_tactic="TA0006", mitre_technique="T1003.001", confidence_score=0.95, conditions=["process_access", "credential_access"], tags=["credential_dump"], data_sources=["endpoint"]),
+    Row(name="Kerberoasting Activity", rule_type="threshold", severity="high", enabled=True, window_seconds=600, threshold=5, mitre_tactic="TA0006", mitre_technique="T1558.003", confidence_score=0.85, conditions=["kerberos_ticket_request"], tags=["kerberos"], data_sources=["auth_logs"]),
+    Row(name="DCSync Attack", rule_type="threshold", severity="critical", enabled=True, window_seconds=300, threshold=1, mitre_tactic="TA0006", mitre_technique="T1003.006", confidence_score=0.95, conditions=["directory_service_access"], tags=["ad", "credential_dump"], data_sources=["auth_logs"]),
+
+    # -- Discovery (TA0007) --
+    Row(name="Port Scanning Detection", rule_type="threshold", severity="medium", enabled=True, window_seconds=300, threshold=20, mitre_tactic="TA0007", mitre_technique="T1046", confidence_score=0.9, conditions=["network_connection"], tags=["recon", "scanning"], data_sources=["network"]),
+    Row(name="Active Directory Enumeration", rule_type="threshold", severity="medium", enabled=True, window_seconds=600, threshold=10, mitre_tactic="TA0007", mitre_technique="T1087.002", confidence_score=0.7, conditions=["directory_service_access"], tags=["recon", "ad"], data_sources=["auth_logs"]),
+    Row(name="Network Share Discovery", rule_type="threshold", severity="low", enabled=True, window_seconds=900, threshold=15, mitre_tactic="TA0007", mitre_technique="T1135", confidence_score=0.6, conditions=["network_share_access"], tags=["recon"], data_sources=["network"]),
+
+    # -- Lateral Movement (TA0008) --
+    Row(name="Lateral Movement Chain", rule_type="sequence", severity="critical", enabled=True, window_seconds=1800, threshold=3, mitre_tactic="TA0008", mitre_technique="T1021", confidence_score=0.8, conditions=["lateral_movement", "remote_login", "remote_execution"], tags=["lateral"], data_sources=["auth_logs", "endpoint"]),
+    Row(name="Pass-the-Hash", rule_type="threshold", severity="critical", enabled=True, window_seconds=300, threshold=2, mitre_tactic="TA0008", mitre_technique="T1550.002", confidence_score=0.85, conditions=["authentication_success"], tags=["pth", "lateral"], data_sources=["auth_logs"]),
+    Row(name="RDP Tunneling", rule_type="threshold", severity="high", enabled=True, window_seconds=600, threshold=3, mitre_tactic="TA0008", mitre_technique="T1021.001", confidence_score=0.75, conditions=["remote_login", "tunnel_creation"], tags=["rdp", "lateral"], data_sources=["network"]),
+
+    # -- Collection (TA0009) --
+    Row(name="Mass File Access", rule_type="threshold", severity="high", enabled=True, window_seconds=600, threshold=50, mitre_tactic="TA0009", mitre_technique="T1005", confidence_score=0.7, conditions=["file_access"], tags=["collection"], data_sources=["endpoint"]),
+    Row(name="Email Collection", rule_type="threshold", severity="medium", enabled=True, window_seconds=3600, threshold=100, mitre_tactic="TA0009", mitre_technique="T1114", confidence_score=0.65, conditions=["email_access"], tags=["collection", "email"], data_sources=["email"]),
+
+    # -- Exfiltration (TA0010) --
+    Row(name="Data Exfiltration Volume", rule_type="threshold", severity="high", enabled=True, window_seconds=3600, threshold=5, mitre_tactic="TA0010", mitre_technique="T1048", confidence_score=0.75, conditions=["data_exfiltration", "large_upload"], tags=["exfiltration"], data_sources=["network", "dlp"]),
+    Row(name="DNS Tunneling", rule_type="statistical", severity="high", enabled=True, window_seconds=900, threshold=100, mitre_tactic="TA0010", mitre_technique="T1071.004", confidence_score=0.7, conditions=["dns_query"], tags=["exfiltration", "dns"], data_sources=["dns"]),
+    Row(name="Cloud Storage Exfiltration", rule_type="threshold", severity="high", enabled=True, window_seconds=1800, threshold=10, mitre_tactic="TA0010", mitre_technique="T1537", confidence_score=0.75, conditions=["cloud_upload", "data_transfer"], tags=["exfiltration", "cloud"], data_sources=["cloud"]),
+
+    # -- Command & Control (TA0011) --
+    Row(name="C2 Beacon Pattern", rule_type="periodic", severity="critical", enabled=True, window_seconds=7200, threshold=10, mitre_tactic="TA0011", mitre_technique="T1071.001", confidence_score=0.8, conditions=["outbound_connection", "command_and_control"], tags=["c2", "beaconing"], data_sources=["network"]),
+    Row(name="Domain Generation Algorithm", rule_type="statistical", severity="high", enabled=True, window_seconds=600, threshold=50, mitre_tactic="TA0011", mitre_technique="T1568.002", confidence_score=0.85, conditions=["dns_query"], tags=["c2", "dga"], data_sources=["dns"]),
+    Row(name="Non-Standard Port Communication", rule_type="threshold", severity="medium", enabled=True, window_seconds=3600, threshold=10, mitre_tactic="TA0011", mitre_technique="T1571", confidence_score=0.6, conditions=["network_connection"], tags=["c2"], data_sources=["network"]),
+
+    # -- Impact (TA0040) --
+    Row(name="Mass File Encryption (Ransomware)", rule_type="threshold", severity="critical", enabled=True, window_seconds=300, threshold=20, mitre_tactic="TA0040", mitre_technique="T1486", confidence_score=0.95, conditions=["file_modification", "file_encryption"], tags=["ransomware"], data_sources=["endpoint"]),
+    Row(name="Service Disruption", rule_type="threshold", severity="critical", enabled=True, window_seconds=600, threshold=5, mitre_tactic="TA0040", mitre_technique="T1489", confidence_score=0.85, conditions=["service_stop"], tags=["disruption"], data_sources=["endpoint"]),
+    Row(name="Data Destruction", rule_type="threshold", severity="critical", enabled=True, window_seconds=300, threshold=10, mitre_tactic="TA0040", mitre_technique="T1485", confidence_score=0.9, conditions=["file_deletion"], tags=["destruction"], data_sources=["endpoint"]),
+
+    # -- Insider Threat --
+    Row(name="After-Hours Data Access Spike", rule_type="temporal", severity="high", enabled=True, window_seconds=7200, threshold=20, mitre_tactic="TA0009", mitre_technique="T1005", confidence_score=0.7, conditions=["file_access"], tags=["insider", "temporal"], data_sources=["endpoint", "dlp"]),
+    Row(name="Unusual Download Volume", rule_type="statistical", severity="high", enabled=True, window_seconds=3600, threshold=100, mitre_tactic="TA0010", mitre_technique="T1048", confidence_score=0.7, conditions=["file_download"], tags=["insider", "exfiltration"], data_sources=["proxy", "dlp"]),
+    Row(name="Privilege Hoarding", rule_type="threshold", severity="medium", enabled=True, window_seconds=86400, threshold=5, mitre_tactic="TA0004", mitre_technique="T1078", confidence_score=0.6, conditions=["permission_change", "role_assignment"], tags=["insider"], data_sources=["iam"]),
+
+    # -- Cloud-Specific --
+    Row(name="Impossible Travel Login", rule_type="temporal", severity="high", enabled=True, window_seconds=3600, threshold=2, mitre_tactic="TA0001", mitre_technique="T1078.004", confidence_score=0.8, conditions=["authentication_success"], tags=["cloud", "geo_anomaly"], data_sources=["cloud_auth"]),
+    Row(name="IAM Policy Weakening", rule_type="threshold", severity="critical", enabled=True, window_seconds=300, threshold=1, mitre_tactic="TA0005", mitre_technique="T1562.007", confidence_score=0.9, conditions=["policy_change"], tags=["cloud", "iam"], data_sources=["cloud"]),
+    Row(name="Snapshot Exfiltration", rule_type="threshold", severity="critical", enabled=True, window_seconds=1800, threshold=2, mitre_tactic="TA0010", mitre_technique="T1537", confidence_score=0.85, conditions=["snapshot_copy", "ami_share"], tags=["cloud", "exfiltration"], data_sources=["cloud"]),
+    Row(name="Security Group Rule Change", rule_type="threshold", severity="high", enabled=True, window_seconds=600, threshold=3, mitre_tactic="TA0005", mitre_technique="T1562.007", confidence_score=0.75, conditions=["firewall_rule_change"], tags=["cloud", "network"], data_sources=["cloud"]),
+
+    # -- Multi-Stage Attack Chains --
+    Row(name="Full Kill Chain Progression", rule_type="sequence", severity="critical", enabled=True, window_seconds=7200, threshold=4, mitre_tactic="TA0001,TA0004,TA0008,TA0010", mitre_technique="T1078,T1068,T1021,T1048", confidence_score=0.95, conditions=["authentication_failure", "privilege_escalation", "lateral_movement", "data_exfiltration"], tags=["apt", "kill_chain"], data_sources=["endpoint", "network", "auth_logs"]),
+    Row(name="Ransomware Precursor Chain", rule_type="sequence", severity="critical", enabled=True, window_seconds=3600, threshold=3, mitre_tactic="TA0001,TA0006,TA0040", mitre_technique="T1110,T1003,T1486", confidence_score=0.9, conditions=["credential_access", "lateral_movement", "file_encryption"], tags=["ransomware", "kill_chain"], data_sources=["endpoint"]),
+    Row(name="APT Reconnaissance to Exfil", rule_type="sequence", severity="critical", enabled=True, window_seconds=86400, threshold=3, mitre_tactic="TA0007,TA0009,TA0010", mitre_technique="T1046,T1005,T1048", confidence_score=0.7, conditions=["network_scan", "file_access", "data_exfiltration"], tags=["apt", "kill_chain"], data_sources=["network", "endpoint"]),
+
+    # -- OT/ICS Specific --
+    Row(name="PLC Stop Command", rule_type="threshold", severity="critical", enabled=True, window_seconds=60, threshold=1, mitre_tactic="TA0040", mitre_technique="T0816", confidence_score=0.95, conditions=["plc_stop", "remote_stop"], tags=["ot", "ics"], data_sources=["ot_network"]),
+    Row(name="Setpoint Manipulation", rule_type="threshold", severity="critical", enabled=True, window_seconds=300, threshold=3, mitre_tactic="TA0040", mitre_technique="T0836", confidence_score=0.9, conditions=["setpoint_change", "write_register"], tags=["ot", "ics"], data_sources=["ot_network"]),
+    Row(name="Engineering Station Anomaly", rule_type="temporal", severity="high", enabled=True, window_seconds=3600, threshold=1, mitre_tactic="TA0001", mitre_technique="T0886", confidence_score=0.8, conditions=["engineering_access"], tags=["ot", "ics"], data_sources=["ot_network"]),
 ]
 
-rules_df = spark.createDataFrame(rules_data)
+from pyspark.sql.types import StructType, StructField, StringType, BooleanType, IntegerType, DoubleType, ArrayType
+
+rules_schema = StructType([
+    StructField("name", StringType()),
+    StructField("rule_type", StringType()),
+    StructField("severity", StringType()),
+    StructField("enabled", BooleanType()),
+    StructField("window_seconds", IntegerType()),
+    StructField("threshold", IntegerType()),
+    StructField("mitre_tactic", StringType()),
+    StructField("mitre_technique", StringType()),
+    StructField("confidence_score", DoubleType()),
+    StructField("conditions", ArrayType(StringType())),
+    StructField("tags", ArrayType(StringType())),
+    StructField("data_sources", ArrayType(StringType())),
+])
+
+rules_rows = []
+for r in rules_data:
+    rules_rows.append((
+        r.name, r.rule_type, r.severity, r.enabled,
+        r.window_seconds, r.threshold, r.mitre_tactic, r.mitre_technique,
+        r.confidence_score, r.conditions, r.tags, r.data_sources,
+    ))
+
+rules_df = spark.createDataFrame(rules_rows, schema=rules_schema)
 rules_df = (rules_df
     .withColumn("id", expr("uuid()"))
     .withColumn("created_at", current_timestamp())
     .withColumn("updated_at", current_timestamp())
     .withColumn("version", lit(1))
     .withColumn("author", lit("0xDSI Platform"))
+    .withColumn("description", concat(lit("Auto-generated rule: "), col("name")))
+    .withColumn("logic", lit("{}"))
 )
-rules_df.write.mode("overwrite").saveAsTable("correlation_rules")
-print(f"Seeded {len(rules_data)} correlation rules")
+rules_df.write.mode("overwrite").saveAsTable(get_table_path(cfg, "correlation_rules"))
+print(f"Seeded {len(rules_data)} production correlation rules ({len([r for r in rules_data if r.rule_type == 'threshold'])} threshold, {len([r for r in rules_data if r.rule_type == 'sequence'])} sequence, {len([r for r in rules_data if r.rule_type in ('statistical', 'temporal', 'periodic')])} temporal/statistical)")
 
 # COMMAND ----------
 

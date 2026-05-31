@@ -179,6 +179,41 @@ rules_df = spark.table(rules_table).filter(col("enabled") == True).collect()
 mon.log_event("rules_loaded", {"count": len(rules_df)})
 print(f"Loaded {len(rules_df)} active correlation rules")
 
+# Parse rules by type for dynamic evaluation
+threshold_rules = [r for r in rules_df if r.rule_type in ("threshold", "statistical")]
+sequence_rules = [r for r in rules_df if r.rule_type == "sequence"]
+temporal_rules = [r for r in rules_df if r.rule_type in ("temporal", "periodic")]
+
+# Build dynamic thresholds from rules
+rule_thresholds = {}
+for r in threshold_rules:
+    rule_thresholds[r.id] = {
+        "name": r.name,
+        "threshold": int(r.threshold) if r.threshold else 5,
+        "window_seconds": int(r.window_seconds) if r.window_seconds else window_minutes * 60,
+        "severity": r.severity,
+        "mitre_tactic": r.mitre_tactic or "",
+        "mitre_technique": r.mitre_technique or "",
+        "confidence_score": float(r.confidence_score) if r.confidence_score else 0.7,
+        "conditions": r.conditions if r.conditions else [],
+    }
+
+# Build sequence patterns from rules
+rule_sequences = {}
+for r in sequence_rules:
+    rule_sequences[r.id] = {
+        "name": r.name,
+        "threshold": int(r.threshold) if r.threshold else 3,
+        "window_seconds": int(r.window_seconds) if r.window_seconds else 1800,
+        "severity": r.severity,
+        "mitre_tactic": r.mitre_tactic or "",
+        "conditions": r.conditions if r.conditions else [],
+    }
+
+print(f"  Threshold rules: {len(threshold_rules)}")
+print(f"  Sequence rules:  {len(sequence_rules)}")
+print(f"  Temporal rules:  {len(temporal_rules)}")
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -202,6 +237,10 @@ mon.log_event("sdp_stream_connected", {"source": sdp_source, "consumer_group": "
 
 # COMMAND ----------
 
+# Use minimum threshold from rules (most sensitive rule wins for streaming pre-filter)
+# Actual rule evaluation happens in write_correlation_matches per-rule
+min_threshold = min((r["threshold"] for r in rule_thresholds.values()), default=5)
+
 threshold_correlations = (
     events_stream
     .groupBy(
@@ -214,7 +253,7 @@ threshold_correlations = (
         slice(collect_list("id"), 1, 100).alias("event_ids"),
         max("severity").alias("max_severity")
     )
-    .filter(col("event_count") >= 5)
+    .filter(col("event_count") >= min_threshold)
 )
 
 # COMMAND ----------
@@ -224,11 +263,21 @@ threshold_correlations = (
 
 # COMMAND ----------
 
-ATTACK_SEQUENCE_TYPES = [
-    "authentication_failure", "privilege_escalation",
-    "lateral_movement", "data_exfiltration",
-    "credential_access", "command_and_control",
-]
+# Build sequence event types dynamically from loaded rules
+ATTACK_SEQUENCE_TYPES = list(set(
+    cond
+    for r in rule_sequences.values()
+    for cond in (r["conditions"] if r["conditions"] else [])
+))
+if not ATTACK_SEQUENCE_TYPES:
+    ATTACK_SEQUENCE_TYPES = [
+        "authentication_failure", "privilege_escalation",
+        "lateral_movement", "data_exfiltration",
+        "credential_access", "command_and_control",
+    ]
+
+# Minimum stages from sequence rules
+min_stages = min((r["threshold"] for r in rule_sequences.values()), default=3)
 
 sequence_events = (
     events_stream
@@ -242,7 +291,7 @@ sequence_events = (
         count("*").alias("event_count"),
         slice(collect_list("id"), 1, 100).alias("event_ids")
     )
-    .filter(size(col("attack_stages")) >= 3)
+    .filter(size(col("attack_stages")) >= min_stages)
 )
 
 # COMMAND ----------
@@ -253,7 +302,7 @@ sequence_events = (
 # COMMAND ----------
 
 def write_correlation_matches(batch_df, batch_id):
-    """Process threshold correlations with KS validation to suppress false positives."""
+    """Process threshold correlations with dynamic rule evaluation + KS validation."""
     if batch_df.isEmpty():
         return
 
@@ -263,20 +312,57 @@ def write_correlation_matches(batch_df, batch_id):
         suppressed = 0
 
         for row in rows:
-            significant, confidence = is_ks_significant(
-                row.source_ip, row.event_type, row.event_count, window_minutes
-            )
-            if significant:
-                validated_rows.append({
-                    "source_ip": row.source_ip,
-                    "event_type": row.event_type,
-                    "event_count": int(row.event_count),
-                    "event_ids": row.event_ids[:50],
-                    "ks_confidence": confidence,
-                    "severity": adaptive_severity(row.source_ip, row.event_type, row.event_count, window_minutes),
-                })
+            # Evaluate against each threshold rule
+            matched_rules = []
+            for rule_id, rule in rule_thresholds.items():
+                # Check if event_type matches rule conditions
+                conditions = rule["conditions"]
+                type_match = (not conditions) or (row.event_type in conditions)
+                threshold_match = row.event_count >= rule["threshold"]
+
+                if type_match and threshold_match:
+                    matched_rules.append(rule_id)
+
+            if not matched_rules:
+                # Fallback: apply KS adaptive threshold for rules without explicit conditions
+                significant, confidence = is_ks_significant(
+                    row.source_ip, row.event_type, row.event_count, window_minutes
+                )
+                if significant:
+                    validated_rows.append({
+                        "source_ip": row.source_ip,
+                        "event_type": row.event_type,
+                        "event_count": int(row.event_count),
+                        "event_ids": row.event_ids[:50],
+                        "ks_confidence": confidence,
+                        "severity": adaptive_severity(row.source_ip, row.event_type, row.event_count, window_minutes),
+                        "rule_id": "ks-adaptive-threshold",
+                        "rule_name": "KS Adaptive Threshold",
+                    })
+                else:
+                    suppressed += 1
             else:
-                suppressed += 1
+                # Rule-matched: validate with KS then use rule metadata
+                significant, confidence = is_ks_significant(
+                    row.source_ip, row.event_type, row.event_count, window_minutes
+                )
+                if significant:
+                    best_rule_id = matched_rules[0]
+                    best_rule = rule_thresholds[best_rule_id]
+                    validated_rows.append({
+                        "source_ip": row.source_ip,
+                        "event_type": row.event_type,
+                        "event_count": int(row.event_count),
+                        "event_ids": row.event_ids[:50],
+                        "ks_confidence": confidence,
+                        "severity": best_rule["severity"],
+                        "rule_id": best_rule_id,
+                        "rule_name": best_rule["name"],
+                        "mitre_tactic": best_rule["mitre_tactic"],
+                        "mitre_technique": best_rule["mitre_technique"],
+                    })
+                else:
+                    suppressed += 1
 
         mon.log_event("ks_validation", {
             "batch_id": batch_id,
@@ -299,10 +385,12 @@ def write_correlation_matches(batch_df, batch_id):
             StructField("event_count", IntegerType()),
             StructField("ks_confidence", DoubleType()),
             StructField("severity", StringType()),
+            StructField("rule_id", StringType()),
+            StructField("rule_name", StringType()),
         ])
 
         validated_df = spark.createDataFrame(
-            [{k: v for k, v in r.items() if k not in ("event_ids",)} for r in validated_rows],
+            [{k: v for k, v in r.items() if k not in ("event_ids", "mitre_tactic", "mitre_technique")} for r in validated_rows],
             schema=match_schema
         )
 
@@ -311,7 +399,6 @@ def write_correlation_matches(batch_df, batch_id):
             .withColumn("id", expr("uuid()"))
             .withColumn("matched_at", current_timestamp())
             .withColumn("score", col("ks_confidence"))
-            .withColumn("rule_id", lit("ks-adaptive-threshold"))
         )
 
         matches_table = cfg.get_table_path("cep_pattern_matches")
@@ -336,12 +423,13 @@ def write_correlation_matches(batch_df, batch_id):
 
             alert_rows = []
             for r in alert_candidates:
-                title = f"KS Correlation: {r['event_type']} surge from {r['source_ip']}"
+                rule_name = r.get("rule_name", "KS Adaptive Threshold")
+                title = f"Correlation: {rule_name} - {r['event_type']} from {r['source_ip']}"
                 if title in recent_alert_keys:
                     continue
                 alert_rows.append({
                     "title": title,
-                    "description": f"Detected {r['event_count']} events in {window_minutes}min window (KS confidence: {r['ks_confidence']:.3f})",
+                    "description": f"Rule '{rule_name}' matched: {r['event_count']} events in {window_minutes}min window (KS confidence: {r['ks_confidence']:.3f})",
                     "severity": r["severity"],
                     "status": "new",
                     "source": "correlation_engine_ks",
