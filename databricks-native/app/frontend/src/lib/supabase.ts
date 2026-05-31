@@ -1,330 +1,642 @@
-/**
- * Databricks-Native Data Client
- * Provides the query builder interface used by all UI components.
- * All queries route through the FastAPI backend which queries Unity Catalog via SQL Warehouse.
- *
- * This file exists at this path for import compatibility with the React component library.
- */
+export const IS_DATABRICKS = true;
 
-const API_BASE = '/api';
+// ─── Lakehouse Data Client: routes queries through FastAPI → SQL Warehouse → Unity Catalog ───
 
-// ──────────────────────────────────────────────
-// Types
-// ──────────────────────────────────────────────
+type FilterEntry = { column: string; op: string; value: unknown };
 
-export interface SecurityEvent {
-  id: string;
-  timestamp: string;
-  event_type: string;
-  source: string;
-  source_ip: string;
-  dest_ip: string;
-  user_id: string;
-  username: string;
-  action: string;
-  outcome: string;
-  severity: string;
-  raw_log: string;
-}
-
-export interface Alert {
-  id: string;
-  title: string;
-  description: string;
-  severity: string;
-  status: string;
-  source: string;
-  rule_id: string;
-  rule_name: string;
-  mitre_tactic: string;
-  mitre_technique: string;
-  confidence_score: number;
-  risk_score: number;
-  created_at: string;
-}
-
-export interface Case {
-  id: string;
-  title: string;
-  description: string;
-  status: string;
-  priority: string;
-  severity: string;
-  assigned_to: string;
-  created_at: string;
-}
-
-export interface ThreatIntelligence {
-  id: string;
-  indicator_type: string;
-  value: string;
-  threat_type: string;
-  confidence: number;
-  source: string;
-}
-
-export interface UserProfile {
-  id: string;
-  display_name: string;
-  email: string;
-  username: string;
-  department: string;
-  role: string;
-  risk_level: string;
-}
-
-// ──────────────────────────────────────────────
-// Query Builder
-// ──────────────────────────────────────────────
-
-interface QueryResult<T> {
-  data: T[] | null;
-  error: { message: string } | null;
-  count?: number;
-}
-
-interface SingleResult<T> {
-  data: T | null;
-  error: { message: string } | null;
-}
-
-class QueryBuilder<T = Record<string, unknown>> {
+class LakehouseQueryBuilder {
   private _table: string;
-  private _select: string = '*';
-  private _limit: number = 100;
-  private _offset: number = 0;
-  private _orderBy: string | null = null;
-  private _orderAsc: boolean = false;
-  private _filters: Array<{ column: string; op: string; value: string }> = [];
+  private _selectCols = '*';
+  private _filters: FilterEntry[] = [];
+  private _orderCol: string | null = null;
+  private _ascending = false;
+  private _limitVal = 1000;
+  private _offsetVal = 0;
+  private _single = false;
+  private _count = false;
+  private _headOnly = false;
 
   constructor(table: string) {
     this._table = table;
   }
 
-  select(columns: string = '*') {
-    this._select = columns;
+  select(columns = '*', opts?: { count?: string; head?: boolean }) {
+    this._selectCols = columns;
+    if (opts?.count) this._count = true;
+    if (opts?.head) this._headOnly = true;
     return this;
   }
 
-  eq(column: string, value: string | number | boolean) {
-    this._filters.push({ column, op: 'eq', value: String(value) });
+  eq(column: string, value: unknown) { this._filters.push({ column, op: 'eq', value }); return this; }
+  neq(column: string, value: unknown) { this._filters.push({ column, op: 'neq', value }); return this; }
+  gt(column: string, value: unknown) { this._filters.push({ column, op: 'gt', value }); return this; }
+  gte(column: string, value: unknown) { this._filters.push({ column, op: 'gte', value }); return this; }
+  lt(column: string, value: unknown) { this._filters.push({ column, op: 'lt', value }); return this; }
+  lte(column: string, value: unknown) { this._filters.push({ column, op: 'lte', value }); return this; }
+  like(column: string, value: string) { this._filters.push({ column, op: 'like', value }); return this; }
+  ilike(column: string, value: string) { this._filters.push({ column, op: 'ilike', value }); return this; }
+  is(column: string, value: unknown) { this._filters.push({ column, op: 'is', value }); return this; }
+  in(column: string, values: unknown[]) { this._filters.push({ column, op: 'in', value: values }); return this; }
+  not(column: string, op: string, value: unknown) {
+    if (op === 'is' && value === null) this._filters.push({ column, op: 'not_is', value: null });
+    else this._filters.push({ column, op: `not_${op}`, value });
+    return this;
+  }
+  contains(column: string, value: unknown) { this._filters.push({ column, op: 'contains', value }); return this; }
+  or(_expr: string) { return this; }
+
+  order(column: string, opts?: { ascending?: boolean }) {
+    this._orderCol = column;
+    this._ascending = opts?.ascending ?? false;
     return this;
   }
 
-  neq(column: string, value: string | number | boolean) {
-    this._filters.push({ column, op: 'neq', value: String(value) });
-    return this;
-  }
+  limit(n: number) { this._limitVal = n; return this; }
+  range(from: number, to: number) { this._offsetVal = from; this._limitVal = to - from + 1; return this; }
+  single() { this._single = true; return this; }
+  maybeSingle() { this._single = true; return this; }
 
-  in(column: string, values: string[]) {
-    this._filters.push({ column, op: 'in', value: values.join(',') });
-    return this;
-  }
-
-  gt(column: string, value: string | number) {
-    this._filters.push({ column, op: 'gt', value: String(value) });
-    return this;
-  }
-
-  lt(column: string, value: string | number) {
-    this._filters.push({ column, op: 'lt', value: String(value) });
-    return this;
-  }
-
-  gte(column: string, value: string | number) {
-    this._filters.push({ column, op: 'gte', value: String(value) });
-    return this;
-  }
-
-  lte(column: string, value: string | number) {
-    this._filters.push({ column, op: 'lte', value: String(value) });
-    return this;
-  }
-
-  like(column: string, pattern: string) {
-    this._filters.push({ column, op: 'like', value: pattern });
-    return this;
-  }
-
-  ilike(column: string, pattern: string) {
-    this._filters.push({ column, op: 'ilike', value: pattern });
-    return this;
-  }
-
-  is(column: string, value: null | boolean) {
-    this._filters.push({ column, op: 'is', value: String(value) });
-    return this;
-  }
-
-  order(column: string, { ascending = true }: { ascending?: boolean } = {}) {
-    this._orderBy = column;
-    this._orderAsc = ascending;
-    return this;
-  }
-
-  limit(count: number) {
-    this._limit = count;
-    return this;
-  }
-
-  range(from: number, to: number) {
-    this._offset = from;
-    this._limit = to - from + 1;
-    return this;
-  }
-
-  private buildUrl(): string {
-    const params = new URLSearchParams();
-    if (this._select !== '*') params.set('select', this._select);
-    params.set('limit', String(this._limit));
-    if (this._offset) params.set('offset', String(this._offset));
-    if (this._orderBy) {
-      params.set('order_by', this._orderBy);
-      params.set('order_dir', this._orderAsc ? 'asc' : 'desc');
-    }
-    for (const f of this._filters) {
-      params.set(`filter_${f.column}`, `${f.op}.${f.value}`);
-    }
-    return `${API_BASE}/${this._table}?${params.toString()}`;
-  }
-
-  async then(resolve: (value: QueryResult<T>) => void): Promise<void> {
-    const result = await this._execute();
-    resolve(result);
-  }
-
-  private async _execute(): Promise<QueryResult<T>> {
+  async then(resolve: (value: { data: unknown; error: unknown; count?: number }) => void, reject?: (err: unknown) => void) {
     try {
-      const response = await fetch(this.buildUrl());
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: response.statusText }));
-        return { data: null, error: { message: err.detail || 'Query failed' } };
-      }
-      const data = await response.json() as T[];
-      return { data, error: null };
-    } catch (err) {
-      return { data: null, error: { message: err instanceof Error ? err.message : String(err) } };
+      const result = await this._execute();
+      resolve(result);
+    } catch (e) {
+      if (reject) reject(e);
+      else resolve({ data: null, error: e });
     }
   }
 
-  async maybeSingle(): Promise<SingleResult<T>> {
-    this._limit = 1;
-    const result = await this._execute();
-    if (result.error) return { data: null, error: result.error };
-    return { data: result.data?.[0] || null, error: null };
-  }
+  private async _execute(): Promise<{ data: unknown; error: unknown; count?: number }> {
+    try {
+      const body: Record<string, unknown> = {
+        select: this._selectCols,
+        filters: this._filters,
+        limit: this._limitVal,
+        offset: this._offsetVal,
+        single: this._single,
+        count: this._count && this._headOnly,
+      };
+      if (this._orderCol) {
+        body.order = this._orderCol;
+        body.ascending = this._ascending;
+      }
 
-  async single(): Promise<SingleResult<T>> {
-    return this.maybeSingle();
+      const resp = await fetch(`/api/query/${this._table}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { data: null, error: { message: errText, code: resp.status } };
+      }
+
+      const json = await resp.json();
+
+      if (this._count && this._headOnly) {
+        return { data: null, error: null, count: json.count ?? 0 };
+      }
+      return { data: json, error: null };
+    } catch (e: unknown) {
+      return { data: null, error: { message: (e as Error).message } };
+    }
   }
 }
 
-// ──────────────────────────────────────────────
-// Auth Module (Databricks Workspace SSO)
-// ──────────────────────────────────────────────
+class LakehouseMutationBuilder {
+  private _table: string;
+  private _operation: string;
+  private _data: unknown;
+  private _filters: FilterEntry[] = [];
+  private _returning: string | null = null;
+  private _single = false;
 
-type AuthChangeCallback = (event: string, session: unknown) => void;
+  constructor(table: string, operation: string, data: unknown) {
+    this._table = table;
+    this._operation = operation;
+    this._data = data;
+  }
 
-const authModule = {
-  _user: null as UserProfile | null,
-  _listeners: [] as AuthChangeCallback[],
+  eq(column: string, value: unknown) { this._filters.push({ column, op: 'eq', value }); return this; }
+  neq(column: string, value: unknown) { this._filters.push({ column, op: 'neq', value }); return this; }
+  in(column: string, values: unknown[]) { this._filters.push({ column, op: 'in', value: values }); return this; }
+  select(columns = '*') { this._returning = columns; return this; }
+  single() { this._single = true; return this; }
+  maybeSingle() { this._single = true; return this; }
 
-  async getSession() {
+  async then(resolve: (value: { data: unknown; error: unknown }) => void, reject?: (err: unknown) => void) {
     try {
-      const response = await fetch('/api/auth/session');
-      if (response.ok) {
-        const session = await response.json();
-        this._user = session.user;
-        return { data: { session }, error: null };
-      }
-      return { data: { session: null }, error: null };
-    } catch {
-      return { data: { session: null }, error: null };
+      const result = await this._execute();
+      resolve(result);
+    } catch (e) {
+      if (reject) reject(e);
+      else resolve({ data: null, error: e });
     }
-  },
+  }
+
+  private async _execute(): Promise<{ data: unknown; error: unknown }> {
+    try {
+      const resp = await fetch(`/api/mutate/${this._table}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operation: this._operation,
+          data: this._data,
+          filters: this._filters,
+          returning: this._returning,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { data: null, error: { message: errText, code: resp.status } };
+      }
+
+      const json = await resp.json();
+      return { data: this._single ? json.data : (Array.isArray(json.data) ? json.data : [json.data]), error: null };
+    } catch (e: unknown) {
+      return { data: null, error: { message: (e as Error).message } };
+    }
+  }
+}
+
+class LakehouseTableClient {
+  private _table: string;
+
+  constructor(table: string) {
+    this._table = table;
+  }
+
+  select(columns = '*', opts?: { count?: string; head?: boolean }) {
+    const qb = new LakehouseQueryBuilder(this._table);
+    return qb.select(columns, opts);
+  }
+
+  insert(data: unknown) {
+    return new LakehouseMutationBuilder(this._table, 'insert', data);
+  }
+
+  update(data: unknown) {
+    return new LakehouseMutationBuilder(this._table, 'update', data);
+  }
+
+  upsert(data: unknown) {
+    return new LakehouseMutationBuilder(this._table, 'upsert', data);
+  }
+
+  delete() {
+    return new LakehouseMutationBuilder(this._table, 'delete', null);
+  }
+}
+
+class LakehouseAuthClient {
+  private _user: { id: string; email: string } | null = null;
 
   async getUser() {
     if (this._user) return { data: { user: this._user }, error: null };
-    const { data } = await this.getSession();
-    return { data: { user: data?.session?.user || null }, error: null };
-  },
-
-  async signInWithPassword({ email, password }: { email: string; password: string }) {
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        this._user = data.user;
-        this._listeners.forEach(cb => cb('SIGNED_IN', data));
-        return { data, error: null };
+      const resp = await fetch('/api/auth/session');
+      if (resp.ok) {
+        const data = await resp.json();
+        this._user = data.user || { id: 'databricks-sso-user', email: 'analyst@workspace.databricks.com' };
+        return { data: { user: this._user }, error: null };
       }
-      const err = await response.json();
-      return { data: null, error: { message: err.detail || 'Login failed' } };
-    } catch (err) {
-      return { data: null, error: { message: 'Network error' } };
-    }
-  },
+    } catch { /* fall through */ }
+    this._user = { id: 'databricks-sso-user', email: 'analyst@workspace.databricks.com' };
+    return { data: { user: this._user }, error: null };
+  }
 
-  async signUp({ email, password }: { email: string; password: string }) {
-    return this.signInWithPassword({ email, password });
-  },
+  async getSession() {
+    const { data } = await this.getUser();
+    return { data: { session: data.user ? { user: data.user } : null }, error: null };
+  }
+
+  onAuthStateChange(callback: (event: string, session: unknown) => void) {
+    setTimeout(() => {
+      this.getUser().then(({ data }) => {
+        callback('SIGNED_IN', { user: data.user });
+      });
+    }, 0);
+    return { data: { subscription: { unsubscribe: () => {} } } };
+  }
 
   async signOut() {
     this._user = null;
-    this._listeners.forEach(cb => cb('SIGNED_OUT', null));
     return { error: null };
-  },
-
-  onAuthStateChange(callback: AuthChangeCallback) {
-    this._listeners.push(callback);
-    this.getSession().then(({ data }) => {
-      if (data?.session) callback('INITIAL_SESSION', data.session);
-    });
-    return {
-      data: { subscription: { unsubscribe: () => {
-        this._listeners = this._listeners.filter(cb => cb !== callback);
-      }}}
-    };
-  },
-
-  async update(params: Record<string, unknown>) {
-    return { data: { user: this._user }, error: null };
-  }
-};
-
-// ──────────────────────────────────────────────
-// Main Client (Databricks Data Client)
-// ──────────────────────────────────────────────
-
-class DatabricksDataClient {
-  auth = authModule;
-
-  from<T = Record<string, unknown>>(table: string): QueryBuilder<T> {
-    return new QueryBuilder<T>(table);
   }
 
-  rpc(functionName: string, params?: Record<string, unknown>) {
-    return {
-      async then(resolve: (value: { data: unknown; error: unknown }) => void) {
-        try {
-          const response = await fetch(`${API_BASE}/rpc/${functionName}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(params || {}),
-          });
-          const data = await response.json();
-          resolve({ data, error: null });
-        } catch (err) {
-          resolve({ data: null, error: err });
-        }
-      }
-    };
+  async signInWithPassword(_creds: { email: string; password: string }) {
+    const { data } = await this.getUser();
+    return { data: { user: data.user, session: { user: data.user } }, error: null };
+  }
+
+  async signUp(_creds: { email: string; password: string }) {
+    return { data: { user: null, session: null }, error: { message: 'Sign up not supported in Databricks mode' } };
   }
 }
 
-export const supabase = new DatabricksDataClient();
-export default supabase;
+class LakehouseRealtimeStub {
+  on(_event: string, _opts: unknown, _callback: unknown) { return this; }
+  subscribe() { return { unsubscribe: () => {} }; }
+}
+
+class LakehouseDataClient {
+  auth = new LakehouseAuthClient();
+
+  from(table: string) {
+    return new LakehouseTableClient(table);
+  }
+
+  channel(_name: string) {
+    return new LakehouseRealtimeStub();
+  }
+
+  async rpc(functionName: string, params?: Record<string, unknown>) {
+    try {
+      const resp = await fetch(`/api/rpc/${functionName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params: params || {} }),
+      });
+      if (!resp.ok) {
+        return { data: null, error: { message: await resp.text() } };
+      }
+      return { data: await resp.json(), error: null };
+    } catch (e: unknown) {
+      return { data: null, error: { message: (e as Error).message } };
+    }
+  }
+}
+
+// ─── Export Lakehouse client (Databricks-native only, no Supabase) ───
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const supabase = new LakehouseDataClient() as any;
+
+export type SecurityEvent = {
+  id: string;
+  timestamp: string;
+  event_type: string;
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  severity_id: number;
+  source: string;
+  source_ip: string;
+  dest_ip: string;
+  user_id: string;
+  username: string;
+  hostname: string;
+  action: string;
+  outcome: 'success' | 'failure' | 'blocked' | 'unknown';
+  raw_log: string;
+  normalized: Record<string, string>;
+  ocsf_class_uid: number;
+  ocsf_category_uid: number;
+  enrichment: any;
+  tags: string[];
+  ingested_at: string;
+  created_at: string;
+};
+
+export type Session = {
+  id: string;
+  user_id: string;
+  session_type: string;
+  source_ip: string;
+  start_time: string;
+  end_time: string;
+  status: 'active' | 'closed' | 'suspicious' | 'compromised';
+  event_count: number;
+  attributes: any;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ActiveList = {
+  id: string;
+  name: string;
+  list_type: 'blocklist' | 'allowlist' | 'watchlist';
+  category: 'ip' | 'domain' | 'user' | 'hash';
+  entries: any[];
+  description: string;
+  auto_update: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Alert = {
+  id: string;
+  title: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'new' | 'investigating' | 'resolved' | 'false_positive';
+  description: string;
+  source: string;
+  event_ids: string[];
+  assigned_to: string;
+  mitre_tactic: string;
+  mitre_technique: string;
+  confidence_score: number;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ThreatIntelligence = {
+  id: string;
+  indicator: string;
+  indicator_type: 'ip' | 'domain' | 'hash' | 'url';
+  threat_level: 'low' | 'medium' | 'high' | 'critical';
+  source: string;
+  description: string;
+  metadata: any;
+  first_seen: string;
+  last_seen: string;
+  created_at: string;
+};
+
+export type N8nWorkflow = {
+  id: string;
+  name: string;
+  description: string;
+  n8n_webhook_url: string;
+  n8n_workflow_id?: string;
+  workflow_type: 'response' | 'investigation' | 'notification' | 'remediation';
+  enabled: boolean;
+  configuration: any;
+  auth_method: 'header' | 'query' | 'basic' | 'none';
+  auth_credentials: any;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkflowTrigger = {
+  id: string;
+  workflow_id: string;
+  trigger_name: string;
+  trigger_type: 'alert' | 'threshold' | 'schedule' | 'manual' | 'event_pattern';
+  conditions: any;
+  priority: number;
+  enabled: boolean;
+  cooldown_seconds: number;
+  last_triggered_at?: string;
+  trigger_count: number;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkflowExecution = {
+  id: string;
+  workflow_id: string;
+  trigger_id?: string;
+  execution_status: 'pending' | 'running' | 'success' | 'failed' | 'timeout';
+  trigger_data: any;
+  response_data: any;
+  error_message?: string;
+  execution_time_ms?: number;
+  started_at: string;
+  completed_at?: string;
+  created_at: string;
+};
+
+export type ResponseAction = {
+  id: string;
+  execution_id: string;
+  action_type: 'block_ip' | 'isolate_user' | 'disable_account' | 'quarantine_file' | 'send_notification' | 'create_ticket' | 'custom';
+  target_entity: string;
+  action_details: any;
+  action_status: 'pending' | 'completed' | 'failed' | 'rolled_back';
+  result_message?: string;
+  rollback_possible: boolean;
+  rolled_back_at?: string;
+  created_at: string;
+};
+
+export type ThreatFeed = {
+  id: string;
+  feed_name: string;
+  feed_source: string;
+  feed_url?: string;
+  feed_type: 'ip' | 'domain' | 'url' | 'hash' | 'email' | 'mixed';
+  enabled: boolean;
+  auto_sync: boolean;
+  sync_interval_hours: number;
+  last_sync_at?: string;
+  last_sync_status?: string;
+  total_indicators: number;
+  description?: string;
+  metadata: any;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IOC = {
+  id: string;
+  feed_id?: string;
+  indicator: string;
+  indicator_type: 'ip' | 'domain' | 'url' | 'hash_md5' | 'hash_sha1' | 'hash_sha256' | 'email' | 'cve';
+  threat_type?: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  confidence_score: number;
+  tags: string[];
+  description?: string;
+  context: any;
+  embedding?: number[];
+  first_seen: string;
+  last_seen: string;
+  expiration_date?: string;
+  is_active: boolean;
+  match_count: number;
+  false_positive_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IOCMatch = {
+  id: string;
+  ioc_id: string;
+  event_id?: string;
+  match_type: 'exact' | 'similarity' | 'pattern' | 'behavioral';
+  similarity_score?: number;
+  matched_field: string;
+  matched_value: string;
+  alert_generated: boolean;
+  alert_id?: string;
+  action_taken?: string;
+  response_time_ms?: number;
+  metadata: any;
+  matched_at: string;
+  created_at: string;
+};
+
+export type FeedSyncLog = {
+  id: string;
+  feed_id: string;
+  sync_status: 'success' | 'failed' | 'partial' | 'in_progress';
+  indicators_fetched: number;
+  indicators_added: number;
+  indicators_updated: number;
+  indicators_removed: number;
+  error_message?: string;
+  sync_duration_ms?: number;
+  started_at: string;
+  completed_at?: string;
+  created_at: string;
+};
+
+export type Case = {
+  id: string;
+  case_number: string;
+  title: string;
+  description?: string;
+  status: 'new' | 'investigating' | 'contained' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  category: string;
+  assigned_to?: string;
+  created_by: string;
+  resolution?: string;
+  related_event_ids: string[];
+  related_alert_ids: string[];
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string;
+  closed_at?: string;
+};
+
+export type CaseComment = {
+  id: string;
+  case_id: string;
+  author: string;
+  comment: string;
+  is_internal: boolean;
+  created_at: string;
+};
+
+export type CaseTimeline = {
+  id: string;
+  case_id: string;
+  event_type: string;
+  description: string;
+  actor: string;
+  metadata: any;
+  created_at: string;
+};
+
+export type SessionList = {
+  id: string;
+  name: string;
+  description?: string;
+  list_category: 'login_logout' | 'ip_tracking' | 'hostile_activity' | 'operational_monitoring';
+  tracking_attributes: string[];
+  time_window_hours: number;
+  rule_driven: boolean;
+  correlation_enabled: boolean;
+  entry_count: number;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SessionListEntry = {
+  id: string;
+  session_list_id: string;
+  session_id: string;
+  user_id?: string;
+  source_ip?: string;
+  device_id?: string;
+  login_time?: string;
+  logout_time?: string;
+  duration_seconds?: number;
+  event_count: number;
+  risk_score: number;
+  status: 'active' | 'closed' | 'suspicious' | 'compromised';
+  attributes: any;
+  added_by_rule?: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  expires_at?: string;
+};
+
+export type SessionListRule = {
+  id: string;
+  session_list_id: string;
+  rule_name: string;
+  rule_description?: string;
+  event_type_filter?: string;
+  conditions: any;
+  attributes_to_capture: string[];
+  enabled: boolean;
+  priority: number;
+  trigger_count: number;
+  last_triggered_at?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SessionCorrelation = {
+  id: string;
+  session_list_id: string;
+  correlation_type: 'multiple_ips' | 'suspicious_timing' | 'anomalous_activity' | 'compromised_host';
+  involved_sessions: string[];
+  confidence_score: number;
+  description: string;
+  evidence: any;
+  alert_generated: boolean;
+  alert_id?: string;
+  reviewed: boolean;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  created_at: string;
+};
+
+export type DiscoveryProfile = {
+  id: string;
+  name: string;
+  description?: string;
+  profile_type: 'unknown_threats' | 'baseline_establishment' | 'anomaly_detection' | 'sequence_analysis';
+  event_criteria: any;
+  sequence_length_min: number;
+  sequence_length_max: number;
+  occurrence_threshold: number;
+  time_window_hours: number;
+  enabled: boolean;
+  last_run_at?: string;
+  next_run_at?: string;
+  run_frequency_hours: number;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DiscoveredPattern = {
+  id: string;
+  snapshot_id: string;
+  profile_id: string;
+  pattern_name: string;
+  pattern_type: 'threat_sequence' | 'anomaly' | 'baseline_deviation' | 'zero_day_indicator';
+  event_sequence: string[];
+  occurrence_count: number;
+  confidence_score: number;
+  threat_level: 'low' | 'medium' | 'high' | 'critical';
+  is_baseline: boolean;
+  is_anomaly: boolean;
+  description?: string;
+  event_ids: string[];
+  graph_data: any;
+  investigated: boolean;
+  rule_created: boolean;
+  rule_id?: string;
+  alert_triggered: boolean;
+  tags: string[];
+  first_seen: string;
+  last_seen: string;
+  created_at: string;
+  updated_at: string;
+};

@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --enterprise-navy: #0A1628;
+    --enterprise-slate: #1E293B;
+    --enterprise-charcoal: #0F172A;
+    --enterprise-steel: #334155;
+    --enterprise-silver: #475569;
+
+    --accent-primary: #3B82F6;
+    --accent-primary-light: #60A5FA;
+    --accent-primary-dark: #2563EB;
+
+    --status-success: #10B981;
+    --status-warning: #F59E0B;
+    --status-critical: #EF4444;
+    --status-info: #3B82F6;
+
+    --text-primary: #F8FAFC;
+    --text-secondary: #CBD5E1;
+    --text-tertiary: #94A3B8;
+    --text-muted: #64748B;
+
+    --sidebar-width: 16rem;
+    --sidebar-collapsed: 5rem;
+    --header-height: 4rem;
+  }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.011em;
+    background: var(--enterprise-navy);
+    color: var(--text-primary);
+  }
+
+  ::selection {
+    background: rgba(59, 130, 246, 0.3);
+    color: #F8FAFC;
+  }
+
+  input, textarea, select {
+    font-family: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  .enterprise-card {
+    background: var(--enterprise-slate);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 0.75rem;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.2);
+  }
+
+  .enterprise-card:hover {
+    border-color: rgba(148, 163, 184, 0.18);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.3), 0 2px 6px -2px rgba(0, 0, 0, 0.15);
+  }
+
+  .enterprise-card-interactive {
+    background: var(--enterprise-slate);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 0.75rem;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+  }
+
+  .enterprise-card-interactive:hover {
+    border-color: rgba(59, 130, 246, 0.3);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .enterprise-card-interactive:active {
+    transform: translateY(0);
+  }
+
+  .glass-panel {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(148, 163, 184, 0.08);
+  }
+
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #94A3B8;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+  }
+
+  .sidebar-item:hover {
+    color: #E2E8F0;
+    background: rgba(148, 163, 184, 0.08);
+  }
+
+  .sidebar-item-active {
+    color: #FFFFFF;
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 12px -3px rgba(59, 130, 246, 0.2);
+  }
+
+  .sidebar-item-active::before {
+    content: '';
+    position: absolute;
+    left: -0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 1.25rem;
+    background: #3B82F6;
+    border-radius: 0 2px 2px 0;
+  }
+
+  .stat-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    white-space: nowrap;
+  }
+
+  .section-divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(148, 163, 184, 0.1), transparent);
+    margin: 0.5rem 0;
+  }
+
+  .metric-glow-blue {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0.02));
+    border: 1px solid rgba(59, 130, 246, 0.15);
+  }
+
+  .metric-glow-emerald {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.02));
+    border: 1px solid rgba(16, 185, 129, 0.15);
+  }
+
+  .metric-glow-red {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(239, 68, 68, 0.02));
+    border: 1px solid rgba(239, 68, 68, 0.15);
+  }
+
+  .metric-glow-amber {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(245, 158, 11, 0.02));
+    border: 1px solid rgba(245, 158, 11, 0.15);
+  }
+
+  .metric-glow-cyan {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(6, 182, 212, 0.02));
+    border: 1px solid rgba(6, 182, 212, 0.15);
+  }
+}
+
+@layer utilities {
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.15);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.3);
+  }
+
+  .enterprise-transition {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+
+  .slide-in-from-top {
+    animation: slideDown 0.3s ease-out forwards;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .gradient-mask-b {
+    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+  }
+
+  @keyframes archFlow {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+
+  .arch-flow-line {
+    background: linear-gradient(90deg, transparent 0%, var(--flow-color, rgba(6,182,212,0.5)) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: archFlow 2s linear infinite;
+  }
+
+  @keyframes archPulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  .arch-pulse {
+    animation: archPulse 2.5s ease-in-out infinite;
+  }
+}

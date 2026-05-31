@@ -1,16 +1,14 @@
 /**
  * Databricks-Native Authentication Context
- * Uses Databricks workspace SSO (the app inherits the user's Databricks session).
- * Identity is extracted server-side from App runtime headers.
- * Zero external auth dependencies.
+ * Uses Databricks workspace SSO -- the app inherits the user's session.
+ * No Supabase auth, no external dependencies.
  */
-
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 interface User {
   id: string;
   username: string;
-  display_name: string;
+  full_name: string;
   email: string;
   groups: string[];
   is_admin: boolean;
@@ -19,20 +17,12 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  loading: true,
-  signOut: () => {},
-});
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function useAuth() {
-  return useContext(AuthContext);
-}
-
-export function AuthProvider({ children }: { children: ReactNode }) {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -40,7 +30,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchSession();
   }, []);
 
-  async function fetchSession() {
+  const fetchSession = async () => {
     try {
       const response = await fetch('/api/auth/session');
       if (response.ok) {
@@ -48,8 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.user) {
           setUser({
             id: data.user.id,
-            username: data.user.username,
-            display_name: data.user.display_name || data.user.username,
+            username: data.user.username || data.user.display_name || 'analyst',
+            full_name: data.user.display_name || data.user.username || 'SOC Analyst',
             email: data.user.email || '',
             groups: data.user.groups || [],
             is_admin: data.user.is_admin || false,
@@ -57,20 +47,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch {
-      // Network error -- leave user as null, UI will show loading/error state
+      // Network error - user stays null, UI shows appropriate state
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  function signOut() {
+  const signOut = async () => {
     setUser(null);
     window.location.href = '/';
-  }
+  };
 
   return (
     <AuthContext.Provider value={{ user, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   );
-}
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};

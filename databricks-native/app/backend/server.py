@@ -294,6 +294,14 @@ ALLOWED_TABLES = [
     "compliance_posture", "compliance_violations", "sla_metrics",
     "edge_collector_registry", "edge_collector_heartbeats",
     "edge_collector_configs", "edge_collector_incidents",
+    # Tables from Unity Catalog setup not previously listed
+    "user_sessions", "quarantine_events", "enriched_security_events",
+    "investigations", "correlation_baselines", "temporal_baselines",
+    "threat_intel_matches", "correlation_matches",
+    "trend_graph_nodes", "trend_graph_edges", "trend_runtime_metrics",
+    "health_alerts", "case_comments", "case_timeline",
+    "session_list_entries", "session_list_rules", "session_correlations",
+    "discovery_profiles", "discovered_patterns",
     # Audit
     "system_audit_log",
 ]

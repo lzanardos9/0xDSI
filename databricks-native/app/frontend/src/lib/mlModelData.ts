@@ -1,0 +1,376 @@
+import type { MLModelInfo } from '../components/MLModelExplainer';
+
+interface MLModelConfig {
+  title: string;
+  description: string;
+  models: MLModelInfo[];
+}
+
+export const ML_MODELS: Record<string, MLModelConfig> = {
+  patternDiscovery: {
+    title: 'ML Models -- Pattern Discovery Engine',
+    description: 'The Pattern Discovery Engine uses an ensemble of unsupervised and deep learning models to detect unknown threats, zero-day indicators, and anomalous behavior patterns across all ingested security telemetry. It operates continuously without labeled training data, identifying novel attack patterns that signature-based systems miss.',
+    models: [
+      {
+        name: 'Isolation Forest',
+        type: 'Unsupervised',
+        algorithm: 'sklearn.ensemble.IsolationForest (n_estimators=200, contamination=0.05)',
+        purpose: 'Detects anomalous security events that deviate from normal baseline behavior by isolating outliers in high-dimensional feature space.',
+        howItWorks: 'Builds an ensemble of random decision trees (isolation trees). Each tree recursively partitions data by selecting random features and split values. Anomalies require fewer partitions to isolate, yielding shorter average path lengths. Events with path lengths below the threshold are flagged as anomalous. The contamination parameter sets the expected proportion of outliers in the data.',
+        keyMetrics: ['Anomaly Score', 'Path Length', 'Contamination Rate', 'F1-Score', 'False Positive Rate'],
+      },
+      {
+        name: 'K-Means Clustering',
+        type: 'Unsupervised',
+        algorithm: 'sklearn.cluster.KMeans (n_clusters=dynamic, init=k-means++)',
+        purpose: 'Groups similar attack patterns and security events into coherent clusters, enabling analysts to identify attack campaigns and coordinated threats.',
+        howItWorks: 'Initializes cluster centroids using the k-means++ algorithm for optimal spread. Iteratively assigns each event vector to the nearest centroid, then recomputes centroids as the mean of assigned points. Converges when assignments stabilize. The number of clusters is dynamically determined using the elbow method and silhouette scores on the input data.',
+        keyMetrics: ['Silhouette Score', 'Inertia', 'Cluster Count', 'Inter-cluster Distance', 'Within-cluster Variance'],
+      },
+      {
+        name: 'DBSCAN Density Clustering',
+        type: 'Unsupervised',
+        algorithm: 'sklearn.cluster.DBSCAN (eps=auto, min_samples=5)',
+        purpose: 'Identifies dense clusters of security events of arbitrary shape and flags noise points as potential zero-day indicators that do not fit any known pattern.',
+        howItWorks: 'Scans the event feature space for core points (those with at least min_samples neighbors within eps radius). Expands clusters by connecting density-reachable core points. Points not reachable from any core point are labeled as noise -- these often represent novel attack techniques or zero-day exploits. Unlike K-Means, DBSCAN does not require specifying the number of clusters upfront.',
+        keyMetrics: ['Noise Ratio', 'Cluster Density', 'Epsilon (eps)', 'Core Points Count', 'Border Points Count'],
+      },
+      {
+        name: 'Autoencoder Anomaly Detector',
+        type: 'Deep Learning',
+        algorithm: 'PyTorch nn.Sequential (encoder: 256->128->64->32, decoder: 32->64->128->256)',
+        purpose: 'Learns a compressed representation of normal security event patterns. Events with high reconstruction error after decoding are flagged as anomalous.',
+        howItWorks: 'The encoder network compresses 256-dimensional event feature vectors down to a 32-dimensional latent space, forcing the model to learn the most salient features of normal behavior. The decoder reconstructs the original vector from the latent representation. During inference, events that differ significantly from learned patterns produce high reconstruction error (measured via MSE), triggering anomaly alerts. The model is trained exclusively on normal baseline data.',
+        keyMetrics: ['Reconstruction Error (MSE)', 'Latent Dimension Size', 'Training Loss', 'Threshold Percentile', 'Detection Rate'],
+      },
+      {
+        name: 'AI Correlation Agent',
+        type: 'NLP',
+        algorithm: 'LLM-powered reasoning chain with MITRE ATT&CK knowledge graph',
+        purpose: 'Converts discovered anomaly patterns into actionable correlation rules with full MITRE ATT&CK mapping, confidence scoring, and pseudo-code generation.',
+        howItWorks: 'Receives anomaly patterns from the detection pipeline and applies multi-step reasoning: (1) Pattern classification against known TTPs, (2) Zero-day indicator assessment using novelty scoring, (3) Attack chain reconstruction by linking temporally related events, (4) Rule logic synthesis with conditions, thresholds, and time windows, (5) Confidence calibration based on evidence strength and pattern frequency. Outputs production-ready correlation rules with MITRE tactic/technique assignments.',
+        keyMetrics: ['Rule Confidence Score', 'MITRE Coverage', 'Zero-Day Probability', 'Evidence Chain Length', 'False Positive Estimate'],
+      },
+    ],
+  },
+
+  vectorThreatHunting: {
+    title: 'ML Models -- Vector Threat Hunting',
+    description: 'The Vector Threat Hunting system transforms security events into high-dimensional vector embeddings, enabling semantic similarity search, cluster-based threat detection, and AI-powered correlation rule generation. Instead of matching exact signatures, it understands the meaning and context of security events.',
+    models: [
+      {
+        name: 'Sentence Transformer Embeddings',
+        type: 'Deep Learning',
+        algorithm: 'all-MiniLM-L6-v2 (384-dim) / text-embedding-ada-002 (1536-dim)',
+        purpose: 'Converts raw security events, log lines, and threat descriptions into dense numerical vectors that capture semantic meaning, enabling similarity-based threat detection.',
+        howItWorks: 'Uses a pre-trained transformer encoder to process tokenized security event text through 6+ attention layers. Each layer applies multi-head self-attention to capture contextual relationships between tokens. The final hidden states are mean-pooled into a fixed-length embedding vector. Security-specific fine-tuning on MITRE ATT&CK descriptions and CVE narratives improves domain relevance. The resulting vectors place semantically similar events close together in vector space.',
+        keyMetrics: ['Embedding Dimension', 'Encoding Latency (ms)', 'Semantic Accuracy', 'Batch Throughput', 'Model Size (MB)'],
+      },
+      {
+        name: 'FAISS ANN Index',
+        type: 'Statistical',
+        algorithm: 'Facebook AI Similarity Search (IVF-PQ index, nprobe=16)',
+        purpose: 'Provides sub-millisecond approximate nearest neighbor search across millions of event embeddings, enabling real-time threat hunting at scale.',
+        howItWorks: 'Builds an Inverted File (IVF) index that partitions the vector space into Voronoi cells using k-means clustering on the training vectors. For each query, only the nprobe closest cells are searched instead of the entire index. Product Quantization (PQ) further compresses vectors into compact codes for memory efficiency. This two-stage approach achieves >95% recall while being 100x faster than brute-force search.',
+        keyMetrics: ['Recall@10', 'Query Latency (ms)', 'Index Size (MB)', 'Vectors Indexed', 'nprobe Setting'],
+      },
+      {
+        name: 'Cosine Similarity Engine',
+        type: 'Statistical',
+        algorithm: 'dot(A, B) / (||A|| * ||B||) with threshold calibration',
+        purpose: 'Measures the angular similarity between event embedding vectors, scoring how semantically related two security events are on a 0-1 scale.',
+        howItWorks: 'Computes the cosine of the angle between two vectors in the embedding space. Values near 1.0 indicate nearly identical semantic content (e.g., two variants of the same attack). Values near 0 indicate unrelated events. The system maintains calibrated thresholds per event category: >0.92 for near-duplicates, >0.85 for strong correlation, >0.75 for weak correlation. These thresholds are periodically recalibrated using analyst feedback.',
+        keyMetrics: ['Similarity Score', 'Correlation Threshold', 'Match Rate', 'Precision@k', 'Calibration Accuracy'],
+      },
+      {
+        name: 'DBSCAN Vector Clustering',
+        type: 'Unsupervised',
+        algorithm: 'DBSCAN on L2-normalized embedding space (eps=0.3, min_samples=3)',
+        purpose: 'Automatically groups related threat events into campaigns by detecting dense regions in the vector embedding space without prior knowledge of cluster count.',
+        howItWorks: 'Operates on L2-normalized embedding vectors where cosine similarity is equivalent to Euclidean distance. Identifies core threat events with sufficient neighbors, then expands clusters through density connectivity. Events that fall outside all clusters (noise points) are flagged as potential novel threats. Cluster labels are then enriched with MITRE ATT&CK mappings based on the majority tactic within each cluster.',
+        keyMetrics: ['Cluster Count', 'Noise Ratio', 'Avg Cluster Size', 'Cluster Purity', 'Campaign Coverage'],
+      },
+      {
+        name: 'Semantic Query Engine',
+        type: 'NLP',
+        algorithm: 'Query embedding + FAISS retrieval + re-ranking with cross-encoder',
+        purpose: 'Allows analysts to hunt for threats using natural language queries like "lateral movement via stolen credentials" instead of rigid search syntax.',
+        howItWorks: 'Encodes the analyst\'s natural language query into the same embedding space as security events. Retrieves the top-k candidates via FAISS ANN search. A cross-encoder re-ranker then scores each candidate pair (query, event) for fine-grained relevance, reordering results. This two-stage retrieve-then-rerank approach balances speed (FAISS) with accuracy (cross-encoder), delivering precise results even for complex multi-concept threat hunting queries.',
+        keyMetrics: ['NDCG@10', 'Query Latency', 'Retrieval Recall', 'Re-rank Precision', 'Relevance Score'],
+      },
+    ],
+  },
+
+  llmRiskProfiling: {
+    title: 'ML Models -- LLM Usage Risk Profiling',
+    description: 'The LLM Risk Profiling system monitors all organizational LLM interactions (ChatGPT, Copilot, Claude, internal models) to detect data leakage, prompt injection attacks, policy violations, and insider threat indicators. It builds behavioral baselines per user and flags deviations using multi-factor risk scoring.',
+    models: [
+      {
+        name: 'NLP Risk Classifier',
+        type: 'NLP',
+        algorithm: 'Fine-tuned DeBERTa-v3 with custom security taxonomy (12 risk categories)',
+        purpose: 'Classifies each LLM interaction into risk categories (data leakage, prompt injection, jailbreak attempt, PII exposure, credential leak, policy violation, etc.) with per-category confidence scores.',
+        howItWorks: 'A DeBERTa-v3 transformer fine-tuned on 50K labeled security-relevant LLM interactions. The model processes both the user prompt and LLM response, using disentangled attention to separately model content and position. A multi-label classification head outputs probabilities for each of 12 risk categories. Interactions exceeding category thresholds trigger alerts. The model is continuously retrained on analyst-verified labels.',
+        keyMetrics: ['Per-class F1', 'AUC-ROC', 'Precision@0.9', 'False Alarm Rate', 'Inference Latency'],
+      },
+      {
+        name: 'Behavioral Baseline Model',
+        type: 'Statistical',
+        algorithm: 'Exponential Moving Average (EMA) with adaptive Z-score thresholds',
+        purpose: 'Establishes per-user normal LLM usage patterns (query frequency, topic distribution, sensitivity level, time-of-day patterns) and flags statistical deviations.',
+        howItWorks: 'Maintains rolling EMA baselines for each user across 15+ behavioral features: queries per hour, average prompt length, topic category distribution, sensitivity score distribution, after-hours usage ratio, etc. Z-scores are computed relative to each user\'s personal baseline. Adaptive thresholds account for natural behavioral drift (e.g., new project assignments). A sustained deviation across multiple features raises the composite anomaly score.',
+        keyMetrics: ['Z-Score', 'EMA Window', 'Feature Count', 'Drift Rate', 'Anomaly Threshold'],
+      },
+      {
+        name: 'Psychological Profile Engine',
+        type: 'Deep Learning',
+        algorithm: 'Multi-task BERT with Big Five + Dark Triad regression heads',
+        purpose: 'Assesses psychological risk indicators from LLM interaction patterns, communication style, and behavioral signals to predict insider threat potential.',
+        howItWorks: 'Analyzes linguistic features across all user communications (LLM prompts, email samples, chat messages). A multi-task BERT model simultaneously predicts Big Five personality traits (openness, conscientiousness, extraversion, agreeableness, neuroticism) and Dark Triad indicators (Machiavellianism, narcissism, psychopathy). These scores feed into the insider threat risk model. High Dark Triad scores combined with elevated data access patterns trigger escalation.',
+        keyMetrics: ['Trait Scores (0-100)', 'Prediction Confidence', 'Cross-platform Correlation', 'Risk Escalation Rate', 'Calibration Error'],
+      },
+      {
+        name: 'Prompt Injection Detector',
+        type: 'NLP',
+        algorithm: 'Ensemble: regex patterns + fine-tuned DistilBERT binary classifier',
+        purpose: 'Detects adversarial prompt injection and jailbreak attempts in real-time before they reach the LLM, preventing data extraction and model manipulation.',
+        howItWorks: 'First-pass: a high-speed regex engine checks for known injection patterns (role override, system prompt extraction, delimiter injection). Second-pass: a fine-tuned DistilBERT classifier scores the prompt on a continuous injection probability scale, catching novel injection techniques that evade pattern matching. Both scores are combined via weighted average. Prompts exceeding the threshold are blocked and logged for analyst review.',
+        keyMetrics: ['Detection Rate', 'Blocking Rate', 'False Block Rate', 'Latency Overhead', 'Pattern Coverage'],
+      },
+      {
+        name: 'Data Leakage Scorer',
+        type: 'NLP',
+        algorithm: 'Named Entity Recognition (spaCy) + custom PII/credential regex + sensitivity taxonomy',
+        purpose: 'Scans LLM responses for sensitive data exposure -- PII, credentials, internal architecture details, financial data, and proprietary information.',
+        howItWorks: 'Applies a three-layer scanning pipeline: (1) Named Entity Recognition extracts person names, organizations, locations, dates, and financial entities. (2) Custom regex patterns detect credentials (API keys, passwords, tokens, connection strings), SSNs, credit card numbers, and internal hostnames. (3) A sensitivity taxonomy classifier scores content against organizational data classification policies (public, internal, confidential, restricted). The composite leakage score combines all three layers with configurable weights.',
+        keyMetrics: ['Entity Count', 'Sensitivity Level', 'Leakage Score', 'PII Detection Rate', 'False Positive Rate'],
+      },
+    ],
+  },
+
+  modelPoisoningGuard: {
+    title: 'ML Models -- Model Poisoning Guard',
+    description: 'The Model Poisoning Guard continuously monitors deployed ML models for integrity degradation, adversarial manipulation, training data contamination, and concept drift. It implements the NIST AI Risk Management Framework and MITRE ATLAS attack taxonomy to detect sophisticated model-level attacks.',
+    models: [
+      {
+        name: 'Model Drift Detector',
+        type: 'Statistical',
+        algorithm: 'Population Stability Index (PSI) + Kolmogorov-Smirnov test on prediction distributions',
+        purpose: 'Detects when a model\'s prediction distribution shifts from its validated baseline, indicating potential poisoning, data drift, or concept drift.',
+        howItWorks: 'Continuously compares the current prediction distribution against the baseline distribution captured during model validation. PSI quantifies distributional shift: values <0.1 indicate stable performance, 0.1-0.25 indicate moderate drift, >0.25 indicates significant drift requiring investigation. The KS test provides a non-parametric confirmation. When both metrics exceed thresholds, an automated investigation is triggered, comparing feature importance shifts and identifying the most drifted features.',
+        keyMetrics: ['PSI Score', 'KS Statistic', 'Feature Drift %', 'Accuracy Delta', 'Detection Latency'],
+      },
+      {
+        name: 'Spectral Signature Analyzer',
+        type: 'Unsupervised',
+        algorithm: 'Singular Value Decomposition (SVD) on weight matrices + spectral clustering on residuals',
+        purpose: 'Detects training data contamination by analyzing the spectral properties of model weight matrices for signatures of backdoor injection or data poisoning.',
+        howItWorks: 'Performs SVD decomposition on each layer\'s weight matrix, extracting singular values and vectors. Poisoned models exhibit distinctive spectral signatures: abnormal singular value distributions, outlier right-singular vectors corresponding to backdoor triggers, and shifted spectral norms. The analyzer compares the current spectral fingerprint against the clean baseline, flagging layers with significant spectral deviations. This technique is effective against both dirty-label and clean-label poisoning attacks.',
+        keyMetrics: ['Spectral Norm Deviation', 'Singular Value Entropy', 'Backdoor Score', 'Layer Health', 'Contamination Estimate'],
+      },
+      {
+        name: 'Adversarial Input Detector',
+        type: 'Deep Learning',
+        algorithm: 'Feature squeezing ensemble + input transformation consistency check',
+        purpose: 'Identifies adversarial inputs crafted to cause misclassification, detecting evasion attacks at inference time before they affect model decisions.',
+        howItWorks: 'Applies multiple feature squeezing transformations to each input (bit-depth reduction, spatial smoothing, JPEG compression). Compares the model\'s predictions on the original and squeezed inputs. Legitimate inputs produce consistent predictions across transformations, while adversarial inputs -- which rely on precise pixel-level perturbations -- produce inconsistent predictions. A disagreement score above the threshold triggers adversarial input rejection and logging.',
+        keyMetrics: ['Disagreement Score', 'Detection Rate', 'Squeezing Methods', 'Evasion Resistance', 'Latency Impact'],
+      },
+      {
+        name: 'Integrity Hash Validator',
+        type: 'Statistical',
+        algorithm: 'SHA-256 checksums + weight distribution fingerprinting + gradient norm tracking',
+        purpose: 'Validates model file integrity and detects unauthorized weight modifications, even subtle changes that preserve overall accuracy while introducing backdoors.',
+        howItWorks: 'Maintains a multi-layered integrity profile: (1) Cryptographic hashes of model weight files for tamper detection, (2) Statistical fingerprints of weight distributions per layer (mean, variance, kurtosis), (3) Gradient norm baselines for detecting fine-tuning on poisoned data. Any deviation triggers an integrity alert. This catches scenarios where an attacker modifies a small fraction of weights to insert a backdoor while maintaining overall model performance on clean data.',
+        keyMetrics: ['Hash Match', 'Weight Distribution Shift', 'Gradient Norm Delta', 'Integrity Score', 'Tampering Probability'],
+      },
+      {
+        name: 'Defense Ensemble Orchestrator',
+        type: 'Ensemble',
+        algorithm: 'Weighted voting across all detectors + risk-priority matrix',
+        purpose: 'Combines signals from all poisoning detection models into a unified risk assessment with prioritized remediation recommendations.',
+        howItWorks: 'Aggregates alerts from drift detection, spectral analysis, adversarial detection, and integrity validation using a weighted voting scheme. Weights are calibrated based on each detector\'s historical precision for each model type (e.g., spectral analysis is weighted higher for neural networks, drift detection for gradient-boosted models). The ensemble produces a composite poisoning risk score (0-100) and maps to remediation actions: quarantine, rollback, retrain, or enhanced monitoring.',
+        keyMetrics: ['Composite Risk Score', 'Detector Agreement', 'Remediation Priority', 'MTTR', 'Coverage Score'],
+      },
+    ],
+  },
+
+  userBehavior: {
+    title: 'ML Models -- User Behavior Analytics (UBA)',
+    description: 'The User Behavior Analytics system correlates physical security events (badge access, CCTV) with logical security events (logins, file access, data transfers) to build comprehensive behavioral profiles. It detects insider threats, compromised accounts, and policy violations through multi-dimensional anomaly detection.',
+    models: [
+      {
+        name: 'Behavioral Anomaly Detector',
+        type: 'Unsupervised',
+        algorithm: 'Isolation Forest + Local Outlier Factor (LOF) ensemble on behavioral feature vectors',
+        purpose: 'Flags unusual user activity patterns by comparing current behavior against the user\'s established baseline across 20+ behavioral dimensions.',
+        howItWorks: 'Constructs a 20+ dimensional feature vector per user session: login time deviation, location entropy, resource access diversity, data volume, privilege escalation frequency, peer group deviation, after-hours activity ratio, etc. An ensemble of Isolation Forest and LOF algorithms score each session. IF captures global outliers while LOF captures local density deviations. Sessions exceeding the combined threshold trigger behavioral alerts with feature-level explanations of what deviated.',
+        keyMetrics: ['Anomaly Score', 'Feature Deviation Map', 'Baseline Stability', 'Alert Rate', 'Analyst Confirmation Rate'],
+      },
+      {
+        name: 'Multi-Factor Risk Scorer',
+        type: 'Ensemble',
+        algorithm: 'Gradient-boosted risk model with 35 features across 5 risk domains',
+        purpose: 'Computes a holistic risk score (0-100) per user by combining signals across access patterns, data handling, communication behavior, physical presence, and peer comparison.',
+        howItWorks: 'A gradient-boosted model trained on historical insider threat cases scores users across 5 risk domains: (1) Access -- unusual resource access, privilege abuse, (2) Data -- volume anomalies, sensitive data access spikes, (3) Communication -- abnormal email patterns, external contact spikes, (4) Physical -- badge anomalies, impossible travel, (5) Peer -- deviation from department baseline. Domain scores are weighted and combined. The model provides SHAP explanations showing which features drive each user\'s risk score.',
+        keyMetrics: ['Risk Score (0-100)', 'Domain Scores', 'SHAP Explanations', 'Precision@95', 'Recall for True Insiders'],
+      },
+      {
+        name: 'Physical-Logical Correlator',
+        type: 'Statistical',
+        algorithm: 'Temporal correlation with impossible travel detection + Haversine distance calculation',
+        purpose: 'Correlates physical badge access events with logical login events to detect credential sharing, impossible travel, and tailgating scenarios.',
+        howItWorks: 'Maintains a real-time timeline of physical and logical events per user. Applies temporal proximity analysis: a login from a remote IP within minutes of a badge access at HQ triggers impossible travel detection using Haversine distance / time calculations. Also detects: badge access without subsequent logical activity (tailgating), logical access without prior badge entry (credential sharing), and simultaneous physical presence at multiple locations (badge cloning).',
+        keyMetrics: ['Correlation Strength', 'Impossible Travel Rate', 'Badge-Login Delta', 'Anomaly Types Detected', 'False Correlation Rate'],
+      },
+      {
+        name: 'Insider Threat Predictor',
+        type: 'Supervised',
+        algorithm: 'XGBoost classifier trained on CERT Insider Threat Dataset v6.2 features',
+        purpose: 'Predicts the probability that a user\'s current behavioral pattern matches known insider threat progression patterns.',
+        howItWorks: 'Trained on the Carnegie Mellon CERT Insider Threat Dataset, the XGBoost classifier recognizes behavioral escalation patterns: increasing after-hours access, growing data exfiltration volumes, expanding access scope, communication pattern changes, and disengagement indicators. The model outputs a threat probability and stage classification (reconnaissance, preparation, execution, exfiltration). Early-stage detection enables proactive intervention before data loss occurs.',
+        keyMetrics: ['Threat Probability', 'Stage Classification', 'Time-to-Detection', 'Precision', 'Lead Time (days)'],
+      },
+    ],
+  },
+
+  smartThreatModeling: {
+    title: 'ML Models -- Smart Threat Modeling',
+    description: 'The Smart Threat Modeling system automatically generates threat models by classifying assets, identifying attack surfaces, mapping to STRIDE/MITRE ATT&CK taxonomies, and predicting likely attack paths. It replaces manual threat modeling with continuous, AI-driven assessment.',
+    models: [
+      {
+        name: 'STRIDE Auto-Classifier',
+        type: 'NLP',
+        algorithm: 'Fine-tuned BERT multi-label classifier (6 STRIDE categories)',
+        purpose: 'Automatically classifies identified threats into STRIDE categories (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege).',
+        howItWorks: 'Processes threat descriptions through a BERT encoder fine-tuned on 10K+ labeled threat scenarios. The multi-label classification head outputs probabilities for each STRIDE category, allowing threats to span multiple categories (e.g., a MitM attack is both Spoofing and Information Disclosure). Confidence thresholds are calibrated per category to optimize precision-recall trade-offs for the organization\'s risk tolerance.',
+        keyMetrics: ['Per-class Accuracy', 'Multi-label F1', 'Classification Confidence', 'Coverage Rate', 'Human Override Rate'],
+      },
+      {
+        name: 'MITRE ATT&CK Mapper',
+        type: 'NLP',
+        algorithm: 'Semantic similarity matching against MITRE ATT&CK knowledge base (1536-dim embeddings)',
+        purpose: 'Maps identified threats and attack scenarios to specific MITRE ATT&CK techniques, sub-techniques, and procedure examples for standardized threat intelligence.',
+        howItWorks: 'Maintains a pre-computed embedding index of all MITRE ATT&CK techniques (500+), sub-techniques (1000+), and procedure examples (5000+). For each threat, generates an embedding and performs nearest-neighbor search against the MITRE index. Returns the top-k matches with similarity scores. A re-ranking model trained on analyst mappings refines the results. This enables automatic tagging of threats with standardized MITRE IDs (e.g., T1059.001, T1078).',
+        keyMetrics: ['Mapping Accuracy', 'Top-5 Recall', 'Technique Coverage', 'Sub-technique Precision', 'Analyst Agreement'],
+      },
+      {
+        name: 'Attack Path Predictor',
+        type: 'Graph',
+        algorithm: 'Graph Neural Network (GNN) on asset-vulnerability-threat graph with PageRank centrality',
+        purpose: 'Predicts the most likely attack paths through the infrastructure by analyzing the graph of assets, vulnerabilities, access relationships, and threat intelligence.',
+        howItWorks: 'Constructs a heterogeneous graph where nodes represent assets, vulnerabilities, users, and network segments, and edges represent access relationships, vulnerability exposure, and data flows. A GNN propagates information through the graph, learning which paths are most likely to be exploited. PageRank-based centrality identifies critical chokepoints. The model outputs ranked attack paths with probability scores, estimated impact, and recommended mitigations for each path.',
+        keyMetrics: ['Path Probability', 'Impact Score', 'Centrality Ranking', 'Path Length', 'Mitigation Coverage'],
+      },
+      {
+        name: 'Risk Assessment Ensemble',
+        type: 'Ensemble',
+        algorithm: 'Bayesian network combining threat likelihood, vulnerability severity, asset criticality, and control effectiveness',
+        purpose: 'Produces calibrated risk scores by combining threat intelligence, vulnerability data, asset value, and existing security control effectiveness into a unified assessment.',
+        howItWorks: 'A Bayesian network models the causal relationships between threat actors, attack vectors, vulnerabilities, controls, and business impact. Conditional probability tables are populated from threat intelligence feeds, CVE data, asset registers, and control audit results. The network performs probabilistic inference to compute residual risk scores. Monte Carlo simulation generates confidence intervals. The output includes risk scores, contributing factors, and control gap analysis.',
+        keyMetrics: ['Risk Score (0-100)', 'Confidence Interval', 'Control Gap %', 'Threat Likelihood', 'Impact Severity'],
+      },
+    ],
+  },
+
+  malwareSandbox: {
+    title: 'ML Models -- AI Malware Sandbox',
+    description: 'The AI Malware Sandbox uses a multi-model ensemble to classify submitted files as malicious or benign. Each model specializes in a different analysis approach: static features, behavioral sequences, and structural patterns. The ensemble voting system produces a final verdict with confidence scoring.',
+    models: [
+      {
+        name: 'Gradient Boosted Trees (GBT)',
+        type: 'Supervised',
+        algorithm: 'XGBoost (max_depth=8, n_estimators=500, learning_rate=0.05) on 847 static features',
+        purpose: 'Primary classifier using static file features -- PE headers, section entropy, import table characteristics, string patterns, and file structure metadata.',
+        howItWorks: 'Extracts 847 static features from submitted files without execution: PE header flags, section count/entropy, imported API functions (especially suspicious APIs like VirtualAlloc, CreateRemoteThread), string patterns (URLs, registry keys, file paths), file size ratios, and packer signatures. The XGBoost model was trained on 2M labeled malware/benign samples. Feature importance analysis reveals the most discriminative features for each malware family, enabling human-interpretable explanations.',
+        keyMetrics: ['Accuracy', 'Feature Importance Ranking', 'Precision/Recall', 'AUC-ROC', 'Malware Family F1'],
+      },
+      {
+        name: 'LSTM Behavioral Analyzer',
+        type: 'Deep Learning',
+        algorithm: 'Bi-directional LSTM (hidden_size=256, layers=3) on system call sequences',
+        purpose: 'Analyzes temporal sequences of system calls and API calls during sandbox execution to detect malicious behavioral patterns.',
+        howItWorks: 'Monitors file execution in an isolated sandbox, recording the sequence of system calls (file operations, network calls, registry modifications, process creation). The bidirectional LSTM processes these sequences, using forward and backward passes to capture both causal and contextual relationships. Attention weights highlight the most suspicious call subsequences. This approach catches polymorphic malware that changes its static features but maintains similar behavioral patterns.',
+        keyMetrics: ['Sequence Accuracy', 'Attention Weights', 'Detection Time', 'Behavioral Signature', 'Evasion Resistance'],
+      },
+      {
+        name: 'Random Forest Classifier',
+        type: 'Supervised',
+        algorithm: 'sklearn.ensemble.RandomForestClassifier (n_estimators=1000, max_features=sqrt)',
+        purpose: 'Structural analysis of file byte-level features, n-gram distributions, and opcode frequency patterns for malware family classification.',
+        howItWorks: 'Extracts structural features: byte n-gram frequency distributions (1-4 grams), opcode frequency for executables, entropy histograms, and file format-specific structural features. The Random Forest builds 1000 decision trees, each trained on a random subset of features and samples. The majority vote across trees provides robust classification. Out-of-bag error estimation provides built-in cross-validation. Feature importance rankings identify which structural patterns are most indicative of each malware family.',
+        keyMetrics: ['OOB Error', 'Feature Importance', 'Family Classification Accuracy', 'Tree Diversity', 'Generalization Score'],
+      },
+      {
+        name: 'Ensemble Voting Orchestrator',
+        type: 'Ensemble',
+        algorithm: 'Weighted soft voting (GBT: 0.40, LSTM: 0.35, RF: 0.25) with calibrated probabilities',
+        purpose: 'Combines predictions from all three classifiers into a final malware verdict with calibrated confidence, reducing individual model weaknesses.',
+        howItWorks: 'Each classifier outputs calibrated probability scores (via Platt scaling). The ensemble computes a weighted average: GBT (40% weight for strong static analysis), LSTM (35% for behavioral detection), RF (25% for structural patterns). Weights were optimized via Bayesian optimization on a held-out validation set. If any single model outputs >0.95 probability for malware, it triggers a "high confidence" flag. Disagreement between models triggers additional analysis rounds. Final confidence intervals are computed via bootstrap aggregation.',
+        keyMetrics: ['Ensemble Accuracy', 'Model Agreement Rate', 'Confidence Calibration', 'Detection Rate', 'False Positive Rate'],
+      },
+    ],
+  },
+
+  microPatterns: {
+    title: 'ML Models -- Micro-Pattern Detection',
+    description: 'The Micro-Pattern Detection system uses vector embeddings to encode fine-grained attack signatures at the sub-technique level. Each micro-pattern represents a specific behavioral fingerprint (e.g., credential spray timing, DNS tunneling frequency) that is matched against incoming events using semantic similarity.',
+    models: [
+      {
+        name: 'Vector Embedding Engine',
+        type: 'Deep Learning',
+        algorithm: 'Custom security-domain Sentence Transformer (768-dim, trained on 500K attack descriptions)',
+        purpose: 'Encodes attack micro-patterns into dense vectors that capture the nuanced behavioral characteristics of specific attack sub-techniques.',
+        howItWorks: 'A custom Sentence Transformer was fine-tuned on 500K attack descriptions spanning 200+ MITRE sub-techniques. Contrastive learning (triplet loss with hard negative mining) ensures that vectors for similar attack variants cluster together while dissimilar attacks are pushed apart. Each micro-pattern is encoded as a 768-dimensional vector. During detection, incoming event sequences are encoded and compared against the micro-pattern library using cosine similarity with per-pattern calibrated thresholds.',
+        keyMetrics: ['Embedding Quality (MAP)', 'Intra-class Similarity', 'Inter-class Distance', 'Detection Threshold', 'Pattern Library Size'],
+      },
+      {
+        name: 'Confidence Calibrator',
+        type: 'Statistical',
+        algorithm: 'Temperature-scaled Platt calibration on similarity score distributions',
+        purpose: 'Transforms raw similarity scores into well-calibrated confidence probabilities that accurately reflect the true match likelihood.',
+        howItWorks: 'Raw cosine similarity scores are not calibrated probabilities -- a 0.85 similarity does not mean 85% chance of true match. The calibrator applies temperature scaling learned on a labeled validation set, then Platt calibration (logistic regression on similarity scores vs. true labels). This ensures that when the system reports 90% confidence, approximately 90% of those matches are true positives. Calibration is refreshed monthly as the pattern library evolves.',
+        keyMetrics: ['Expected Calibration Error', 'Brier Score', 'Reliability Diagram', 'Sharpness', 'Resolution'],
+      },
+      {
+        name: 'Reasoning Weight Optimizer',
+        type: 'Ensemble',
+        algorithm: 'Multi-armed bandit (Thompson Sampling) for dynamic feature weight optimization',
+        purpose: 'Dynamically adjusts the importance weights assigned to different evidence features when scoring micro-pattern matches, optimizing for analyst-confirmed detection accuracy.',
+        howItWorks: 'Models each evidence feature (timing pattern, source diversity, payload characteristics, etc.) as an arm in a multi-armed bandit. Thompson Sampling maintains a Beta distribution over each feature\'s contribution to correct detections. Features that consistently contribute to true positive detections receive higher sampling (weight) probabilities. This allows the system to adapt to the evolving threat landscape without manual weight tuning. Weights are updated daily based on analyst feedback.',
+        keyMetrics: ['Feature Weights', 'Regret Bound', 'Adaptation Rate', 'Analyst Feedback Score', 'Weight Stability'],
+      },
+    ],
+  },
+
+  correlationRules: {
+    title: 'ML Models -- AI Correlation Rule Engine',
+    description: 'The Correlation Rule Engine combines traditional rule-based detection with AI-powered rule generation, confidence scoring, and false positive optimization. The ML layer enhances static rules with adaptive thresholds, auto-tuning, and intelligent rule prioritization.',
+    models: [
+      {
+        name: 'Rule Confidence Scorer',
+        type: 'Supervised',
+        algorithm: 'Logistic regression on rule metadata features (trigger count, FP rate, age, complexity)',
+        purpose: 'Predicts the expected true positive rate for each correlation rule, enabling automatic prioritization and resource allocation.',
+        howItWorks: 'Trained on historical rule performance data: trigger count, confirmed true positive rate, false positive rate, rule age, condition complexity, data source coverage, and MITRE technique prevalence. The logistic regression model outputs a calibrated confidence score (0-1) predicting the probability that the next trigger will be a true positive. Rules with degrading confidence are flagged for review. New rules inherit confidence from similar existing rules via nearest-neighbor imputation.',
+        keyMetrics: ['Predicted TP Rate', 'Calibration Accuracy', 'Rule Ranking Quality', 'Degradation Alert Rate', 'Coverage Score'],
+      },
+      {
+        name: 'Adaptive Threshold Engine',
+        type: 'Statistical',
+        algorithm: 'Online percentile estimation with exponentially weighted moving quantiles',
+        purpose: 'Automatically adjusts rule thresholds (event counts, time windows, score cutoffs) based on observed data distributions to maintain consistent detection quality.',
+        howItWorks: 'Maintains online quantile estimates for each rule\'s triggering metric using the P-squared algorithm for memory-efficient percentile tracking. As the data distribution shifts (e.g., higher baseline traffic after infrastructure expansion), thresholds automatically adjust to maintain the target false positive rate. An EMA-weighted approach ensures recent data is more influential than historical data. Threshold changes are logged and require analyst approval for critical rules.',
+        keyMetrics: ['Threshold Drift', 'Target FP Rate', 'Adaptation Speed', 'Stability Score', 'Override Count'],
+      },
+      {
+        name: 'False Positive Optimizer',
+        type: 'Ensemble',
+        algorithm: 'Gradient-boosted classifier on alert context features + analyst feedback loop',
+        purpose: 'Learns from analyst feedback to automatically suppress known false positive patterns while preserving true positive detection capability.',
+        howItWorks: 'When analysts mark alerts as false positives, the system extracts contextual features (source/destination characteristics, time context, concurrent events, user role). A gradient-boosted classifier learns the FP pattern. Future alerts matching learned FP patterns are auto-suppressed with an explanation. A safety mechanism ensures suppression rules are periodically audited and that no more than a configurable percentage of alerts for any rule are suppressed. The model is retrained daily with a sliding window.',
+        keyMetrics: ['FP Reduction %', 'TP Preservation Rate', 'Suppression Accuracy', 'Model Freshness', 'Audit Pass Rate'],
+      },
+    ],
+  },
+};
