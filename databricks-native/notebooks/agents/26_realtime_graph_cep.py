@@ -336,34 +336,33 @@ except Exception as e:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Streaming Source with Watermark
+# MAGIC ## Streaming Source from ZeroBus (Sub-Second Latency)
 
 # COMMAND ----------
 
-events_table = get_table_path(cfg, "events")
 checkpoint_location = get_checkpoint_path(cfg, "graph_cep_streaming")
 
-events_stream = (
-    spark.readStream
-    .format("delta")
-    .option("ignoreChanges", "true")
-    .option("maxFilesPerTrigger", 500)
-    .table(events_table)
-    .withWatermark("timestamp", "5 minutes")
-    .select(
-        col("id").alias("event_id"),
-        col("event_type"),
-        col("user_id").alias("source_user"),
-        col("hostname").alias("source_device"),
-        col("source_ip"),
-        col("dest_ip"),
-        coalesce(col("description"), lit("")).alias("dest_domain"),
-        col("timestamp"),
-        col("severity"),
-    )
+events_stream, sdp_source = create_sdp_stream_with_fallback(
+    spark, secrets_mgr, cfg,
+    consumer_group="0xdsi-sdp-graph-cep",
+    watermark="5 minutes",
+    max_offsets_per_trigger=50000,
 )
 
-mon.log_event("graph_cep_stream_initialized", {"source_table": events_table})
+# Select only the columns needed for graph construction
+events_stream = events_stream.select(
+    col("id").alias("event_id"),
+    col("event_type"),
+    col("user_id").alias("source_user"),
+    col("hostname").alias("source_device"),
+    col("source_ip"),
+    col("dest_ip"),
+    coalesce(col("description"), lit("")).alias("dest_domain"),
+    col("timestamp"),
+    col("severity"),
+)
+
+mon.log_event("graph_cep_stream_initialized", {"source": sdp_source, "consumer_group": "0xdsi-sdp-graph-cep"})
 
 # COMMAND ----------
 

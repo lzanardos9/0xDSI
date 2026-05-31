@@ -39,6 +39,7 @@ from delta_helpers import (
 )
 from monitoring import Monitor, create_audit_table
 from secrets import SecretsManager, SecretNotFound, KNOWN_SECRETS
+from sdp_stream import create_sdp_stream, create_sdp_stream_with_fallback, SDPStreamConfig
 
 # COMMAND ----------
 
@@ -91,6 +92,8 @@ def require_enabled(agent_name: str):
 # MAGIC |----------|---------|
 # MAGIC | `get_table_path(cfg, "table")` | Full 3-part table name |
 # MAGIC | `get_checkpoint_path(cfg, "stream")` | Checkpoint location |
+# MAGIC | `create_sdp_stream(spark, secrets_mgr, cfg, group, ...)` | ZeroBus Kafka stream (sub-second) |
+# MAGIC | `create_sdp_stream_with_fallback(...)` | ZeroBus with Delta fallback |
 # MAGIC | `safe_append(df, table, ...)` | Safe Delta append |
 # MAGIC | `safe_merge(spark, df, table, keys, ...)` | Safe MERGE/UPSERT |
 # MAGIC | `streaming_append(df, table, ckpt, ...)` | Streaming write |

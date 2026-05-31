@@ -123,20 +123,18 @@ with mon.time("ioc_load"):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Event Stream
+# MAGIC ## Event Stream from ZeroBus (Sub-Second Latency)
 
 # COMMAND ----------
 
-events_table = cfg.get_table_path("events")
-
-events_stream = (
-    spark.readStream
-    .format("delta")
-    .option("ignoreChanges", "true")
-    .option("maxFilesPerTrigger", 1000)
-    .table(events_table)
-    .withWatermark("timestamp", "10 minutes")
+events_stream, sdp_source = create_sdp_stream_with_fallback(
+    spark, secrets_mgr, cfg,
+    consumer_group="0xdsi-sdp-threat-intel",
+    watermark="10 minutes",
+    max_offsets_per_trigger=100000,
 )
+
+mon.log_event("sdp_stream_connected", {"source": sdp_source, "consumer_group": "0xdsi-sdp-threat-intel"})
 
 # COMMAND ----------
 
