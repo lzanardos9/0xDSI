@@ -90,7 +90,6 @@ export default function SOCAgents3D() {
   const aurasRef = useRef<THREE.Points[]>([]);
   const holoRef = useRef<HologramParts | null>(null);
   const vrSeatRef = useRef<VRSeatParts | null>(null);
-  const realCommsQueueRef = useRef<any[]>([]);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const timeRef = useRef(0);
   const [selected, setSelected] = useState<AgentDef | null>(null);
@@ -425,36 +424,22 @@ export default function SOCAgents3D() {
       if (agents.length === 0 || !scene) return;
 
       const scenario = STATUS_MESSAGES[Math.floor(Math.random() * STATUS_MESSAGES.length)];
+      const fromIdx = scenario.from < agents.length ? scenario.from : Math.floor(Math.random() * agents.length);
+      let toIdx = scenario.to < agents.length ? scenario.to : Math.floor(Math.random() * agents.length);
+      if (toIdx === fromIdx) toIdx = (fromIdx + 1) % agents.length;
+      const packet = spawnDataPacket(agents[fromIdx], agents[toIdx], scene);
+      packetsRef.current.push(packet);
 
-      // Check real communication queue first
-      const realComm = realCommsQueueRef.current.shift();
-      let feedMsg: string;
-      let feedColor: string;
-      let feedSeverity: string;
+      const beam = spawnEnergyBeam(agents[fromIdx], agents[toIdx], scene);
+      beamsRef.current.push(beam);
 
-      if (realComm) {
-        const fromName = realComm.fromAgent || 'Agent';
-        const toName = realComm.toAgent || 'Agent';
-        feedMsg = `${fromName} -> ${toName}: ${realComm.subject || realComm.message || ''}`;
-        feedColor = '#06b6d4';
-        feedSeverity = realComm.severity || 'medium';
-      } else {
-        const fromIdx = scenario.from < agents.length ? scenario.from : Math.floor(Math.random() * agents.length);
-        let toIdx = scenario.to < agents.length ? scenario.to : Math.floor(Math.random() * agents.length);
-        if (toIdx === fromIdx) toIdx = (fromIdx + 1) % agents.length;
-        const packet = spawnDataPacket(agents[fromIdx], agents[toIdx], scene);
-        packetsRef.current.push(packet);
+      agents[toIdx].reactionTime = timeRef.current + 1.5;
 
-        const beam = spawnEnergyBeam(agents[fromIdx], agents[toIdx], scene);
-        beamsRef.current.push(beam);
-
-        agents[toIdx].reactionTime = timeRef.current + 1.5;
-        feedMsg = `${agents[fromIdx].def.name} -> ${agents[toIdx].def.name}: ${scenario.msg}`;
-        feedColor = agents[fromIdx].def.color;
-        feedSeverity = scenario.severity;
-      }
-
-      addFeedItem(feedMsg, feedColor, feedSeverity);
+      addFeedItem(
+        `${agents[fromIdx].def.name} -> ${agents[toIdx].def.name}: ${scenario.msg}`,
+        agents[fromIdx].def.color,
+        scenario.severity
+      );
 
       setLiveStats(prev => ({
         ...prev,
@@ -498,33 +483,12 @@ export default function SOCAgents3D() {
       updateThoughtBubble(agents[idx]);
     }, 2800);
 
-    // Fetch real agent communications periodically
-    const seenCommsRef = new Set<string>();
-    const realCommsInterval = setInterval(async () => {
-      try {
-        const { data } = await callFunction('agent-orchestrator', {
-          action: 'get_communications',
-          limit: 10,
-          since_minutes: 30,
-        });
-        if (data && (data as any).communications) {
-          const comms = (data as any).communications as any[];
-          const newComms = comms.filter((c: any) => c.isReal && !seenCommsRef.has(c.id));
-          newComms.forEach((c: any) => {
-            seenCommsRef.add(c.id);
-            realCommsQueueRef.current.push(c);
-          });
-        }
-      } catch {}
-    }, 10000);
-
     return () => {
       clearInterval(commInterval);
       clearInterval(pulseInterval);
       clearInterval(labelInterval);
       clearInterval(alertInterval);
       clearInterval(thoughtInterval);
-      clearInterval(realCommsInterval);
     };
   }, [addFeedItem]);
 

@@ -266,7 +266,6 @@ ALLOWED_TABLES = [
     "financial_threat_intel", "financial_transactions",
     "insider_credential_cases", "feature_lab_features", "feature_lab_creations",
     "soc_agent_registry", "agent_implementations",
-    "agent_communications", "agent_task_queue",
     "mcp_servers", "mcp_tools", "detection_confluence_signals",
     "user_activity_logs", "user_activity_sessions", "user_activity_events",
     "user_activity_lineage", "swarm_battlefields", "trend_signals",
@@ -305,10 +304,6 @@ ALLOWED_TABLES = [
     "health_alerts", "case_comments", "case_timeline",
     "session_list_entries", "session_list_rules", "session_correlations",
     "discovery_profiles", "discovered_patterns",
-    # Network & Physical Security
-    "physical_zones", "cctv_cameras", "personnel_tracking",
-    "network_segments", "datacenter_racks",
-    "physical_security_events", "physical_asset_vulnerabilities",
     # Audit
     "system_audit_log",
     # Ops
@@ -1722,134 +1717,46 @@ async def migrate_dashboard(request: Request):
 
 @app.post("/api/agent-orchestrator")
 async def agent_orchestrator_endpoint(request: Request):
-    """Agent orchestration: status, run cycle, get communications from real execution logs."""
+    """Agent orchestration: status, run cycle, get communications."""
     body = await request.json()
     action = body.get("action", "status")
     try:
         if action == "status":
             agents = query(f"""
-                SELECT ac.name, ac.agent_type, ac.enabled, as2.status, as2.last_heartbeat,
-                       as2.events_processed, as2.errors
+                SELECT ac.name, ac.agent_type, ac.enabled, as2.status, as2.last_heartbeat
                 FROM {fqn('agent_configs')} ac
                 LEFT JOIN {fqn('agent_status')} as2 ON ac.id = as2.agent_id
             """)
             return {"agents": agents}
 
         elif action == "run":
-            # Trigger actual pipeline run via Databricks Jobs API
-            job_result = trigger_job("0xDSI_SOC_Pipeline")
+            agents = query(f"SELECT id, name, agent_type, enabled FROM {fqn('agent_configs')} WHERE enabled = true")
+            agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
+            communications = _generate_agent_communications(agent_names)
             return {
                 "success": True,
-                "job_triggered": job_result.get("run_id") is not None,
-                "run_id": job_result.get("run_id"),
-                "message": "Pipeline triggered via Databricks Jobs API",
+                "agents_executed": len(agents),
+                "tasks_created": len(communications),
+                "tasks_completed": len(communications),
+                "agent_results": {},
+                "errors": [],
+                "communications": communications,
             }
 
         elif action == "get_communications":
-            limit = body.get("limit", 20)
-            since_minutes = body.get("since_minutes", 60)
-            comms = _fetch_real_communications(limit, since_minutes)
-            return {"communications": comms}
-
-        elif action == "get_executions":
-            limit = body.get("limit", 20)
-            executions = query(f"""
-                SELECT run_id, stage_name, status, duration_seconds, error_message, result_json, started_at
-                FROM {fqn('orchestration_runs')}
-                ORDER BY started_at DESC
-                LIMIT {limit}
-            """)
-            return {"executions": executions}
-
-        elif action == "get_task_queue":
-            tasks = query(f"""
-                SELECT id, agent_name, task_type, status, priority, created_at, completed_at
-                FROM {fqn('agent_task_queue')}
-                ORDER BY created_at DESC
-                LIMIT 30
-            """)
-            return {"tasks": tasks}
+            agents = query(f"SELECT id, name, agent_type FROM {fqn('agent_configs')} WHERE enabled = true LIMIT 10")
+            agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
+            communications = _generate_agent_communications(agent_names, count=1)
+            return {"communications": communications}
 
         elif action == "trigger":
             agent_id = body.get("agent_id")
-            agent_name = body.get("agent_name", "")
-            job_result = trigger_job(f"0xDSI_{agent_name}")
-            return {"status": "triggered", "agent_id": agent_id, "job": job_result}
+            return {"status": "triggered", "agent_id": agent_id}
 
         else:
             return {"status": "unknown_action"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-def _fetch_real_communications(limit: int = 20, since_minutes: int = 60) -> list:
-    """
-    Fetch real agent-to-agent communications from the agent_communications table.
-    Falls back to template generation only if table is empty.
-    """
-    try:
-        comms = query(f"""
-            SELECT id, run_id, from_agent, to_agent, message_type, subject, body,
-                   payload, alert_id, case_id, confidence, priority, status, created_at
-            FROM {fqn('agent_communications')}
-            WHERE created_at > current_timestamp() - INTERVAL {since_minutes} MINUTES
-            ORDER BY created_at DESC
-            LIMIT {limit}
-        """)
-
-        if comms:
-            return [
-                {
-                    "id": c.get("id", ""),
-                    "from": f"agent-{c.get('from_agent', '')}",
-                    "to": f"agent-{c.get('to_agent', '')}",
-                    "fromAgent": _agent_display_name(c.get("from_agent", "")),
-                    "toAgent": _agent_display_name(c.get("to_agent", "")),
-                    "message": c.get("body", ""),
-                    "subject": c.get("subject", ""),
-                    "type": c.get("message_type", "handoff"),
-                    "timestamp": int(datetime.fromisoformat(str(c.get("created_at", ""))).timestamp() * 1000) if c.get("created_at") else int(datetime.now().timestamp() * 1000),
-                    "narrative": c.get("body", ""),
-                    "severity": c.get("priority", "medium"),
-                    "actionType": c.get("message_type", "handoff"),
-                    "confidence": c.get("confidence"),
-                    "alertId": c.get("alert_id"),
-                    "caseId": c.get("case_id"),
-                    "isReal": True,
-                }
-                for c in comms
-            ]
-
-        # Fallback to templates only if no real data exists yet
-        agents = query(f"SELECT id, name, agent_type FROM {fqn('agent_configs')} WHERE enabled = true LIMIT 10")
-        agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
-        return _generate_agent_communications(agent_names, count=min(limit, 3))
-
-    except Exception:
-        # Table might not exist yet -- use templates
-        try:
-            agents = query(f"SELECT id, name, agent_type FROM {fqn('agent_configs')} WHERE enabled = true LIMIT 10")
-            agent_names = {a.get("agent_type", "unknown"): a.get("name", "Agent") for a in agents}
-            return _generate_agent_communications(agent_names, count=2)
-        except Exception:
-            return []
-
-
-_AGENT_DISPLAY_NAMES = {
-    "triage_agent": "Atlas (Triage)",
-    "enrichment_agent": "Sage (Enrichment)",
-    "threat_hunter_agent": "Nova (Threat Hunter)",
-    "nova_investigation": "Nova (Investigation)",
-    "vanguard_response": "Vanguard (Response)",
-    "orchestrator": "Orchestrator",
-    "ciso_assistant": "CISO Assistant",
-    "pattern_discovery": "Pattern Discovery",
-    "ai_correlation": "AI Correlation",
-}
-
-
-def _agent_display_name(agent_key: str) -> str:
-    return _AGENT_DISPLAY_NAMES.get(agent_key, agent_key.replace("_", " ").title())
 
 
 _COMM_TEMPLATES = {
@@ -1937,218 +1844,6 @@ def execute_write(sql: str, params: Optional[dict] = None):
         cursor.execute(sql, params)
     finally:
         cursor.close()
-
-
-# ══════════════════════════════════════════════════════════════
-# ASSET MANAGEMENT: Import & CRUD for Network + Physical
-# ══════════════════════════════════════════════════════════════
-
-@app.post("/api/import-assets")
-async def import_assets(request: Request):
-    """
-    Import assets from structured data (CSV rows, JSON array, or document text).
-    Supports: network devices, physical zones, cameras, personnel, racks, segments.
-    If 'source_text' is provided, uses LLM to extract structured asset data.
-    """
-    body = await request.json()
-    source_type = body.get("source_type", "json")  # json | csv | document
-    asset_category = body.get("asset_category", "network")  # network | physical_zone | camera | personnel | rack | segment
-    items = body.get("items", [])
-    source_text = body.get("source_text", "")
-    source_label = body.get("source_label", "manual_import")
-
-    try:
-        if source_type == "document" and source_text:
-            items = await _parse_document_to_assets(source_text, asset_category)
-            if not items:
-                return {"success": False, "error": "Could not extract assets from document", "imported": 0}
-
-        imported = 0
-        errors = []
-
-        for item in items:
-            try:
-                if asset_category == "network":
-                    _insert_network_asset(item, source_label)
-                elif asset_category == "physical_zone":
-                    _insert_physical_zone(item, source_label)
-                elif asset_category == "camera":
-                    _insert_camera(item, source_label)
-                elif asset_category == "personnel":
-                    _insert_personnel(item, source_label)
-                elif asset_category == "rack":
-                    _insert_rack(item, source_label)
-                elif asset_category == "segment":
-                    _insert_segment(item, source_label)
-                imported += 1
-            except Exception as e:
-                errors.append({"item": item.get("hostname") or item.get("zone_name") or item.get("camera_id") or str(item), "error": str(e)})
-
-        return {"success": True, "imported": imported, "errors": errors, "total_submitted": len(items)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def _parse_document_to_assets(text: str, category: str) -> list:
-    """Use LLM to extract structured asset data from freeform document text."""
-    schema_hints = {
-        "network": "hostname, ip_address, mac_address, asset_type (server/switch/router/firewall/workstation/printer/iot), os, criticality (critical/high/medium/low), location, zone (External/DMZ/Production/Internal/Office), exposed_ports, owner, department",
-        "physical_zone": "zone_name, zone_type (restricted/controlled/public/critical), security_level (level-1 to level-4), floor, building, max_occupancy",
-        "camera": "camera_id, camera_name, zone_name, camera_type (fixed/ptz/dome/thermal), resolution, has_night_vision, has_facial_recognition, ip_address",
-        "personnel": "person_id, person_name, clearance_level (level-1 to level-4), badge_type (employee/contractor/visitor), department, title",
-        "rack": "rack_id, rack_name, row_label, position, total_units, power_capacity_kw, cooling_zone",
-        "segment": "segment_name, segment_type (external/dmz/production/internal/office), vlan_id, cidr, gateway, security_level",
-    }
-
-    prompt = f"""Extract structured asset data from the following document. Return ONLY a JSON array of objects.
-Each object should have these fields: {schema_hints.get(category, '')}
-Only include fields that are clearly stated or can be confidently inferred.
-Document:
----
-{text[:8000]}
----
-Return ONLY valid JSON array, no markdown, no explanation."""
-
-    try:
-        from databricks.sdk import WorkspaceClient
-        w = WorkspaceClient()
-        response = w.serving_endpoints.query(
-            name="databricks-meta-llama-3-3-70b-instruct",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=4000,
-            temperature=0.1,
-        )
-        content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
-        return json.loads(content)
-    except Exception:
-        return []
-
-
-def _insert_network_asset(item: dict, source: str):
-    asset_id = str(uuid.uuid4())
-    execute_write(f"""
-        INSERT INTO {fqn('asset_registry')}
-        (id, hostname, asset_name, ip_address, mac_address, asset_type, os, criticality,
-         owner, department, environment, location, zone, rack_id, rack_position,
-         is_active, imported_from)
-        VALUES (:id, :hostname, :asset_name, :ip, :mac, :atype, :os, :crit,
-                :owner, :dept, :env, :loc, :zone, :rack, :rpos, true, :src)
-    """, {
-        "id": asset_id,
-        "hostname": item.get("hostname", ""),
-        "asset_name": item.get("asset_name") or item.get("hostname", ""),
-        "ip": item.get("ip_address", ""),
-        "mac": item.get("mac_address", ""),
-        "atype": item.get("asset_type", "server"),
-        "os": item.get("os", ""),
-        "crit": item.get("criticality", "medium"),
-        "owner": item.get("owner", ""),
-        "dept": item.get("department", ""),
-        "env": item.get("environment", "production"),
-        "loc": item.get("location", ""),
-        "zone": item.get("zone", "Internal"),
-        "rack": item.get("rack_id", ""),
-        "rpos": item.get("rack_position"),
-        "src": source,
-    })
-
-
-def _insert_physical_zone(item: dict, source: str):
-    zone_id = str(uuid.uuid4())
-    execute_write(f"""
-        INSERT INTO {fqn('physical_zones')}
-        (id, zone_name, zone_type, security_level, floor, building, max_occupancy, is_active, imported_from)
-        VALUES (:id, :name, :ztype, :slevel, :floor, :bldg, :max_occ, true, :src)
-    """, {
-        "id": zone_id,
-        "name": item.get("zone_name", ""),
-        "ztype": item.get("zone_type", "controlled"),
-        "slevel": item.get("security_level", "level-2"),
-        "floor": item.get("floor", "1"),
-        "bldg": item.get("building", "Main"),
-        "max_occ": item.get("max_occupancy", 20),
-        "src": source,
-    })
-
-
-def _insert_camera(item: dict, source: str):
-    cam_id = str(uuid.uuid4())
-    execute_write(f"""
-        INSERT INTO {fqn('cctv_cameras')}
-        (id, camera_id, camera_name, zone_id, camera_type, resolution,
-         has_night_vision, has_facial_recognition, ip_address, status, imported_from)
-        VALUES (:id, :cam_id, :cam_name, :zone, :ctype, :res, :nv, :fr, :ip, 'operational', :src)
-    """, {
-        "id": cam_id,
-        "cam_id": item.get("camera_id", f"CAM-{cam_id[:8]}"),
-        "cam_name": item.get("camera_name", ""),
-        "zone": item.get("zone_id") or item.get("zone_name", ""),
-        "ctype": item.get("camera_type", "fixed"),
-        "res": item.get("resolution", "4K"),
-        "nv": item.get("has_night_vision", True),
-        "fr": item.get("has_facial_recognition", False),
-        "ip": item.get("ip_address", ""),
-        "src": source,
-    })
-
-
-def _insert_personnel(item: dict, source: str):
-    pid = str(uuid.uuid4())
-    execute_write(f"""
-        INSERT INTO {fqn('personnel_tracking')}
-        (id, person_id, person_name, clearance_level, badge_type, department, title, is_active, imported_from)
-        VALUES (:id, :pid, :name, :clevel, :btype, :dept, :title, true, :src)
-    """, {
-        "id": pid,
-        "pid": item.get("person_id", f"EMP-{pid[:6]}"),
-        "name": item.get("person_name", ""),
-        "clevel": item.get("clearance_level", "level-1"),
-        "btype": item.get("badge_type", "employee"),
-        "dept": item.get("department", ""),
-        "title": item.get("title", ""),
-        "src": source,
-    })
-
-
-def _insert_rack(item: dict, source: str):
-    rid = str(uuid.uuid4())
-    execute_write(f"""
-        INSERT INTO {fqn('datacenter_racks')}
-        (id, rack_id, rack_name, row_label, position, total_units, power_capacity_kw, cooling_zone, status, imported_from)
-        VALUES (:id, :rack_id, :rack_name, :row, :pos, :units, :power, :cooling, 'operational', :src)
-    """, {
-        "id": rid,
-        "rack_id": item.get("rack_id", f"RACK-{rid[:6]}"),
-        "rack_name": item.get("rack_name", ""),
-        "row": item.get("row_label", "A"),
-        "pos": item.get("position", 1),
-        "units": item.get("total_units", 42),
-        "power": item.get("power_capacity_kw", 10.0),
-        "cooling": item.get("cooling_zone", "Zone-A"),
-        "src": source,
-    })
-
-
-def _insert_segment(item: dict, source: str):
-    sid = str(uuid.uuid4())
-    execute_write(f"""
-        INSERT INTO {fqn('network_segments')}
-        (id, segment_name, segment_type, vlan_id, cidr, gateway, zone, security_level, description, is_active, imported_from)
-        VALUES (:id, :name, :stype, :vlan, :cidr, :gw, :zone, :slevel, :desc, true, :src)
-    """, {
-        "id": sid,
-        "name": item.get("segment_name", ""),
-        "stype": item.get("segment_type", "internal"),
-        "vlan": item.get("vlan_id"),
-        "cidr": item.get("cidr", ""),
-        "gw": item.get("gateway", ""),
-        "zone": item.get("zone", "Internal"),
-        "slevel": item.get("security_level", "standard"),
-        "desc": item.get("description", ""),
-        "src": source,
-    })
 
 
 def resolve_job_id(job_name_prefix: str) -> Optional[int]:

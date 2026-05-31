@@ -414,45 +414,6 @@ USING DELTA
 """)
 
 spark.sql("""
-CREATE TABLE IF NOT EXISTS agent_communications (
-    id STRING DEFAULT uuid(),
-    run_id STRING,
-    from_agent STRING NOT NULL,
-    to_agent STRING NOT NULL,
-    message_type STRING DEFAULT 'handoff',
-    subject STRING,
-    body STRING,
-    payload STRING,
-    alert_id STRING,
-    case_id STRING,
-    confidence DOUBLE,
-    priority STRING DEFAULT 'medium',
-    status STRING DEFAULT 'delivered',
-    created_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true')
-""")
-
-spark.sql("""
-CREATE TABLE IF NOT EXISTS agent_task_queue (
-    id STRING DEFAULT uuid(),
-    run_id STRING,
-    agent_name STRING NOT NULL,
-    task_type STRING NOT NULL,
-    input_data STRING,
-    output_data STRING,
-    status STRING DEFAULT 'pending',
-    priority INT DEFAULT 5,
-    created_at TIMESTAMP DEFAULT current_timestamp(),
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    error STRING
-)
-USING DELTA
-""")
-
-spark.sql("""
 CREATE TABLE IF NOT EXISTS soc_agent_registry (
     id STRING DEFAULT uuid(),
     agent_key STRING,
@@ -717,9 +678,7 @@ spark.sql("""
 CREATE TABLE IF NOT EXISTS asset_registry (
     id STRING DEFAULT uuid(),
     hostname STRING,
-    asset_name STRING,
     ip_address STRING,
-    mac_address STRING,
     asset_type STRING,
     os STRING,
     criticality STRING DEFAULT 'medium',
@@ -727,125 +686,12 @@ CREATE TABLE IF NOT EXISTS asset_registry (
     department STRING,
     environment STRING,
     location STRING,
-    zone STRING,
-    rack_id STRING,
-    rack_position INT,
-    exposed_ports ARRAY<INT>,
-    known_vulnerabilities ARRAY<STRING>,
-    is_active BOOLEAN DEFAULT true,
     tags ARRAY<STRING>,
-    metadata STRING,
     last_scan TIMESTAMP,
-    imported_from STRING,
-    created_at TIMESTAMP DEFAULT current_timestamp(),
-    updated_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-""")
-
-spark.sql("""
-CREATE TABLE IF NOT EXISTS physical_zones (
-    id STRING DEFAULT uuid(),
-    zone_name STRING NOT NULL,
-    zone_type STRING DEFAULT 'controlled',
-    security_level STRING DEFAULT 'level-2',
-    floor STRING DEFAULT '1',
-    building STRING DEFAULT 'Main',
-    coordinates STRING,
-    boundary_points STRING,
-    access_rules STRING,
-    max_occupancy INT DEFAULT 20,
-    current_occupancy INT DEFAULT 0,
-    is_active BOOLEAN DEFAULT true,
-    imported_from STRING,
-    created_at TIMESTAMP DEFAULT current_timestamp(),
-    updated_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-""")
-
-spark.sql("""
-CREATE TABLE IF NOT EXISTS cctv_cameras (
-    id STRING DEFAULT uuid(),
-    camera_id STRING NOT NULL,
-    camera_name STRING,
-    zone_id STRING,
-    camera_type STRING DEFAULT 'fixed',
-    position STRING,
-    coverage_radius DOUBLE DEFAULT 50.0,
-    coverage_angle DOUBLE DEFAULT 120.0,
-    resolution STRING DEFAULT '4K',
-    has_night_vision BOOLEAN DEFAULT true,
-    has_facial_recognition BOOLEAN DEFAULT false,
-    status STRING DEFAULT 'operational',
-    ip_address STRING,
-    stream_url STRING,
-    imported_from STRING,
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
 """)
-
-spark.sql("""
-CREATE TABLE IF NOT EXISTS personnel_tracking (
-    id STRING DEFAULT uuid(),
-    person_id STRING NOT NULL,
-    person_name STRING NOT NULL,
-    clearance_level STRING DEFAULT 'level-1',
-    badge_type STRING DEFAULT 'employee',
-    department STRING,
-    title STRING,
-    current_zone_id STRING,
-    position STRING,
-    last_seen TIMESTAMP DEFAULT current_timestamp(),
-    badge_photo_url STRING,
-    is_active BOOLEAN DEFAULT true,
-    imported_from STRING,
-    created_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-""")
-
-spark.sql("""
-CREATE TABLE IF NOT EXISTS network_segments (
-    id STRING DEFAULT uuid(),
-    segment_name STRING NOT NULL,
-    segment_type STRING DEFAULT 'internal',
-    vlan_id INT,
-    cidr STRING,
-    gateway STRING,
-    zone STRING,
-    parent_segment_id STRING,
-    security_level STRING DEFAULT 'standard',
-    description STRING,
-    is_active BOOLEAN DEFAULT true,
-    imported_from STRING,
-    created_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-""")
-
-spark.sql("""
-CREATE TABLE IF NOT EXISTS datacenter_racks (
-    id STRING DEFAULT uuid(),
-    rack_id STRING NOT NULL,
-    rack_name STRING,
-    zone_id STRING,
-    row_label STRING,
-    position INT,
-    total_units INT DEFAULT 42,
-    used_units INT DEFAULT 0,
-    power_capacity_kw DOUBLE DEFAULT 10.0,
-    current_power_kw DOUBLE DEFAULT 0.0,
-    cooling_zone STRING,
-    status STRING DEFAULT 'operational',
-    imported_from STRING,
-    created_at TIMESTAMP DEFAULT current_timestamp()
-)
-USING DELTA
-""")
-
-print("Network & Physical security tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS data_connectors (

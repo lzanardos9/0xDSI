@@ -119,54 +119,6 @@ class EnrichmentAgent(BatchAgent):
                 # Persist results
                 self._persist_results(enrichment_results)
 
-                # Communicate findings to downstream agents
-                high_risk = [r for r in enrichment_results if r.get("enrichment_score", 0) > 0.75]
-                self._high_risk_count = len(high_risk)
-                self._ti_matches_found = sum(1 for r in enrichment_results if r.get("threat_intel_matches"))
-
-                if high_risk:
-                    self.send_communication(
-                        to_agent="threat_hunter_agent",
-                        subject=f"Enrichment: {len(high_risk)} high-risk alerts require hunting",
-                        body=f"Enriched {len(enrichment_results)} alerts. "
-                             f"{len(high_risk)} scored above 0.75 risk threshold. "
-                             f"{self._ti_matches_found} have threat intel matches. "
-                             f"Recommend hypothesis-driven hunting on these IOCs.",
-                        message_type="handoff",
-                        payload={
-                            "enriched_total": len(enrichment_results),
-                            "high_risk_count": len(high_risk),
-                            "ti_matches": self._ti_matches_found,
-                            "alert_ids": [r["alert_id"] for r in high_risk[:10]],
-                        },
-                        priority="high",
-                    )
-
-                if self._ti_matches_found > 0:
-                    self.send_communication(
-                        to_agent="triage_agent",
-                        subject=f"Enrichment feedback: {self._ti_matches_found} TI matches confirmed",
-                        body=f"Confirmed {self._ti_matches_found} threat intelligence matches "
-                             f"across {len(enrichment_results)} enriched alerts. "
-                             f"Rule-based triage confidence validated.",
-                        message_type="feedback",
-                        payload={"ti_matches": self._ti_matches_found},
-                        priority="low",
-                    )
-
-                self.send_communication(
-                    to_agent="nova_investigation",
-                    subject=f"Investigation candidates: {len(high_risk)} high-risk alerts",
-                    body=f"Completed enrichment of {len(enrichment_results)} alerts. "
-                         f"{len(high_risk)} are high-risk (score > 0.75) and ready for deep investigation.",
-                    message_type="handoff",
-                    payload={
-                        "candidate_count": len(high_risk),
-                        "avg_score": sum(r.get("enrichment_score", 0) for r in high_risk) / max(len(high_risk), 1),
-                    },
-                    priority="high" if len(high_risk) >= 3 else "medium",
-                )
-
                 # Log metrics
                 self._log_metrics(enrichment_results)
 

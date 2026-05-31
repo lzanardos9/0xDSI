@@ -1,111 +1,91 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { Shield, Lock, GitBranch, Search, ShieldCheck, Eye, Radio, Bot, Wifi, WifiOff } from 'lucide-react';
-import { callFunction } from '../../lib/llmGateway';
+import { useEffect, useRef, useState } from 'react';
+import { Shield, Lock, GitBranch, Search, ShieldCheck, Eye, Radio, Bot } from 'lucide-react';
 
-type MessageType = 'alert' | 'analysis' | 'finding' | 'hunt' | 'prediction' | 'action' | 'handoff' | 'escalation' | 'feedback' | 'dispatch' | 'task_assignment';
+type MessageType = 'alert' | 'analysis' | 'finding' | 'hunt' | 'prediction' | 'action';
 
-interface Message {
+interface Agent {
   id: string;
-  from: string;
-  fromAgent: string;
-  to?: string;
-  toAgent?: string;
-  text: string;
-  subject?: string;
-  type: MessageType;
-  timestamp: number;
-  isReal: boolean;
-  confidence?: number;
+  role: string;
+  color: string;
+  icon: typeof Shield;
 }
 
-const typeBorderColors: Record<string, string> = {
+interface Message {
+  agent: string;
+  text: string;
+  type: MessageType;
+  timestamp: number;
+}
+
+const agents: Agent[] = [
+  { id: 'SENTINEL', role: 'Threat Detection Lead', color: '#ef4444', icon: Shield },
+  { id: 'CIPHER', role: 'Cryptanalysis & Decryption', color: '#f97316', icon: Lock },
+  { id: 'NEXUS', role: 'Correlation Engine', color: '#06b6d4', icon: GitBranch },
+  { id: 'PHANTOM', role: 'Threat Hunter', color: '#22c55e', icon: Search },
+  { id: 'AEGIS', role: 'Defense Orchestrator', color: '#3b82f6', icon: ShieldCheck },
+  { id: 'ORACLE', role: 'Predictive Analytics', color: '#eab308', icon: Eye },
+];
+
+const conversationScript = [
+  { agent: 'SENTINEL', text: "I'm picking up a weird beacon pattern on WKS-FIN-042 -- every 120 seconds with about 15 seconds of jitter. Flagging it for correlation.", type: 'alert' as MessageType },
+  { agent: 'NEXUS', text: "Got it. I'm seeing three other signals that line up with this. Pattern's matching the APT-29 TTP cluster at 94% confidence. Let me pull the IOC database.", type: 'analysis' as MessageType },
+  { agent: 'CIPHER', text: "Just cracked the C2 channel headers. The JA3 fingerprint e7d705a3 is a match for the Cozy Bear toolkit -- working on extracting payload signatures now.", type: 'finding' as MessageType },
+  { agent: 'PHANTOM', text: "I went hunting across the east subnet proactively and found two more endpoints with the same beacon behavior. This is wider than we thought.", type: 'hunt' as MessageType },
+  { agent: 'ORACLE', text: "Ran the Monte Carlo sim -- 87% chance of lateral movement within four hours at current trajectory. I'd strongly recommend preemptive isolation.", type: 'prediction' as MessageType },
+  { agent: 'AEGIS', text: "On it. Kicking off containment playbook ALPHA-7 right now. Isolating the affected segment and deploying an EDR sweep across VLAN 42.", type: 'action' as MessageType },
+  { agent: 'SENTINEL', text: "Heads up, second alert just fired -- Mimikatz signature on SRV-DC-01. Something's accessing LSASS memory through an injected process.", type: 'alert' as MessageType },
+  { agent: 'NEXUS', text: "That credential dump ties directly back to the original C2 beacon. I've reconstructed the chain: Initial Access, then Execution, then Credential Access. We're at kill chain stage five.", type: 'analysis' as MessageType },
+  { agent: 'AEGIS', text: "This just escalated. I'm forcing password rotation on fourteen accounts and revoking all Kerberos tickets for the affected scope.", type: 'action' as MessageType },
+  { agent: 'PHANTOM', text: "Deep scan's finished. Good news -- no additional lateral movement beyond what we already found. Perimeter's holding. I'll keep watching.", type: 'hunt' as MessageType },
+  { agent: 'ORACLE', text: "Updated the forecast. Containment effectiveness is at 96.2% and residual risk is dropping. Should have full remediation wrapped up in about two and a half hours.", type: 'prediction' as MessageType },
+  { agent: 'CIPHER', text: "Pulled four unique IOCs out of the payload analysis. Pushing them to the threat feed now so they get blocked enterprise-wide.", type: 'finding' as MessageType },
+];
+
+const typeBorderColors: Record<MessageType, string> = {
   alert: '#ef4444',
   analysis: '#06b6d4',
   finding: '#f97316',
   hunt: '#22c55e',
   prediction: '#eab308',
   action: '#3b82f6',
-  handoff: '#06b6d4',
-  escalation: '#ef4444',
-  feedback: '#22c55e',
-  dispatch: '#8b5cf6',
-  task_assignment: '#f97316',
-};
-
-const agentColors: Record<string, string> = {
-  'triage_agent': '#ef4444',
-  'enrichment_agent': '#f97316',
-  'threat_hunter_agent': '#22c55e',
-  'nova_investigation': '#06b6d4',
-  'vanguard_response': '#3b82f6',
-  'orchestrator': '#8b5cf6',
-  'ciso_assistant': '#eab308',
-  'pattern_discovery': '#ec4899',
 };
 
 const formatRelativeTime = (timestamp: number): string => {
   const diff = Math.floor((Date.now() - timestamp) / 1000);
   if (diff < 3) return 'just now';
   if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 120) return '1m ago';
+  return `${Math.floor(diff / 60)}m ago`;
 };
 
 const AgentCommsPanel = () => {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isLive, setIsLive] = useState(false);
   const [, setTick] = useState(0);
   const feedRef = useRef<HTMLDivElement>(null);
-  const seenIdsRef = useRef<Set<string>>(new Set());
+  const nextIndexRef = useRef(3);
 
-  const fetchCommunications = useCallback(async () => {
-    try {
-      const { data, error } = await callFunction('agent-orchestrator', {
-        action: 'get_communications',
-        limit: 30,
-        since_minutes: 120,
-      });
-
-      if (error || !data) return;
-
-      const comms = (data as any).communications || [];
-      if (comms.length === 0) return;
-
-      const hasReal = comms.some((c: any) => c.isReal);
-      setIsLive(hasReal);
-
-      const newMessages: Message[] = comms
-        .filter((c: any) => !seenIdsRef.current.has(c.id))
-        .map((c: any) => {
-          seenIdsRef.current.add(c.id);
-          return {
-            id: c.id,
-            from: c.from || '',
-            fromAgent: c.fromAgent || 'Agent',
-            to: c.to,
-            toAgent: c.toAgent,
-            text: c.message || c.narrative || '',
-            subject: c.subject,
-            type: (c.type || 'handoff') as MessageType,
-            timestamp: c.timestamp || Date.now(),
-            isReal: !!c.isReal,
-            confidence: c.confidence,
-          };
-        });
-
-      if (newMessages.length > 0) {
-        setMessages(prev => [...prev, ...newMessages].slice(-50));
-      }
-    } catch {
-      // silently fail
-    }
+  useEffect(() => {
+    const now = Date.now();
+    const initial: Message[] = conversationScript.slice(0, 3).map((m, i) => ({
+      ...m,
+      timestamp: now - (3 - i) * 3500,
+    }));
+    setMessages(initial);
   }, []);
 
   useEffect(() => {
-    fetchCommunications();
-    const interval = setInterval(fetchCommunications, 5000);
+    const interval = setInterval(() => {
+      const idx = nextIndexRef.current % conversationScript.length;
+      const script = conversationScript[idx];
+      nextIndexRef.current++;
+      setMessages(prev => [
+        ...prev,
+        { ...script, timestamp: Date.now() },
+      ]);
+    }, 3500);
+
     return () => clearInterval(interval);
-  }, [fetchCommunications]);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => setTick(t => t + 1), 1000);
@@ -118,12 +98,7 @@ const AgentCommsPanel = () => {
     }
   }, [messages]);
 
-  const getAgentColor = (agentId: string): string => {
-    const key = agentId.replace('agent-', '');
-    return agentColors[key] || '#64748b';
-  };
-
-  const uniqueAgents = [...new Set(messages.map(m => m.fromAgent))];
+  const agentMap = new Map(agents.map(a => [a.id, a]));
 
   return (
     <div className="enterprise-card flex flex-col" style={{ maxHeight: 350 }}>
@@ -133,19 +108,15 @@ const AgentCommsPanel = () => {
             <Bot className="w-4 h-4 text-cyan-400" />
             <span className="text-slate-100 text-xs font-semibold tracking-wide">AGENT COMMUNICATIONS</span>
           </div>
-          {isLive && (
-            <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded text-[9px] font-mono font-bold border border-emerald-500/20">
-              PRODUCTION DATA
-            </span>
-          )}
+          <span className="px-2 py-0.5 bg-cyan-500/10 text-cyan-400 rounded text-[9px] font-mono font-bold border border-cyan-500/20">
+            MULTI-AGENT SOC
+          </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-slate-500 text-[10px] font-mono">{messages.length} MSGS</span>
+          <span className="text-slate-500 text-[10px] font-mono">{agents.length} AGENTS</span>
           <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded">
-            {isLive ? <Wifi className="w-3 h-3 text-emerald-400" /> : <WifiOff className="w-3 h-3 text-slate-500" />}
-            <span className={`text-[10px] font-mono font-bold ${isLive ? 'text-emerald-400' : 'text-slate-500'}`}>
-              {isLive ? 'LIVE' : 'POLLING'}
-            </span>
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-emerald-400 text-[10px] font-mono font-bold">LIVE</span>
           </div>
         </div>
       </div>
@@ -155,49 +126,45 @@ const AgentCommsPanel = () => {
         className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5"
         style={{ minHeight: 0 }}
       >
-        {messages.length === 0 && (
-          <div className="flex items-center justify-center h-full text-slate-600 text-xs font-mono">
-            Waiting for agent communications...
-          </div>
-        )}
         {messages.map((msg, i) => {
-          const agentColor = getAgentColor(msg.from);
+          const agent = agentMap.get(msg.agent);
+          if (!agent) return null;
           const isNew = i === messages.length - 1;
           return (
             <div
-              key={msg.id}
+              key={`${i}-${msg.timestamp}`}
               className="flex gap-2.5 py-1.5 px-2 rounded-md transition-opacity duration-500"
               style={{
-                borderLeft: `2px solid ${typeBorderColors[msg.type] || '#64748b'}`,
-                backgroundColor: msg.isReal ? 'rgba(6, 182, 212, 0.03)' : 'rgba(15, 23, 42, 0.3)',
+                borderLeft: `2px solid ${typeBorderColors[msg.type]}`,
+                backgroundColor: 'rgba(15, 23, 42, 0.3)',
+                opacity: 1,
                 animation: isNew ? 'agentMsgFadeIn 0.4s ease-out' : undefined,
               }}
             >
               <div className="flex-shrink-0 mt-0.5">
-                <div className="w-2 h-2 rounded-full mt-1" style={{ backgroundColor: agentColor }} />
+                <div
+                  className="w-2 h-2 rounded-full mt-1"
+                  style={{ backgroundColor: agent.color }}
+                />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[11px] font-mono font-bold" style={{ color: agentColor }}>
-                    {msg.fromAgent}
+                  <span
+                    className="text-[11px] font-mono font-bold"
+                    style={{ color: agent.color }}
+                  >
+                    {agent.id}
                   </span>
-                  {msg.toAgent && (
-                    <>
-                      <span className="text-[9px] text-slate-600">-&gt;</span>
-                      <span className="text-[10px] text-slate-400 font-mono">{msg.toAgent}</span>
-                    </>
-                  )}
+                  <span className="text-[9px] text-slate-600 font-mono truncate">
+                    {agent.role}
+                  </span>
                   <span className="text-[9px] text-slate-600 font-mono ml-auto flex-shrink-0">
                     {formatRelativeTime(msg.timestamp)}
                   </span>
                 </div>
-                {msg.subject && (
-                  <p className="text-[10px] text-slate-400 font-medium mb-0.5">{msg.subject}</p>
-                )}
-                <p className="text-[11px] text-slate-300 leading-relaxed">{msg.text}</p>
-                {msg.confidence != null && (
-                  <span className="text-[9px] text-cyan-500/70 font-mono">conf: {(msg.confidence * 100).toFixed(0)}%</span>
-                )}
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  {msg.text}
+                </p>
               </div>
             </div>
           );
@@ -206,25 +173,36 @@ const AgentCommsPanel = () => {
 
       <div className="flex items-center justify-between px-4 py-2 border-t border-slate-700/40 bg-slate-800/20">
         <div className="flex items-center gap-2">
-          {uniqueAgents.slice(0, 8).map(agent => (
-            <div key={agent} className="relative group">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: getAgentColor(messages.find(m => m.fromAgent === agent)?.from || '') }} />
+          {agents.map(agent => (
+            <div key={agent.id} className="relative group">
+              <div
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: agent.color }}
+              />
+              <div
+                className="absolute inset-0 w-2.5 h-2.5 rounded-full animate-ping opacity-40"
+                style={{ backgroundColor: agent.color }}
+              />
             </div>
           ))}
-          <span className="text-[10px] text-slate-500 font-mono ml-1.5">
-            {uniqueAgents.length} AGENTS ACTIVE
-          </span>
+          <span className="text-[10px] text-slate-500 font-mono ml-1.5">ALL ACTIVE</span>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-500/5 border border-cyan-500/15 rounded">
           <Radio className="w-3 h-3 text-cyan-400" />
-          <span className="text-cyan-400 text-[9px] font-mono font-bold">AUTONOMOUS</span>
+          <span className="text-cyan-400 text-[9px] font-mono font-bold">AUTONOMOUS MODE</span>
         </div>
       </div>
 
       <style>{`
         @keyframes agentMsgFadeIn {
-          from { opacity: 0; transform: translateY(6px); }
-          to { opacity: 1; transform: translateY(0); }
+          from {
+            opacity: 0;
+            transform: translateY(6px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
       `}</style>
     </div>

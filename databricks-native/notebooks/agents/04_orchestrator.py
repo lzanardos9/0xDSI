@@ -337,29 +337,10 @@ Current Execution Mode: {self._config.environment}
     def _execute_sequential(self, stages: list) -> list:
         """Execute agents sequentially."""
         results = []
-        prev_stage = None
 
         for stage in stages:
-            # Announce handoff to next agent
-            if prev_stage and prev_stage.get("status") == "success":
-                self.send_communication(
-                    to_agent=stage["name"],
-                    subject=f"Pipeline handoff from {prev_stage['stage']}",
-                    body=f"Orchestrator dispatching {stage['name']}. "
-                         f"Previous stage '{prev_stage['stage']}' completed in "
-                         f"{prev_stage.get('duration', 0):.1f}s. "
-                         f"Results: {json.dumps(prev_stage.get('result', {}))[:200]}",
-                    message_type="dispatch",
-                    payload={
-                        "previous_stage": prev_stage["stage"],
-                        "previous_result": prev_stage.get("result", {}),
-                    },
-                    priority="medium",
-                )
-
             result = self._run_agent(stage, timeout_seconds, max_retries)
             results.append(result)
-            prev_stage = result
 
             # Log and track health
             self._agent_health[stage["name"]] = result["status"]
@@ -374,19 +355,11 @@ Current Execution Mode: {self._config.environment}
                 result["status"] == "failed"
                 and stage.get("critical", False)
             ):
-                self.send_communication(
-                    to_agent="ciso_assistant",
-                    subject=f"CRITICAL: Agent {stage['name']} failed",
-                    body=f"Critical agent '{stage['name']}' has failed. "
-                         f"Error: {result.get('error', 'unknown')[:200]}. "
-                         f"Pipeline continuing but manual review recommended.",
-                    message_type="alert",
-                    priority="high",
-                )
                 logger.error(
                     f"Critical agent '{stage['name']}' failed; "
                     f"continuing pipeline but flagging for review"
                 )
+                # Continue to allow other agents to run
 
         return results
 

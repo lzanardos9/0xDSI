@@ -173,43 +173,6 @@ class TriageAgent(BatchAgent):
                 # Persist to Delta
                 self._persist_results(all_results, fp_results)
 
-                # Communicate to downstream agents
-                tp_count = sum(1 for r in all_results if r.get("classification") == "TRUE_POSITIVE")
-                needs_inv = sum(1 for r in all_results if r.get("classification") == "NEEDS_INVESTIGATION")
-
-                if tp_count > 0 or needs_inv > 0:
-                    self.send_communication(
-                        to_agent="enrichment_agent",
-                        subject=f"Triage complete: {tp_count} true positives, {needs_inv} need investigation",
-                        body=f"Processed {len(all_results)} alerts. {tp_count} confirmed TRUE_POSITIVE "
-                             f"and {needs_inv} NEEDS_INVESTIGATION are ready for enrichment. "
-                             f"{self._fp_closed_count} auto-closed as false positives.",
-                        message_type="handoff",
-                        payload={
-                            "total_processed": len(all_results),
-                            "true_positives": tp_count,
-                            "needs_investigation": needs_inv,
-                            "false_positives": self._fp_closed_count,
-                            "llm_classified": self._llm_classified_count,
-                        },
-                        priority="high" if tp_count >= 5 else "medium",
-                    )
-
-                critical_alerts = [r for r in all_results if r.get("recommended_severity") == "critical" and r.get("classification") == "TRUE_POSITIVE"]
-                for alert in critical_alerts[:3]:
-                    self.send_communication(
-                        to_agent="threat_hunter_agent",
-                        subject=f"Critical alert: {alert.get('mitre_tactic', 'unknown')} tactic detected",
-                        body=f"Alert {alert['alert_id']} classified as CRITICAL TRUE_POSITIVE "
-                             f"(confidence: {alert.get('confidence', 0):.0%}). "
-                             f"MITRE tactic: {alert.get('mitre_tactic', 'N/A')}. "
-                             f"Recommend immediate threat hunting.",
-                        message_type="escalation",
-                        alert_id=alert["alert_id"],
-                        confidence=alert.get("confidence"),
-                        priority="high",
-                    )
-
                 # Log metrics
                 self._log_metrics(all_results)
 
