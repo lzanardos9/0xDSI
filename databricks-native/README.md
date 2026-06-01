@@ -24,7 +24,7 @@
      ██  ╚══════╝ ╚═════╝  ╚═════╝                                                 ██      
      ██                                                                            ██      
      ██   D A T A B R I C K S   N A T I V E   S E C U R I T Y   P L A T F O R M    ██      
-     ██   by Luiz Zanardo                                                          ██      
+     ██   by Luiz Zanardo (lz@databricks.com)                                      ██      
      ████████████████████████████████████████████████████████████████████████████████      
                                                                                           
 ```
