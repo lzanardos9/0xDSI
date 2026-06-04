@@ -312,7 +312,7 @@ const Dashboard = () => {
       items: [
         { id: 'mitre', label: 'MITRE ATT&CK Matrix', icon: Grid3X3 },
         { id: 'glasswing', label: 'Glasswing Scanner', icon: Scan },
-        { id: 'threatradar', label: 'Threat Radar Agent', icon: Radar },
+        { id: 'threatradar', label: 'Threat Cortex', icon: Radar },
         { id: 'feeds', label: 'Threat Feeds', icon: Rss },
         { id: 'iocs', label: 'IOCs', icon: Shield },
         { id: 'stixtaxii', label: 'STIX/TAXII Intel', icon: Globe },

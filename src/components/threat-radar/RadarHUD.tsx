@@ -52,12 +52,12 @@ export default function RadarHUD({
               <Radar className="w-5 h-5 text-emerald-300" />
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-[0.22em] text-emerald-300/80 font-bold">Threat Radar Agent</div>
-              <h1 className="text-2xl font-bold text-white leading-tight">Live Intelligence Horizon</h1>
+              <div className="text-[10px] uppercase tracking-[0.22em] text-emerald-300/80 font-bold">Threat Cortex</div>
+              <h1 className="text-2xl font-bold text-white leading-tight">Predictive Intelligence Nexus</h1>
             </div>
           </div>
           <p className="text-sm text-slate-400 max-w-xl mb-4">
-            Autonomous agent scanning {stats.total > 0 ? 'live' : 'your'} feeds across CVE advisories, vendor blogs, malware trackers, bounty disclosures and academic research. Each story gets a point of view, a proposed correlation rule, and a reality check against our data.
+            Autonomous intelligence cortex scanning {stats.total > 0 ? 'live' : 'your'} feeds across CVE advisories, vendor blogs, malware trackers, bounty disclosures and academic research. Each story gets a point of view, a proposed correlation rule, and a reality check against our data.
           </p>
 
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
