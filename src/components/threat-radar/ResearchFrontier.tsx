@@ -4,8 +4,9 @@ import {
   BookOpen, Microscope, Cpu, FlaskConical, ChevronRight,
   ArrowUpRight, Lightbulb, Rocket, Clock, CheckCircle2, Eye,
   XCircle, Filter, Sparkles, GraduationCap, BrainCircuit,
-  Shield, Target, Layers, TrendingUp
+  Shield, Target, Layers, TrendingUp, Maximize2
 } from 'lucide-react';
+import ProposalArchitectureView from './ProposalArchitectureView';
 
 type Publication = {
   id: string;
@@ -83,6 +84,7 @@ export default function ResearchFrontier() {
   const [view, setView] = useState<'papers' | 'proposals'>('papers');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [expandedProposal, setExpandedProposal] = useState<Proposal | null>(null);
 
   useEffect(() => {
     loadData();
@@ -208,7 +210,7 @@ export default function ResearchFrontier() {
 
           {/* Paper Detail */}
           {selectedPaper ? (
-            <PaperDetail paper={selectedPaper} proposals={paperProposals} />
+            <PaperDetail paper={selectedPaper} proposals={paperProposals} onExpandProposal={setExpandedProposal} />
           ) : (
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center text-slate-500">
               <GraduationCap className="w-10 h-10 mx-auto mb-3 opacity-40" />
@@ -217,7 +219,16 @@ export default function ResearchFrontier() {
           )}
         </div>
       ) : (
-        <ProposalBoard proposals={filteredProposals} papers={papers} statusFilter={statusFilter} setStatusFilter={setStatusFilter} />
+        <ProposalBoard proposals={filteredProposals} papers={papers} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onExpand={setExpandedProposal} />
+      )}
+
+      {/* Architecture Modal */}
+      {expandedProposal && (
+        <ProposalArchitectureView
+          proposal={expandedProposal}
+          paper={papers.find(p => p.id === expandedProposal.publication_id) || null}
+          onClose={() => setExpandedProposal(null)}
+        />
       )}
     </div>
   );
@@ -294,7 +305,7 @@ function PaperCard({ paper, isSelected, proposalCount, onClick }: {
   );
 }
 
-function PaperDetail({ paper, proposals }: { paper: Publication; proposals: Proposal[] }) {
+function PaperDetail({ paper, proposals, onExpandProposal }: { paper: Publication; proposals: Proposal[]; onExpandProposal: (p: Proposal) => void }) {
   const cat = CATEGORY_META[paper.category] || CATEGORY_META.detection_technique;
 
   return (
@@ -374,7 +385,7 @@ function PaperDetail({ paper, proposals }: { paper: Publication; proposals: Prop
           </h4>
           <div className="space-y-2">
             {proposals.map(prop => (
-              <ProposalMiniCard key={prop.id} proposal={prop} />
+              <ProposalMiniCard key={prop.id} proposal={prop} onExpand={() => onExpandProposal(prop)} />
             ))}
           </div>
         </div>
@@ -383,20 +394,23 @@ function PaperDetail({ paper, proposals }: { paper: Publication; proposals: Prop
   );
 }
 
-function ProposalMiniCard({ proposal }: { proposal: Proposal }) {
+function ProposalMiniCard({ proposal, onExpand }: { proposal: Proposal; onExpand: () => void }) {
   const typeMeta = TYPE_BADGE[proposal.proposed_type] || TYPE_BADGE.agent;
   const statusMeta = STATUS_BADGE[proposal.status] || STATUS_BADGE.draft;
 
   return (
-    <div className="p-2.5 rounded-lg border border-slate-700/60 bg-slate-800/30 hover:bg-slate-800/50 transition">
+    <div className="p-2.5 rounded-lg border border-slate-700/60 bg-slate-800/30 hover:bg-slate-800/50 transition cursor-pointer group" onClick={onExpand}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h5 className="text-xs font-bold text-white leading-tight">{proposal.proposed_name}</h5>
           <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{proposal.description}</p>
         </div>
-        <span className={`shrink-0 px-1.5 py-0.5 rounded text-[8px] font-bold border ${statusMeta.cls}`}>
-          {statusMeta.label}
-        </span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border ${statusMeta.cls}`}>
+            {statusMeta.label}
+          </span>
+          <Maximize2 className="w-3 h-3 text-slate-600 group-hover:text-cyan-400 transition" />
+        </div>
       </div>
       <div className="flex items-center gap-2 mt-2">
         <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${typeMeta.cls}`}>
@@ -416,11 +430,12 @@ function ProposalMiniCard({ proposal }: { proposal: Proposal }) {
   );
 }
 
-function ProposalBoard({ proposals, papers, statusFilter, setStatusFilter }: {
+function ProposalBoard({ proposals, papers, statusFilter, setStatusFilter, onExpand }: {
   proposals: Proposal[];
   papers: Publication[];
   statusFilter: string;
   setStatusFilter: (s: string) => void;
+  onExpand: (p: Proposal) => void;
 }) {
   const columns = ['draft', 'under_review', 'approved', 'shipped'];
 
@@ -470,8 +485,11 @@ function ProposalBoard({ proposals, papers, statusFilter, setStatusFilter }: {
                   const paper = getPaper(prop.publication_id);
                   const typeMeta = TYPE_BADGE[prop.proposed_type] || TYPE_BADGE.agent;
                   return (
-                    <div key={prop.id} className="p-2.5 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 transition">
-                      <h5 className="text-xs font-bold text-white leading-tight mb-1">{prop.proposed_name}</h5>
+                    <div key={prop.id} onClick={() => onExpand(prop)} className="p-2.5 rounded-lg border border-slate-700/50 bg-slate-800/30 hover:bg-slate-800/50 hover:border-cyan-500/30 transition cursor-pointer group">
+                      <div className="flex items-start justify-between">
+                        <h5 className="text-xs font-bold text-white leading-tight mb-1 flex-1">{prop.proposed_name}</h5>
+                        <Maximize2 className="w-3 h-3 text-slate-700 group-hover:text-cyan-400 transition shrink-0 ml-1" />
+                      </div>
                       <p className="text-[10px] text-slate-400 line-clamp-2 mb-2">{prop.rationale}</p>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border ${typeMeta.cls}`}>
