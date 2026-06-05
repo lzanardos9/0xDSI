@@ -72,6 +72,7 @@ import SwarmCrucible from './SwarmCrucible';
 import TrendEngineCET from './TrendEngineCET';
 import MCPRegistry from './MCPRegistry';
 import PhishingSimulator from './PhishingSimulator';
+import AttackUniverse from './AttackUniverse';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -646,6 +647,11 @@ const Dashboard = () => {
                 <div className="h-[500px]">
                   <ThreatGlobe threats={mockThreats} />
                 </div>
+              </div>
+
+              {/* Attack Universe */}
+              <div className="mb-8">
+                <AttackUniverse />
               </div>
 
               {/* Live Metrics Dashboard */}
