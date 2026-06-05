@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, IS_DATABRICKS } from '../lib/supabase';
 import { callFunction } from '../lib/llmGateway';
-import { CheckCircle2, XCircle } from 'lucide-react';
+import { CheckCircle2, XCircle, Radio, GraduationCap, Zap } from 'lucide-react';
 import RadarHUD from './threat-radar/RadarHUD';
 import FeedStream from './threat-radar/FeedStream';
 import IntelligenceDossier from './threat-radar/IntelligenceDossier';
+import ResearchFrontier from './threat-radar/ResearchFrontier';
+
+type CortexTab = 'live_intel' | 'research';
 
 export default function ThreatRadar() {
   const [items, setItems] = useState<any[]>([]);
@@ -14,6 +17,7 @@ export default function ThreatRadar() {
   const [lastRun, setLastRun] = useState<string | null>(null);
   const [proposalsCount, setProposalsCount] = useState(0);
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; msg: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<CortexTab>('live_intel');
 
   useEffect(() => { load(); }, []);
 
@@ -51,14 +55,16 @@ export default function ThreatRadar() {
         }
         setToast({ kind: 'ok', msg: `Scan complete: ${itemsNew} new items processed` });
       } else {
-        const fetchRes = await callFunction('threat-radar-fetch', { limit: 15 }).then(r => r.data as any);
-        if (fetchRes?.items_new > 0) {
+        const base = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+        const headers = { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' };
+        const fetchRes = await fetch(`${base}/threat-radar-fetch`, { method: 'POST', headers, body: JSON.stringify({ limit: 15 }) }).then(r => r.json());
+        if (fetchRes.items_new > 0) {
           setToast({ kind: 'ok', msg: `Fetched ${fetchRes.items_new} new items. Analyzing...` });
-          await callFunction('threat-radar-analyze', { limit: 50 });
+          await fetch(`${base}/threat-radar-analyze`, { method: 'POST', headers, body: JSON.stringify({ limit: 50 }) });
           setToast({ kind: 'ok', msg: `Running exposure probe...` });
-          await callFunction('threat-radar-probe', { limit: 50 });
+          await fetch(`${base}/threat-radar-probe`, { method: 'POST', headers, body: JSON.stringify({ limit: 50 }) });
         }
-        setToast({ kind: 'ok', msg: `Scan complete: ${fetchRes?.items_new || 0} new, ${fetchRes?.sources_ok}/${fetchRes?.sources_attempted} sources OK` });
+        setToast({ kind: 'ok', msg: `Scan complete: ${fetchRes.items_new || 0} new, ${fetchRes.sources_ok}/${fetchRes.sources_attempted} sources OK` });
       }
       await load();
     } catch (e: any) {
@@ -81,20 +87,52 @@ export default function ThreatRadar() {
 
   return (
     <div className="p-4 space-y-4 bg-[#05070f] min-h-screen">
-      <RadarHUD items={items} stats={stats} onRefresh={scanNow} refreshing={refreshing} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
-        <FeedStream items={items} selectedId={selectedId} onSelect={setSelectedId} />
-        {selected ? (
-          <IntelligenceDossier item={selected} onRefresh={load} onPromote={(msg) => { setToast({ kind: 'ok', msg }); setTimeout(() => setToast(null), 4500); }} />
-        ) : loading ? (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-10 text-center text-slate-400">Loading feed...</div>
-        ) : (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-10 text-center text-slate-400">
-            No intelligence items yet. Click "Scan Now" to pull the latest reports.
-          </div>
-        )}
+      {/* Cortex Tab Navigation */}
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900/60 border border-slate-800 w-fit">
+        <button
+          onClick={() => setActiveTab('live_intel')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
+            activeTab === 'live_intel'
+              ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/15 border border-emerald-500/40 text-emerald-200 shadow-lg shadow-emerald-500/10'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+          }`}
+        >
+          <Radio className="w-4 h-4" />
+          Live Threat Intelligence
+        </button>
+        <button
+          onClick={() => setActiveTab('research')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${
+            activeTab === 'research'
+              ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/15 border border-cyan-500/40 text-cyan-200 shadow-lg shadow-cyan-500/10'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4" />
+          Research Frontier
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">NEW</span>
+        </button>
       </div>
+
+      {activeTab === 'live_intel' ? (
+        <>
+          <RadarHUD items={items} stats={stats} onRefresh={scanNow} refreshing={refreshing} />
+          <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
+            <FeedStream items={items} selectedId={selectedId} onSelect={setSelectedId} />
+            {selected ? (
+              <IntelligenceDossier item={selected} onRefresh={load} onPromote={(msg) => { setToast({ kind: 'ok', msg }); setTimeout(() => setToast(null), 4500); }} />
+            ) : loading ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-10 text-center text-slate-400">Loading feed...</div>
+            ) : (
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-10 text-center text-slate-400">
+                No intelligence items yet. Click "Scan Now" to pull the latest reports.
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <ResearchFrontier />
+      )}
 
       {toast && (
         <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded-lg border text-sm font-semibold shadow-xl z-50 ${
