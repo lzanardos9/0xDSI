@@ -695,6 +695,11 @@ const AttackUniverse = () => {
       return;
     }
 
+    // Auto-switch to future mode so predictions are available
+    if (timelineMode !== 'future') {
+      setTimelineMode('future');
+    }
+
     const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -755,7 +760,7 @@ const AttackUniverse = () => {
     voiceActiveRef.current = true;
     setVoiceActive(true);
     setVoiceTranscript('Listening...');
-  }, [sortedPredictions]);
+  }, [sortedPredictions, timelineMode]);
 
   const stopVoiceCapture = useCallback(() => {
     if (recognitionRef.current) {
@@ -1903,53 +1908,33 @@ const AttackUniverse = () => {
 
       <video ref={videoRef} className="hidden" playsInline muted />
 
-      {/* Hologram PIP - silhouette only, no raw camera feed */}
+      {/* Hologram PIP - CSS-filtered silhouette, no raw camera feed */}
       {handTrackingOn && (
         <div className="absolute bottom-24 right-4 z-30 w-44 h-32 rounded-lg border border-cyan-500/30 overflow-hidden shadow-lg shadow-cyan-500/20 bg-[#020a14]">
-          <canvas
-            ref={el => {
-              if (!el || !videoRef.current?.srcObject) return;
-              const ctx = el.getContext('2d');
-              if (!ctx) return;
-              el.width = 176;
-              el.height = 128;
-              const tmpVideo = document.createElement('video');
-              tmpVideo.srcObject = videoRef.current.srcObject;
-              tmpVideo.playsInline = true;
-              tmpVideo.muted = true;
-              tmpVideo.play();
-              let frameId = 0;
-              const drawHologram = () => {
-                frameId = requestAnimationFrame(drawHologram);
-                ctx.save();
-                ctx.translate(el.width, 0);
-                ctx.scale(-1, 1);
-                ctx.drawImage(tmpVideo, 0, 0, el.width, el.height);
-                ctx.restore();
-                const imgData = ctx.getImageData(0, 0, el.width, el.height);
-                const d = imgData.data;
-                for (let i = 0; i < d.length; i += 4) {
-                  const lum = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
-                  const edge = lum > 40 ? Math.min(255, lum * 0.6) : 0;
-                  d[i] = 0;
-                  d[i+1] = Math.floor(edge * 0.9);
-                  d[i+2] = Math.floor(edge);
-                  d[i+3] = edge > 15 ? Math.min(200, Math.floor(edge * 0.8)) : 0;
+          <div className="relative w-full h-full">
+            <video
+              ref={el => {
+                if (el && videoRef.current?.srcObject) {
+                  el.srcObject = videoRef.current.srcObject;
+                  el.play();
                 }
-                ctx.putImageData(imgData, 0, 0);
-                // Scanlines
-                ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
-                for (let y = 0; y < el.height; y += 3) {
-                  ctx.fillRect(0, y, el.width, 1);
-                }
-              };
-              drawHologram();
-              (el as any)._holoFrame = frameId;
-              (el as any)._holoVideo = tmpVideo;
-            }}
-            className="w-full h-full"
-          />
-          <div className="absolute inset-0 rounded-lg pointer-events-none" style={{boxShadow: 'inset 0 0 20px rgba(0,255,255,0.1)'}} />
+              }}
+              className="w-full h-full object-cover transform scale-x-[-1]"
+              style={{
+                filter: 'saturate(0) brightness(0.4) contrast(2.5)',
+                mixBlendMode: 'screen',
+              }}
+              playsInline muted autoPlay
+            />
+            <div className="absolute inset-0 pointer-events-none" style={{
+              background: 'linear-gradient(180deg, rgba(0,255,255,0.15) 0%, rgba(0,180,200,0.08) 100%)',
+              mixBlendMode: 'color',
+            }} />
+            <div className="absolute inset-0 pointer-events-none" style={{
+              backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,255,0.04) 2px, rgba(0,255,255,0.04) 3px)',
+            }} />
+          </div>
+          <div className="absolute inset-0 rounded-lg pointer-events-none" style={{boxShadow: 'inset 0 0 20px rgba(0,255,255,0.15)'}} />
           <div className="absolute top-1 left-2 flex items-center gap-1">
             <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
             <span className="text-[8px] text-cyan-400/70 font-bold uppercase tracking-wider">HOLO</span>
@@ -2150,6 +2135,11 @@ const AttackUniverse = () => {
         >
           {voiceActive ? <Mic className="w-4 h-4 animate-pulse" /> : <MicOff className="w-4 h-4" />}
         </button>
+        {voiceActive && voiceTranscript && (
+          <div className="px-2 py-1.5 rounded-lg border border-cyan-500/20 bg-slate-900/80 backdrop-blur-sm max-w-[140px]">
+            <span className="text-[8px] font-mono text-cyan-300/80 truncate block">{voiceTranscript}</span>
+          </div>
+        )}
         <button
           onClick={() => {
             if (sceneDataRef.current) {
