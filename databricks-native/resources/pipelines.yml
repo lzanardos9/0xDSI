@@ -25,3 +25,25 @@ resources:
             min_workers: 1
             max_workers: 4
             mode: "ENHANCED"
+
+    attack_universe_realtime:
+      name: "[0xDSI] Attack Universe - Real-Time Intelligence Pipeline"
+      target: ${var.schema}
+      catalog: ${var.catalog}
+      development: false
+      continuous: true
+      channel: "CURRENT"
+      photon: true
+      serverless: true
+      libraries:
+        - notebook:
+            path: ../notebooks/pipelines/attack_universe_realtime.py
+      configuration:
+        catalog: ${var.catalog}
+        schema: ${var.schema}
+      clusters:
+        - label: "default"
+          autoscale:
+            min_workers: 1
+            max_workers: 2
+            mode: "ENHANCED"
