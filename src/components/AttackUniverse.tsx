@@ -571,7 +571,7 @@ const AttackUniverse = () => {
   const [shockwaveActive, setShockwaveActive] = useState(false);
   const [twoHandsDetected, setTwoHandsDetected] = useState(false);
   const [showGestureTutorial, setShowGestureTutorial] = useState(true);
-  const [liveEvents, setLiveEvents] = useState<{ ts: string; type: string; src: string; dst: string; severity: string; detail: string }[]>([]);
+  const [liveEvents, setLiveEvents] = useState<{ ts: string; type: string; src: string; dst: string; severity: string; detail: string; domain: string }[]>([]);
   const [activeThreatActor, setActiveThreatActor] = useState({ name: 'APT-29 (Cozy Bear)', confidence: 92 });
   const [timelineOffset, setTimelineOffset] = useState(0);
   const [timelineMode, setTimelineMode] = useState<'past' | 'present' | 'future'>('present');
@@ -615,16 +615,16 @@ const AttackUniverse = () => {
   // Live event generation (security events every 2.2s)
   useEffect(() => {
     const eventTemplates = [
-      { type: 'AUTH_FAIL', src: '10.0.2.{r}', dst: 'DC-01', severity: 'HIGH', detail: 'Brute-force attempt on service account svc_backup' },
-      { type: 'C2_BEACON', src: '192.168.1.{r}', dst: '45.33.32.{r}', severity: 'CRITICAL', detail: 'Cobalt Strike beacon detected, 60s jitter interval' },
-      { type: 'PROC_INJ', src: 'WKS-{r}', dst: 'lsass.exe', severity: 'CRITICAL', detail: 'Process injection via NtMapViewOfSection into LSASS' },
-      { type: 'DNS_TUN', src: '10.0.5.{r}', dst: 'ns1.evil.{r}.cc', severity: 'HIGH', detail: 'DNS tunneling detected, high entropy subdomain queries' },
-      { type: 'EXFIL', src: 'DB-PROD-{r}', dst: '185.220.{r}.{r}', severity: 'CRITICAL', detail: 'Anomalous data transfer 2.3GB to external endpoint' },
-      { type: 'PRIV_ESC', src: 'WKS-{r}', dst: 'SYSTEM', severity: 'HIGH', detail: 'Token impersonation via SeImpersonatePrivilege exploitation' },
-      { type: 'LAT_MOV', src: '10.0.3.{r}', dst: '10.0.4.{r}', severity: 'HIGH', detail: 'WMI lateral movement using stolen credentials' },
-      { type: 'CRED_DUMP', src: 'SRV-{r}', dst: 'ntds.dit', severity: 'CRITICAL', detail: 'DCSync replication request from non-DC host' },
-      { type: 'MALWARE', src: 'EMAIL-GW', dst: 'WKS-{r}', severity: 'HIGH', detail: 'Emotet dropper detected in macro-enabled document' },
-      { type: 'ANOMALY', src: 'CLOUD-{r}', dst: 'S3-PROD', severity: 'HIGH', detail: 'Unusual API call pattern from unfamiliar geo-location' },
+      { type: 'AUTH_FAIL', src: '10.0.2.{r}', dst: 'DC-01', severity: 'HIGH', detail: 'Brute-force attempt on service account svc_backup', domain: 'identity' },
+      { type: 'C2_BEACON', src: '192.168.1.{r}', dst: '45.33.32.{r}', severity: 'CRITICAL', detail: 'Cobalt Strike beacon detected, 60s jitter interval', domain: 'network' },
+      { type: 'PROC_INJ', src: 'WKS-{r}', dst: 'lsass.exe', severity: 'CRITICAL', detail: 'Process injection via NtMapViewOfSection into LSASS', domain: 'endpoint' },
+      { type: 'DNS_TUN', src: '10.0.5.{r}', dst: 'ns1.evil.{r}.cc', severity: 'HIGH', detail: 'DNS tunneling detected, high entropy subdomain queries', domain: 'network' },
+      { type: 'EXFIL', src: 'DB-PROD-{r}', dst: '185.220.{r}.{r}', severity: 'CRITICAL', detail: 'Anomalous data transfer 2.3GB to external endpoint', domain: 'data' },
+      { type: 'PRIV_ESC', src: 'WKS-{r}', dst: 'SYSTEM', severity: 'HIGH', detail: 'Token impersonation via SeImpersonatePrivilege exploitation', domain: 'endpoint' },
+      { type: 'LAT_MOV', src: '10.0.3.{r}', dst: '10.0.4.{r}', severity: 'HIGH', detail: 'WMI lateral movement using stolen credentials', domain: 'network' },
+      { type: 'CRED_DUMP', src: 'SRV-{r}', dst: 'ntds.dit', severity: 'CRITICAL', detail: 'DCSync replication request from non-DC host', domain: 'identity' },
+      { type: 'MALWARE', src: 'EMAIL-GW', dst: 'WKS-{r}', severity: 'HIGH', detail: 'Emotet dropper detected in macro-enabled document', domain: 'endpoint' },
+      { type: 'ANOMALY', src: 'CLOUD-{r}', dst: 'S3-PROD', severity: 'HIGH', detail: 'Unusual API call pattern from unfamiliar geo-location', domain: 'cloud' },
     ];
     const r = () => Math.floor(Math.random() * 254 + 1);
     const iv = setInterval(() => {
@@ -638,6 +638,7 @@ const AttackUniverse = () => {
         dst: tmpl.dst.replace(/\{r\}/g, () => String(r())),
         severity: tmpl.severity,
         detail: tmpl.detail,
+        domain: tmpl.domain,
       };
       setLiveEvents(prev => [evt, ...prev.slice(0, 9)]);
     }, 2200);
@@ -1902,23 +1903,59 @@ const AttackUniverse = () => {
 
       <video ref={videoRef} className="hidden" playsInline muted />
 
-      {/* Webcam PIP */}
+      {/* Hologram PIP - silhouette only, no raw camera feed */}
       {handTrackingOn && (
-        <div className="absolute bottom-24 right-4 z-30 w-44 h-32 rounded-lg border-2 border-cyan-500/50 overflow-hidden shadow-lg shadow-cyan-500/20">
-          <video
+        <div className="absolute bottom-24 right-4 z-30 w-44 h-32 rounded-lg border border-cyan-500/30 overflow-hidden shadow-lg shadow-cyan-500/20 bg-[#020a14]">
+          <canvas
             ref={el => {
-              if (el && videoRef.current?.srcObject) {
-                el.srcObject = videoRef.current.srcObject;
-                el.play();
-              }
+              if (!el || !videoRef.current?.srcObject) return;
+              const ctx = el.getContext('2d');
+              if (!ctx) return;
+              el.width = 176;
+              el.height = 128;
+              const tmpVideo = document.createElement('video');
+              tmpVideo.srcObject = videoRef.current.srcObject;
+              tmpVideo.playsInline = true;
+              tmpVideo.muted = true;
+              tmpVideo.play();
+              let frameId = 0;
+              const drawHologram = () => {
+                frameId = requestAnimationFrame(drawHologram);
+                ctx.save();
+                ctx.translate(el.width, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(tmpVideo, 0, 0, el.width, el.height);
+                ctx.restore();
+                const imgData = ctx.getImageData(0, 0, el.width, el.height);
+                const d = imgData.data;
+                for (let i = 0; i < d.length; i += 4) {
+                  const lum = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+                  const edge = lum > 40 ? Math.min(255, lum * 0.6) : 0;
+                  d[i] = 0;
+                  d[i+1] = Math.floor(edge * 0.9);
+                  d[i+2] = Math.floor(edge);
+                  d[i+3] = edge > 15 ? Math.min(200, Math.floor(edge * 0.8)) : 0;
+                }
+                ctx.putImageData(imgData, 0, 0);
+                // Scanlines
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
+                for (let y = 0; y < el.height; y += 3) {
+                  ctx.fillRect(0, y, el.width, 1);
+                }
+              };
+              drawHologram();
+              (el as any)._holoFrame = frameId;
+              (el as any)._holoVideo = tmpVideo;
             }}
-            className="w-full h-full object-cover transform scale-x-[-1]"
-            playsInline muted autoPlay
+            className="w-full h-full"
           />
-          <div className="absolute inset-0 border-2 border-cyan-400/20 rounded-lg pointer-events-none" />
+          <div className="absolute inset-0 rounded-lg pointer-events-none" style={{boxShadow: 'inset 0 0 20px rgba(0,255,255,0.1)'}} />
           <div className="absolute top-1 left-2 flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-[8px] text-cyan-400 font-bold uppercase">LIVE</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-[8px] text-cyan-400/70 font-bold uppercase tracking-wider">HOLO</span>
+          </div>
+          <div className="absolute bottom-1 right-2">
+            <span className="text-[7px] text-cyan-600/50 font-mono">GESTURE FEED</span>
           </div>
         </div>
       )}
@@ -2103,6 +2140,17 @@ const AttackUniverse = () => {
           {handTrackingOn ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
         </button>
         <button
+          onClick={voiceActive ? stopVoiceCapture : startVoiceCapture}
+          className={`p-2.5 rounded-lg border transition-all backdrop-blur-sm ${
+            voiceActive
+              ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400 shadow-lg shadow-cyan-500/20'
+              : 'border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30'
+          }`}
+          title={voiceActive ? 'Stop voice capture' : 'Enable voice commands'}
+        >
+          {voiceActive ? <Mic className="w-4 h-4 animate-pulse" /> : <MicOff className="w-4 h-4" />}
+        </button>
+        <button
           onClick={() => {
             if (sceneDataRef.current) {
               sceneDataRef.current.controls.target.set(0, 0, 0);
@@ -2271,25 +2319,7 @@ const AttackUniverse = () => {
             <div className="flex items-center gap-2 mb-2">
               <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-[0.15em]">Monte Carlo Simulation</span>
-              <span className="text-[8px] font-mono text-slate-600 ml-auto mr-1">10K iterations</span>
-              <button
-                onClick={voiceActive ? stopVoiceCapture : startVoiceCapture}
-                className={`relative w-6 h-6 rounded-md flex items-center justify-center transition-all duration-300 ${
-                  voiceActive
-                    ? 'bg-cyan-500/20 border border-cyan-400/50 shadow-lg shadow-cyan-500/20'
-                    : 'bg-white/[0.03] border border-white/10 hover:bg-cyan-500/10 hover:border-cyan-500/30'
-                }`}
-                title={voiceActive ? 'Stop voice capture' : 'Speak a number to select forecast'}
-              >
-                {voiceActive ? (
-                  <Mic className="w-3 h-3 text-cyan-400 animate-pulse" />
-                ) : (
-                  <MicOff className="w-3 h-3 text-slate-500" />
-                )}
-                {voiceActive && (
-                  <div className="absolute inset-0 rounded-md border border-cyan-400/50 animate-ping opacity-30" />
-                )}
-              </button>
+              <span className="text-[8px] font-mono text-slate-600 ml-auto">10K iterations</span>
             </div>
             {voiceActive && voiceTranscript && (
               <div className="mb-2 px-2 py-1.5 rounded-md bg-cyan-500/[0.06] border border-cyan-500/15">
@@ -2453,19 +2483,23 @@ const AttackUniverse = () => {
     </div>
 
     {/* Scene Intercepts - below the 3D universe */}
-    {!selectedDomain && !isFullscreen && liveEvents.length > 0 && (
+    {!isFullscreen && liveEvents.length > 0 && (
       <div className="w-full mt-3">
-        <div className="rounded-xl border border-cyan-500/8 bg-[#040c1a]/70 backdrop-blur-2xl p-3 shadow-2xl shadow-cyan-900/10">
+        <div className="rounded-xl border bg-[#040c1a]/70 backdrop-blur-2xl p-3 shadow-2xl shadow-cyan-900/10" style={{ borderColor: selectedDomain ? `${selectedDomain.color}15` : 'rgba(6,182,212,0.08)' }}>
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="text-[9px] font-mono text-cyan-400/70 uppercase tracking-[0.15em]">Scene Intercepts</span>
-            <span className="text-[8px] font-mono text-slate-600 ml-auto">{liveEvents.length} signals</span>
+            <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: selectedDomain ? selectedDomain.color : '#22d3ee' }} />
+            <span className="text-[9px] font-mono uppercase tracking-[0.15em]" style={{ color: selectedDomain ? `${selectedDomain.color}bb` : 'rgba(34,211,238,0.7)' }}>
+              {selectedDomain ? `${selectedDomain.name} Intercepts` : 'Scene Intercepts'}
+            </span>
+            <span className="text-[8px] font-mono text-slate-600 ml-auto">
+              {(selectedDomain ? liveEvents.filter(e => e.domain === selectedDomain.id) : liveEvents).length} signals
+            </span>
           </div>
           <div className="grid grid-cols-2 gap-1">
-            {liveEvents.map((evt, i) => (
+            {(selectedDomain ? liveEvents.filter(e => e.domain === selectedDomain.id) : liveEvents).map((evt, i) => (
               <button
                 key={`ambient-${evt.ts}-${i}`}
-                onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: 'network', detail: evt.detail, severity: evt.severity })}
+                onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: evt.domain, detail: evt.detail, severity: evt.severity })}
                 className="flex items-start gap-2 text-[9px] font-mono py-1.5 px-2 rounded bg-white/[0.01] border-l-2 transition-all duration-300 hover:bg-cyan-500/[0.05] hover:border-l-cyan-400 text-left group"
                 style={{
                   borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : '#f97316',
@@ -2479,8 +2513,11 @@ const AttackUniverse = () => {
               </button>
             ))}
           </div>
+          {(selectedDomain ? liveEvents.filter(e => e.domain === selectedDomain.id) : liveEvents).length === 0 && (
+            <div className="text-center py-4 text-[10px] text-slate-600 font-mono">No intercepts for {selectedDomain?.name} domain yet</div>
+          )}
           <div className="mt-2 pt-2 border-t border-white/[0.03] flex items-center justify-between">
-            <span className="text-[8px] font-mono text-slate-600">Click to investigate</span>
+            <span className="text-[8px] font-mono text-slate-600">{selectedDomain ? `Filtered by ${selectedDomain.name}` : 'Click to investigate'}</span>
             <span className="text-[8px] font-mono text-cyan-500/40 animate-pulse">MONITORING</span>
           </div>
         </div>
