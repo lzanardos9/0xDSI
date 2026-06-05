@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
-import { Crosshair, Maximize2, Minimize2, Video, VideoOff, RotateCcw, Hand, Zap, Link2, Target } from 'lucide-react';
+import { Crosshair, Maximize2, Minimize2, Video, VideoOff, RotateCcw, Hand, Zap, Link2, Target, X, AlertTriangle, Shield, Activity, Clock, TrendingUp } from 'lucide-react';
 
 interface DomainData {
   id: string;
@@ -46,6 +46,424 @@ function getSeverityConfig(s: SeverityLevel) {
     case 'critical': return { color: new THREE.Color('#ef4444'), hex: '#ef4444' };
   }
 }
+
+// Attack Forecast Graph Modal - stunning visualization of predicted attack paths
+const AttackForecastModal = ({ forecast, onClose }: { forecast: { label: string; probability: number; impact: string; path: string }; onClose: () => void }) => {
+  const graphRef = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef<number>(0);
+
+  const nodes = forecast.path.split(' -> ').map((name, i, arr) => ({
+    id: i,
+    name: name.trim(),
+    x: 0,
+    y: 0,
+    phase: ['Initial Access', 'Execution', 'Lateral Movement', 'Privilege Escalation', 'Exfiltration', 'Impact', 'Command & Control', 'Persistence'][i % 8],
+    risk: Math.max(0.3, forecast.probability - (arr.length - 1 - i) * 0.1),
+    compromised: i < arr.length - 1,
+  }));
+
+  const killChainPhases = [
+    { name: 'Recon', active: true, icon: 'R' },
+    { name: 'Weaponize', active: true, icon: 'W' },
+    { name: 'Deliver', active: forecast.probability > 0.3, icon: 'D' },
+    { name: 'Exploit', active: forecast.probability > 0.4, icon: 'E' },
+    { name: 'Install', active: forecast.probability > 0.5, icon: 'I' },
+    { name: 'C2', active: forecast.probability > 0.6, icon: 'C2' },
+    { name: 'Actions', active: forecast.probability > 0.7, icon: 'A' },
+  ];
+
+  const timelineEvents = [
+    { time: 'T+0s', event: 'Initial compromise vector detected', severity: 'warning' },
+    { time: 'T+12s', event: `${nodes[0]?.name} targeted via known CVE`, severity: 'high' },
+    { time: 'T+45s', event: 'Payload execution & C2 callback', severity: 'critical' },
+    { time: 'T+2m', event: `Lateral movement toward ${nodes[1]?.name || 'target'}`, severity: 'critical' },
+    { time: 'T+5m', event: 'Privilege escalation attempt', severity: 'critical' },
+    { time: 'T+8m', event: `Objective: ${forecast.label}`, severity: 'critical' },
+  ];
+
+  const mitigations = [
+    { action: 'Isolate affected segment', priority: 'IMMEDIATE', automated: true },
+    { action: 'Rotate compromised credentials', priority: 'HIGH', automated: true },
+    { action: 'Deploy additional monitoring', priority: 'MEDIUM', automated: false },
+    { action: 'Block lateral movement paths', priority: 'HIGH', automated: true },
+  ];
+
+  useEffect(() => {
+    const canvas = graphRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width = canvas.offsetWidth * 2;
+    const h = canvas.height = canvas.offsetHeight * 2;
+    ctx.scale(2, 2);
+    const cw = w / 2;
+    const ch = h / 2;
+
+    // Position nodes in a flowing arc
+    const margin = 60;
+    const usableW = cw - margin * 2;
+    const usableH = ch - margin * 2;
+    nodes.forEach((node, i) => {
+      const t = nodes.length > 1 ? i / (nodes.length - 1) : 0.5;
+      node.x = margin + t * usableW;
+      node.y = ch / 2 + Math.sin(t * Math.PI) * (usableH * 0.25) - 20;
+    });
+
+    let frame = 0;
+    const particles: { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; fromIdx: number }[] = [];
+
+    const animate = () => {
+      frame++;
+      ctx.clearRect(0, 0, cw, ch);
+
+      // Grid background
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.03)';
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x < cw; x += 30) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke();
+      }
+      for (let y = 0; y < ch; y += 30) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke();
+      }
+
+      // Draw connections with animated flow
+      for (let i = 0; i < nodes.length - 1; i++) {
+        const from = nodes[i];
+        const to = nodes[i + 1];
+        const midX = (from.x + to.x) / 2;
+        const midY = (from.y + to.y) / 2 - 30;
+
+        // Glow path
+        const gradient = ctx.createLinearGradient(from.x, from.y, to.x, to.y);
+        const alpha = 0.3 + Math.sin(frame * 0.03 + i) * 0.15;
+        gradient.addColorStop(0, `rgba(239, 68, 68, ${alpha})`);
+        gradient.addColorStop(0.5, `rgba(249, 115, 22, ${alpha + 0.1})`);
+        gradient.addColorStop(1, `rgba(239, 68, 68, ${alpha})`);
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.quadraticCurveTo(midX, midY, to.x, to.y);
+        ctx.stroke();
+
+        // Outer glow
+        ctx.strokeStyle = `rgba(239, 68, 68, ${alpha * 0.3})`;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.quadraticCurveTo(midX, midY, to.x, to.y);
+        ctx.stroke();
+
+        // Animated dash
+        ctx.setLineDash([4, 8]);
+        ctx.lineDashOffset = -frame * 0.8;
+        ctx.strokeStyle = `rgba(6, 182, 212, ${0.4 + Math.sin(frame * 0.05) * 0.2})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.quadraticCurveTo(midX, midY, to.x, to.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Spawn particles along path
+        if (frame % 8 === i * 2) {
+          const t = Math.random();
+          const px = (1-t)*(1-t)*from.x + 2*(1-t)*t*midX + t*t*to.x;
+          const py = (1-t)*(1-t)*from.y + 2*(1-t)*t*midY + t*t*to.y;
+          particles.push({ x: px, y: py, vx: (Math.random()-0.5)*0.5, vy: (Math.random()-0.5)*0.5, life: 0, maxLife: 40 + Math.random()*30, fromIdx: i });
+        }
+      }
+
+      // Draw and update particles
+      for (let p = particles.length - 1; p >= 0; p--) {
+        const part = particles[p];
+        part.x += part.vx;
+        part.y += part.vy;
+        part.life++;
+        if (part.life > part.maxLife) { particles.splice(p, 1); continue; }
+        const fade = 1 - part.life / part.maxLife;
+        const size = 1.5 * fade;
+        ctx.beginPath();
+        ctx.arc(part.x, part.y, size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(6, 182, 212, ${fade * 0.7})`;
+        ctx.fill();
+      }
+      if (particles.length > 200) particles.splice(0, 50);
+
+      // Draw nodes
+      nodes.forEach((node, i) => {
+        const pulse = 1 + Math.sin(frame * 0.04 + i * 0.8) * 0.12;
+        const nodeRadius = 18 * pulse;
+        const isLast = i === nodes.length - 1;
+        const riskColor = node.risk > 0.7 ? [239, 68, 68] : node.risk > 0.5 ? [249, 115, 22] : [234, 179, 8];
+
+        // Outer glow ring
+        const glowGrad = ctx.createRadialGradient(node.x, node.y, nodeRadius * 0.5, node.x, node.y, nodeRadius * 2.5);
+        glowGrad.addColorStop(0, `rgba(${riskColor.join(',')}, 0.15)`);
+        glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = glowGrad;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, nodeRadius * 2.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Node body
+        const bodyGrad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, nodeRadius);
+        bodyGrad.addColorStop(0, `rgba(${riskColor.join(',')}, 0.9)`);
+        bodyGrad.addColorStop(0.7, `rgba(${riskColor.join(',')}, 0.5)`);
+        bodyGrad.addColorStop(1, `rgba(${riskColor.join(',')}, 0.1)`);
+        ctx.fillStyle = bodyGrad;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, nodeRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Orbit ring
+        ctx.strokeStyle = `rgba(${riskColor.join(',')}, ${0.3 + Math.sin(frame * 0.02 + i) * 0.15})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, nodeRadius * 1.6, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Spinning orbit dot
+        const orbitAngle = frame * 0.03 + i * 1.2;
+        const orbitX = node.x + Math.cos(orbitAngle) * nodeRadius * 1.6;
+        const orbitY = node.y + Math.sin(orbitAngle) * nodeRadius * 1.6;
+        ctx.beginPath();
+        ctx.arc(orbitX, orbitY, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(6, 182, 212, 0.9)`;
+        ctx.fill();
+
+        // Target crosshair on final node
+        if (isLast) {
+          ctx.strokeStyle = `rgba(239, 68, 68, ${0.5 + Math.sin(frame * 0.06) * 0.3})`;
+          ctx.lineWidth = 1.5;
+          const cSize = nodeRadius * 2;
+          ctx.beginPath(); ctx.moveTo(node.x - cSize, node.y); ctx.lineTo(node.x - nodeRadius * 1.3, node.y); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(node.x + nodeRadius * 1.3, node.y); ctx.lineTo(node.x + cSize, node.y); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(node.x, node.y - cSize); ctx.lineTo(node.x, node.y - nodeRadius * 1.3); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(node.x, node.y + nodeRadius * 1.3); ctx.lineTo(node.x, node.y + cSize); ctx.stroke();
+        }
+
+        // Node label
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fillText(node.name, node.x, node.y + nodeRadius + 16);
+
+        // Phase label
+        ctx.font = '7px monospace';
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.6)';
+        ctx.fillText(node.phase, node.x, node.y + nodeRadius + 26);
+
+        // Risk percentage inside node
+        ctx.font = 'bold 10px monospace';
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.fillText(`${Math.round(node.risk * 100)}%`, node.x, node.y + 4);
+      });
+
+      // Title
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.8)';
+      ctx.fillText('PREDICTED ATTACK PATH', 12, 18);
+      ctx.font = '9px monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText(`Monte Carlo: ${Math.round(forecast.probability * 10000)} / 10,000 simulations converge`, 12, 32);
+
+      animRef.current = requestAnimationFrame(animate);
+    };
+    animate();
+    return () => cancelAnimationFrame(animRef.current);
+  }, [forecast]);
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl border border-cyan-500/20 bg-[#020a14] shadow-2xl shadow-cyan-900/20"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.06] bg-[#020a14]/95 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/30 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-red-400" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white font-mono">{forecast.label}</h2>
+              <p className="text-[10px] font-mono text-slate-400 mt-0.5">Attack Path Forecast - Precognitive Analysis</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className={`px-3 py-1.5 rounded-lg border text-[10px] font-mono font-bold ${
+              forecast.impact === 'CRITICAL' ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-orange-500/10 border-orange-500/30 text-orange-400'
+            }`}>
+              {forecast.impact} IMPACT
+            </div>
+            <div className="px-3 py-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/5 text-[10px] font-mono font-bold text-cyan-400">
+              {Math.round(forecast.probability * 100)}% PROBABILITY
+            </div>
+            <button onClick={onClose} className="w-8 h-8 rounded-lg border border-white/10 flex items-center justify-center hover:bg-white/5 transition-colors">
+              <X className="w-4 h-4 text-slate-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Attack Graph Canvas */}
+        <div className="px-6 pt-4">
+          <canvas
+            ref={graphRef}
+            className="w-full h-[220px] rounded-xl border border-white/[0.05] bg-[#010810]"
+            style={{ imageRendering: 'auto' }}
+          />
+        </div>
+
+        {/* Body Grid */}
+        <div className="grid grid-cols-3 gap-4 px-6 py-4">
+          {/* Kill Chain Progression */}
+          <div className="col-span-2 rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Shield className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-[10px] font-mono text-cyan-400/80 uppercase tracking-wider font-bold">Kill Chain Progression</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {killChainPhases.map((phase, i) => (
+                <div key={phase.name} className="flex-1 relative group">
+                  <div className={`h-8 rounded-md flex items-center justify-center transition-all duration-500 ${
+                    phase.active
+                      ? 'bg-gradient-to-b from-red-500/30 to-red-500/10 border border-red-500/40 shadow-lg shadow-red-500/10'
+                      : 'bg-slate-800/30 border border-slate-700/20'
+                  }`}
+                  style={{ animationDelay: `${i * 100}ms` }}>
+                    <span className={`text-[9px] font-mono font-bold ${phase.active ? 'text-red-300' : 'text-slate-600'}`}>{phase.icon}</span>
+                  </div>
+                  <span className={`block text-[7px] font-mono text-center mt-1 ${phase.active ? 'text-white/60' : 'text-slate-700'}`}>{phase.name}</span>
+                  {i < killChainPhases.length - 1 && phase.active && (
+                    <div className="absolute top-3.5 -right-0.5 w-1 h-1 rounded-full bg-red-400 animate-ping" />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center gap-2 px-2 py-1.5 rounded-md bg-red-500/5 border border-red-500/10">
+              <Activity className="w-3 h-3 text-red-400" />
+              <span className="text-[9px] font-mono text-red-300/80">
+                Attack progression: {killChainPhases.filter(p => p.active).length}/{killChainPhases.length} phases predicted to complete
+              </span>
+            </div>
+          </div>
+
+          {/* Probability Breakdown */}
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-[10px] font-mono text-cyan-400/80 uppercase tracking-wider font-bold">Confidence</span>
+            </div>
+            <div className="relative h-24 flex items-end justify-center">
+              <svg viewBox="0 0 100 60" className="w-full h-full">
+                <defs>
+                  <linearGradient id="probGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="rgba(239,68,68,0.4)" />
+                    <stop offset="100%" stopColor="rgba(239,68,68,0)" />
+                  </linearGradient>
+                </defs>
+                <path d="M 5 55 Q 15 50, 25 45 Q 35 38, 45 32 Q 55 25, 65 20 Q 75 15, 85 12 Q 92 10, 95 8" fill="none" stroke="rgba(239,68,68,0.8)" strokeWidth="1.5" />
+                <path d="M 5 55 Q 15 50, 25 45 Q 35 38, 45 32 Q 55 25, 65 20 Q 75 15, 85 12 Q 92 10, 95 8 L 95 60 L 5 60 Z" fill="url(#probGrad)" />
+                <circle cx="95" cy="8" r="2.5" fill="#ef4444" opacity="0.9">
+                  <animate attributeName="r" values="2;3.5;2" dur="1.5s" repeatCount="indefinite" />
+                </circle>
+              </svg>
+            </div>
+            <div className="text-center mt-2">
+              <span className="text-2xl font-bold font-mono text-white">{Math.round(forecast.probability * 100)}%</span>
+              <p className="text-[8px] font-mono text-slate-500 mt-0.5">convergence across 10K simulations</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Timeline & Mitigations */}
+        <div className="grid grid-cols-2 gap-4 px-6 pb-4">
+          {/* Predicted Timeline */}
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-[10px] font-mono text-cyan-400/80 uppercase tracking-wider font-bold">Forecasted Timeline</span>
+            </div>
+            <div className="space-y-2">
+              {timelineEvents.map((evt, i) => (
+                <div key={i} className="flex items-start gap-3 group">
+                  <div className="flex flex-col items-center">
+                    <div className={`w-2 h-2 rounded-full mt-1 ${
+                      evt.severity === 'critical' ? 'bg-red-400 shadow-lg shadow-red-400/30' :
+                      evt.severity === 'high' ? 'bg-orange-400' : 'bg-yellow-400'
+                    }`} />
+                    {i < timelineEvents.length - 1 && <div className="w-px h-5 bg-slate-700/50 mt-0.5" />}
+                  </div>
+                  <div className="flex-1 -mt-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] font-mono text-cyan-400/70 font-bold">{evt.time}</span>
+                      <span className={`text-[7px] font-mono px-1.5 py-0.5 rounded ${
+                        evt.severity === 'critical' ? 'bg-red-500/10 text-red-400' :
+                        evt.severity === 'high' ? 'bg-orange-500/10 text-orange-400' : 'bg-yellow-500/10 text-yellow-400'
+                      }`}>{evt.severity.toUpperCase()}</span>
+                    </div>
+                    <p className="text-[9px] font-mono text-white/70 mt-0.5">{evt.event}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Recommended Mitigations */}
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Shield className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-[10px] font-mono text-emerald-400/80 uppercase tracking-wider font-bold">Countermeasures</span>
+            </div>
+            <div className="space-y-2">
+              {mitigations.map((mit, i) => (
+                <div key={i} className="flex items-center gap-3 px-2.5 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:border-emerald-500/20 hover:bg-emerald-500/[0.03] transition-all group">
+                  <div className={`w-1.5 h-6 rounded-full ${
+                    mit.priority === 'IMMEDIATE' ? 'bg-red-400' : mit.priority === 'HIGH' ? 'bg-orange-400' : 'bg-yellow-400'
+                  }`} />
+                  <div className="flex-1">
+                    <span className="text-[9px] font-mono text-white/80 font-bold">{mit.action}</span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className={`text-[7px] font-mono px-1.5 py-0.5 rounded ${
+                        mit.priority === 'IMMEDIATE' ? 'bg-red-500/10 text-red-400' : mit.priority === 'HIGH' ? 'bg-orange-500/10 text-orange-400' : 'bg-yellow-500/10 text-yellow-400'
+                      }`}>{mit.priority}</span>
+                      {mit.automated && <span className="text-[7px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">AUTO</span>}
+                    </div>
+                  </div>
+                  <button className="px-2 py-1 rounded text-[8px] font-mono font-bold text-emerald-400 border border-emerald-500/20 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-500/10">
+                    DEPLOY
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 flex items-center justify-between px-6 py-3 border-t border-white/[0.06] bg-[#020a14]/95 backdrop-blur-xl">
+          <div className="flex items-center gap-4">
+            <span className="text-[8px] font-mono text-slate-500">PATH: {forecast.path}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg text-[10px] font-mono font-bold text-slate-400 border border-white/10 hover:bg-white/5 transition-all">
+              DISMISS
+            </button>
+            <button className="px-4 py-2 rounded-lg text-[10px] font-mono font-bold text-white bg-gradient-to-r from-red-500/80 to-orange-500/80 border border-red-500/30 hover:from-red-500 hover:to-orange-500 transition-all shadow-lg shadow-red-500/20">
+              PREEMPTIVE BLOCK
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const AttackUniverse = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,6 +528,7 @@ const AttackUniverse = () => {
   const [timelineEvents, setTimelineEvents] = useState<{ ts: string; type: string; detail: string; probability?: number }[]>([]);
   const [monteCarloLines, setMonteCarloLines] = useState<{ label: string; probability: number; impact: string; path: string }[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<{ id: number; ts: string; type: string; domain: string; detail: string; severity: string } | null>(null);
+  const [selectedForecast, setSelectedForecast] = useState<{ label: string; probability: number; impact: string; path: string } | null>(null);
 
   const severityRef = useRef(severity);
   const selectedIdxRef = useRef(-1);
@@ -1644,9 +2063,13 @@ const AttackUniverse = () => {
             </div>
             <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
               {monteCarloLines.map((mc, i) => (
-                <div key={i} className="px-2 py-1.5 rounded bg-white/[0.02] border border-white/[0.04]">
+                <button
+                  key={i}
+                  onClick={() => setSelectedForecast(mc)}
+                  className="w-full text-left px-2 py-1.5 rounded bg-white/[0.02] border border-white/[0.04] hover:bg-cyan-500/[0.06] hover:border-cyan-500/20 transition-all duration-200 group cursor-pointer"
+                >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-mono text-white/90 font-bold">{mc.label}</span>
+                    <span className="text-[10px] font-mono text-white/90 font-bold group-hover:text-cyan-300 transition-colors">{mc.label}</span>
                     <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
                       mc.impact === 'CRITICAL' ? 'bg-red-500/10 text-red-400' : 'bg-orange-500/10 text-orange-400'
                     }`}>{mc.impact}</span>
@@ -1660,8 +2083,11 @@ const AttackUniverse = () => {
                     </div>
                     <span className="text-[9px] font-mono text-white/70">{Math.round(mc.probability * 100)}%</span>
                   </div>
-                  <div className="text-[8px] font-mono text-slate-500 mt-0.5 truncate">{mc.path}</div>
-                </div>
+                  <div className="flex items-center justify-between mt-0.5">
+                    <span className="text-[8px] font-mono text-slate-500 truncate max-w-[200px]">{mc.path}</span>
+                    <span className="text-[7px] font-mono text-cyan-500/60 opacity-0 group-hover:opacity-100 transition-opacity">INSPECT</span>
+                  </div>
+                </button>
               ))}
             </div>
           </div>
@@ -1743,6 +2169,11 @@ const AttackUniverse = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Attack Forecast Graph Modal */}
+      {selectedForecast && (
+        <AttackForecastModal forecast={selectedForecast} onClose={() => setSelectedForecast(null)} />
       )}
 
       {/* Severity Controls */}
