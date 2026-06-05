@@ -456,12 +456,12 @@ const AttackUniverse = () => {
         });
       } else {
         // Slow open palm = timeline scrubbing
-        const offset = (mirroredX - 0.5) * 2; // -1 (left/future) to +1 (right/past)
+        const offset = (mirroredX - 0.5) * 2; // -1 (left/past) to +1 (right/future)
         setTimelineOffset(offset);
-        if (offset > 0.2) {
+        if (offset < -0.2) {
           setTimelineMode('past');
           setHandGesture('TIMELINE - PAST');
-        } else if (offset < -0.2) {
+        } else if (offset > 0.2) {
           setTimelineMode('future');
           setHandGesture('TIMELINE - FUTURE');
         } else {
@@ -738,47 +738,195 @@ const AttackUniverse = () => {
     const coreLight = new THREE.PointLight(sevConfig.color.getHex(), 2.5, 6);
     scene.add(coreLight);
 
-    // Domain nodes
+    // Domain nodes - Premium 3D multi-layer composition
     const domainMeshes: THREE.Mesh[] = [];
     const domainRings: THREE.Mesh[] = [];
+    const domainGroups: THREE.Group[] = [];
     const orbitRadius = 2.8;
+
+    // Custom fresnel shader for outer glow shells
+    const fresnelVertexShader = `
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+        vViewDir = normalize(-mvPos.xyz);
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `;
+    const fresnelFragmentShader = `
+      uniform vec3 uColor;
+      uniform float uIntensity;
+      uniform float uTime;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      void main() {
+        float fresnel = 1.0 - dot(vNormal, vViewDir);
+        fresnel = pow(fresnel, 3.0) * uIntensity;
+        float pulse = 0.85 + 0.15 * sin(uTime * 2.0);
+        gl_FragColor = vec4(uColor, fresnel * pulse);
+      }
+    `;
+
+    // Holographic disc shader
+    const holoVertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+    const holoFragmentShader = `
+      uniform vec3 uColor;
+      uniform float uTime;
+      varying vec2 vUv;
+      void main() {
+        float dist = length(vUv - 0.5) * 2.0;
+        float ring1 = smoothstep(0.02, 0.0, abs(dist - 0.6 - sin(uTime) * 0.05));
+        float ring2 = smoothstep(0.015, 0.0, abs(dist - 0.8 + cos(uTime * 1.3) * 0.03));
+        float ring3 = smoothstep(0.01, 0.0, abs(dist - 0.95));
+        float scan = smoothstep(0.02, 0.0, abs(fract(vUv.y * 12.0 - uTime * 0.5) - 0.5) - 0.47);
+        float alpha = (ring1 + ring2 + ring3) * 0.9 + scan * 0.15;
+        alpha *= smoothstep(1.0, 0.3, dist);
+        gl_FragColor = vec4(uColor, alpha * 0.7);
+      }
+    `;
+
+    const shaderUniforms: { uTime: { value: number } }[] = [];
 
     DOMAINS.forEach((domain, idx) => {
       const angle = (idx / DOMAINS.length) * Math.PI * 2;
       const nodeSize = domain.active ? 0.22 + (domain.pressure / 600) : 0.15;
+      const color = new THREE.Color(domain.color);
+      const group = new THREE.Group();
 
-      const geo = new THREE.SphereGeometry(nodeSize, 32, 32);
-      const mat = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(domain.color),
-        emissive: new THREE.Color(domain.color),
-        emissiveIntensity: domain.active ? 0.4 : 0.1,
-        transparent: true, opacity: domain.active ? 0.95 : 0.5, shininess: 60,
+      // Layer 1: Inner core with high shininess
+      const coreGeoD = new THREE.SphereGeometry(nodeSize * 0.6, 48, 48);
+      const coreMatD = new THREE.MeshPhongMaterial({
+        color: color.clone().multiplyScalar(0.5),
+        emissive: color,
+        emissiveIntensity: domain.active ? 0.7 : 0.2,
+        transparent: true, opacity: domain.active ? 0.95 : 0.6,
+        shininess: 200, specular: new THREE.Color(0xffffff),
       });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(
+      const coreMeshD = new THREE.Mesh(coreGeoD, coreMatD);
+      group.add(coreMeshD);
+
+      // Layer 2: Outer shell with fresnel glow
+      const uniforms = { uColor: { value: color }, uIntensity: { value: domain.active ? 2.5 : 1.0 }, uTime: { value: 0 } };
+      shaderUniforms.push(uniforms);
+      const shellGeo = new THREE.SphereGeometry(nodeSize, 48, 48);
+      const shellMat = new THREE.ShaderMaterial({
+        vertexShader: fresnelVertexShader, fragmentShader: fresnelFragmentShader,
+        uniforms, transparent: true, side: THREE.FrontSide, depthWrite: false,
+      });
+      const shellMesh = new THREE.Mesh(shellGeo, shellMat);
+      group.add(shellMesh);
+
+      // Layer 3: Wireframe icosahedron cage
+      const icoGeo = new THREE.IcosahedronGeometry(nodeSize * 1.2, 1);
+      const icoMat = new THREE.MeshBasicMaterial({
+        color, wireframe: true, transparent: true,
+        opacity: domain.active ? 0.35 : 0.12,
+      });
+      const icoMesh = new THREE.Mesh(icoGeo, icoMat);
+      group.add(icoMesh);
+
+      // Layer 4: Holographic disc (equatorial ring)
+      const discGeo = new THREE.PlaneGeometry(nodeSize * 3.2, nodeSize * 3.2);
+      const discMat = new THREE.ShaderMaterial({
+        vertexShader: holoVertexShader, fragmentShader: holoFragmentShader,
+        uniforms: { uColor: { value: color }, uTime: uniforms.uTime },
+        transparent: true, side: THREE.DoubleSide, depthWrite: false,
+      });
+      const disc = new THREE.Mesh(discGeo, discMat);
+      disc.rotation.x = -Math.PI / 2;
+      group.add(disc);
+
+      // Layer 5: Orbiting torus ring
+      const torusGeo = new THREE.TorusGeometry(nodeSize * 1.6, 0.012, 16, 64);
+      const torusMat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: domain.active ? 0.6 : 0.2,
+      });
+      const torus = new THREE.Mesh(torusGeo, torusMat);
+      torus.rotation.x = Math.PI / 2 + idx * 0.3;
+      group.add(torus);
+
+      // Layer 6: Secondary tilted torus
+      const torus2Geo = new THREE.TorusGeometry(nodeSize * 1.35, 0.008, 12, 48);
+      const torus2Mat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: domain.active ? 0.4 : 0.1,
+      });
+      const torus2 = new THREE.Mesh(torus2Geo, torus2Mat);
+      torus2.rotation.x = Math.PI / 3;
+      torus2.rotation.z = Math.PI / 4 + idx * 0.5;
+      group.add(torus2);
+
+      // Layer 7: Orbiting micro-particles
+      const particleCount = domain.active ? 24 : 8;
+      const pPositions = new Float32Array(particleCount * 3);
+      for (let i = 0; i < particleCount; i++) {
+        const pAngle = (i / particleCount) * Math.PI * 2;
+        const pRadius = nodeSize * (1.4 + Math.random() * 0.6);
+        const pY = (Math.random() - 0.5) * nodeSize * 1.5;
+        pPositions[i * 3] = Math.cos(pAngle) * pRadius;
+        pPositions[i * 3 + 1] = pY;
+        pPositions[i * 3 + 2] = Math.sin(pAngle) * pRadius;
+      }
+      const pGeoNode = new THREE.BufferGeometry();
+      pGeoNode.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+      const pMatNode = new THREE.PointsMaterial({
+        color, size: domain.active ? 0.025 : 0.015,
+        transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending,
+      });
+      const particles = new THREE.Points(pGeoNode, pMatNode);
+      group.add(particles);
+
+      // Layer 8: Outer glow sphere (backside)
+      const glowGeoD = new THREE.SphereGeometry(nodeSize * 1.8, 24, 24);
+      const glowMatD = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: domain.active ? 0.06 : 0.02,
+        side: THREE.BackSide, blending: THREE.AdditiveBlending,
+      });
+      const glowMeshD = new THREE.Mesh(glowGeoD, glowMatD);
+      group.add(glowMeshD);
+
+      // Position the group
+      group.position.set(
         Math.cos(angle) * orbitRadius,
         Math.sin(angle * 0.5) * 0.3,
         Math.sin(angle) * orbitRadius
       );
-      mesh.userData = { domainIdx: idx, baseY: mesh.position.y };
-      scene.add(mesh);
-      domainMeshes.push(mesh);
 
-      domainOrigPosRef.current[idx] = mesh.position.clone();
+      // The main hitbox mesh for raycasting (invisible)
+      const hitGeo = new THREE.SphereGeometry(nodeSize * 1.4, 16, 16);
+      const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+      const hitMesh = new THREE.Mesh(hitGeo, hitMat);
+      hitMesh.position.copy(group.position);
+      hitMesh.userData = { domainIdx: idx, baseY: group.position.y };
+      scene.add(hitMesh);
+      domainMeshes.push(hitMesh);
+
+      domainOrigPosRef.current[idx] = group.position.clone();
       domainDisplaceRef.current[idx] = new THREE.Vector3();
 
-      const ringGeo = new THREE.RingGeometry(nodeSize * 1.5, nodeSize * 1.8, 32);
+      scene.add(group);
+      domainGroups.push(group);
+
+      // Selection ring (hover/selected state)
+      const ringGeo = new THREE.RingGeometry(nodeSize * 2.0, nodeSize * 2.3, 48);
       const ringMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(domain.color), transparent: true, opacity: 0, side: THREE.DoubleSide,
+        color, transparent: true, opacity: 0, side: THREE.DoubleSide,
       });
       const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.position.copy(mesh.position);
+      ring.position.copy(group.position);
       scene.add(ring);
       domainRings.push(ring);
 
       if (domain.active) {
-        const light = new THREE.PointLight(new THREE.Color(domain.color).getHex(), 0.3, 1.8);
-        light.position.copy(mesh.position);
+        const light = new THREE.PointLight(color.getHex(), 0.5, 2.5);
+        light.position.copy(group.position);
         scene.add(light);
       }
     });
@@ -912,31 +1060,48 @@ const AttackUniverse = () => {
       (coreGlow.material as THREE.MeshBasicMaterial).color.lerp(sev.color, 0.02);
       coreLight.color.lerp(sev.color, 0.02);
 
-      // Domain positions with spring physics
+      // Domain positions with spring physics + animate layered groups
       domainMeshes.forEach((mesh, idx) => {
         const orig = domainOrigPosRef.current[idx];
         const displace = domainDisplaceRef.current[idx];
+        const group = domainGroups[idx];
 
         if (orig && displace) {
-          // Spring back toward original position
           displace.x *= 0.94;
           displace.y *= 0.94;
           displace.z *= 0.94;
+          if (displace.length() < 0.001) displace.set(0, 0, 0);
 
-          if (displace.length() < 0.001) {
-            displace.set(0, 0, 0);
-          }
+          const targetX = orig.x + displace.x;
+          const targetY = orig.y + displace.y + Math.sin(elapsed * 0.7 + idx) * 0.08;
+          const targetZ = orig.z + displace.z;
 
-          mesh.position.set(
-            orig.x + displace.x,
-            orig.y + displace.y + Math.sin(elapsed * 0.7 + idx) * 0.08,
-            orig.z + displace.z
-          );
+          mesh.position.set(targetX, targetY, targetZ);
+          if (group) group.position.set(targetX, targetY, targetZ);
         } else {
-          mesh.position.y = mesh.userData.baseY + Math.sin(elapsed * 0.7 + idx) * 0.08;
+          const newY = mesh.userData.baseY + Math.sin(elapsed * 0.7 + idx) * 0.08;
+          mesh.position.y = newY;
+          if (group) group.position.y = newY;
         }
 
-        mesh.rotation.y += 0.006;
+        // Animate group layers
+        if (group) {
+          // Icosahedron cage rotation
+          const ico = group.children[2];
+          if (ico) { ico.rotation.y = elapsed * 0.3 + idx; ico.rotation.x = elapsed * 0.2; }
+          // Torus ring rotation
+          const torus = group.children[4];
+          if (torus) { torus.rotation.z = elapsed * 0.5 + idx * 0.7; }
+          // Secondary torus
+          const torus2 = group.children[5];
+          if (torus2) { torus2.rotation.y = -elapsed * 0.4 + idx; }
+          // Orbiting particles rotation
+          const particles = group.children[6];
+          if (particles) { particles.rotation.y = elapsed * 0.6 + idx * 0.5; particles.rotation.x = Math.sin(elapsed * 0.3 + idx) * 0.2; }
+          // Update shader uniforms
+          if (shaderUniforms[idx]) { shaderUniforms[idx].uTime.value = elapsed; }
+        }
+
         domainRings[idx].position.copy(mesh.position);
         domainRings[idx].lookAt(camera.position);
       });
@@ -1410,9 +1575,9 @@ const AttackUniverse = () => {
               }} />
             </div>
             <div className="flex justify-between mt-1.5">
-              <span className="text-[8px] font-mono text-cyan-400/50">FUTURE (Monte Carlo)</span>
-              <span className="text-[8px] font-mono text-white/40">NOW</span>
               <span className="text-[8px] font-mono text-amber-400/50">PAST (Forensic)</span>
+              <span className="text-[8px] font-mono text-white/40">NOW</span>
+              <span className="text-[8px] font-mono text-cyan-400/50">FUTURE (Monte Carlo)</span>
             </div>
           </div>
         </div>
