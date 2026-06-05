@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Shield, ShieldAlert, ShieldCheck, AlertTriangle, Ban,
   TrendingUp, TrendingDown, Activity, Clock, Zap, Eye,
-  Lock, Unlock, FileWarning, Brain, Users, ChevronDown, ChevronUp, User
+  Lock, Unlock, FileWarning, Brain
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { GuardrailPolicy, ScanResult, GuardrailIncident } from '../../lib/guardrailsData';
@@ -17,9 +17,6 @@ const GuardrailsDashboard = () => {
   const [livePassCount, setLivePassCount] = useState(0);
   const [liveScanRate, setLiveScanRate] = useState(47);
   const [pulseActive, setPulseActive] = useState(false);
-  const [userRiskData, setUserRiskData] = useState<any[]>([]);
-  const [expandedUser, setExpandedUser] = useState<string | null>(null);
-  const [userScans, setUserScans] = useState<ScanResult[]>([]);
 
   useEffect(() => {
     loadData();
@@ -55,47 +52,6 @@ const GuardrailsDashboard = () => {
     setLiveBlockCount(blocks);
     setLiveWarnCount(warns);
     setLivePassCount(passes);
-
-    // Build per-user risk aggregation from scan results
-    if (scansRes.data) {
-      const userMap = new Map<string, { email: string; scans: number; blocks: number; warns: number; redacts: number; maxRisk: number; totalRisk: number; models: Set<string>; lastScan: string }>();
-      scansRes.data.forEach((s: ScanResult) => {
-        const existing = userMap.get(s.user_email) || { email: s.user_email, scans: 0, blocks: 0, warns: 0, redacts: 0, maxRisk: 0, totalRisk: 0, models: new Set<string>(), lastScan: '' };
-        existing.scans++;
-        if (s.verdict === 'block') existing.blocks++;
-        if (s.verdict === 'warn') existing.warns++;
-        if (s.verdict === 'redact') existing.redacts++;
-        existing.maxRisk = Math.max(existing.maxRisk, s.risk_score);
-        existing.totalRisk += s.risk_score;
-        existing.models.add(s.model_name);
-        if (!existing.lastScan || s.scanned_at > existing.lastScan) existing.lastScan = s.scanned_at;
-        userMap.set(s.user_email, existing);
-      });
-      const userData = Array.from(userMap.values())
-        .map(u => ({ ...u, avgRisk: Math.round(u.totalRisk / u.scans), models: Array.from(u.models) }))
-        .sort((a, b) => b.blocks - a.blocks || b.maxRisk - a.maxRisk);
-      setUserRiskData(userData);
-    }
-  };
-
-  const loadUserScans = async (email: string) => {
-    const { data } = await supabase
-      .from('guardrail_scan_results')
-      .select('*')
-      .eq('user_email', email)
-      .order('scanned_at', { ascending: false })
-      .limit(20);
-    if (data) setUserScans(data);
-  };
-
-  const handleExpandUser = (email: string) => {
-    if (expandedUser === email) {
-      setExpandedUser(null);
-      setUserScans([]);
-    } else {
-      setExpandedUser(email);
-      loadUserScans(email);
-    }
   };
 
   const totalHits = policies.reduce((sum, p) => sum + (p.hit_count || 0), 0);
@@ -367,174 +323,6 @@ const GuardrailsDashboard = () => {
           ))}
         </div>
       </div>
-
-      {userRiskData.length > 0 && (
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-700/40 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Users className="w-4 h-4 text-cyan-400" />
-              <h3 className="text-sm font-semibold text-slate-200">Top Risk Users</h3>
-              <span className="text-[10px] text-slate-500 bg-slate-700/50 px-2 py-0.5 rounded-full">{userRiskData.length} users</span>
-            </div>
-            <span className="text-[10px] text-slate-500">Click to drill down</span>
-          </div>
-          <div className="divide-y divide-slate-800/60">
-            {userRiskData.slice(0, 10).map((user) => (
-              <div key={user.email}>
-                <div
-                  className={`px-5 py-4 cursor-pointer transition-colors ${
-                    expandedUser === user.email ? 'bg-slate-800/60' : 'hover:bg-slate-800/40'
-                  }`}
-                  onClick={() => handleExpandUser(user.email)}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        user.blocks > 2 ? 'bg-red-500/15 border border-red-500/30' :
-                        user.blocks > 0 ? 'bg-amber-500/15 border border-amber-500/30' :
-                        'bg-slate-700/50 border border-slate-600/30'
-                      }`}>
-                        <User className={`w-4 h-4 ${
-                          user.blocks > 2 ? 'text-red-400' :
-                          user.blocks > 0 ? 'text-amber-400' :
-                          'text-slate-400'
-                        }`} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-200 truncate">{user.email}</p>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className="text-[10px] text-slate-500">{user.scans} scans</span>
-                          <span className="text-[10px] text-slate-600">{user.models.length} model{user.models.length !== 1 ? 's' : ''}</span>
-                          <span className="text-[10px] text-slate-600">Last: {new Date(user.lastScan).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 flex-shrink-0">
-                      <div className="flex items-center gap-2">
-                        {user.blocks > 0 && (
-                          <span className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded text-[10px] font-bold text-red-400">
-                            {user.blocks} blocked
-                          </span>
-                        )}
-                        {user.warns > 0 && (
-                          <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded text-[10px] font-bold text-amber-400">
-                            {user.warns} warned
-                          </span>
-                        )}
-                        {user.redacts > 0 && (
-                          <span className="px-2 py-0.5 bg-cyan-500/10 border border-cyan-500/20 rounded text-[10px] font-bold text-cyan-400">
-                            {user.redacts} redacted
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className={`w-10 h-2 rounded-full overflow-hidden bg-slate-700/50`}>
-                          <div className={`h-full rounded-full ${
-                            user.avgRisk >= 70 ? 'bg-red-500' :
-                            user.avgRisk >= 45 ? 'bg-amber-500' :
-                            'bg-emerald-500'
-                          }`} style={{ width: `${user.avgRisk}%` }} />
-                        </div>
-                        <span className={`text-xs font-mono font-bold w-6 text-right ${
-                          user.avgRisk >= 70 ? 'text-red-400' :
-                          user.avgRisk >= 45 ? 'text-amber-400' :
-                          'text-emerald-400'
-                        }`}>{user.avgRisk}</span>
-                      </div>
-                      {expandedUser === user.email ? (
-                        <ChevronUp className="w-4 h-4 text-slate-500" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4 text-slate-500" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-                {expandedUser === user.email && (
-                  <div className="bg-slate-900/40 border-t border-slate-700/30">
-                    <div className="px-5 py-3 border-b border-slate-800/50">
-                      <div className="flex items-center gap-4 flex-wrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-slate-500">Models:</span>
-                          {user.models.map((model: string) => (
-                            <span key={model} className="px-2 py-0.5 bg-slate-700/50 rounded text-[10px] text-slate-300 font-medium">
-                              {model}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-slate-500">Peak Risk:</span>
-                          <span className={`text-[10px] font-bold ${
-                            user.maxRisk >= 80 ? 'text-red-400' :
-                            user.maxRisk >= 50 ? 'text-amber-400' :
-                            'text-emerald-400'
-                          }`}>{user.maxRisk}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="divide-y divide-slate-800/40 max-h-[320px] overflow-y-auto custom-scrollbar">
-                      {userScans.length === 0 ? (
-                        <div className="px-5 py-8 text-center">
-                          <div className="w-5 h-5 border-2 border-slate-600 border-t-cyan-400 rounded-full animate-spin mx-auto" />
-                          <p className="text-[10px] text-slate-500 mt-2">Loading scan history...</p>
-                        </div>
-                      ) : (
-                        userScans.map((scan) => {
-                          const vc = VERDICT_CONFIG[scan.verdict] || VERDICT_CONFIG.pass;
-                          return (
-                            <div key={scan.id} className="px-5 py-3 hover:bg-slate-800/30 transition-colors">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${vc.bgColor} ${vc.color} border ${vc.borderColor}`}>
-                                      {vc.label.toUpperCase()}
-                                    </span>
-                                    <span className="text-[10px] text-slate-500 font-medium">{scan.model_name}</span>
-                                    <span className="text-[10px] text-slate-600">{scan.application}</span>
-                                  </div>
-                                  <p className="text-xs text-slate-400 leading-relaxed">
-                                    {scan.input_text || scan.output_text}
-                                  </p>
-                                  {scan.triggered_policies && scan.triggered_policies.length > 0 && (
-                                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                      <span className="text-[9px] text-slate-600">Policies:</span>
-                                      {scan.triggered_policies.map((p: any, idx: number) => (
-                                        <span key={idx} className="px-1.5 py-0.5 bg-slate-700/50 rounded text-[9px] text-slate-400">
-                                          {p.policy_name || p}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                                  <div className="flex items-center gap-1">
-                                    <span className={`text-[10px] font-mono font-bold ${
-                                      scan.risk_score >= 80 ? 'text-red-400' :
-                                      scan.risk_score >= 50 ? 'text-amber-400' :
-                                      'text-emerald-400'
-                                    }`}>{scan.risk_score}</span>
-                                  </div>
-                                  <span className="text-[9px] text-slate-600">
-                                    {new Date(scan.scanned_at).toLocaleString()}
-                                  </span>
-                                  {scan.pii_found > 0 && (
-                                    <span className="px-1.5 py-0.5 bg-cyan-500/10 rounded text-[9px] text-cyan-400">
-                                      {scan.pii_found} PII
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

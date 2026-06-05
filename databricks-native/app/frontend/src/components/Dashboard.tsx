@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { trackView, setCurrentView } from '../lib/activityTracker';
 import ThreatGlobe from './ThreatGlobe';
 import AttackVectorGraph from './AttackVectorGraph';
-import AttackUniverse from './AttackUniverse';
 import ListsPanel from './ListsPanel';
 import EventStream from './EventStream';
 import AlertsPanel from './AlertsPanel';
@@ -85,7 +84,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'attackuniverse' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -319,7 +318,6 @@ const Dashboard = () => {
         { id: 'poisonguard', label: 'Model Poisoning Guard', icon: Shield },
         { id: 'guardrails', label: 'LLM Guardrails', icon: ShieldCheck },
         { id: 'attackvectors', label: 'Attack Vectors', icon: Target },
-        { id: 'attackuniverse', label: 'Attack Universe', icon: Globe },
         { id: 'threatmodeling', label: 'Smart Threat Modeling', icon: Scan },
         { id: 'correlationrules', label: 'Correlation Rules', icon: Zap },
         { id: 'negcorrelation', label: 'Negative Correlation', icon: AlertTriangle },
@@ -1042,11 +1040,6 @@ const Dashboard = () => {
               <div className="h-[700px]">
                 <AttackVectorGraph />
               </div>
-            </div>
-          )}
-          {selectedView === 'attackuniverse' && (
-            <div className="h-[calc(100vh-180px)]">
-              <AttackUniverse />
             </div>
           )}
         </main>

