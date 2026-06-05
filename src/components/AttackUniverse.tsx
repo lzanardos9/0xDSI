@@ -103,6 +103,11 @@ const AttackUniverse = () => {
   const [showGestureTutorial, setShowGestureTutorial] = useState(true);
   const [liveEvents, setLiveEvents] = useState<{ ts: string; type: string; src: string; dst: string; severity: string; detail: string }[]>([]);
   const [activeThreatActor, setActiveThreatActor] = useState({ name: 'APT-29 (Cozy Bear)', confidence: 92 });
+  const [timelineOffset, setTimelineOffset] = useState(0); // -1 = past, 0 = now, +1 = future
+  const [timelineMode, setTimelineMode] = useState<'past' | 'present' | 'future'>('present');
+  const [timelineEvents, setTimelineEvents] = useState<{ id: number; ts: string; type: string; domain: string; detail: string; severity: string; x: number; y: number }[]>([]);
+  const [monteCarloLines, setMonteCarloLines] = useState<{ id: number; label: string; probability: number; impact: string; color: string }[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<{ id: number; ts: string; type: string; domain: string; detail: string; severity: string } | null>(null);
 
   const severityRef = useRef(severity);
   const selectedIdxRef = useRef(-1);
@@ -334,7 +339,7 @@ const AttackUniverse = () => {
       }
 
     } else if (extendedCount === 4) {
-      // OPEN PALM = Force Push/Pull
+      // OPEN PALM = Timeline Scrub (horizontal) or Force Push (fast motion)
       setIsBeaming(false);
       laserLine.visible = false;
       setIsGrabbing(false);
@@ -347,9 +352,9 @@ const AttackUniverse = () => {
       const vel = handVelocityRef.current;
       const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
 
-      if (speed > 0.015) {
+      if (speed > 0.03) {
+        // Fast swipe = Force Push
         setHandGesture('FORCE PUSH');
-        // Push all domains away from hand position
         domainMeshes.forEach((mesh, idx) => {
           const meshScreen = mesh.position.clone().project(camera);
           const dx = meshScreen.x - handVec.x;
@@ -364,11 +369,19 @@ const AttackUniverse = () => {
           }
         });
       } else {
-        setHandGesture('OPEN - Navigate');
-        const dx = (mirroredX - 0.5) * 4;
-        const dy = (palmY - 0.5) * 2;
-        controls.autoRotateSpeed = dx;
-        camera.position.y += (dy * 3 + 1 - camera.position.y) * 0.03;
+        // Slow open palm = Timeline scrub by X position
+        const timeX = (mirroredX - 0.5) * 2; // -1 to +1
+        setTimelineOffset(timeX);
+        if (timeX < -0.3) {
+          setTimelineMode('future');
+          setHandGesture('TIMELINE - FUTURE (Monte Carlo)');
+        } else if (timeX > 0.3) {
+          setTimelineMode('past');
+          setHandGesture('TIMELINE - PAST (History)');
+        } else {
+          setTimelineMode('present');
+          setHandGesture('TIMELINE - NOW');
+        }
       }
 
     } else if (extendedCount === 2 && fingersExtended[0] && fingersExtended[1]) {
@@ -1179,10 +1192,11 @@ const AttackUniverse = () => {
       setActiveThreatActor({ name: actor.name, confidence: actor.confidence + Math.floor(Math.random() * 6 - 3) });
     }, 8000);
 
-    // Live event generation for selected domain
+    // Live event generation - always active (domain-specific when selected)
     const eventInt = setInterval(() => {
-      if (selectedIdxRef.current < 0) return;
-      const domain = DOMAINS[selectedIdxRef.current];
+      const domain = selectedIdxRef.current >= 0
+        ? DOMAINS[selectedIdxRef.current]
+        : DOMAINS[Math.floor(Math.random() * DOMAINS.length)];
       const eventTemplates: Record<string, { type: string; src: string; dst: string; detail: string }[]> = {
         identity: [
           { type: 'AUTH_FAIL', src: '10.42.8.201', dst: 'DC-01.corp.local', detail: 'Kerberos TGT request failed - invalid credentials (5x in 30s)' },
@@ -1259,6 +1273,50 @@ const AttackUniverse = () => {
     }, 50);
   }, [isFullscreen]);
 
+  // Generate timeline events and Monte Carlo projections
+  useEffect(() => {
+    if (timelineMode === 'past') {
+      const pastEvents = [];
+      const pastTypes = ['AUTH_FAIL', 'C2_BEACON', 'LATERAL_MOV', 'PRIV_ESC', 'DATA_STAGING', 'EXFIL_PREP', 'RECON', 'CREDENTIAL_DUMP'];
+      const domains = ['identity', 'endpoint', 'network', 'cloud', 'data'];
+      const sources = ['10.42.8.201', 'WKS-FIN042', 'SRV-DB03', '10.42.12.55', '10.42.3.14'];
+      for (let i = 0; i < 12; i++) {
+        const minutesAgo = Math.floor(Math.abs(timelineOffset) * 60 + i * 5);
+        const h = new Date(Date.now() - minutesAgo * 60000);
+        pastEvents.push({
+          id: i,
+          ts: `${h.getHours().toString().padStart(2, '0')}:${h.getMinutes().toString().padStart(2, '0')}:${h.getSeconds().toString().padStart(2, '0')}`,
+          type: pastTypes[i % pastTypes.length],
+          domain: domains[i % domains.length],
+          detail: `${sources[i % sources.length]} → ${['DC-01.corp', 'krbtgt', 'ADMIN$', '185.220.101.42', 's3://finance'][i % 5]} | Kill chain stage ${Math.min(7, Math.floor(i / 1.5) + 1)}/7`,
+          severity: i < 3 ? 'HIGH' : i < 6 ? 'CRITICAL' : 'MEDIUM',
+          x: 0.1 + (i % 4) * 0.22,
+          y: 0.15 + Math.floor(i / 4) * 0.28,
+        });
+      }
+      setTimelineEvents(pastEvents);
+      setMonteCarloLines([]);
+    } else if (timelineMode === 'future') {
+      const predictions = [
+        { id: 1, label: 'Ransomware Deployment', probability: 73, impact: 'CATASTROPHIC', color: '#ef4444' },
+        { id: 2, label: 'Data Exfiltration Complete', probability: 61, impact: 'CRITICAL', color: '#f97316' },
+        { id: 3, label: 'Lateral to Finance Subnet', probability: 84, impact: 'HIGH', color: '#eab308' },
+        { id: 4, label: 'Domain Admin Compromise', probability: 45, impact: 'CATASTROPHIC', color: '#ef4444' },
+        { id: 5, label: 'Cloud Persistence Established', probability: 56, impact: 'HIGH', color: '#f97316' },
+        { id: 6, label: 'Supply Chain Pivot', probability: 22, impact: 'MEDIUM', color: '#06b6d4' },
+        { id: 7, label: 'Wiper Malware Activation', probability: 18, impact: 'CATASTROPHIC', color: '#ef4444' },
+        { id: 8, label: 'Credential Marketplace Sale', probability: 38, impact: 'HIGH', color: '#eab308' },
+      ];
+      const depth = Math.abs(timelineOffset);
+      const visible = predictions.slice(0, Math.min(8, Math.ceil(depth * 8)));
+      setMonteCarloLines(visible.map(p => ({ ...p, probability: Math.min(99, p.probability + Math.floor(depth * 15)) })));
+      setTimelineEvents([]);
+    } else {
+      setTimelineEvents([]);
+      setMonteCarloLines([]);
+    }
+  }, [timelineMode, timelineOffset]);
+
   const sevConfig = getSeverityConfig(severity);
 
   return (
@@ -1319,7 +1377,7 @@ const AttackUniverse = () => {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-lg">&#9995;</span>
-                <span className="text-slate-300"><span className="text-white font-bold">Open</span> = Force Push</span>
+                <span className="text-slate-300"><span className="text-white font-bold">Open</span> = Timeline Scrub</span>
               </div>
               <div className="flex items-center gap-2">
                 <Zap className="w-3.5 h-3.5 text-yellow-400" />
@@ -1439,7 +1497,7 @@ const AttackUniverse = () => {
             </div>
             <p className="text-[10px] text-slate-600 mt-0.5 font-mono tracking-wide">
               {handTrackingOn
-                ? 'POINT=BEAM | FIST=GRAB | PALM=PUSH | PEACE=LINK | PINCH=SELECT | CLAP=SHOCKWAVE'
+                ? 'POINT=BEAM | FIST=GRAB | PALM=TIMELINE | PEACE=LINK | PINCH=SELECT | CLAP=SHOCKWAVE'
                 : 'DRAG=ORBIT // CLICK=INSPECT // SCROLL=ZOOM // DBLCLICK=FOCUS'}
             </p>
           </div>
@@ -1530,6 +1588,46 @@ const AttackUniverse = () => {
         </div>
       )}
 
+      {/* Ambient Scene Events - visible when no domain selected */}
+      {!selectedDomain && liveEvents.length > 0 && (
+        <div className="absolute bottom-20 left-4 z-10 w-[360px]">
+          <div className="rounded-xl border border-cyan-500/8 bg-[#040c1a]/70 backdrop-blur-2xl p-3 shadow-2xl shadow-cyan-900/10" style={{ boxShadow: '0 0 30px rgba(6,182,212,0.04), inset 0 0 20px rgba(6,182,212,0.02)' }}>
+            <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
+              <div className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/20 to-transparent animate-pulse" style={{ top: '25%' }} />
+            </div>
+            <div className="flex items-center gap-2 mb-2 relative">
+              <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="text-[9px] font-mono text-cyan-400/70 uppercase tracking-[0.15em]">Scene Intercepts</span>
+              <span className="text-[8px] font-mono text-slate-600 ml-auto">{liveEvents.length} signals</span>
+            </div>
+            <div className="space-y-1 max-h-[180px] overflow-hidden">
+              {liveEvents.map((evt, i) => (
+                <button
+                  key={`ambient-${evt.ts}-${i}`}
+                  onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: 'unknown', detail: evt.detail, severity: evt.severity })}
+                  className="w-full flex items-start gap-2 text-[9px] font-mono py-1.5 px-2 rounded bg-white/[0.01] border-l-2 transition-all duration-300 hover:bg-cyan-500/[0.05] hover:border-l-cyan-400 text-left group"
+                  style={{
+                    borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : evt.severity === 'HIGH' ? '#f97316' : '#eab308',
+                    opacity: 1 - i * 0.08,
+                  }}
+                >
+                  <span className="text-slate-600 shrink-0">{evt.ts}</span>
+                  <span className={`shrink-0 font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : evt.severity === 'HIGH' ? 'text-orange-400' : 'text-yellow-400'}`}>
+                    {evt.type}
+                  </span>
+                  <span className="text-slate-500 truncate">{evt.src} &rarr; {evt.dst}</span>
+                  <span className="text-[8px] text-cyan-500/0 group-hover:text-cyan-500/70 transition-all ml-auto shrink-0">[INVESTIGATE]</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 pt-2 border-t border-white/[0.03] flex items-center justify-between">
+              <span className="text-[8px] font-mono text-slate-600">Click event to begin investigation</span>
+              <span className="text-[8px] font-mono text-cyan-500/40 animate-pulse">MONITORING</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Selected Domain Panel - Minority Report Style */}
       {selectedDomain && (
         <div className="absolute bottom-20 left-4 z-10 w-[420px]">
@@ -1586,9 +1684,10 @@ const AttackUniverse = () => {
                   <div className="text-[10px] text-slate-600 font-mono text-center py-3 animate-pulse">Intercepting traffic...</div>
                 ) : (
                   liveEvents.map((evt, i) => (
-                    <div
+                    <button
                       key={`${evt.ts}-${i}`}
-                      className="flex items-start gap-2 text-[9px] font-mono py-1 px-1.5 rounded bg-white/[0.01] border-l-2 transition-all duration-300"
+                      onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: selectedDomain?.id || 'network', detail: evt.detail, severity: evt.severity })}
+                      className="w-full flex items-start gap-2 text-[9px] font-mono py-1 px-1.5 rounded bg-white/[0.01] border-l-2 transition-all duration-300 hover:bg-cyan-500/[0.03] text-left"
                       style={{
                         borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : evt.severity === 'HIGH' ? '#f97316' : '#eab308',
                         opacity: 1 - i * 0.1,
@@ -1598,8 +1697,8 @@ const AttackUniverse = () => {
                       <span className={`shrink-0 font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : evt.severity === 'HIGH' ? 'text-orange-400' : 'text-yellow-400'}`}>
                         {evt.type}
                       </span>
-                      <span className="text-slate-500 truncate">{evt.src} → {evt.dst}</span>
-                    </div>
+                      <span className="text-slate-500 truncate">{evt.src} &rarr; {evt.dst}</span>
+                    </button>
                   ))
                 )}
               </div>
@@ -1608,6 +1707,63 @@ const AttackUniverse = () => {
                   {liveEvents[0]?.detail}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Event Investigation Panel (from clicking live events) */}
+      {selectedEvent && timelineMode === 'present' && (
+        <div className="absolute top-24 right-4 z-30 w-72">
+          <div className="rounded-xl border border-cyan-500/15 bg-[#040c1a]/90 backdrop-blur-2xl p-4 shadow-2xl" style={{ boxShadow: '0 0 40px rgba(6,182,212,0.08)' }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="text-[9px] font-mono text-cyan-400 uppercase tracking-[0.15em]">Investigate Event</span>
+              </div>
+              <button onClick={() => setSelectedEvent(null)} className="text-slate-600 hover:text-cyan-400 text-[9px] font-mono px-1.5 py-0.5 rounded border border-slate-700/30 hover:border-cyan-500/30 transition-all">[X]</button>
+            </div>
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                  selectedEvent.severity === 'CRITICAL' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                  'bg-orange-500/10 text-orange-400 border border-orange-500/20'
+                }`}>{selectedEvent.severity}</span>
+                <span className="text-xs font-mono font-bold text-white">{selectedEvent.type}</span>
+              </div>
+              <div className="text-[10px] font-mono text-slate-400 leading-relaxed">{selectedEvent.detail}</div>
+              <div className="text-[9px] font-mono text-slate-600">
+                TIME: <span className="text-white/70">{selectedEvent.ts}</span> | DOMAIN: <span className="text-cyan-400">{selectedEvent.domain.toUpperCase()}</span>
+              </div>
+              <div className="border-t border-white/[0.04] pt-2.5">
+                <div className="text-[8px] font-mono text-slate-600 mb-2 uppercase tracking-wider">Response Actions</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button className="px-2 py-2 rounded text-[9px] font-mono font-bold bg-cyan-500/5 border border-cyan-500/15 text-cyan-400 hover:bg-cyan-500/10 transition-all">
+                    TRACE ORIGIN
+                  </button>
+                  <button className="px-2 py-2 rounded text-[9px] font-mono font-bold bg-orange-500/5 border border-orange-500/15 text-orange-400 hover:bg-orange-500/10 transition-all">
+                    CORRELATE
+                  </button>
+                  <button className="px-2 py-2 rounded text-[9px] font-mono font-bold bg-red-500/5 border border-red-500/15 text-red-400 hover:bg-red-500/10 transition-all">
+                    CONTAIN HOST
+                  </button>
+                  <button className="px-2 py-2 rounded text-[9px] font-mono font-bold bg-emerald-500/5 border border-emerald-500/15 text-emerald-400 hover:bg-emerald-500/10 transition-all">
+                    OPEN CASE
+                  </button>
+                </div>
+              </div>
+              <div className="border-t border-white/[0.04] pt-2">
+                <div className="text-[8px] font-mono text-slate-600 mb-1.5 uppercase tracking-wider">Kill Chain Position</div>
+                <div className="flex gap-0.5">
+                  {['RECON', 'WEAPON', 'DELIVER', 'EXPLOIT', 'INSTALL', 'C2', 'ACTION'].map((phase, i) => (
+                    <div key={phase} className={`flex-1 h-1.5 rounded-sm ${i <= 4 ? 'bg-red-500/60' : 'bg-slate-700/30'}`} title={phase} />
+                  ))}
+                </div>
+                <div className="flex justify-between mt-1">
+                  <span className="text-[7px] font-mono text-slate-600">RECON</span>
+                  <span className="text-[7px] font-mono text-slate-600">ACTION</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1633,6 +1789,145 @@ const AttackUniverse = () => {
           <div className="text-[9px] text-slate-500 mt-1.5 font-mono">TTP MATCH // MITRE ATT&CK CORRELATION</div>
         </div>
       </div>
+
+      {/* Timeline Scrubber HUD */}
+      {handTrackingOn && timelineMode !== 'present' && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 pointer-events-none">
+          <div className="px-6 py-2 rounded-full border bg-[#040c1a]/80 backdrop-blur-2xl" style={{ borderColor: timelineMode === 'past' ? '#06b6d450' : '#ef444450' }}>
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] font-mono uppercase tracking-[0.2em]" style={{ color: timelineMode === 'past' ? '#06b6d4' : '#ef4444' }}>
+                {timelineMode === 'past' ? 'TEMPORAL REWIND' : 'MONTE CARLO PROJECTION'}
+              </span>
+              <div className="w-32 h-1 bg-slate-800 rounded-full relative overflow-visible">
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full transition-all duration-100"
+                  style={{
+                    left: `${(timelineOffset + 1) * 50}%`,
+                    backgroundColor: timelineMode === 'past' ? '#06b6d4' : '#ef4444',
+                    boxShadow: `0 0 8px ${timelineMode === 'past' ? '#06b6d4' : '#ef4444'}`,
+                  }}
+                />
+                <div className="absolute top-1/2 left-1/2 -translate-y-1/2 -translate-x-1/2 w-0.5 h-3 bg-white/20" />
+              </div>
+              <span className="text-[10px] font-mono font-bold" style={{ color: timelineMode === 'past' ? '#06b6d4' : '#ef4444' }}>
+                {timelineMode === 'past' ? `-${Math.floor(Math.abs(timelineOffset) * 60)}min` : `+${Math.floor(Math.abs(timelineOffset) * 60)}min`}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Past Events - Floating Timeline Cards */}
+      {timelineMode === 'past' && timelineEvents.length > 0 && (
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          <div className="absolute top-24 right-4 w-64 pointer-events-auto">
+            <div className="rounded-xl border border-cyan-500/10 bg-[#040c1a]/85 backdrop-blur-2xl p-3 shadow-2xl">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-[0.15em]">Historical Events</span>
+              </div>
+              <div className="space-y-1.5 max-h-[360px] overflow-y-auto">
+                {timelineEvents.map((evt) => (
+                  <button
+                    key={evt.id}
+                    onClick={() => setSelectedEvent(evt)}
+                    className={`w-full text-left px-2 py-1.5 rounded border transition-all ${
+                      selectedEvent?.id === evt.id
+                        ? 'border-cyan-500/40 bg-cyan-500/5'
+                        : 'border-white/[0.03] bg-white/[0.01] hover:border-cyan-500/20 hover:bg-cyan-500/[0.03]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[8px] font-mono text-slate-600">{evt.ts}</span>
+                      <span className={`text-[9px] font-mono font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : evt.severity === 'HIGH' ? 'text-orange-400' : 'text-yellow-400'}`}>
+                        {evt.type}
+                      </span>
+                    </div>
+                    <div className="text-[8px] font-mono text-slate-500 mt-0.5 truncate">{evt.detail}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Investigation from selected event */}
+          {selectedEvent && (
+            <div className="absolute bottom-24 right-4 w-72 pointer-events-auto">
+              <div className="rounded-xl border border-cyan-500/20 bg-[#040c1a]/90 backdrop-blur-2xl p-4 shadow-2xl" style={{ boxShadow: '0 0 30px rgba(6,182,212,0.1)' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[9px] font-mono text-cyan-400 uppercase tracking-wider">Investigation Target</span>
+                  <button onClick={() => setSelectedEvent(null)} className="text-slate-600 hover:text-white text-[9px] font-mono">[X]</button>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${selectedEvent.severity === 'CRITICAL' ? 'bg-red-500' : 'bg-orange-500'} animate-pulse`} />
+                    <span className="text-xs font-mono font-bold text-white">{selectedEvent.type}</span>
+                    <span className="text-[9px] font-mono text-slate-500">{selectedEvent.ts}</span>
+                  </div>
+                  <div className="text-[10px] font-mono text-slate-400">{selectedEvent.detail}</div>
+                  <div className="text-[9px] font-mono text-slate-600">DOMAIN: <span className="text-cyan-400">{selectedEvent.domain.toUpperCase()}</span></div>
+                  <div className="grid grid-cols-2 gap-1.5 mt-2">
+                    <button className="px-2 py-1.5 rounded text-[9px] font-mono font-bold bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 transition-all">
+                      TRACE ORIGIN
+                    </button>
+                    <button className="px-2 py-1.5 rounded text-[9px] font-mono font-bold bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all">
+                      CORRELATE
+                    </button>
+                    <button className="px-2 py-1.5 rounded text-[9px] font-mono font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all">
+                      ISOLATE HOST
+                    </button>
+                    <button className="px-2 py-1.5 rounded text-[9px] font-mono font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all">
+                      OPEN CASE
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Future Monte Carlo Predictions */}
+      {timelineMode === 'future' && monteCarloLines.length > 0 && (
+        <div className="absolute inset-0 z-20 pointer-events-none">
+          <div className="absolute top-24 right-4 w-72 pointer-events-auto">
+            <div className="rounded-xl border border-red-500/10 bg-[#040c1a]/85 backdrop-blur-2xl p-3 shadow-2xl">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                <span className="text-[9px] font-mono text-red-400/80 uppercase tracking-[0.15em]">Predictive Analysis // Monte Carlo</span>
+              </div>
+              <div className="space-y-2">
+                {monteCarloLines.map((pred) => (
+                  <div key={pred.id} className="px-2 py-2 rounded border border-white/[0.03] bg-white/[0.01]">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-mono font-bold text-white/90">{pred.label}</span>
+                      <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${
+                        pred.impact === 'CATASTROPHIC' ? 'bg-red-500/10 text-red-400' :
+                        pred.impact === 'CRITICAL' ? 'bg-orange-500/10 text-orange-400' :
+                        'bg-yellow-500/10 text-yellow-400'
+                      }`}>{pred.impact}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-slate-800/50 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${pred.probability}%`, backgroundColor: pred.color, boxShadow: `0 0 4px ${pred.color}` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-mono font-bold" style={{ color: pred.color }}>{pred.probability}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-2 border-t border-white/[0.04]">
+                <div className="text-[8px] font-mono text-slate-600 text-center">
+                  SIMULATIONS: 10,000 | CONFIDENCE: 94.2% | TIME HORIZON: +{Math.floor(Math.abs(timelineOffset) * 60)}min
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Severity Controls */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-2 py-1 rounded-lg border border-white/[0.04] bg-[#040c1a]/60 backdrop-blur-xl">
