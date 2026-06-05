@@ -649,7 +649,7 @@ const Dashboard = () => {
                 </div>
               </div>
 
-              {/* Attack Universe */}
+              {/* Precognet Universe */}
               <div className="mb-8">
                 <AttackUniverse />
               </div>

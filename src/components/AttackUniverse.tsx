@@ -1061,7 +1061,7 @@ const AttackUniverse = () => {
     };
   }, []);
 
-  // Resize on fullscreen
+  // Resize + re-center on fullscreen
   useEffect(() => {
     setTimeout(() => {
       if (sceneDataRef.current && containerRef.current) {
@@ -1070,6 +1070,9 @@ const AttackUniverse = () => {
         sceneDataRef.current.camera.aspect = w / h;
         sceneDataRef.current.camera.updateProjectionMatrix();
         sceneDataRef.current.renderer.setSize(w, h);
+        sceneDataRef.current.controls.target.set(0, 0, 0);
+        sceneDataRef.current.camera.position.set(0, 2.5, 6.5);
+        sceneDataRef.current.controls.update();
       }
     }, 50);
   }, [isFullscreen]);
@@ -1240,7 +1243,7 @@ const AttackUniverse = () => {
           <div>
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: sevConfig.hex, boxShadow: `0 0 8px ${sevConfig.hex}` }} />
-              <h2 className="text-sm font-bold text-white uppercase tracking-widest">Attack Universe</h2>
+              <h2 className="text-sm font-bold text-white uppercase tracking-widest">Precognet Universe</h2>
               {handTrackingOn && (
                 <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 uppercase">
                   Hand Control
