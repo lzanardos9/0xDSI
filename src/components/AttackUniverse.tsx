@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
-import { Crosshair, Maximize2, Minimize2, Video, VideoOff, RotateCcw, Hand } from 'lucide-react';
+import { Crosshair, Maximize2, Minimize2, Video, VideoOff, RotateCcw, Hand, Zap, Link2, Target } from 'lucide-react';
 
 interface DomainData {
   id: string;
@@ -16,6 +16,13 @@ interface DomainData {
 }
 
 type SeverityLevel = 'normal' | 'elevated' | 'high' | 'critical';
+
+interface InvestigationLink {
+  fromIdx: number;
+  toIdx: number;
+  timestamp: number;
+  strength: number;
+}
 
 const DOMAINS: DomainData[] = [
   { id: 'identity', name: 'Identity', health: 72, pressure: 68, active: true, color: '#06b6d4', attacks: 14, description: 'Authentication & Access' },
@@ -58,10 +65,25 @@ const AttackUniverse = () => {
     domainMeshes: THREE.Mesh[];
     domainRings: THREE.Mesh[];
     flowParticles: THREE.Mesh[];
+    laserLine: THREE.Line;
+    shockwaveRing: THREE.Mesh;
+    investigationLines: THREE.Line[];
     raycaster: THREE.Raycaster;
     clock: THREE.Clock;
     animId: number;
   } | null>(null);
+
+  // Hand physics state
+  const prevHandPosRef = useRef<{ x: number; y: number } | null>(null);
+  const handVelocityRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const grabbedDomainRef = useRef<number>(-1);
+  const grabbedOffsetRef = useRef<THREE.Vector3>(new THREE.Vector3());
+  const domainOrigPosRef = useRef<THREE.Vector3[]>([]);
+  const domainDisplaceRef = useRef<THREE.Vector3[]>([]);
+  const prevTwoHandDistRef = useRef<number>(0);
+  const linkStartRef = useRef<number>(-1);
+  const shockwaveTimeRef = useRef<number>(0);
+  const prevBothHandsDistRef = useRef<number>(999);
 
   const [severity, setSeverity] = useState<SeverityLevel>('critical');
   const [selectedDomain, setSelectedDomain] = useState<DomainData | null>(null);
@@ -73,13 +95,18 @@ const AttackUniverse = () => {
   const [handGesture, setHandGesture] = useState<string>('');
   const [handPosition, setHandPosition] = useState<{ x: number; y: number } | null>(null);
   const [isPinching, setIsPinching] = useState(false);
+  const [isGrabbing, setIsGrabbing] = useState(false);
+  const [isBeaming, setIsBeaming] = useState(false);
+  const [investigationLinks, setInvestigationLinks] = useState<InvestigationLink[]>([]);
+  const [shockwaveActive, setShockwaveActive] = useState(false);
+  const [twoHandsDetected, setTwoHandsDetected] = useState(false);
+  const [showGestureTutorial, setShowGestureTutorial] = useState(true);
 
   const severityRef = useRef(severity);
   const selectedIdxRef = useRef(-1);
 
   useEffect(() => { severityRef.current = severity; }, [severity]);
 
-  // Initialize MediaPipe Hand Landmarker
   const initHandTracking = useCallback(async () => {
     try {
       const vision = await FilesetResolver.forVisionTasks(
@@ -104,13 +131,10 @@ const AttackUniverse = () => {
     }
   }, []);
 
-  // Start webcam
   const startHandTracking = useCallback(async () => {
     if (!videoRef.current) return;
-
     const success = await initHandTracking();
     if (!success) return;
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480, facingMode: 'user' },
@@ -119,21 +143,25 @@ const AttackUniverse = () => {
       await videoRef.current.play();
       handTrackingActiveRef.current = true;
       setHandTrackingOn(true);
+      setShowGestureTutorial(true);
+      setTimeout(() => setShowGestureTutorial(false), 8000);
       detectHands();
     } catch (e) {
       console.error('Webcam access failed:', e);
     }
   }, [initHandTracking]);
 
-  // Stop webcam
   const stopHandTracking = useCallback(() => {
     handTrackingActiveRef.current = false;
     setHandTrackingOn(false);
     setHandGesture('');
     setHandPosition(null);
     setIsPinching(false);
+    setIsGrabbing(false);
+    setIsBeaming(false);
+    setTwoHandsDetected(false);
+    grabbedDomainRef.current = -1;
     cancelAnimationFrame(handAnimFrameRef.current);
-
     if (videoRef.current?.srcObject) {
       const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
       tracks.forEach(t => t.stop());
@@ -141,123 +169,315 @@ const AttackUniverse = () => {
     }
   }, []);
 
-  // Hand detection loop
   const detectHands = useCallback(() => {
     if (!handTrackingActiveRef.current || !videoRef.current || !handLandmarkerRef.current) return;
     if (videoRef.current.readyState < 2) {
       handAnimFrameRef.current = requestAnimationFrame(detectHands);
       return;
     }
-
     const results: HandLandmarkerResult = handLandmarkerRef.current.detectForVideo(
-      videoRef.current,
-      performance.now()
+      videoRef.current, performance.now()
     );
-
     processHandResults(results);
     drawHandOverlay(results);
-
     handAnimFrameRef.current = requestAnimationFrame(detectHands);
   }, []);
 
-  // Process hand landmarks into gestures
   const processHandResults = useCallback((results: HandLandmarkerResult) => {
     if (!results.landmarks || results.landmarks.length === 0) {
       setHandGesture('');
       setHandPosition(null);
       setIsPinching(false);
+      setIsGrabbing(false);
+      setIsBeaming(false);
+      setTwoHandsDetected(false);
+      grabbedDomainRef.current = -1;
+      prevHandPosRef.current = null;
       return;
     }
 
-    const hand = results.landmarks[0];
-    // Index finger tip (8) and thumb tip (4)
-    const indexTip = hand[8];
-    const thumbTip = hand[4];
-    const wrist = hand[0];
-    const middleTip = hand[12];
+    const hand1 = results.landmarks[0];
+    const hasTwoHands = results.landmarks.length >= 2;
+    setTwoHandsDetected(hasTwoHands);
 
-    // Palm center approximation
-    const palmX = (hand[0].x + hand[5].x + hand[17].x) / 3;
-    const palmY = (hand[0].y + hand[5].y + hand[17].y) / 3;
+    const indexTip = hand1[8];
+    const thumbTip = hand1[4];
+    const palmX = (hand1[0].x + hand1[5].x + hand1[17].x) / 3;
+    const palmY = (hand1[0].y + hand1[5].y + hand1[17].y) / 3;
+    const mirroredX = 1 - palmX;
 
-    // Mirror X for natural interaction
-    setHandPosition({ x: 1 - palmX, y: palmY });
+    // Track velocity
+    if (prevHandPosRef.current) {
+      handVelocityRef.current = {
+        x: mirroredX - prevHandPosRef.current.x,
+        y: palmY - prevHandPosRef.current.y,
+      };
+    }
+    prevHandPosRef.current = { x: mirroredX, y: palmY };
+    setHandPosition({ x: mirroredX, y: palmY });
 
-    // Pinch detection (thumb-index distance)
+    // Pinch detection
     const pinchDist = Math.sqrt(
       (thumbTip.x - indexTip.x) ** 2 +
       (thumbTip.y - indexTip.y) ** 2 +
       (thumbTip.z - indexTip.z) ** 2
     );
-
     const pinching = pinchDist < 0.06;
     setIsPinching(pinching);
 
-    // Gesture classification
+    // Finger extension
     const fingersExtended = [
-      hand[8].y < hand[6].y, // Index
-      hand[12].y < hand[10].y, // Middle
-      hand[16].y < hand[14].y, // Ring
-      hand[20].y < hand[18].y, // Pinky
+      hand1[8].y < hand1[6].y,
+      hand1[12].y < hand1[10].y,
+      hand1[16].y < hand1[14].y,
+      hand1[20].y < hand1[18].y,
     ];
     const extendedCount = fingersExtended.filter(Boolean).length;
 
-    if (pinching) {
-      setHandGesture('PINCH - Select');
-    } else if (extendedCount === 0) {
-      setHandGesture('FIST - Grab');
-    } else if (extendedCount === 4) {
-      setHandGesture('OPEN - Navigate');
-    } else if (extendedCount === 1 && fingersExtended[0]) {
-      setHandGesture('POINT - Target');
-    } else if (extendedCount === 2 && fingersExtended[0] && fingersExtended[1]) {
-      setHandGesture('PEACE - Zoom');
+    // TWO-HAND ZOOM
+    if (hasTwoHands) {
+      const hand2 = results.landmarks[1];
+      const palm2X = (hand2[0].x + hand2[5].x + hand2[17].x) / 3;
+      const palm2Y = (hand2[0].y + hand2[5].y + hand2[17].y) / 3;
+      const dist = Math.sqrt((palmX - palm2X) ** 2 + (palmY - palm2Y) ** 2);
+
+      // SHOCKWAVE CLAP detection
+      if (prevBothHandsDistRef.current > 0.15 && dist < 0.08) {
+        triggerShockwave();
+      }
+      prevBothHandsDistRef.current = dist;
+
+      // Two-hand zoom
+      if (prevTwoHandDistRef.current > 0 && sceneDataRef.current) {
+        const delta = dist - prevTwoHandDistRef.current;
+        const zoomSpeed = delta * 15;
+        sceneDataRef.current.camera.position.multiplyScalar(1 - zoomSpeed);
+        const minD = 3;
+        const maxD = 14;
+        const camDist = sceneDataRef.current.camera.position.length();
+        if (camDist < minD) sceneDataRef.current.camera.position.setLength(minD);
+        if (camDist > maxD) sceneDataRef.current.camera.position.setLength(maxD);
+      }
+      prevTwoHandDistRef.current = dist;
+      setHandGesture('TWO-HAND ZOOM');
+      return;
     } else {
-      setHandGesture('TRACKING');
+      prevTwoHandDistRef.current = 0;
+      prevBothHandsDistRef.current = 999;
     }
 
-    // Apply hand position to 3D scene
-    if (sceneDataRef.current) {
-      const { controls, camera, domainMeshes, raycaster } = sceneDataRef.current;
+    // GESTURE CLASSIFICATION & DOMAIN INTERACTION
+    if (!sceneDataRef.current) return;
+    const { controls, camera, domainMeshes, raycaster, laserLine } = sceneDataRef.current;
+    const handVec = new THREE.Vector2(mirroredX * 2 - 1, -(palmY * 2 - 1));
 
-      if (pinching) {
-        // Pinch = select nearest domain
-        const handVec = new THREE.Vector2((1 - palmX) * 2 - 1, -(palmY * 2 - 1));
+    if (extendedCount === 1 && fingersExtended[0] && !pinching) {
+      // POINT = Energy Beam
+      setHandGesture('BEAM - Targeting');
+      setIsBeaming(true);
+      setIsGrabbing(false);
+      grabbedDomainRef.current = -1;
+
+      const fingerTipX = 1 - indexTip.x;
+      const fingerTipY = indexTip.y;
+      const fingerVec = new THREE.Vector2(fingerTipX * 2 - 1, -(fingerTipY * 2 - 1));
+      raycaster.setFromCamera(fingerVec, camera);
+
+      const beamOrigin = new THREE.Vector3(fingerVec.x * 3, fingerVec.y * 3, 4).unproject(camera);
+      const intersects = raycaster.intersectObjects(domainMeshes);
+
+      const positions = laserLine.geometry.attributes.position;
+      if (intersects.length > 0) {
+        const target = intersects[0].point;
+        positions.setXYZ(0, beamOrigin.x, beamOrigin.y, beamOrigin.z);
+        positions.setXYZ(1, target.x, target.y, target.z);
+        (laserLine.material as THREE.LineBasicMaterial).opacity = 0.9;
+
+        const hitIdx = intersects[0].object.userData.domainIdx;
+        setHoveredDomain(DOMAINS[hitIdx]);
+      } else {
+        const farPoint = raycaster.ray.at(10, new THREE.Vector3());
+        positions.setXYZ(0, beamOrigin.x, beamOrigin.y, beamOrigin.z);
+        positions.setXYZ(1, farPoint.x, farPoint.y, farPoint.z);
+        (laserLine.material as THREE.LineBasicMaterial).opacity = 0.3;
+      }
+      positions.needsUpdate = true;
+      laserLine.visible = true;
+
+    } else if (extendedCount === 0) {
+      // FIST = Grab & Drag
+      setIsBeaming(false);
+      laserLine.visible = false;
+
+      if (grabbedDomainRef.current === -1) {
         raycaster.setFromCamera(handVec, camera);
         const intersects = raycaster.intersectObjects(domainMeshes);
         if (intersects.length > 0) {
           const idx = intersects[0].object.userData.domainIdx;
-          setSelectedDomain(DOMAINS[idx]);
-          selectedIdxRef.current = idx;
+          grabbedDomainRef.current = idx;
+          setIsGrabbing(true);
+          setHandGesture('GRAB - Dragging');
+          controls.enabled = false;
+        } else {
+          setHandGesture('FIST - Ready');
+          setIsGrabbing(false);
         }
-      } else if (extendedCount === 4) {
-        // Open hand = orbit the scene based on hand position
-        const dx = ((1 - palmX) - 0.5) * 4;
+      } else {
+        setHandGesture('GRAB - Dragging');
+        const vel = handVelocityRef.current;
+        const displacement = domainDisplaceRef.current[grabbedDomainRef.current] || new THREE.Vector3();
+        displacement.x += vel.x * 8;
+        displacement.y -= vel.y * 5;
+        domainDisplaceRef.current[grabbedDomainRef.current] = displacement;
+      }
+
+    } else if (extendedCount === 4) {
+      // OPEN PALM = Force Push/Pull
+      setIsBeaming(false);
+      laserLine.visible = false;
+      setIsGrabbing(false);
+
+      if (grabbedDomainRef.current >= 0) {
+        grabbedDomainRef.current = -1;
+        controls.enabled = true;
+      }
+
+      const vel = handVelocityRef.current;
+      const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y);
+
+      if (speed > 0.015) {
+        setHandGesture('FORCE PUSH');
+        // Push all domains away from hand position
+        domainMeshes.forEach((mesh, idx) => {
+          const meshScreen = mesh.position.clone().project(camera);
+          const dx = meshScreen.x - handVec.x;
+          const dy = meshScreen.y - handVec.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 1.5) {
+            const force = (1.5 - dist) * speed * 3;
+            const dir = new THREE.Vector3(dx, dy, 0).normalize();
+            const displacement = domainDisplaceRef.current[idx] || new THREE.Vector3();
+            displacement.add(dir.multiplyScalar(force));
+            domainDisplaceRef.current[idx] = displacement;
+          }
+        });
+      } else {
+        setHandGesture('OPEN - Navigate');
+        const dx = (mirroredX - 0.5) * 4;
         const dy = (palmY - 0.5) * 2;
         controls.autoRotateSpeed = dx;
         camera.position.y += (dy * 3 + 1 - camera.position.y) * 0.03;
-      } else if (extendedCount === 0) {
-        // Fist = stop rotation
-        controls.autoRotateSpeed = 0;
+      }
+
+    } else if (extendedCount === 2 && fingersExtended[0] && fingersExtended[1]) {
+      // PEACE = Investigation Link mode
+      setIsBeaming(false);
+      laserLine.visible = false;
+      setIsGrabbing(false);
+      setHandGesture('LINK - Connect Domains');
+
+      if (grabbedDomainRef.current >= 0) {
+        grabbedDomainRef.current = -1;
+        controls.enabled = true;
+      }
+
+      raycaster.setFromCamera(handVec, camera);
+      const intersects = raycaster.intersectObjects(domainMeshes);
+      if (intersects.length > 0) {
+        const hitIdx = intersects[0].object.userData.domainIdx;
+        if (linkStartRef.current === -1) {
+          linkStartRef.current = hitIdx;
+          setHandGesture(`LINK - From: ${DOMAINS[hitIdx].name}`);
+        } else if (linkStartRef.current !== hitIdx) {
+          const newLink: InvestigationLink = {
+            fromIdx: linkStartRef.current,
+            toIdx: hitIdx,
+            timestamp: Date.now(),
+            strength: 1,
+          };
+          setInvestigationLinks(prev => [...prev.slice(-4), newLink]);
+          addInvestigationLine3D(linkStartRef.current, hitIdx);
+          linkStartRef.current = -1;
+          setHandGesture('LINK - Connected!');
+        }
+      }
+
+    } else if (pinching) {
+      // PINCH = Select
+      setIsBeaming(false);
+      laserLine.visible = false;
+      setIsGrabbing(false);
+      setHandGesture('PINCH - Select');
+
+      if (grabbedDomainRef.current >= 0) {
+        grabbedDomainRef.current = -1;
+        controls.enabled = true;
+      }
+
+      raycaster.setFromCamera(handVec, camera);
+      const intersects = raycaster.intersectObjects(domainMeshes);
+      if (intersects.length > 0) {
+        const idx = intersects[0].object.userData.domainIdx;
+        setSelectedDomain(DOMAINS[idx]);
+        selectedIdxRef.current = idx;
+      }
+    } else {
+      setIsBeaming(false);
+      laserLine.visible = false;
+      setIsGrabbing(false);
+      setHandGesture('TRACKING');
+
+      if (grabbedDomainRef.current >= 0) {
+        grabbedDomainRef.current = -1;
+        controls.enabled = true;
       }
     }
   }, []);
 
-  // Draw hand landmarks overlay (Minority Report style)
+  const triggerShockwave = useCallback(() => {
+    setShockwaveActive(true);
+    shockwaveTimeRef.current = 0;
+    setTimeout(() => setShockwaveActive(false), 2000);
+  }, []);
+
+  const addInvestigationLine3D = useCallback((fromIdx: number, toIdx: number) => {
+    if (!sceneDataRef.current) return;
+    const { scene, domainMeshes, investigationLines } = sceneDataRef.current;
+    const from = domainMeshes[fromIdx].position;
+    const to = domainMeshes[toIdx].position;
+
+    const points = [];
+    const segments = 30;
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const x = from.x + (to.x - from.x) * t;
+      const y = from.y + (to.y - from.y) * t + Math.sin(t * Math.PI) * 0.5;
+      const z = from.z + (to.z - from.z) * t;
+      points.push(new THREE.Vector3(x, y, z));
+    }
+
+    const geo = new THREE.BufferGeometry().setFromPoints(points);
+    const mat = new THREE.LineBasicMaterial({
+      color: 0x06b6d4,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const line = new THREE.Line(geo, mat);
+    line.userData = { createdAt: Date.now(), lifetime: 8000 };
+    scene.add(line);
+    investigationLines.push(line);
+  }, []);
+
   const drawHandOverlay = useCallback((results: HandLandmarkerResult) => {
     const canvas = canvasOverlayRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     if (!results.landmarks || results.landmarks.length === 0) return;
 
     results.landmarks.forEach((hand, handIdx) => {
       const color = handIdx === 0 ? '#06b6d4' : '#f59e0b';
-
-      // Draw connections (Minority Report style glowing lines)
       const connections = [
         [0, 1], [1, 2], [2, 3], [3, 4],
         [0, 5], [5, 6], [6, 7], [7, 8],
@@ -266,10 +486,11 @@ const AttackUniverse = () => {
         [13, 17], [17, 18], [18, 19], [19, 20], [0, 17],
       ];
 
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
+      // Glowing skeleton lines
       ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
 
       connections.forEach(([start, end]) => {
         const s = hand[start];
@@ -280,28 +501,30 @@ const AttackUniverse = () => {
         ctx.stroke();
       });
 
-      // Draw landmarks as glowing dots
+      // Landmark dots
       hand.forEach((landmark, i) => {
         const x = (1 - landmark.x) * canvas.width;
         const y = landmark.y * canvas.height;
-        const size = [4, 8].includes(i) ? 6 : 3;
+        const isFingertip = [4, 8, 12, 16, 20].includes(i);
+        const size = isFingertip ? 6 : 3;
 
         ctx.beginPath();
         ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fillStyle = [4, 8, 12, 16, 20].includes(i) ? '#ffffff' : color;
+        ctx.fillStyle = isFingertip ? '#ffffff' : color;
+        ctx.shadowColor = isFingertip ? '#ffffff' : color;
+        ctx.shadowBlur = isFingertip ? 15 : 8;
         ctx.fill();
 
-        // Outer glow for fingertips
-        if ([4, 8, 12, 16, 20].includes(i)) {
+        if (isFingertip) {
           ctx.beginPath();
-          ctx.arc(x, y, 10, 0, Math.PI * 2);
-          ctx.strokeStyle = `${color}60`;
+          ctx.arc(x, y, 12, 0, Math.PI * 2);
+          ctx.strokeStyle = `${color}50`;
           ctx.lineWidth = 1;
           ctx.stroke();
         }
       });
 
-      // Draw pinch indicator
+      // Pinch indicator
       const thumbTip = hand[4];
       const indexTip = hand[8];
       const dist = Math.sqrt((thumbTip.x - indexTip.x) ** 2 + (thumbTip.y - indexTip.y) ** 2);
@@ -309,22 +532,53 @@ const AttackUniverse = () => {
         const cx = ((1 - thumbTip.x) + (1 - indexTip.x)) / 2 * canvas.width;
         const cy = (thumbTip.y + indexTip.y) / 2 * canvas.height;
         ctx.beginPath();
-        ctx.arc(cx, cy, 15, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 18, 0, Math.PI * 2);
         ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.5;
         ctx.shadowColor = '#ef4444';
-        ctx.shadowBlur = 15;
+        ctx.shadowBlur = 20;
         ctx.stroke();
+      }
+
+      // Energy beam from index finger
+      if (hand[8].y < hand[6].y && hand[12].y > hand[10].y) {
+        const tipX = (1 - hand[8].x) * canvas.width;
+        const tipY = hand[8].y * canvas.height;
+        const gradient = ctx.createRadialGradient(tipX, tipY, 0, tipX, tipY, 40);
+        gradient.addColorStop(0, '#06b6d4');
+        gradient.addColorStop(0.5, '#06b6d440');
+        gradient.addColorStop(1, 'transparent');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(tipX - 40, tipY - 40, 80, 80);
       }
     });
 
-    ctx.shadowBlur = 0;
-  }, []);
+    // Shockwave overlay
+    if (shockwaveActive) {
+      const t = shockwaveTimeRef.current;
+      const radius = t * canvas.width * 0.8;
+      const opacity = Math.max(0, 1 - t);
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(6, 182, 212, ${opacity})`;
+      ctx.lineWidth = 4 * (1 - t);
+      ctx.shadowColor = '#06b6d4';
+      ctx.shadowBlur = 30;
+      ctx.stroke();
 
-  // Fullscreen toggle
-  const toggleFullscreen = useCallback(() => {
-    setIsFullscreen(prev => !prev);
-  }, []);
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, radius * 0.8, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(239, 68, 68, ${opacity * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      shockwaveTimeRef.current += 0.02;
+    }
+
+    ctx.shadowBlur = 0;
+  }, [shockwaveActive]);
+
+  const toggleFullscreen = useCallback(() => setIsFullscreen(prev => !prev), []);
 
   // 3D Scene setup
   useEffect(() => {
@@ -357,7 +611,6 @@ const AttackUniverse = () => {
     controls.autoRotateSpeed = 0.4;
     controls.target.set(0, 0, 0);
 
-    // Lighting
     scene.add(new THREE.AmbientLight(0x1a2040, 0.6));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.25);
     dirLight.position.set(5, 8, 5);
@@ -374,7 +627,6 @@ const AttackUniverse = () => {
     const coreMesh = new THREE.Mesh(coreGeo, coreMat);
     scene.add(coreMesh);
 
-    // Core glow
     const glowGeo = new THREE.SphereGeometry(0.85, 32, 32);
     const glowMat = new THREE.MeshBasicMaterial({
       color: sevConfig.color, transparent: true, opacity: 0.12, side: THREE.BackSide,
@@ -411,7 +663,9 @@ const AttackUniverse = () => {
       scene.add(mesh);
       domainMeshes.push(mesh);
 
-      // Selection ring
+      domainOrigPosRef.current[idx] = mesh.position.clone();
+      domainDisplaceRef.current[idx] = new THREE.Vector3();
+
       const ringGeo = new THREE.RingGeometry(nodeSize * 1.5, nodeSize * 1.8, 32);
       const ringMat = new THREE.MeshBasicMaterial({
         color: new THREE.Color(domain.color), transparent: true, opacity: 0, side: THREE.DoubleSide,
@@ -434,7 +688,7 @@ const AttackUniverse = () => {
     const orbitLineGeo = new THREE.BufferGeometry().setFromPoints(orbitPts);
     scene.add(new THREE.Line(orbitLineGeo, new THREE.LineBasicMaterial({ color: 0x1a3050, transparent: true, opacity: 0.3 })));
 
-    // Flow lines & particles
+    // Flow particles
     const flowParticles: THREE.Mesh[] = [];
     ATTACK_FLOWS.forEach((flow) => {
       const fromPos = domainMeshes[flow.from].position;
@@ -457,6 +711,25 @@ const AttackUniverse = () => {
       flowParticles.push(particle);
     });
 
+    // LASER BEAM LINE
+    const laserGeo = new THREE.BufferGeometry();
+    const laserPositions = new Float32Array(6);
+    laserGeo.setAttribute('position', new THREE.BufferAttribute(laserPositions, 3));
+    const laserMat = new THREE.LineBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.9, linewidth: 2 });
+    const laserLine = new THREE.Line(laserGeo, laserMat);
+    laserLine.visible = false;
+    scene.add(laserLine);
+
+    // SHOCKWAVE RING
+    const shockGeo = new THREE.RingGeometry(0.1, 0.3, 64);
+    const shockMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0, side: THREE.DoubleSide });
+    const shockwaveRing = new THREE.Mesh(shockGeo, shockMat);
+    shockwaveRing.rotation.x = -Math.PI / 2;
+    scene.add(shockwaveRing);
+
+    // Investigation lines array
+    const investigationLines: THREE.Line[] = [];
+
     // Starfield
     const starCount = 600;
     const starGeo = new THREE.BufferGeometry();
@@ -476,7 +749,8 @@ const AttackUniverse = () => {
 
     sceneDataRef.current = {
       scene, camera, renderer, controls, coreMesh, coreGlow,
-      domainMeshes, domainRings, flowParticles, raycaster, clock, animId: 0,
+      domainMeshes, domainRings, flowParticles, laserLine, shockwaveRing,
+      investigationLines, raycaster, clock, animId: 0,
     };
 
     // Mouse events
@@ -520,11 +794,12 @@ const AttackUniverse = () => {
     container.addEventListener('click', onClick);
     container.addEventListener('dblclick', onDblClick);
 
-    // Animate
+    // ANIMATION LOOP
     const animate = () => {
       const elapsed = clock.getElapsedTime();
       controls.update();
 
+      // Core pulse
       const pulse = 1 + Math.sin(elapsed * 2) * 0.04;
       coreMesh.scale.setScalar(pulse);
       coreGlow.scale.setScalar(pulse * 1.15);
@@ -536,12 +811,76 @@ const AttackUniverse = () => {
       (coreGlow.material as THREE.MeshBasicMaterial).color.lerp(sev.color, 0.02);
       coreLight.color.lerp(sev.color, 0.02);
 
+      // Domain positions with spring physics
       domainMeshes.forEach((mesh, idx) => {
-        mesh.position.y = mesh.userData.baseY + Math.sin(elapsed * 0.7 + idx) * 0.08;
+        const orig = domainOrigPosRef.current[idx];
+        const displace = domainDisplaceRef.current[idx];
+
+        if (orig && displace) {
+          // Spring back toward original position
+          displace.x *= 0.94;
+          displace.y *= 0.94;
+          displace.z *= 0.94;
+
+          if (displace.length() < 0.001) {
+            displace.set(0, 0, 0);
+          }
+
+          mesh.position.set(
+            orig.x + displace.x,
+            orig.y + displace.y + Math.sin(elapsed * 0.7 + idx) * 0.08,
+            orig.z + displace.z
+          );
+        } else {
+          mesh.position.y = mesh.userData.baseY + Math.sin(elapsed * 0.7 + idx) * 0.08;
+        }
+
         mesh.rotation.y += 0.006;
         domainRings[idx].position.copy(mesh.position);
         domainRings[idx].lookAt(camera.position);
       });
+
+      // Shockwave animation
+      if (shockwaveActive) {
+        const t = shockwaveTimeRef.current;
+        const scale = 1 + t * 12;
+        shockwaveRing.scale.setScalar(scale);
+        (shockwaveRing.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.6 - t * 0.3);
+        shockwaveTimeRef.current += 0.016;
+
+        // Push all domains outward during shockwave
+        if (t < 0.5) {
+          domainMeshes.forEach((_, idx) => {
+            const orig = domainOrigPosRef.current[idx];
+            if (orig) {
+              const dir = orig.clone().normalize();
+              const force = Math.max(0, 0.5 - t) * 0.05;
+              const displacement = domainDisplaceRef.current[idx] || new THREE.Vector3();
+              displacement.add(dir.multiplyScalar(force));
+              domainDisplaceRef.current[idx] = displacement;
+            }
+          });
+        }
+      } else {
+        (shockwaveRing.material as THREE.MeshBasicMaterial).opacity = 0;
+        shockwaveRing.scale.setScalar(1);
+      }
+
+      // Investigation lines fade
+      for (let i = investigationLines.length - 1; i >= 0; i--) {
+        const line = investigationLines[i];
+        const age = Date.now() - line.userData.createdAt;
+        const lifetime = line.userData.lifetime;
+        if (age > lifetime) {
+          scene.remove(line);
+          line.geometry.dispose();
+          (line.material as THREE.LineBasicMaterial).dispose();
+          investigationLines.splice(i, 1);
+        } else {
+          const fade = 1 - age / lifetime;
+          (line.material as THREE.LineBasicMaterial).opacity = fade * 0.8;
+        }
+      }
 
       // Hover via mouse
       raycaster.setFromCamera(mouse, camera);
@@ -575,11 +914,17 @@ const AttackUniverse = () => {
         }
       });
 
+      // Flow particles
       flowParticles.forEach((p) => {
         p.userData.progress += 0.004;
         if (p.userData.progress > 1) p.userData.progress = 0;
         p.position.copy(p.userData.curve.getPoint(p.userData.progress));
       });
+
+      // Laser beam pulse
+      if (laserLine.visible) {
+        (laserLine.material as THREE.LineBasicMaterial).opacity = 0.5 + Math.sin(elapsed * 10) * 0.4;
+      }
 
       renderer.render(scene, camera);
       sceneDataRef.current!.animId = requestAnimationFrame(animate);
@@ -615,7 +960,7 @@ const AttackUniverse = () => {
     };
   }, []);
 
-  // Resize on fullscreen change
+  // Resize on fullscreen
   useEffect(() => {
     setTimeout(() => {
       if (sceneDataRef.current && containerRef.current) {
@@ -637,23 +982,21 @@ const AttackUniverse = () => {
       }`}
       style={{ height: isFullscreen ? '100vh' : '640px' }}
     >
-      {/* Three.js Canvas */}
       <div ref={containerRef} className="absolute inset-0" />
 
       {/* Hand Tracking Overlay Canvas */}
       <canvas
         ref={canvasOverlayRef}
-        width={640}
-        height={480}
+        width={960}
+        height={720}
         className={`absolute inset-0 w-full h-full pointer-events-none z-20 ${handTrackingOn ? 'opacity-100' : 'opacity-0'}`}
       />
 
-      {/* Hidden video element for webcam */}
       <video ref={videoRef} className="hidden" playsInline muted />
 
-      {/* Webcam PIP Feed */}
+      {/* Webcam PIP */}
       {handTrackingOn && (
-        <div className="absolute bottom-24 right-4 z-30 w-48 h-36 rounded-lg border-2 border-cyan-500/50 overflow-hidden shadow-lg shadow-cyan-500/20">
+        <div className="absolute bottom-24 right-4 z-30 w-44 h-32 rounded-lg border-2 border-cyan-500/50 overflow-hidden shadow-lg shadow-cyan-500/20">
           <video
             ref={el => {
               if (el && videoRef.current?.srcObject) {
@@ -662,9 +1005,7 @@ const AttackUniverse = () => {
               }
             }}
             className="w-full h-full object-cover transform scale-x-[-1]"
-            playsInline
-            muted
-            autoPlay
+            playsInline muted autoPlay
           />
           <div className="absolute inset-0 border-2 border-cyan-400/20 rounded-lg pointer-events-none" />
           <div className="absolute top-1 left-2 flex items-center gap-1">
@@ -674,37 +1015,121 @@ const AttackUniverse = () => {
         </div>
       )}
 
-      {/* Hand Gesture HUD */}
+      {/* Gesture Tutorial Overlay */}
+      {handTrackingOn && showGestureTutorial && (
+        <div className="absolute inset-0 z-40 pointer-events-none flex items-center justify-center">
+          <div className="bg-slate-900/90 backdrop-blur-lg border border-cyan-500/30 rounded-2xl p-6 max-w-md pointer-events-auto animate-pulse">
+            <h3 className="text-sm font-bold text-cyan-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Hand className="w-4 h-4" /> Hand Gesture Controls
+            </h3>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <Target className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-slate-300"><span className="text-white font-bold">Point</span> = Energy Beam</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg">&#9994;</span>
+                <span className="text-slate-300"><span className="text-white font-bold">Fist</span> = Grab Domain</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg">&#9995;</span>
+                <span className="text-slate-300"><span className="text-white font-bold">Open</span> = Force Push</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Zap className="w-3.5 h-3.5 text-yellow-400" />
+                <span className="text-slate-300"><span className="text-white font-bold">Pinch</span> = Select</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link2 className="w-3.5 h-3.5 text-green-400" />
+                <span className="text-slate-300"><span className="text-white font-bold">Peace</span> = Link Domains</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg">&#128079;</span>
+                <span className="text-slate-300"><span className="text-white font-bold">Clap</span> = Shockwave</span>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-3 text-center">Use both hands spread/pinch for zoom</p>
+          </div>
+        </div>
+      )}
+
+      {/* Gesture State HUD */}
       {handTrackingOn && handGesture && (
-        <div className="absolute top-1/2 left-8 -translate-y-1/2 z-30">
-          <div className="px-4 py-3 rounded-xl border border-cyan-500/30 bg-slate-900/80 backdrop-blur-md">
+        <div className="absolute top-1/2 left-4 -translate-y-1/2 z-30">
+          <div className="px-4 py-3 rounded-xl border border-cyan-500/30 bg-slate-900/80 backdrop-blur-md min-w-[140px]">
             <div className="flex items-center gap-2 mb-1">
               <Hand className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Gesture</span>
+              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider">Gesture</span>
             </div>
             <div className="text-sm font-bold text-white">{handGesture}</div>
+            {isGrabbing && (
+              <div className="mt-1.5 flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full bg-orange-400 animate-ping" />
+                <span className="text-[10px] text-orange-400 font-bold">HOLDING DOMAIN</span>
+              </div>
+            )}
+            {isBeaming && (
+              <div className="mt-1.5 flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="text-[10px] text-cyan-400 font-bold">BEAM ACTIVE</span>
+              </div>
+            )}
             {isPinching && (
-              <div className="mt-1 flex items-center gap-1">
+              <div className="mt-1.5 flex items-center gap-1">
                 <div className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
                 <span className="text-[10px] text-red-400 font-bold">SELECTING</span>
+              </div>
+            )}
+            {twoHandsDetected && (
+              <div className="mt-1.5 flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full bg-green-400" />
+                <span className="text-[10px] text-green-400 font-bold">2 HANDS</span>
+              </div>
+            )}
+            {shockwaveActive && (
+              <div className="mt-1.5 flex items-center gap-1">
+                <Zap className="w-3 h-3 text-yellow-400 animate-bounce" />
+                <span className="text-[10px] text-yellow-400 font-bold">SHOCKWAVE!</span>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Hand cursor indicator in 3D space */}
+      {/* Hand Cursor */}
       {handTrackingOn && handPosition && (
         <div
           className="absolute z-25 pointer-events-none transition-all duration-75"
-          style={{
-            left: `${handPosition.x * 100}%`,
-            top: `${handPosition.y * 100}%`,
-            transform: 'translate(-50%, -50%)',
-          }}
+          style={{ left: `${handPosition.x * 100}%`, top: `${handPosition.y * 100}%`, transform: 'translate(-50%, -50%)' }}
         >
-          <div className={`w-8 h-8 rounded-full border-2 ${isPinching ? 'border-red-400 bg-red-400/20 scale-75' : 'border-cyan-400 bg-cyan-400/10'} transition-all duration-150`} />
-          <div className={`absolute inset-0 w-8 h-8 rounded-full ${isPinching ? 'border border-red-400/40' : 'border border-cyan-400/30'} animate-ping`} />
+          <div className={`w-8 h-8 rounded-full border-2 transition-all duration-150 ${
+            isGrabbing ? 'border-orange-400 bg-orange-400/20 scale-50' :
+            isBeaming ? 'border-cyan-400 bg-cyan-400/30 scale-110' :
+            isPinching ? 'border-red-400 bg-red-400/20 scale-75' :
+            'border-cyan-400 bg-cyan-400/10'
+          }`} />
+          {isBeaming && <div className="absolute inset-0 w-8 h-8 rounded-full border border-cyan-400/30 animate-ping" />}
+        </div>
+      )}
+
+      {/* Investigation Links Display */}
+      {investigationLinks.length > 0 && (
+        <div className="absolute top-20 left-4 z-10">
+          <div className="px-3 py-2 rounded-lg border border-cyan-500/20 bg-slate-900/80 backdrop-blur-sm">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Link2 className="w-3 h-3 text-cyan-400" />
+              <span className="text-[9px] font-bold text-cyan-400 uppercase tracking-wider">Investigation Links</span>
+            </div>
+            {investigationLinks.slice(-3).map((link, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[10px] text-slate-300">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: DOMAINS[link.fromIdx].color }} />
+                <span className="text-white font-medium">{DOMAINS[link.fromIdx].name}</span>
+                <span className="text-slate-500">-&gt;</span>
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: DOMAINS[link.toIdx].color }} />
+                <span className="text-white font-medium">{DOMAINS[link.toIdx].name}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -717,12 +1142,19 @@ const AttackUniverse = () => {
               <h2 className="text-sm font-bold text-white uppercase tracking-widest">Attack Universe</h2>
               {handTrackingOn && (
                 <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 uppercase">
-                  Hand Control Active
+                  Hand Control
+                </span>
+              )}
+              {shockwaveActive && (
+                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 uppercase animate-pulse">
+                  Shockwave
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              {handTrackingOn ? 'Use hand gestures to navigate - Open palm to orbit, Pinch to select' : 'Drag to orbit - Click domains to inspect - Scroll to zoom'}
+              {handTrackingOn
+                ? 'Point=Beam | Fist=Grab | Palm=Push | Peace=Link | Pinch=Select | Clap=Shockwave'
+                : 'Drag to orbit - Click to inspect - Scroll to zoom - Double-click to focus'}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -774,6 +1206,24 @@ const AttackUniverse = () => {
         >
           <RotateCcw className="w-4 h-4" />
         </button>
+        {handTrackingOn && (
+          <button
+            onClick={() => setShowGestureTutorial(prev => !prev)}
+            className="p-2.5 rounded-lg border border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-white hover:border-white/20 transition-all backdrop-blur-sm"
+            title="Show gesture guide"
+          >
+            <Hand className="w-4 h-4" />
+          </button>
+        )}
+        {investigationLinks.length > 0 && (
+          <button
+            onClick={() => setInvestigationLinks([])}
+            className="p-2.5 rounded-lg border border-red-500/30 bg-slate-900/70 text-red-400 hover:text-red-300 hover:border-red-400/40 transition-all backdrop-blur-sm"
+            title="Clear investigation links"
+          >
+            <Link2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Hover Tooltip */}
@@ -821,7 +1271,7 @@ const AttackUniverse = () => {
       )}
 
       {/* Threat Actor */}
-      <div className="absolute bottom-20 right-4 z-10 w-48">
+      <div className="absolute bottom-20 right-56 z-10 w-48">
         <div className="rounded-xl border border-red-500/20 bg-slate-900/80 backdrop-blur-md p-3">
           <div className="flex items-center gap-1.5 mb-1.5">
             <Crosshair className="w-3 h-3 text-red-400" />
