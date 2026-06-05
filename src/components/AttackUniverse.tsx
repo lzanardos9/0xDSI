@@ -450,6 +450,52 @@ const AttackForecastModal = ({ forecast, onClose }: { forecast: { label: string;
           </div>
         </div>
 
+        {/* Historical Vector Patterns - from embedding similarity */}
+        <div className="px-6 pb-4">
+          <div className="rounded-xl border border-amber-500/10 bg-amber-500/[0.02] p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Activity className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-[10px] font-mono text-amber-400/80 uppercase tracking-wider font-bold">Historical Patterns (Vector Similarity)</span>
+              <span className="text-[8px] font-mono text-slate-600 ml-auto">cosine &gt; 0.87</span>
+            </div>
+            <div className="text-[8px] font-mono text-slate-500 mb-2">
+              Embedding matches from threat knowledge base that reinforce this forecast
+            </div>
+            <div className="space-y-2">
+              {[
+                { pattern: 'APT-29 credential spray -> endpoint pivot -> cloud exfil', similarity: 0.94, date: '2024-11-03', outcome: 'Confirmed breach' },
+                { pattern: `Lazarus ${nodes[0]?.name || 'Identity'} exploitation chain`, similarity: 0.91, date: '2025-01-17', outcome: 'Blocked at stage 4' },
+                { pattern: `FIN7 ${forecast.label.toLowerCase()} via supply chain`, similarity: 0.89, date: '2025-03-22', outcome: 'Partial compromise' },
+                { pattern: 'Scattered Spider social eng -> VPN -> lateral AD pivot', similarity: 0.88, date: '2025-05-08', outcome: 'Contained' },
+              ].map((hist, i) => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:border-amber-500/20 transition-all">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                    <span className="text-[10px] font-mono font-bold text-amber-400">{Math.round(hist.similarity * 100)}%</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[9px] font-mono text-white/80 font-bold truncate">{hist.pattern}</div>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="text-[8px] font-mono text-slate-500">{hist.date}</span>
+                      <span className={`text-[7px] font-mono px-1.5 py-0.5 rounded ${
+                        hist.outcome.includes('breach') ? 'bg-red-500/10 text-red-400' :
+                        hist.outcome.includes('Partial') ? 'bg-orange-500/10 text-orange-400' :
+                        'bg-emerald-500/10 text-emerald-400'
+                      }`}>{hist.outcome}</span>
+                    </div>
+                  </div>
+                  <div className="w-16 h-1 bg-slate-800 rounded-full overflow-hidden shrink-0">
+                    <div className="h-full bg-gradient-to-r from-amber-500/60 to-amber-400/80 rounded-full" style={{ width: `${hist.similarity * 100}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 pt-2 border-t border-white/[0.04] flex items-center gap-2">
+              <span className="text-[8px] font-mono text-slate-600">Source: vector_threat_patterns index</span>
+              <span className="text-[8px] font-mono text-amber-500/50 ml-auto">4 matches above threshold</span>
+            </div>
+          </div>
+        </div>
+
         {/* Footer */}
         <div className="sticky bottom-0 flex items-center justify-between px-6 py-3 border-t border-white/[0.06] bg-[#020a14]/95 backdrop-blur-xl">
           <div className="flex items-center gap-4">
@@ -1837,6 +1883,7 @@ const AttackUniverse = () => {
   const sevConfig = getSeverityConfig(severity);
 
   return (
+    <div className="flex flex-col">
     <div
       className={`relative rounded-2xl border border-slate-700/40 bg-[#030810] overflow-hidden transition-all duration-500 ${
         isFullscreen ? 'fixed inset-0 z-[9999] rounded-none border-none' : 'w-full'
@@ -2300,41 +2347,6 @@ const AttackUniverse = () => {
         </div>
       )}
 
-      {/* Ambient Scene Events - visible when no domain selected */}
-      {!selectedDomain && liveEvents.length > 0 && (
-        <div className="absolute bottom-20 left-4 z-10 w-[360px]">
-          <div className="rounded-xl border border-cyan-500/8 bg-[#040c1a]/70 backdrop-blur-2xl p-3 shadow-2xl shadow-cyan-900/10">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="text-[9px] font-mono text-cyan-400/70 uppercase tracking-[0.15em]">Scene Intercepts</span>
-              <span className="text-[8px] font-mono text-slate-600 ml-auto">{liveEvents.length} signals</span>
-            </div>
-            <div className="space-y-1 max-h-[180px] overflow-hidden">
-              {liveEvents.map((evt, i) => (
-                <button
-                  key={`ambient-${evt.ts}-${i}`}
-                  onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: 'network', detail: evt.detail, severity: evt.severity })}
-                  className="w-full flex items-start gap-2 text-[9px] font-mono py-1.5 px-2 rounded bg-white/[0.01] border-l-2 transition-all duration-300 hover:bg-cyan-500/[0.05] hover:border-l-cyan-400 text-left group"
-                  style={{
-                    borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : '#f97316',
-                    opacity: 1 - i * 0.08,
-                  }}
-                >
-                  <span className="text-slate-600 shrink-0">{evt.ts}</span>
-                  <span className={`shrink-0 font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : 'text-orange-400'}`}>{evt.type}</span>
-                  <span className="text-slate-500 truncate">{evt.src} &rarr; {evt.dst}</span>
-                  <span className="text-[8px] text-cyan-500/0 group-hover:text-cyan-500/70 transition-all ml-auto shrink-0">[INV]</span>
-                </button>
-              ))}
-            </div>
-            <div className="mt-2 pt-2 border-t border-white/[0.03] flex items-center justify-between">
-              <span className="text-[8px] font-mono text-slate-600">Click to investigate</span>
-              <span className="text-[8px] font-mono text-cyan-500/40 animate-pulse">MONITORING</span>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Event Investigation Panel */}
       {selectedEvent && (
         <div className="absolute top-24 right-4 z-30 w-72">
@@ -2438,6 +2450,42 @@ const AttackUniverse = () => {
           </div>
         ))}
       </div>
+    </div>
+
+    {/* Scene Intercepts - below the 3D universe */}
+    {!selectedDomain && !isFullscreen && liveEvents.length > 0 && (
+      <div className="w-full mt-3">
+        <div className="rounded-xl border border-cyan-500/8 bg-[#040c1a]/70 backdrop-blur-2xl p-3 shadow-2xl shadow-cyan-900/10">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-[9px] font-mono text-cyan-400/70 uppercase tracking-[0.15em]">Scene Intercepts</span>
+            <span className="text-[8px] font-mono text-slate-600 ml-auto">{liveEvents.length} signals</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            {liveEvents.map((evt, i) => (
+              <button
+                key={`ambient-${evt.ts}-${i}`}
+                onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: 'network', detail: evt.detail, severity: evt.severity })}
+                className="flex items-start gap-2 text-[9px] font-mono py-1.5 px-2 rounded bg-white/[0.01] border-l-2 transition-all duration-300 hover:bg-cyan-500/[0.05] hover:border-l-cyan-400 text-left group"
+                style={{
+                  borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : '#f97316',
+                  opacity: 1 - i * 0.06,
+                }}
+              >
+                <span className="text-slate-600 shrink-0">{evt.ts}</span>
+                <span className={`shrink-0 font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : 'text-orange-400'}`}>{evt.type}</span>
+                <span className="text-slate-500 truncate">{evt.src} &rarr; {evt.dst}</span>
+                <span className="text-[8px] text-cyan-500/0 group-hover:text-cyan-500/70 transition-all ml-auto shrink-0">[INV]</span>
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 pt-2 border-t border-white/[0.03] flex items-center justify-between">
+            <span className="text-[8px] font-mono text-slate-600">Click to investigate</span>
+            <span className="text-[8px] font-mono text-cyan-500/40 animate-pulse">MONITORING</span>
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 };

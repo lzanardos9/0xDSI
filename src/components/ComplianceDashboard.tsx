@@ -60,7 +60,7 @@ export default function ComplianceDashboard() {
   const [frameworkControls, setFrameworkControls] = useState<Control[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFramework, setSelectedFramework] = useState<string | null>(null);
-  const [gapsExpanded, setGapsExpanded] = useState(true);
+  const [gapsExpanded, setGapsExpanded] = useState(false);
 
   useEffect(() => {
     loadComplianceData();
