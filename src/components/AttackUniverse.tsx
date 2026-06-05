@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FilesetResolver, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
-import { Crosshair, Maximize2, Minimize2, Video, VideoOff, RotateCcw, Hand, Zap, Link2, Target, X, AlertTriangle, Shield, Activity, Clock, TrendingUp } from 'lucide-react';
+import { Crosshair, Maximize2, Minimize2, Video, VideoOff, RotateCcw, Hand, Zap, Link2, Target, X, AlertTriangle, Shield, Activity, Clock, TrendingUp, Mic, MicOff } from 'lucide-react';
 
 interface DomainData {
   id: string;
@@ -529,6 +529,10 @@ const AttackUniverse = () => {
   const [monteCarloLines, setMonteCarloLines] = useState<{ label: string; probability: number; impact: string; path: string }[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<{ id: number; ts: string; type: string; domain: string; detail: string; severity: string } | null>(null);
   const [selectedForecast, setSelectedForecast] = useState<{ label: string; probability: number; impact: string; path: string } | null>(null);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const recognitionRef = useRef<any>(null);
+  const voiceActiveRef = useRef(false);
 
   const severityRef = useRef(severity);
   const selectedIdxRef = useRef(-1);
@@ -621,6 +625,106 @@ const AttackUniverse = () => {
       setMonteCarloLines([]);
     }
   }, [timelineMode, timelineOffset]);
+
+  // Sort predictions: CRITICAL first, then by probability descending
+  const sortedPredictions = [...monteCarloLines].sort((a, b) => {
+    const impactOrder: Record<string, number> = { 'CRITICAL': 0, 'HIGH': 1, 'MEDIUM': 2, 'LOW': 3 };
+    const impDiff = (impactOrder[a.impact] ?? 9) - (impactOrder[b.impact] ?? 9);
+    if (impDiff !== 0) return impDiff;
+    return b.probability - a.probability;
+  });
+
+  // Voice recognition for selecting forecasts by number
+  const startVoiceCapture = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceTranscript('Speech API not supported');
+      setTimeout(() => setVoiceTranscript(''), 3000);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event: any) => {
+      const last = event.results[event.results.length - 1];
+      const transcript = last[0].transcript.trim().toLowerCase();
+      setVoiceTranscript(transcript);
+
+      if (last.isFinal) {
+        // Parse spoken number (supports "one", "two", etc. and digits)
+        const numberWords: Record<string, number> = {
+          'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+          'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+          'won': 1, 'to': 2, 'too': 2, 'for': 4, 'ate': 8,
+          'first': 1, 'second': 2, 'third': 3, 'fourth': 4, 'fifth': 5,
+          'sixth': 6, 'seventh': 7, 'eighth': 8,
+          'number one': 1, 'number two': 2, 'number three': 3, 'number four': 4,
+          'number five': 5, 'number six': 6, 'number seven': 7, 'number eight': 8,
+        };
+
+        let num: number | null = null;
+        // Check multi-word patterns first
+        for (const [word, val] of Object.entries(numberWords)) {
+          if (transcript.includes(word)) { num = val; break; }
+        }
+        // Check for raw digit
+        if (num === null) {
+          const digitMatch = transcript.match(/\d+/);
+          if (digitMatch) num = parseInt(digitMatch[0]);
+        }
+
+        if (num !== null && num >= 1 && num <= sortedPredictions.length) {
+          setSelectedForecast(sortedPredictions[num - 1]);
+          setVoiceTranscript(`Opening forecast #${num}`);
+          setTimeout(() => setVoiceTranscript(''), 2000);
+        }
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      if (event.error !== 'no-speech') {
+        setVoiceActive(false);
+        setVoiceTranscript('');
+      }
+    };
+
+    recognition.onend = () => {
+      if (voiceActiveRef.current) {
+        try { recognition.start(); } catch (_) {}
+      }
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+    voiceActiveRef.current = true;
+    setVoiceActive(true);
+    setVoiceTranscript('Listening...');
+  }, [sortedPredictions]);
+
+  const stopVoiceCapture = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null;
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    voiceActiveRef.current = false;
+    setVoiceActive(false);
+    setVoiceTranscript('');
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
 
   const initHandTracking = useCallback(async () => {
     try {
@@ -2059,22 +2163,58 @@ const AttackUniverse = () => {
             <div className="flex items-center gap-2 mb-2">
               <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-[0.15em]">Monte Carlo Simulation</span>
-              <span className="text-[8px] font-mono text-slate-600 ml-auto">10K iterations</span>
+              <span className="text-[8px] font-mono text-slate-600 ml-auto mr-1">10K iterations</span>
+              <button
+                onClick={voiceActive ? stopVoiceCapture : startVoiceCapture}
+                className={`relative w-6 h-6 rounded-md flex items-center justify-center transition-all duration-300 ${
+                  voiceActive
+                    ? 'bg-cyan-500/20 border border-cyan-400/50 shadow-lg shadow-cyan-500/20'
+                    : 'bg-white/[0.03] border border-white/10 hover:bg-cyan-500/10 hover:border-cyan-500/30'
+                }`}
+                title={voiceActive ? 'Stop voice capture' : 'Speak a number to select forecast'}
+              >
+                {voiceActive ? (
+                  <Mic className="w-3 h-3 text-cyan-400 animate-pulse" />
+                ) : (
+                  <MicOff className="w-3 h-3 text-slate-500" />
+                )}
+                {voiceActive && (
+                  <div className="absolute inset-0 rounded-md border border-cyan-400/50 animate-ping opacity-30" />
+                )}
+              </button>
             </div>
+            {voiceActive && voiceTranscript && (
+              <div className="mb-2 px-2 py-1.5 rounded-md bg-cyan-500/[0.06] border border-cyan-500/15">
+                <div className="flex items-center gap-1.5">
+                  <div className="flex gap-0.5">
+                    <div className="w-1 h-3 bg-cyan-400/80 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
+                    <div className="w-1 h-2 bg-cyan-400/60 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+                    <div className="w-1 h-3.5 bg-cyan-400/80 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+                    <div className="w-1 h-2 bg-cyan-400/60 rounded-full animate-pulse" style={{ animationDelay: '450ms' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-cyan-300/80 truncate">{voiceTranscript}</span>
+                </div>
+              </div>
+            )}
             <div className="space-y-1.5 max-h-[280px] overflow-y-auto">
-              {monteCarloLines.map((mc, i) => (
+              {sortedPredictions.map((mc, i) => (
                 <button
                   key={i}
                   onClick={() => setSelectedForecast(mc)}
                   className="w-full text-left px-2 py-1.5 rounded bg-white/[0.02] border border-white/[0.04] hover:bg-cyan-500/[0.06] hover:border-cyan-500/20 transition-all duration-200 group cursor-pointer"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-mono text-white/90 font-bold group-hover:text-cyan-300 transition-colors">{mc.label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-mono font-bold ${
+                        voiceActive ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-400' : 'bg-white/[0.04] border border-white/[0.08] text-white/50'
+                      }`}>{i + 1}</span>
+                      <span className="text-[10px] font-mono text-white/90 font-bold group-hover:text-cyan-300 transition-colors">{mc.label}</span>
+                    </div>
                     <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
                       mc.impact === 'CRITICAL' ? 'bg-red-500/10 text-red-400' : 'bg-orange-500/10 text-orange-400'
                     }`}>{mc.impact}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 pl-7">
                     <div className="flex-1 h-1 bg-slate-800/50 rounded-full overflow-hidden">
                       <div className="h-full rounded-full transition-all duration-500" style={{
                         width: `${mc.probability * 100}%`,
@@ -2083,13 +2223,18 @@ const AttackUniverse = () => {
                     </div>
                     <span className="text-[9px] font-mono text-white/70">{Math.round(mc.probability * 100)}%</span>
                   </div>
-                  <div className="flex items-center justify-between mt-0.5">
-                    <span className="text-[8px] font-mono text-slate-500 truncate max-w-[200px]">{mc.path}</span>
+                  <div className="flex items-center justify-between mt-0.5 pl-7">
+                    <span className="text-[8px] font-mono text-slate-500 truncate max-w-[180px]">{mc.path}</span>
                     <span className="text-[7px] font-mono text-cyan-500/60 opacity-0 group-hover:opacity-100 transition-opacity">INSPECT</span>
                   </div>
                 </button>
               ))}
             </div>
+            {voiceActive && (
+              <div className="mt-2 px-2 py-1 rounded-md bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-[8px] font-mono text-slate-500">Say a number (1-{sortedPredictions.length}) to inspect forecast</span>
+              </div>
+            )}
           </div>
         </div>
       )}
