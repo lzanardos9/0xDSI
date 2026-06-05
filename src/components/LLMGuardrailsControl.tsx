@@ -11,8 +11,9 @@ import PromptScanner from './guardrails/PromptScanner';
 import PIIRedactionEngine from './guardrails/PIIRedactionEngine';
 import TokenBudgetControls from './guardrails/TokenBudgetControls';
 import ModelAccessGovernance from './guardrails/ModelAccessGovernance';
+import AIGatewayControlPlane from './guardrails/AIGatewayControlPlane';
 
-type TabId = 'dashboard' | 'policies' | 'scanner' | 'pii' | 'budgets' | 'models';
+type TabId = 'gateway' | 'dashboard' | 'policies' | 'scanner' | 'pii' | 'budgets' | 'models';
 
 interface TabConfig {
   id: TabId;
@@ -24,6 +25,7 @@ interface TabConfig {
 }
 
 const TABS: TabConfig[] = [
+  { id: 'gateway', label: 'AI Gateway Control Plane', shortLabel: 'Gateway', icon: Lock, color: 'text-red-400', description: 'Centralized AI request enforcement & monitoring' },
   { id: 'dashboard', label: 'Guardrails Dashboard', shortLabel: 'Dashboard', icon: Activity, color: 'text-cyan-400', description: 'Real-time enforcement overview' },
   { id: 'policies', label: 'Policy Manager', shortLabel: 'Policies', icon: Shield, color: 'text-blue-400', description: 'Create and manage guardrail policies' },
   { id: 'scanner', label: 'Prompt Scanner', shortLabel: 'Scanner', icon: Scan, color: 'text-emerald-400', description: 'Real-time prompt/response scanning' },
@@ -33,7 +35,7 @@ const TABS: TabConfig[] = [
 ];
 
 const LLMGuardrailsControl = () => {
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabId>('gateway');
   const [headerStats, setHeaderStats] = useState({
     activePolicies: 0,
     blockedToday: 0,
@@ -163,6 +165,7 @@ const LLMGuardrailsControl = () => {
       {renderHeader()}
       {renderTabs()}
       <div className="min-h-[600px]">
+        {activeTab === 'gateway' && <AIGatewayControlPlane />}
         {activeTab === 'dashboard' && <GuardrailsDashboard />}
         {activeTab === 'policies' && <PolicyManager />}
         {activeTab === 'scanner' && <PromptScanner />}
