@@ -64,6 +64,7 @@ const AttackUniverse = () => {
     coreGlow: THREE.Mesh;
     domainMeshes: THREE.Mesh[];
     domainRings: THREE.Mesh[];
+    domainGroups: THREE.Group[];
     flowParticles: THREE.Mesh[];
     laserLine: THREE.Line;
     shockwaveRing: THREE.Mesh;
@@ -80,6 +81,7 @@ const AttackUniverse = () => {
   const grabbedOffsetRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const domainOrigPosRef = useRef<THREE.Vector3[]>([]);
   const domainDisplaceRef = useRef<THREE.Vector3[]>([]);
+  const domainSpinRef = useRef<{ x: number; y: number }[]>([]);
   const prevTwoHandDistRef = useRef<number>(0);
   const linkStartRef = useRef<number>(-1);
   const shockwaveTimeRef = useRef<number>(0);
@@ -423,6 +425,12 @@ const AttackUniverse = () => {
         displacement.x += vel.x * 8;
         displacement.y -= vel.y * 5;
         domainDisplaceRef.current[grabbedDomainRef.current] = displacement;
+        // Apply spin velocity from hand movement
+        const spin = domainSpinRef.current[grabbedDomainRef.current];
+        if (spin) {
+          spin.y += vel.x * 12;
+          spin.x -= vel.y * 8;
+        }
       }
 
     } else if (extendedCount === 4) {
@@ -452,6 +460,12 @@ const AttackUniverse = () => {
             const displacement = domainDisplaceRef.current[idx] || new THREE.Vector3();
             displacement.add(dir.multiplyScalar(force));
             domainDisplaceRef.current[idx] = displacement;
+            // Add spin from force push
+            const spin = domainSpinRef.current[idx];
+            if (spin) {
+              spin.y += vel.x * force * 5;
+              spin.x -= vel.y * force * 5;
+            }
           }
         });
       } else {
@@ -692,7 +706,7 @@ const AttackUniverse = () => {
     scene.background = new THREE.Color('#030810');
 
     const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 100);
-    camera.position.set(0, 2.5, 6.5);
+    camera.position.set(0, 1.2, 6.5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
@@ -910,6 +924,7 @@ const AttackUniverse = () => {
 
       domainOrigPosRef.current[idx] = group.position.clone();
       domainDisplaceRef.current[idx] = new THREE.Vector3();
+      domainSpinRef.current[idx] = { x: 0, y: 0 };
 
       scene.add(group);
       domainGroups.push(group);
@@ -998,7 +1013,7 @@ const AttackUniverse = () => {
 
     sceneDataRef.current = {
       scene, camera, renderer, controls, coreMesh, coreGlow,
-      domainMeshes, domainRings, flowParticles, laserLine, shockwaveRing,
+      domainMeshes, domainRings, domainGroups, flowParticles, laserLine, shockwaveRing,
       investigationLines, raycaster, clock, animId: 0,
     };
 
@@ -1086,6 +1101,16 @@ const AttackUniverse = () => {
 
         // Animate group layers
         if (group) {
+          // Apply hand-driven spin with decay
+          const spin = domainSpinRef.current[idx];
+          if (spin) {
+            group.rotation.y += spin.y * 0.016;
+            group.rotation.x += spin.x * 0.016;
+            spin.x *= 0.97;
+            spin.y *= 0.97;
+            if (Math.abs(spin.x) < 0.01) spin.x = 0;
+            if (Math.abs(spin.y) < 0.01) spin.y = 0;
+          }
           // Icosahedron cage rotation
           const ico = group.children[2];
           if (ico) { ico.rotation.y = elapsed * 0.3 + idx; ico.rotation.x = elapsed * 0.2; }
@@ -1228,7 +1253,7 @@ const AttackUniverse = () => {
 
   // Resize + re-center on fullscreen
   useEffect(() => {
-    setTimeout(() => {
+    const recenter = () => {
       if (sceneDataRef.current && containerRef.current) {
         const w = containerRef.current.clientWidth;
         const h = containerRef.current.clientHeight;
@@ -1236,10 +1261,14 @@ const AttackUniverse = () => {
         sceneDataRef.current.camera.updateProjectionMatrix();
         sceneDataRef.current.renderer.setSize(w, h);
         sceneDataRef.current.controls.target.set(0, 0, 0);
-        sceneDataRef.current.camera.position.set(0, 2.5, 6.5);
+        sceneDataRef.current.camera.position.set(0, 1.2, 6.5);
         sceneDataRef.current.controls.update();
       }
-    }, 50);
+    };
+    const t1 = setTimeout(recenter, 50);
+    const t2 = setTimeout(recenter, 150);
+    const t3 = setTimeout(recenter, 350);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [isFullscreen]);
 
   const sevConfig = getSeverityConfig(severity);
@@ -1467,7 +1496,7 @@ const AttackUniverse = () => {
           onClick={() => {
             if (sceneDataRef.current) {
               sceneDataRef.current.controls.target.set(0, 0, 0);
-              sceneDataRef.current.camera.position.set(0, 2.5, 6.5);
+              sceneDataRef.current.camera.position.set(0, 1.2, 6.5);
             }
           }}
           className="p-2.5 rounded-lg border border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-white hover:border-white/20 transition-all backdrop-blur-sm"
