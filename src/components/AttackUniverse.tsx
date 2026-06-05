@@ -35,7 +35,11 @@ const DOMAINS: DomainData[] = [
 ];
 
 const ATTACK_FLOWS = [
-  { from: 0, to: 1 }, { from: 1, to: 4 }, { from: 4, to: 5 }, { from: 0, to: 4 }, { from: 2, to: 1 },
+  { from: 0, to: 1, label: 'Credential theft lateral to endpoint' },
+  { from: 1, to: 4, label: 'Endpoint beacon to cloud C2' },
+  { from: 4, to: 5, label: 'Cloud exfil targeting data stores' },
+  { from: 0, to: 4, label: 'Identity token reuse in cloud' },
+  { from: 2, to: 1, label: 'Network exploit pivoting to endpoint' },
 ];
 
 function getSeverityConfig(s: SeverityLevel) {
@@ -529,6 +533,7 @@ const AttackUniverse = () => {
   const [monteCarloLines, setMonteCarloLines] = useState<{ label: string; probability: number; impact: string; path: string }[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<{ id: number; ts: string; type: string; domain: string; detail: string; severity: string } | null>(null);
   const [selectedForecast, setSelectedForecast] = useState<{ label: string; probability: number; impact: string; path: string } | null>(null);
+  const [hoveredFlow, setHoveredFlow] = useState<{ from: string; to: string; label: string; x: number; y: number } | null>(null);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const recognitionRef = useRef<any>(null);
@@ -938,8 +943,18 @@ const AttackUniverse = () => {
           setHandGesture('GRAB - Dragging');
           controls.enabled = false;
         } else {
-          setHandGesture('FIST - Ready');
-          setIsGrabbing(false);
+          // Fist without target = pan the whole scene vertically
+          const vel = handVelocityRef.current;
+          const panSpeed = Math.abs(vel.y);
+          if (panSpeed > 0.005) {
+            controls.target.y -= vel.y * 4;
+            camera.position.y -= vel.y * 4;
+            setHandGesture('PAN - Vertical');
+            setIsGrabbing(true);
+          } else {
+            setHandGesture('FIST - Ready');
+            setIsGrabbing(false);
+          }
         }
       } else {
         setHandGesture('GRAB - Dragging');
@@ -1243,6 +1258,8 @@ const AttackUniverse = () => {
     controls.dampingFactor = 0.06;
     controls.rotateSpeed = 0.5;
     controls.zoomSpeed = 0.7;
+    controls.enablePan = true;
+    controls.panSpeed = 0.8;
     controls.minDistance = 3;
     controls.maxDistance = 14;
     controls.autoRotate = true;
@@ -1477,7 +1494,7 @@ const AttackUniverse = () => {
 
     // Flow particles
     const flowParticles: THREE.Mesh[] = [];
-    ATTACK_FLOWS.forEach((flow) => {
+    ATTACK_FLOWS.forEach((flow, fIdx) => {
       const fromPos = domainMeshes[flow.from].position;
       const toPos = domainMeshes[flow.to].position;
       const mid = new THREE.Vector3(
@@ -1490,10 +1507,10 @@ const AttackUniverse = () => {
         color: new THREE.Color(DOMAINS[flow.from].color), transparent: true, opacity: 0.2,
       })));
 
-      const pGeo = new THREE.SphereGeometry(0.04, 8, 8);
+      const pGeo = new THREE.SphereGeometry(0.06, 8, 8);
       const pMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(DOMAINS[flow.from].color), transparent: true, opacity: 0.9 });
       const particle = new THREE.Mesh(pGeo, pMat);
-      particle.userData = { curve, progress: Math.random() };
+      particle.userData = { curve, progress: Math.random(), flowIdx: fIdx };
       scene.add(particle);
       flowParticles.push(particle);
     });
@@ -1715,6 +1732,29 @@ const AttackUniverse = () => {
           renderer.domElement.style.cursor = 'grab';
         }
         hoveredIdx = newHover;
+      }
+
+      // Flow particle hover detection
+      if (newHover < 0) {
+        const flowHits = raycaster.intersectObjects(flowParticles);
+        if (flowHits.length > 0 && flowHits[0].distance < 8) {
+          const fIdx = flowHits[0].object.userData.flowIdx;
+          const flow = ATTACK_FLOWS[fIdx];
+          const screenPos = flowHits[0].object.position.clone().project(camera);
+          const rect = renderer.domElement.getBoundingClientRect();
+          setHoveredFlow({
+            from: DOMAINS[flow.from].name,
+            to: DOMAINS[flow.to].name,
+            label: flow.label,
+            x: (screenPos.x * 0.5 + 0.5) * rect.width,
+            y: (-screenPos.y * 0.5 + 0.5) * rect.height,
+          });
+          renderer.domElement.style.cursor = 'help';
+        } else {
+          setHoveredFlow(null);
+        }
+      } else {
+        setHoveredFlow(null);
       }
 
       // Selected highlight
@@ -2064,6 +2104,27 @@ const AttackUniverse = () => {
         </div>
       )}
 
+      {/* Flow Particle Tooltip */}
+      {hoveredFlow && (
+        <div
+          className="absolute z-20 pointer-events-none"
+          style={{ left: hoveredFlow.x, top: hoveredFlow.y - 60 }}
+        >
+          <div className="px-3 py-2 rounded-lg border border-cyan-500/30 bg-[#040c1a]/95 backdrop-blur-md shadow-lg shadow-cyan-900/20 -translate-x-1/2">
+            <div className="flex items-center gap-1.5 mb-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-wider">Active Flow</span>
+            </div>
+            <div className="text-[10px] font-mono text-white/90 font-bold">{hoveredFlow.label}</div>
+            <div className="flex items-center gap-1 mt-1 text-[9px] font-mono text-slate-400">
+              <span className="text-amber-400">{hoveredFlow.from}</span>
+              <span className="text-slate-600">-&gt;</span>
+              <span className="text-red-400">{hoveredFlow.to}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Selected Domain Panel */}
       {selectedDomain && (
         <div className="absolute bottom-20 left-4 z-10 max-w-sm">
@@ -2108,8 +2169,8 @@ const AttackUniverse = () => {
         </div>
       </div>
 
-      {/* Timeline Scrubber HUD - visible when hand tracking is on */}
-      {handTrackingOn && timelineMode !== 'present' && (
+      {/* Timeline Scrubber HUD - visible when timeline is not present */}
+      {timelineMode !== 'present' && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 w-[500px]">
           <div className="rounded-xl border border-cyan-500/15 bg-[#040c1a]/80 backdrop-blur-2xl p-3 shadow-2xl">
             <div className="flex items-center justify-between mb-2">
@@ -2320,6 +2381,34 @@ const AttackUniverse = () => {
       {selectedForecast && (
         <AttackForecastModal forecast={selectedForecast} onClose={() => setSelectedForecast(null)} />
       )}
+
+      {/* Timeline Mode Switcher */}
+      <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-1.5 py-1 rounded-lg border border-slate-700/30 bg-slate-900/70 backdrop-blur-sm">
+        <button
+          onClick={() => { setTimelineMode('past'); setTimelineOffset(-0.5); }}
+          className={`px-3 py-1.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-wider transition-all ${
+            timelineMode === 'past' ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' : 'text-slate-500 hover:text-amber-400/70 hover:bg-amber-500/5'
+          }`}
+        >
+          Past
+        </button>
+        <button
+          onClick={() => { setTimelineMode('present'); setTimelineOffset(0); }}
+          className={`px-3 py-1.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-wider transition-all ${
+            timelineMode === 'present' ? 'bg-white/10 text-white border border-white/20' : 'text-slate-500 hover:text-white/70 hover:bg-white/5'
+          }`}
+        >
+          Now
+        </button>
+        <button
+          onClick={() => { setTimelineMode('future'); setTimelineOffset(0.5); }}
+          className={`px-3 py-1.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-wider transition-all ${
+            timelineMode === 'future' ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30' : 'text-slate-500 hover:text-cyan-400/70 hover:bg-cyan-500/5'
+          }`}
+        >
+          Future
+        </button>
+      </div>
 
       {/* Severity Controls */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-700/30 bg-slate-900/70 backdrop-blur-sm">
