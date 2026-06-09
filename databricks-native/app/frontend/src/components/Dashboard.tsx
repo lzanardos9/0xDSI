@@ -318,7 +318,7 @@ const Dashboard = () => {
         { id: 'malwaresandbox', label: 'AI Malware Sandbox', icon: Bug },
         { id: 'backdoordefense', label: 'Agent Backdoor Defense', icon: ShieldAlert },
         { id: 'poisonguard', label: 'Model Poisoning Guard', icon: Shield },
-        { id: 'guardrails', label: 'LLM Guardrails', icon: ShieldCheck },
+        { id: 'guardrails', label: 'AI Unity Gateway', icon: ShieldCheck },
         { id: 'attackvectors', label: 'Attack Vectors', icon: Target },
         { id: 'threatmodeling', label: 'Smart Threat Modeling', icon: Scan },
         { id: 'correlationrules', label: 'Correlation Rules', icon: Zap },

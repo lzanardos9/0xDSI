@@ -86,7 +86,7 @@ const LLMGuardrailsControl = () => {
               <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#0A1628] animate-pulse" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-100">LLM Guardrails Control Center</h1>
+              <h1 className="text-xl font-bold text-slate-100">AI Unity Gateway</h1>
               <p className="text-xs text-slate-500">Real-time AI safety enforcement, PII protection, and model governance</p>
             </div>
           </div>
