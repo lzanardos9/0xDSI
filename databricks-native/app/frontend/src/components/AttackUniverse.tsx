@@ -52,21 +52,9 @@ function getSeverityConfig(s: SeverityLevel) {
 }
 
 // Attack Forecast Graph Modal - stunning visualization of predicted attack paths
-const AttackForecastModal = ({ forecast, onClose, handPosition, handTrackingOn, voiceActive, voiceTranscript }: {
-  forecast: { label: string; probability: number; impact: string; path: string };
-  onClose: () => void;
-  handPosition: { x: number; y: number } | null;
-  handTrackingOn: boolean;
-  voiceActive: boolean;
-  voiceTranscript: string;
-}) => {
+const AttackForecastModal = ({ forecast, onClose }: { forecast: { label: string; probability: number; impact: string; path: string }; onClose: () => void }) => {
   const graphRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [attackStopped, setAttackStopped] = useState(false);
-  const [stopPhase, setStopPhase] = useState(0);
-  const [responseMessage, setResponseMessage] = useState('');
-  const lastHandY = useRef(0.5);
 
   const nodes = forecast.path.split(' -> ').map((name, i, arr) => ({
     id: i,
@@ -292,175 +280,12 @@ const AttackForecastModal = ({ forecast, onClose, handPosition, handTrackingOn, 
     return () => cancelAnimationFrame(animRef.current);
   }, [forecast]);
 
-  // Head-tracking scroll: move hand/head up = scroll up, down = scroll down
-  useEffect(() => {
-    if (!handTrackingOn || !handPosition || !scrollRef.current) return;
-    const deltaY = handPosition.y - lastHandY.current;
-    lastHandY.current = handPosition.y;
-    if (Math.abs(deltaY) > 0.005) {
-      scrollRef.current.scrollTop += deltaY * 800;
-    }
-  }, [handPosition, handTrackingOn]);
-
-  // Voice command detection
-  useEffect(() => {
-    if (!voiceActive || !voiceTranscript) return;
-    const t = voiceTranscript.toLowerCase();
-    if (t.includes('stop') || t.includes('block') || t.includes('kill') || t.includes('halt') || t.includes('terminate')) {
-      if (!attackStopped) triggerStopAttack();
-    }
-    if (t.includes('dismiss') || t.includes('close') || t.includes('cancel')) {
-      onClose();
-    }
-  }, [voiceTranscript, voiceActive]);
-
-  const triggerStopAttack = () => {
-    setAttackStopped(true);
-    setStopPhase(1);
-    setResponseMessage('INITIATING KILL CHAIN DISRUPTION...');
-    setTimeout(() => { setStopPhase(2); setResponseMessage('Deploying Response Agent to intercept...'); }, 1200);
-    setTimeout(() => { setStopPhase(3); setResponseMessage('Isolating compromised segments...'); }, 2800);
-    setTimeout(() => { setStopPhase(4); setResponseMessage('Kill chain severed. Attack vector neutralized.'); }, 4500);
-    setTimeout(() => setStopPhase(5), 6000);
-  };
-
   return (
-    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4" onClick={attackStopped ? undefined : onClose}>
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-
-      {/* Cinematic Attack Stopped Overlay */}
-      {attackStopped && (
-        <div className="absolute inset-0 z-[10001] flex items-center justify-center pointer-events-none">
-          <div className={`w-full max-w-4xl mx-4 transition-all duration-1000 ${stopPhase >= 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-90'}`}>
-            {/* Shockwave ring */}
-            <div className={`absolute inset-0 rounded-3xl transition-all duration-[2s] ${
-              stopPhase >= 2 ? 'ring-4 ring-emerald-400/40 shadow-[0_0_120px_rgba(16,185,129,0.3)]' : ''
-            }`} />
-
-            <div className="relative rounded-3xl border-2 border-emerald-500/50 bg-[#010a08]/95 backdrop-blur-2xl p-8 shadow-2xl shadow-emerald-900/30 overflow-hidden pointer-events-auto">
-              {/* Scanlines animation */}
-              <div className="absolute inset-0 pointer-events-none opacity-20" style={{
-                backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(16,185,129,0.05) 3px, rgba(16,185,129,0.05) 4px)',
-                animation: 'pulse 3s infinite',
-              }} />
-
-              {/* Status Header */}
-              <div className="flex items-center justify-center gap-3 mb-6">
-                <div className={`w-4 h-4 rounded-full transition-all duration-500 ${
-                  stopPhase >= 4 ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50' : 'bg-red-500 animate-pulse'
-                }`} />
-                <h1 className={`text-2xl font-black font-mono tracking-wider transition-all duration-700 ${
-                  stopPhase >= 4 ? 'text-emerald-400' : 'text-red-400'
-                }`}>
-                  {stopPhase >= 4 ? 'ATTACK NEUTRALIZED' : 'EXECUTING RESPONSE'}
-                </h1>
-                <div className={`w-4 h-4 rounded-full transition-all duration-500 ${
-                  stopPhase >= 4 ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50' : 'bg-red-500 animate-pulse'
-                }`} />
-              </div>
-
-              {/* Response Agent Message */}
-              <div className="text-center mb-6">
-                <p className="text-sm font-mono text-cyan-300/90 animate-pulse">{responseMessage}</p>
-                <p className="text-[10px] font-mono text-slate-500 mt-2">Response Agent ID: RSP-{Math.random().toString(36).substring(2, 8).toUpperCase()}</p>
-              </div>
-
-              {/* Cinematic Kill Chain - shows where attack is stopped */}
-              <div className="relative mb-6">
-                <div className="flex items-center justify-between px-4">
-                  {nodes.map((node, i) => {
-                    const isStopped = stopPhase >= 3 && i === Math.min(nodes.length - 2, 2);
-                    const isBlocked = stopPhase >= 3 && i > Math.min(nodes.length - 2, 2);
-                    return (
-                      <div key={i} className="flex flex-col items-center relative">
-                        {/* Connection line to next */}
-                        {i < nodes.length - 1 && (
-                          <div className={`absolute top-5 left-[60%] h-0.5 transition-all duration-700 ${
-                            isBlocked || isStopped
-                              ? 'bg-emerald-500/50 w-full'
-                              : stopPhase >= 2
-                                ? 'bg-red-500/80 w-full animate-pulse'
-                                : 'bg-red-500/30 w-full'
-                          }`} style={{ width: '120%' }}>
-                            {isStopped && (
-                              <div className="absolute right-0 -top-2 w-5 h-5 rounded-full bg-emerald-500 border-2 border-emerald-300 flex items-center justify-center animate-bounce shadow-lg shadow-emerald-500/50">
-                                <span className="text-[8px] font-bold text-white">X</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {/* Node */}
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border-2 transition-all duration-700 ${
-                          isBlocked
-                            ? 'bg-emerald-500/10 border-emerald-500/40 shadow-lg shadow-emerald-500/20'
-                            : isStopped
-                              ? 'bg-yellow-500/20 border-yellow-400/60 animate-pulse shadow-lg shadow-yellow-500/20'
-                              : 'bg-red-500/20 border-red-500/50 shadow-lg shadow-red-500/20'
-                        }`}>
-                          <span className={`text-[9px] font-mono font-bold ${
-                            isBlocked ? 'text-emerald-400' : isStopped ? 'text-yellow-300' : 'text-red-300'
-                          }`}>{isBlocked ? 'OK' : isStopped ? 'CUT' : node.name.substring(0, 3).toUpperCase()}</span>
-                        </div>
-                        <span className={`text-[8px] font-mono mt-1.5 text-center max-w-[70px] truncate ${
-                          isBlocked ? 'text-emerald-400/70' : isStopped ? 'text-yellow-400' : 'text-red-400/80'
-                        }`}>{node.name}</span>
-                        <span className={`text-[7px] font-mono mt-0.5 ${
-                          isBlocked ? 'text-emerald-600' : isStopped ? 'text-yellow-600' : 'text-red-600'
-                        }`}>{isBlocked ? 'PROTECTED' : isStopped ? 'BLOCKED' : 'COMPROMISED'}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Response Actions taken */}
-              {stopPhase >= 3 && (
-                <div className="space-y-2 mb-4 animate-in fade-in duration-700">
-                  <div className="text-[9px] font-mono text-emerald-400/70 uppercase tracking-wider mb-2 font-bold">Response Actions Executed:</div>
-                  {[
-                    { action: 'Network segment isolated', time: '0.3s' },
-                    { action: 'Compromised credentials rotated', time: '1.2s' },
-                    { action: 'Lateral movement paths blocked', time: '2.1s' },
-                    { action: 'Forensic snapshot captured', time: '2.8s' },
-                  ].map((a, i) => (
-                    <div key={i} className={`flex items-center gap-3 px-3 py-1.5 rounded-lg bg-emerald-500/[0.05] border border-emerald-500/15 transition-all duration-500 ${
-                      stopPhase >= 3 + (i * 0.3) ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'
-                    }`} style={{ transitionDelay: `${i * 200}ms` }}>
-                      <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
-                      <span className="text-[9px] font-mono text-white/80">{a.action}</span>
-                      <span className="text-[8px] font-mono text-emerald-500/60 ml-auto">+{a.time}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Footer */}
-              {stopPhase >= 5 && (
-                <div className="flex items-center justify-center gap-3 pt-4 border-t border-emerald-500/10">
-                  <button
-                    onClick={onClose}
-                    className="px-6 py-2.5 rounded-xl text-[10px] font-mono font-bold text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/10 transition-all"
-                  >
-                    ACKNOWLEDGED
-                  </button>
-                  <button
-                    onClick={() => { setAttackStopped(false); setStopPhase(0); }}
-                    className="px-6 py-2.5 rounded-xl text-[10px] font-mono font-bold text-white bg-emerald-600/80 border border-emerald-500/50 hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-500/20"
-                  >
-                    VIEW FORENSICS
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       <div
-        ref={scrollRef}
         className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl border border-cyan-500/20 bg-[#020a14] shadow-2xl shadow-cyan-900/20"
         onClick={e => e.stopPropagation()}
-        style={{ scrollBehavior: 'smooth' }}
       >
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.06] bg-[#020a14]/95 backdrop-blur-xl">
@@ -675,27 +500,13 @@ const AttackForecastModal = ({ forecast, onClose, handPosition, handTrackingOn, 
         <div className="sticky bottom-0 flex items-center justify-between px-6 py-3 border-t border-white/[0.06] bg-[#020a14]/95 backdrop-blur-xl">
           <div className="flex items-center gap-4">
             <span className="text-[8px] font-mono text-slate-500">PATH: {forecast.path}</span>
-            {voiceActive && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-cyan-500/[0.06] border border-cyan-500/15">
-                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="text-[8px] font-mono text-cyan-400/80">Voice: say "Stop Attack" or "Dismiss"</span>
-              </div>
-            )}
-            {handTrackingOn && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.03] border border-white/[0.06]">
-                <span className="text-[8px] font-mono text-slate-500">Move hand up/down to scroll</span>
-              </div>
-            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-4 py-2 rounded-lg text-[10px] font-mono font-bold text-slate-400 border border-white/10 hover:bg-white/5 transition-all">
               DISMISS
             </button>
-            <button
-              onClick={triggerStopAttack}
-              className="px-4 py-2 rounded-lg text-[10px] font-mono font-bold text-white bg-gradient-to-r from-red-500/80 to-orange-500/80 border border-red-500/30 hover:from-red-500 hover:to-orange-500 transition-all shadow-lg shadow-red-500/20"
-            >
-              STOP ATTACK
+            <button className="px-4 py-2 rounded-lg text-[10px] font-mono font-bold text-white bg-gradient-to-r from-red-500/80 to-orange-500/80 border border-red-500/30 hover:from-red-500 hover:to-orange-500 transition-all shadow-lg shadow-red-500/20">
+              PREEMPTIVE BLOCK
             </button>
           </div>
         </div>
@@ -760,7 +571,7 @@ const AttackUniverse = () => {
   const [shockwaveActive, setShockwaveActive] = useState(false);
   const [twoHandsDetected, setTwoHandsDetected] = useState(false);
   const [showGestureTutorial, setShowGestureTutorial] = useState(true);
-  const [liveEvents, setLiveEvents] = useState<{ ts: string; type: string; src: string; dst: string; severity: string; detail: string; domain: string }[]>([]);
+  const [liveEvents, setLiveEvents] = useState<{ ts: string; type: string; src: string; dst: string; severity: string; detail: string }[]>([]);
   const [activeThreatActor, setActiveThreatActor] = useState({ name: 'APT-29 (Cozy Bear)', confidence: 92 });
   const [timelineOffset, setTimelineOffset] = useState(0);
   const [timelineMode, setTimelineMode] = useState<'past' | 'present' | 'future'>('present');
@@ -804,16 +615,16 @@ const AttackUniverse = () => {
   // Live event generation (security events every 2.2s)
   useEffect(() => {
     const eventTemplates = [
-      { type: 'AUTH_FAIL', src: '10.0.2.{r}', dst: 'DC-01', severity: 'HIGH', detail: 'Brute-force attempt on service account svc_backup', domain: 'identity' },
-      { type: 'C2_BEACON', src: '192.168.1.{r}', dst: '45.33.32.{r}', severity: 'CRITICAL', detail: 'Cobalt Strike beacon detected, 60s jitter interval', domain: 'network' },
-      { type: 'PROC_INJ', src: 'WKS-{r}', dst: 'lsass.exe', severity: 'CRITICAL', detail: 'Process injection via NtMapViewOfSection into LSASS', domain: 'endpoint' },
-      { type: 'DNS_TUN', src: '10.0.5.{r}', dst: 'ns1.evil.{r}.cc', severity: 'HIGH', detail: 'DNS tunneling detected, high entropy subdomain queries', domain: 'network' },
-      { type: 'EXFIL', src: 'DB-PROD-{r}', dst: '185.220.{r}.{r}', severity: 'CRITICAL', detail: 'Anomalous data transfer 2.3GB to external endpoint', domain: 'data' },
-      { type: 'PRIV_ESC', src: 'WKS-{r}', dst: 'SYSTEM', severity: 'HIGH', detail: 'Token impersonation via SeImpersonatePrivilege exploitation', domain: 'endpoint' },
-      { type: 'LAT_MOV', src: '10.0.3.{r}', dst: '10.0.4.{r}', severity: 'HIGH', detail: 'WMI lateral movement using stolen credentials', domain: 'network' },
-      { type: 'CRED_DUMP', src: 'SRV-{r}', dst: 'ntds.dit', severity: 'CRITICAL', detail: 'DCSync replication request from non-DC host', domain: 'identity' },
-      { type: 'MALWARE', src: 'EMAIL-GW', dst: 'WKS-{r}', severity: 'HIGH', detail: 'Emotet dropper detected in macro-enabled document', domain: 'endpoint' },
-      { type: 'ANOMALY', src: 'CLOUD-{r}', dst: 'S3-PROD', severity: 'HIGH', detail: 'Unusual API call pattern from unfamiliar geo-location', domain: 'cloud' },
+      { type: 'AUTH_FAIL', src: '10.0.2.{r}', dst: 'DC-01', severity: 'HIGH', detail: 'Brute-force attempt on service account svc_backup' },
+      { type: 'C2_BEACON', src: '192.168.1.{r}', dst: '45.33.32.{r}', severity: 'CRITICAL', detail: 'Cobalt Strike beacon detected, 60s jitter interval' },
+      { type: 'PROC_INJ', src: 'WKS-{r}', dst: 'lsass.exe', severity: 'CRITICAL', detail: 'Process injection via NtMapViewOfSection into LSASS' },
+      { type: 'DNS_TUN', src: '10.0.5.{r}', dst: 'ns1.evil.{r}.cc', severity: 'HIGH', detail: 'DNS tunneling detected, high entropy subdomain queries' },
+      { type: 'EXFIL', src: 'DB-PROD-{r}', dst: '185.220.{r}.{r}', severity: 'CRITICAL', detail: 'Anomalous data transfer 2.3GB to external endpoint' },
+      { type: 'PRIV_ESC', src: 'WKS-{r}', dst: 'SYSTEM', severity: 'HIGH', detail: 'Token impersonation via SeImpersonatePrivilege exploitation' },
+      { type: 'LAT_MOV', src: '10.0.3.{r}', dst: '10.0.4.{r}', severity: 'HIGH', detail: 'WMI lateral movement using stolen credentials' },
+      { type: 'CRED_DUMP', src: 'SRV-{r}', dst: 'ntds.dit', severity: 'CRITICAL', detail: 'DCSync replication request from non-DC host' },
+      { type: 'MALWARE', src: 'EMAIL-GW', dst: 'WKS-{r}', severity: 'HIGH', detail: 'Emotet dropper detected in macro-enabled document' },
+      { type: 'ANOMALY', src: 'CLOUD-{r}', dst: 'S3-PROD', severity: 'HIGH', detail: 'Unusual API call pattern from unfamiliar geo-location' },
     ];
     const r = () => Math.floor(Math.random() * 254 + 1);
     const iv = setInterval(() => {
@@ -827,7 +638,6 @@ const AttackUniverse = () => {
         dst: tmpl.dst.replace(/\{r\}/g, () => String(r())),
         severity: tmpl.severity,
         detail: tmpl.detail,
-        domain: tmpl.domain,
       };
       setLiveEvents(prev => [evt, ...prev.slice(0, 9)]);
     }, 2200);
@@ -882,11 +692,6 @@ const AttackUniverse = () => {
       setVoiceTranscript('Speech API not supported');
       setTimeout(() => setVoiceTranscript(''), 3000);
       return;
-    }
-
-    // Auto-switch to future mode so predictions are available
-    if (timelineMode !== 'future') {
-      setTimelineMode('future');
     }
 
     const recognition = new SpeechRecognition();
@@ -949,7 +754,7 @@ const AttackUniverse = () => {
     voiceActiveRef.current = true;
     setVoiceActive(true);
     setVoiceTranscript('Listening...');
-  }, [sortedPredictions, timelineMode]);
+  }, [sortedPredictions]);
 
   const stopVoiceCapture = useCallback(() => {
     if (recognitionRef.current) {
@@ -2097,39 +1902,23 @@ const AttackUniverse = () => {
 
       <video ref={videoRef} className="hidden" playsInline muted />
 
-      {/* Hologram PIP - CSS-filtered silhouette, no raw camera feed */}
+      {/* Webcam PIP */}
       {handTrackingOn && (
-        <div className="absolute bottom-24 right-4 z-30 w-44 h-32 rounded-lg border border-cyan-500/30 overflow-hidden shadow-lg shadow-cyan-500/20 bg-[#020a14]">
-          <div className="relative w-full h-full">
-            <video
-              ref={el => {
-                if (el && videoRef.current?.srcObject) {
-                  el.srcObject = videoRef.current.srcObject;
-                  el.play();
-                }
-              }}
-              className="w-full h-full object-cover transform scale-x-[-1]"
-              style={{
-                filter: 'saturate(0) brightness(0.4) contrast(2.5)',
-                mixBlendMode: 'screen',
-              }}
-              playsInline muted autoPlay
-            />
-            <div className="absolute inset-0 pointer-events-none" style={{
-              background: 'linear-gradient(180deg, rgba(0,255,255,0.15) 0%, rgba(0,180,200,0.08) 100%)',
-              mixBlendMode: 'color',
-            }} />
-            <div className="absolute inset-0 pointer-events-none" style={{
-              backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,255,0.04) 2px, rgba(0,255,255,0.04) 3px)',
-            }} />
-          </div>
-          <div className="absolute inset-0 rounded-lg pointer-events-none" style={{boxShadow: 'inset 0 0 20px rgba(0,255,255,0.15)'}} />
+        <div className="absolute bottom-24 right-4 z-30 w-44 h-32 rounded-lg border-2 border-cyan-500/50 overflow-hidden shadow-lg shadow-cyan-500/20">
+          <video
+            ref={el => {
+              if (el && videoRef.current?.srcObject) {
+                el.srcObject = videoRef.current.srcObject;
+                el.play();
+              }
+            }}
+            className="w-full h-full object-cover transform scale-x-[-1]"
+            playsInline muted autoPlay
+          />
+          <div className="absolute inset-0 border-2 border-cyan-400/20 rounded-lg pointer-events-none" />
           <div className="absolute top-1 left-2 flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="text-[8px] text-cyan-400/70 font-bold uppercase tracking-wider">HOLO</span>
-          </div>
-          <div className="absolute bottom-1 right-2">
-            <span className="text-[7px] text-cyan-600/50 font-mono">GESTURE FEED</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[8px] text-cyan-400 font-bold uppercase">LIVE</span>
           </div>
         </div>
       )}
@@ -2314,22 +2103,6 @@ const AttackUniverse = () => {
           {handTrackingOn ? <VideoOff className="w-4 h-4" /> : <Video className="w-4 h-4" />}
         </button>
         <button
-          onClick={voiceActive ? stopVoiceCapture : startVoiceCapture}
-          className={`p-2.5 rounded-lg border transition-all backdrop-blur-sm ${
-            voiceActive
-              ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-400 shadow-lg shadow-cyan-500/20'
-              : 'border-slate-600/40 bg-slate-900/70 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/30'
-          }`}
-          title={voiceActive ? 'Stop voice capture' : 'Enable voice commands'}
-        >
-          {voiceActive ? <Mic className="w-4 h-4 animate-pulse" /> : <MicOff className="w-4 h-4" />}
-        </button>
-        {voiceActive && voiceTranscript && (
-          <div className="px-2 py-1.5 rounded-lg border border-cyan-500/20 bg-slate-900/80 backdrop-blur-sm max-w-[140px]">
-            <span className="text-[8px] font-mono text-cyan-300/80 truncate block">{voiceTranscript}</span>
-          </div>
-        )}
-        <button
           onClick={() => {
             if (sceneDataRef.current) {
               sceneDataRef.current.controls.target.set(0, 0, 0);
@@ -2498,7 +2271,25 @@ const AttackUniverse = () => {
             <div className="flex items-center gap-2 mb-2">
               <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-[0.15em]">Monte Carlo Simulation</span>
-              <span className="text-[8px] font-mono text-slate-600 ml-auto">10K iterations</span>
+              <span className="text-[8px] font-mono text-slate-600 ml-auto mr-1">10K iterations</span>
+              <button
+                onClick={voiceActive ? stopVoiceCapture : startVoiceCapture}
+                className={`relative w-6 h-6 rounded-md flex items-center justify-center transition-all duration-300 ${
+                  voiceActive
+                    ? 'bg-cyan-500/20 border border-cyan-400/50 shadow-lg shadow-cyan-500/20'
+                    : 'bg-white/[0.03] border border-white/10 hover:bg-cyan-500/10 hover:border-cyan-500/30'
+                }`}
+                title={voiceActive ? 'Stop voice capture' : 'Speak a number to select forecast'}
+              >
+                {voiceActive ? (
+                  <Mic className="w-3 h-3 text-cyan-400 animate-pulse" />
+                ) : (
+                  <MicOff className="w-3 h-3 text-slate-500" />
+                )}
+                {voiceActive && (
+                  <div className="absolute inset-0 rounded-md border border-cyan-400/50 animate-ping opacity-30" />
+                )}
+              </button>
             </div>
             {voiceActive && voiceTranscript && (
               <div className="mb-2 px-2 py-1.5 rounded-md bg-cyan-500/[0.06] border border-cyan-500/15">
@@ -2600,14 +2391,7 @@ const AttackUniverse = () => {
 
       {/* Attack Forecast Graph Modal */}
       {selectedForecast && (
-        <AttackForecastModal
-          forecast={selectedForecast}
-          onClose={() => setSelectedForecast(null)}
-          handPosition={handPosition}
-          handTrackingOn={handTrackingOn}
-          voiceActive={voiceActive}
-          voiceTranscript={voiceTranscript}
-        />
+        <AttackForecastModal forecast={selectedForecast} onClose={() => setSelectedForecast(null)} />
       )}
 
       {/* Timeline Mode Switcher */}
@@ -2669,23 +2453,19 @@ const AttackUniverse = () => {
     </div>
 
     {/* Scene Intercepts - below the 3D universe */}
-    {!isFullscreen && liveEvents.length > 0 && (
+    {!selectedDomain && !isFullscreen && liveEvents.length > 0 && (
       <div className="w-full mt-3">
-        <div className="rounded-xl border bg-[#040c1a]/70 backdrop-blur-2xl p-3 shadow-2xl shadow-cyan-900/10" style={{ borderColor: selectedDomain ? `${selectedDomain.color}15` : 'rgba(6,182,212,0.08)' }}>
+        <div className="rounded-xl border border-cyan-500/8 bg-[#040c1a]/70 backdrop-blur-2xl p-3 shadow-2xl shadow-cyan-900/10">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: selectedDomain ? selectedDomain.color : '#22d3ee' }} />
-            <span className="text-[9px] font-mono uppercase tracking-[0.15em]" style={{ color: selectedDomain ? `${selectedDomain.color}bb` : 'rgba(34,211,238,0.7)' }}>
-              {selectedDomain ? `${selectedDomain.name} Intercepts` : 'Scene Intercepts'}
-            </span>
-            <span className="text-[8px] font-mono text-slate-600 ml-auto">
-              {(selectedDomain ? liveEvents.filter(e => e.domain === selectedDomain.id) : liveEvents).length} signals
-            </span>
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-[9px] font-mono text-cyan-400/70 uppercase tracking-[0.15em]">Scene Intercepts</span>
+            <span className="text-[8px] font-mono text-slate-600 ml-auto">{liveEvents.length} signals</span>
           </div>
           <div className="grid grid-cols-2 gap-1">
-            {(selectedDomain ? liveEvents.filter(e => e.domain === selectedDomain.id) : liveEvents).map((evt, i) => (
+            {liveEvents.map((evt, i) => (
               <button
                 key={`ambient-${evt.ts}-${i}`}
-                onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: evt.domain, detail: evt.detail, severity: evt.severity })}
+                onClick={() => setSelectedEvent({ id: i, ts: evt.ts, type: evt.type, domain: 'network', detail: evt.detail, severity: evt.severity })}
                 className="flex items-start gap-2 text-[9px] font-mono py-1.5 px-2 rounded bg-white/[0.01] border-l-2 transition-all duration-300 hover:bg-cyan-500/[0.05] hover:border-l-cyan-400 text-left group"
                 style={{
                   borderLeftColor: evt.severity === 'CRITICAL' ? '#ef4444' : '#f97316',
@@ -2699,11 +2479,8 @@ const AttackUniverse = () => {
               </button>
             ))}
           </div>
-          {(selectedDomain ? liveEvents.filter(e => e.domain === selectedDomain.id) : liveEvents).length === 0 && (
-            <div className="text-center py-4 text-[10px] text-slate-600 font-mono">No intercepts for {selectedDomain?.name} domain yet</div>
-          )}
           <div className="mt-2 pt-2 border-t border-white/[0.03] flex items-center justify-between">
-            <span className="text-[8px] font-mono text-slate-600">{selectedDomain ? `Filtered by ${selectedDomain.name}` : 'Click to investigate'}</span>
+            <span className="text-[8px] font-mono text-slate-600">Click to investigate</span>
             <span className="text-[8px] font-mono text-cyan-500/40 animate-pulse">MONITORING</span>
           </div>
         </div>
