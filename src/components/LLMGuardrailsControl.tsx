@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
-  Shield, ShieldCheck, Scan, EyeOff, Coins, Brain,
-  Lock, Activity, AlertTriangle, Ban,
-  Sparkles
+  Shield, ShieldCheck, Scan, Eye, EyeOff, Coins, Brain,
+  Lock, Activity, AlertTriangle, Ban, ChevronRight,
+  Zap, TrendingUp, Clock
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import GuardrailsDashboard from './guardrails/GuardrailsDashboard';
@@ -12,9 +12,8 @@ import PIIRedactionEngine from './guardrails/PIIRedactionEngine';
 import TokenBudgetControls from './guardrails/TokenBudgetControls';
 import ModelAccessGovernance from './guardrails/ModelAccessGovernance';
 import AIGatewayControlPlane from './guardrails/AIGatewayControlPlane';
-import AIInsightEngine from './guardrails/AIInsightEngine';
 
-type TabId = 'gateway' | 'insights' | 'dashboard' | 'policies' | 'scanner' | 'pii' | 'budgets' | 'models';
+type TabId = 'gateway' | 'dashboard' | 'policies' | 'scanner' | 'pii' | 'budgets' | 'models';
 
 interface TabConfig {
   id: TabId;
@@ -27,7 +26,6 @@ interface TabConfig {
 
 const TABS: TabConfig[] = [
   { id: 'gateway', label: 'AI Gateway Control Plane', shortLabel: 'Gateway', icon: Lock, color: 'text-red-400', description: 'Centralized AI request enforcement & monitoring' },
-  { id: 'insights', label: 'AI Insight Engine', shortLabel: 'Insights', icon: Sparkles, color: 'text-cyan-400', description: 'AI-powered recommendations based on usage patterns' },
   { id: 'dashboard', label: 'Guardrails Dashboard', shortLabel: 'Dashboard', icon: Activity, color: 'text-cyan-400', description: 'Real-time enforcement overview' },
   { id: 'policies', label: 'Policy Manager', shortLabel: 'Policies', icon: Shield, color: 'text-blue-400', description: 'Create and manage guardrail policies' },
   { id: 'scanner', label: 'Prompt Scanner', shortLabel: 'Scanner', icon: Scan, color: 'text-emerald-400', description: 'Real-time prompt/response scanning' },
@@ -168,7 +166,6 @@ const LLMGuardrailsControl = () => {
       {renderTabs()}
       <div className="min-h-[600px]">
         {activeTab === 'gateway' && <AIGatewayControlPlane />}
-        {activeTab === 'insights' && <AIInsightEngine />}
         {activeTab === 'dashboard' && <GuardrailsDashboard />}
         {activeTab === 'policies' && <PolicyManager />}
         {activeTab === 'scanner' && <PromptScanner />}
