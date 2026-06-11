@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Activity, Brain, Cpu, TrendingUp, AlertTriangle, CheckCircle, XCircle, Play, Pause, RotateCcw, Search, Send, ChevronRight, Zap, DollarSign, Clock, BarChart3, Eye, Lock, Unlock, ArrowUpRight, ArrowDownRight, Terminal, MessageSquare, Bot, Fingerprint, ShieldCheck, Users, Layers, RefreshCw } from 'lucide-react';
+import { Shield, Activity, Brain, Cpu, TrendingUp, AlertTriangle, CheckCircle, XCircle, Play, Pause, RotateCcw, Search, Send, ChevronRight, Zap, DollarSign, Clock, BarChart3, Eye, Lock, Unlock, ArrowUpRight, ArrowDownRight, Terminal, MessageSquare, Bot, Fingerprint, ShieldCheck, Users, Layers, RefreshCw, Network, GitBranch, ShieldAlert, Workflow } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface AgentIdentity {
@@ -40,7 +40,7 @@ interface ConversationMessage {
   timestamp: Date;
 }
 
-type TabType = 'registry' | 'lifecycle' | 'commander' | 'economics';
+type TabType = 'registry' | 'lifecycle' | 'commander' | 'economics' | 'trust' | 'permissions' | 'collaboration' | 'threatsurface';
 
 export default function AgentControlPlane() {
   const [activeTab, setActiveTab] = useState<TabType>('registry');
@@ -140,8 +140,12 @@ export default function AgentControlPlane() {
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'registry', label: 'Agent Registry', icon: Fingerprint },
     { id: 'lifecycle', label: 'Lifecycle & Governance', icon: ShieldCheck },
+    { id: 'trust', label: 'Trust Intelligence', icon: Shield },
+    { id: 'permissions', label: 'Permission Gov.', icon: Lock },
+    { id: 'collaboration', label: 'Collaboration', icon: Network },
+    { id: 'threatsurface', label: 'Threat Surface', icon: ShieldAlert },
     { id: 'commander', label: 'SOC Commander', icon: Terminal },
-    { id: 'economics', label: 'Economics & ROI', icon: DollarSign },
+    { id: 'economics', label: 'Economics', icon: DollarSign },
   ];
 
   const getHealthColor = (status: string) => {
@@ -292,6 +296,18 @@ export default function AgentControlPlane() {
         )}
         {activeTab === 'economics' && (
           <AgentEconomicsTab agents={agents} totalCostMTD={totalCostMTD} totalValueMTD={totalValueMTD} totalTimeSaved={totalTimeSaved} />
+        )}
+        {activeTab === 'trust' && (
+          <AgentTrustTab agents={agents} getTrustColor={getTrustColor} />
+        )}
+        {activeTab === 'permissions' && (
+          <AgentPermissionsTab agents={agents} />
+        )}
+        {activeTab === 'collaboration' && (
+          <AgentCollaborationTab agents={agents} />
+        )}
+        {activeTab === 'threatsurface' && (
+          <AgentThreatSurfaceTab agents={agents} />
         )}
       </div>
     </div>
@@ -814,6 +830,640 @@ function EconCard({ title, value, subtitle, trend }: { title: string; value: str
         )}
       </div>
       <div className="text-xs text-slate-500 mt-0.5">{subtitle}</div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SPRINT 2: Advanced Governance & Intelligence Tabs
+// ============================================================================
+
+function AgentTrustTab({ agents, getTrustColor }: any) {
+  const [trustHistory, setTrustHistory] = useState<any[]>([]);
+  const [anomalies, setAnomalies] = useState<any[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [loadingTrust, setLoadingTrust] = useState(true);
+
+  useEffect(() => {
+    loadTrustData();
+  }, []);
+
+  const loadTrustData = async () => {
+    const [historyRes, anomalyRes] = await Promise.all([
+      supabase.from('agent_trust_history').select('*').order('created_at', { ascending: false }).limit(200),
+      supabase.from('agent_trust_history').select('*, agent_identities(display_name)').eq('anomaly_detected', true).order('created_at', { ascending: false }).limit(50),
+    ]);
+    if (historyRes.data) setTrustHistory(historyRes.data);
+    if (anomalyRes.data) setAnomalies(anomalyRes.data);
+    setLoadingTrust(false);
+  };
+
+  const trustDistribution = agents.reduce((acc: any, a: any) => {
+    const bucket = a.trust_score >= 95 ? 'excellent' : a.trust_score >= 90 ? 'good' : a.trust_score >= 85 ? 'acceptable' : a.trust_score >= 75 ? 'concerning' : 'critical';
+    acc[bucket] = (acc[bucket] || 0) + 1;
+    return acc;
+  }, {});
+
+  const recentAnomalies = anomalies.slice(0, 8);
+  const agentTrustTrends = selectedAgentId
+    ? trustHistory.filter((h: any) => h.agent_id === selectedAgentId).slice(0, 30)
+    : [];
+
+  const avgDecayRate = trustHistory.length > 0
+    ? trustHistory.reduce((s: number, h: any) => s + (h.decay_rate || 0), 0) / trustHistory.length
+    : 0;
+
+  return (
+    <div className="h-full overflow-y-auto custom-scrollbar space-y-4">
+      {/* Trust Distribution */}
+      <div className="grid grid-cols-5 gap-3">
+        {[
+          { key: 'excellent', label: 'Excellent (95+)', color: 'emerald', count: trustDistribution.excellent || 0 },
+          { key: 'good', label: 'Good (90-94)', color: 'cyan', count: trustDistribution.good || 0 },
+          { key: 'acceptable', label: 'Acceptable (85-89)', color: 'blue', count: trustDistribution.acceptable || 0 },
+          { key: 'concerning', label: 'Concerning (75-84)', color: 'amber', count: trustDistribution.concerning || 0 },
+          { key: 'critical', label: 'Critical (<75)', color: 'red', count: trustDistribution.critical || 0 },
+        ].map(bucket => (
+          <div key={bucket.key} className={`bg-${bucket.color}-500/5 border border-${bucket.color}-500/20 rounded-lg p-3`}>
+            <div className={`text-2xl font-bold text-${bucket.color}-400`}>{bucket.count}</div>
+            <div className="text-xs text-slate-400 mt-1">{bucket.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        {/* Trust Factor Breakdown */}
+        <div className="col-span-2 bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">Agent Trust Scores</h3>
+          <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+            {agents.sort((a: any, b: any) => a.trust_score - b.trust_score).map((agent: any) => (
+              <div
+                key={agent.id}
+                onClick={() => setSelectedAgentId(agent.id === selectedAgentId ? null : agent.id)}
+                className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
+                  selectedAgentId === agent.id ? 'bg-cyan-500/10 border border-cyan-500/30' : 'hover:bg-slate-700/30'
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-slate-200 truncate">{agent.display_name}</div>
+                  <div className="text-xs text-slate-500">{agent.category}</div>
+                </div>
+                <div className="w-32 h-2 bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      agent.trust_score >= 95 ? 'bg-emerald-400' : agent.trust_score >= 90 ? 'bg-cyan-400' : agent.trust_score >= 85 ? 'bg-blue-400' : agent.trust_score >= 75 ? 'bg-amber-400' : 'bg-red-400'
+                    }`}
+                    style={{ width: `${agent.trust_score}%` }}
+                  />
+                </div>
+                <span className={`text-xs font-mono w-10 text-right ${getTrustColor(agent.trust_score)}`}>
+                  {agent.trust_score}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Trust Stats */}
+        <div className="space-y-3">
+          <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+            <h3 className="text-sm font-semibold text-slate-200 mb-3">Trust Metrics</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Avg Trust Score</span>
+                <span className="text-sm font-mono text-emerald-400">{(agents.reduce((s: number, a: any) => s + a.trust_score, 0) / Math.max(agents.length, 1)).toFixed(1)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Avg Decay Rate</span>
+                <span className="text-sm font-mono text-amber-400">{(avgDecayRate * 100).toFixed(2)}%/hr</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Anomalies (24h)</span>
+                <span className="text-sm font-mono text-red-400">{anomalies.filter((a: any) => new Date(a.created_at) > new Date(Date.now() - 86400000)).length}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Evaluations (24h)</span>
+                <span className="text-sm font-mono text-blue-400">{trustHistory.filter((h: any) => new Date(h.created_at) > new Date(Date.now() - 86400000)).length}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Trust History for selected agent */}
+          {selectedAgentId && agentTrustTrends.length > 0 && (
+            <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+              <h3 className="text-xs font-semibold text-slate-200 mb-2">Trust History</h3>
+              <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar">
+                {agentTrustTrends.slice(0, 10).map((h: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className={`font-mono ${h.delta > 0 ? 'text-emerald-400' : h.delta < 0 ? 'text-red-400' : 'text-slate-400'}`}>
+                      {h.delta > 0 ? '+' : ''}{h.delta?.toFixed(1)}
+                    </span>
+                    <span className="text-slate-500">{new Date(h.created_at).toLocaleDateString()}</span>
+                    {h.anomaly_detected && <AlertTriangle className="w-3 h-3 text-amber-400" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Anomaly Feed */}
+      <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-red-300 mb-3 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4" /> Trust Anomalies Detected
+        </h3>
+        {recentAnomalies.length === 0 ? (
+          <div className="text-xs text-slate-400">No anomalies detected recently.</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {recentAnomalies.map((a: any, i: number) => (
+              <div key={i} className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/30">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-slate-200">
+                    {a.agent_identities?.display_name || 'Agent'}
+                  </span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    a.anomaly_severity === 'critical' ? 'bg-red-500/20 text-red-300' :
+                    a.anomaly_severity === 'high' ? 'bg-orange-500/20 text-orange-300' :
+                    a.anomaly_severity === 'medium' ? 'bg-amber-500/20 text-amber-300' :
+                    'bg-slate-600/20 text-slate-300'
+                  }`}>{a.anomaly_severity}</span>
+                </div>
+                <div className="text-xs text-slate-400">{a.anomaly_type?.replace('_', ' ')}</div>
+                <div className="text-xs text-slate-500 mt-1">Score: {a.trust_score?.toFixed(1)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AgentPermissionsTab({ agents }: any) {
+  const [policies, setPolicies] = useState<any[]>([]);
+  const [auditLog, setAuditLog] = useState<any[]>([]);
+  const [driftEvents, setDriftEvents] = useState<any[]>([]);
+  const [loadingPerm, setLoadingPerm] = useState(true);
+
+  useEffect(() => {
+    loadPermissionData();
+  }, []);
+
+  const loadPermissionData = async () => {
+    const [policiesRes, auditRes, driftRes] = await Promise.all([
+      supabase.from('agent_permission_policies').select('*').order('created_at', { ascending: false }),
+      supabase.from('agent_permission_audit').select('*, agent_identities(display_name)').order('created_at', { ascending: false }).limit(100),
+      supabase.from('agent_permission_audit').select('*, agent_identities(display_name)').eq('is_drift', true).order('created_at', { ascending: false }).limit(30),
+    ]);
+    if (policiesRes.data) setPolicies(policiesRes.data);
+    if (auditRes.data) setAuditLog(auditRes.data);
+    if (driftRes.data) setDriftEvents(driftRes.data);
+    setLoadingPerm(false);
+  };
+
+  const totalActions = auditLog.length;
+  const grantedCount = auditLog.filter((a: any) => a.action === 'granted').length;
+  const deniedCount = auditLog.filter((a: any) => a.action === 'denied').length;
+  const driftCount = driftEvents.length;
+
+  return (
+    <div className="h-full overflow-y-auto custom-scrollbar space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-3">
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Active Policies</div>
+          <div className="text-xl font-bold text-slate-100">{policies.filter(p => p.is_active).length}</div>
+        </div>
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Actions Evaluated</div>
+          <div className="text-xl font-bold text-blue-400">{totalActions}</div>
+        </div>
+        <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Granted / Denied</div>
+          <div className="text-xl font-bold text-emerald-400">{grantedCount} <span className="text-red-400 text-sm">/ {deniedCount}</span></div>
+        </div>
+        <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Drift Detected</div>
+          <div className="text-xl font-bold text-red-400">{driftCount}</div>
+          <div className="text-xs text-red-300">permission violations</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Policies */}
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">Permission Policies</h3>
+          <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+            {policies.map((policy: any) => (
+              <div key={policy.id} className="bg-slate-900/50 border border-slate-700/30 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-slate-200">{policy.policy_name}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    policy.enforcement_mode === 'enforce' ? 'bg-emerald-500/20 text-emerald-300' :
+                    policy.enforcement_mode === 'audit' ? 'bg-amber-500/20 text-amber-300' :
+                    'bg-slate-600/20 text-slate-300'
+                  }`}>{policy.enforcement_mode}</span>
+                </div>
+                <div className="text-xs text-slate-400 mb-2">{policy.description}</div>
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="text-slate-500">Scope: <span className="text-slate-300">{policy.scope}</span></span>
+                  <span className="text-slate-500">Max Autonomy: <span className="text-cyan-300">{policy.max_autonomy_level}</span></span>
+                  {policy.auto_revoke_on_anomaly && (
+                    <span className="text-red-300 flex items-center gap-1">
+                      <ShieldAlert className="w-3 h-3" /> Auto-revoke
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Drift Events */}
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-red-300 mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" /> Permission Drift Detected
+          </h3>
+          <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+            {driftEvents.length === 0 ? (
+              <div className="text-xs text-slate-400 text-center py-8">No drift events detected.</div>
+            ) : driftEvents.map((drift: any, i: number) => (
+              <div key={i} className="bg-red-500/5 border border-red-500/15 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-slate-200">{drift.agent_identities?.display_name || 'Agent'}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    drift.drift_severity === 'critical' ? 'bg-red-500/30 text-red-200' :
+                    drift.drift_severity === 'major' ? 'bg-orange-500/20 text-orange-300' :
+                    drift.drift_severity === 'moderate' ? 'bg-amber-500/20 text-amber-300' :
+                    'bg-slate-600/20 text-slate-300'
+                  }`}>{drift.drift_severity}</span>
+                </div>
+                <div className="text-xs text-slate-400">{drift.permission_type}: {drift.resource_path}</div>
+                <div className="text-xs text-slate-500 mt-1">Risk: {drift.risk_score?.toFixed(0)}/100</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Audit Trail */}
+      <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-3">Permission Audit Trail (Recent)</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-700/50">
+                <th className="text-left py-2 px-2 text-slate-400">Agent</th>
+                <th className="text-left py-2 px-2 text-slate-400">Type</th>
+                <th className="text-left py-2 px-2 text-slate-400">Resource</th>
+                <th className="text-center py-2 px-2 text-slate-400">Action</th>
+                <th className="text-right py-2 px-2 text-slate-400">Risk</th>
+                <th className="text-right py-2 px-2 text-slate-400">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditLog.slice(0, 20).map((log: any, i: number) => (
+                <tr key={i} className="border-b border-slate-800/30">
+                  <td className="py-1.5 px-2 text-slate-200">{log.agent_identities?.display_name || '...'}</td>
+                  <td className="py-1.5 px-2 text-slate-400">{log.permission_type}</td>
+                  <td className="py-1.5 px-2 text-slate-300 font-mono">{log.resource_path}</td>
+                  <td className="py-1.5 px-2 text-center">
+                    <span className={`px-1.5 py-0.5 rounded ${
+                      log.action === 'granted' ? 'bg-emerald-500/20 text-emerald-300' :
+                      log.action === 'denied' ? 'bg-red-500/20 text-red-300' :
+                      'bg-amber-500/20 text-amber-300'
+                    }`}>{log.action}</span>
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-mono text-slate-300">{log.risk_score?.toFixed(0)}</td>
+                  <td className="py-1.5 px-2 text-right text-slate-500">{new Date(log.created_at).toLocaleTimeString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentCollaborationTab({ agents }: any) {
+  const [collaborations, setCollaborations] = useState<any[]>([]);
+  const [workflows, setWorkflows] = useState<any[]>([]);
+  const [loadingCollab, setLoadingCollab] = useState(true);
+
+  useEffect(() => {
+    loadCollabData();
+  }, []);
+
+  const loadCollabData = async () => {
+    const [collabRes, workflowRes] = await Promise.all([
+      supabase.from('agent_collaborations').select('*, source:agent_identities!agent_collaborations_source_agent_id_fkey(display_name), target:agent_identities!agent_collaborations_target_agent_id_fkey(display_name)').order('message_count', { ascending: false }).limit(50),
+      supabase.from('agent_workflow_dags').select('*').order('executions_last_24h', { ascending: false }),
+    ]);
+    if (collabRes.data) setCollaborations(collabRes.data);
+    if (workflowRes.data) setWorkflows(workflowRes.data);
+    setLoadingCollab(false);
+  };
+
+  const totalMessages = collaborations.reduce((s: number, c: any) => s + (c.message_count || 0), 0);
+  const avgLatency = collaborations.length > 0 ? collaborations.reduce((s: number, c: any) => s + (c.avg_latency_ms || 0), 0) / collaborations.length : 0;
+  const totalWorkflowExecs = workflows.reduce((s: number, w: any) => s + (w.executions_last_24h || 0), 0);
+
+  const collabTypes = collaborations.reduce((acc: any, c: any) => {
+    acc[c.collaboration_type] = (acc[c.collaboration_type] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <div className="h-full overflow-y-auto custom-scrollbar space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-3">
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Active Connections</div>
+          <div className="text-xl font-bold text-cyan-400">{collaborations.length}</div>
+        </div>
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Messages Exchanged</div>
+          <div className="text-xl font-bold text-blue-400">{(totalMessages/1000).toFixed(1)}K</div>
+        </div>
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Avg Latency</div>
+          <div className="text-xl font-bold text-slate-100">{avgLatency.toFixed(0)}ms</div>
+        </div>
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Workflow Runs (24h)</div>
+          <div className="text-xl font-bold text-emerald-400">{totalWorkflowExecs}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Workflow DAGs */}
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3 flex items-center gap-2">
+            <Workflow className="w-4 h-4 text-cyan-400" /> Active Workflows
+          </h3>
+          <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
+            {workflows.map((wf: any) => (
+              <div key={wf.id} className="bg-slate-900/50 border border-slate-700/30 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-slate-200">{wf.workflow_name}</span>
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${wf.is_active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-600/20 text-slate-400'}`}>
+                    {wf.is_active ? 'active' : 'paused'}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 mb-2">{wf.workflow_description}</div>
+                {/* DAG visualization */}
+                <div className="flex items-center gap-1 mb-2 flex-wrap">
+                  {wf.dag_definition?.nodes?.map((node: any, ni: number) => (
+                    <div key={ni} className="flex items-center gap-1">
+                      <div className={`px-2 py-0.5 rounded text-xs ${
+                        node.type === 'start' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' :
+                        node.type === 'end' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                        'bg-slate-700/50 text-slate-300 border border-slate-600/50'
+                      }`}>
+                        {node.id}
+                      </div>
+                      {ni < (wf.dag_definition?.nodes?.length || 0) - 1 && (
+                        <ChevronRight className="w-3 h-3 text-slate-600" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-4 text-xs text-slate-500">
+                  <span>Trigger: <span className="text-slate-300">{wf.trigger_type}</span></span>
+                  <span>24h: <span className="text-cyan-300">{wf.executions_last_24h}</span></span>
+                  <span>Success: <span className="text-emerald-300">{wf.success_rate}%</span></span>
+                  <span>Avg: <span className="text-slate-300">{(wf.avg_completion_time_ms / 1000).toFixed(1)}s</span></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Collaboration Network */}
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3 flex items-center gap-2">
+            <Network className="w-4 h-4 text-blue-400" /> Inter-Agent Communications
+          </h3>
+
+          {/* Collaboration type breakdown */}
+          <div className="flex gap-2 mb-3 flex-wrap">
+            {Object.entries(collabTypes).map(([type, count]: any) => (
+              <span key={type} className="text-xs bg-slate-700/50 text-slate-300 px-2 py-1 rounded">
+                {type}: <span className="text-cyan-300 font-mono">{count}</span>
+              </span>
+            ))}
+          </div>
+
+          <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+            {collaborations.slice(0, 15).map((collab: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 bg-slate-900/30 rounded p-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 text-xs">
+                    <span className="text-cyan-300 truncate">{collab.source?.display_name || 'Agent'}</span>
+                    <ChevronRight className="w-3 h-3 text-slate-600 flex-shrink-0" />
+                    <span className="text-blue-300 truncate">{collab.target?.display_name || 'Agent'}</span>
+                  </div>
+                </div>
+                <span className="text-xs text-slate-500 flex-shrink-0">{collab.collaboration_type}</span>
+                <span className="text-xs font-mono text-slate-400 flex-shrink-0">{collab.message_count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentThreatSurfaceTab({ agents }: any) {
+  const [threatSurfaces, setThreatSurfaces] = useState<any[]>([]);
+  const [loadingSurface, setLoadingSurface] = useState(true);
+
+  useEffect(() => {
+    loadThreatSurface();
+  }, []);
+
+  const loadThreatSurface = async () => {
+    const { data } = await supabase
+      .from('agent_threat_surface')
+      .select('*, agent_identities(display_name, agent_slug, category)')
+      .order('attack_surface_score', { ascending: false });
+    if (data) setThreatSurfaces(data);
+    setLoadingSurface(false);
+  };
+
+  const avgAttackSurface = threatSurfaces.length > 0
+    ? threatSurfaces.reduce((s, t) => s + t.attack_surface_score, 0) / threatSurfaces.length : 0;
+  const totalVulns = threatSurfaces.reduce((s, t) => s + (t.vulnerability_count || 0), 0);
+  const totalCritical = threatSurfaces.reduce((s, t) => s + (t.critical_vulns || 0), 0);
+  const publicExposed = threatSurfaces.filter(t => t.network_exposure === 'public' || t.network_exposure === 'dmz').length;
+
+  const isolationDistribution = threatSurfaces.reduce((acc: any, t: any) => {
+    acc[t.isolation_level] = (acc[t.isolation_level] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <div className="h-full overflow-y-auto custom-scrollbar space-y-4">
+      {/* Risk Summary */}
+      <div className="grid grid-cols-5 gap-3">
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Avg Attack Surface</div>
+          <div className={`text-xl font-bold ${avgAttackSurface > 60 ? 'text-red-400' : avgAttackSurface > 40 ? 'text-amber-400' : 'text-emerald-400'}`}>
+            {avgAttackSurface.toFixed(1)}
+          </div>
+          <div className="text-xs text-slate-500">/100 risk score</div>
+        </div>
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Total Vulnerabilities</div>
+          <div className="text-xl font-bold text-amber-400">{totalVulns}</div>
+          <div className="text-xs text-red-300">{totalCritical} critical</div>
+        </div>
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Network Exposed</div>
+          <div className="text-xl font-bold text-red-400">{publicExposed}</div>
+          <div className="text-xs text-slate-500">in DMZ/public</div>
+        </div>
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Assessed Agents</div>
+          <div className="text-xl font-bold text-blue-400">{threatSurfaces.length}</div>
+        </div>
+        <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-3">
+          <div className="text-xs text-slate-400 mb-1">Isolation Levels</div>
+          <div className="flex gap-1 mt-1 flex-wrap">
+            {Object.entries(isolationDistribution).map(([level, count]: any) => (
+              <span key={level} className="text-xs bg-slate-700/50 text-slate-300 px-1.5 py-0.5 rounded">
+                {level}: {count}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Threat Surface Table */}
+      <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-3">Agent Attack Surface Assessment</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-700/50">
+                <th className="text-left py-2 px-2 text-slate-400">Agent</th>
+                <th className="text-center py-2 px-2 text-slate-400">Surface Score</th>
+                <th className="text-center py-2 px-2 text-slate-400">Vulns</th>
+                <th className="text-center py-2 px-2 text-slate-400">Network</th>
+                <th className="text-center py-2 px-2 text-slate-400">Data Level</th>
+                <th className="text-center py-2 px-2 text-slate-400">Isolation</th>
+                <th className="text-center py-2 px-2 text-slate-400">Input Val.</th>
+                <th className="text-center py-2 px-2 text-slate-400">Output San.</th>
+                <th className="text-center py-2 px-2 text-slate-400">Pentest</th>
+              </tr>
+            </thead>
+            <tbody>
+              {threatSurfaces.map((ts: any) => (
+                <tr key={ts.id} className="border-b border-slate-800/30 hover:bg-slate-700/20">
+                  <td className="py-2 px-2">
+                    <div className="text-slate-200 font-medium">{ts.agent_identities?.display_name || ts.agent_id}</div>
+                    <div className="text-slate-500">{ts.agent_identities?.category}</div>
+                  </td>
+                  <td className="py-2 px-2 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${ts.attack_surface_score > 60 ? 'bg-red-400' : ts.attack_surface_score > 40 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                          style={{ width: `${ts.attack_surface_score}%` }}
+                        />
+                      </div>
+                      <span className={`font-mono ${ts.attack_surface_score > 60 ? 'text-red-400' : ts.attack_surface_score > 40 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {ts.attack_surface_score}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2 px-2 text-center">
+                    <span className={ts.critical_vulns > 0 ? 'text-red-400 font-semibold' : 'text-slate-300'}>
+                      {ts.vulnerability_count} {ts.critical_vulns > 0 && `(${ts.critical_vulns}C)`}
+                    </span>
+                  </td>
+                  <td className="py-2 px-2 text-center">
+                    <span className={`px-1.5 py-0.5 rounded ${
+                      ts.network_exposure === 'isolated' ? 'bg-emerald-500/20 text-emerald-300' :
+                      ts.network_exposure === 'internal' ? 'bg-blue-500/20 text-blue-300' :
+                      ts.network_exposure === 'dmz' ? 'bg-amber-500/20 text-amber-300' :
+                      'bg-red-500/20 text-red-300'
+                    }`}>{ts.network_exposure}</span>
+                  </td>
+                  <td className="py-2 px-2 text-center">
+                    <span className={`px-1.5 py-0.5 rounded ${
+                      ts.data_sensitivity_level === 'top_secret' ? 'bg-red-500/20 text-red-300' :
+                      ts.data_sensitivity_level === 'restricted' ? 'bg-orange-500/20 text-orange-300' :
+                      ts.data_sensitivity_level === 'confidential' ? 'bg-amber-500/20 text-amber-300' :
+                      'bg-slate-600/20 text-slate-300'
+                    }`}>{ts.data_sensitivity_level}</span>
+                  </td>
+                  <td className="py-2 px-2 text-center text-slate-300">{ts.isolation_level}</td>
+                  <td className="py-2 px-2 text-center">
+                    <span className={ts.input_validation_score >= 80 ? 'text-emerald-400' : ts.input_validation_score >= 60 ? 'text-amber-400' : 'text-red-400'}>
+                      {ts.input_validation_score?.toFixed(0)}%
+                    </span>
+                  </td>
+                  <td className="py-2 px-2 text-center">
+                    <span className={ts.output_sanitization_score >= 80 ? 'text-emerald-400' : ts.output_sanitization_score >= 60 ? 'text-amber-400' : 'text-red-400'}>
+                      {ts.output_sanitization_score?.toFixed(0)}%
+                    </span>
+                  </td>
+                  <td className="py-2 px-2 text-center">
+                    <span className={`px-1.5 py-0.5 rounded ${
+                      ts.last_pentest_result === 'pass' ? 'bg-emerald-500/20 text-emerald-300' :
+                      ts.last_pentest_result === 'pass_with_findings' ? 'bg-blue-500/20 text-blue-300' :
+                      ts.last_pentest_result === 'conditional_pass' ? 'bg-amber-500/20 text-amber-300' :
+                      'bg-red-500/20 text-red-300'
+                    }`}>{ts.last_pentest_result?.replace(/_/g, ' ')}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Threat Vectors Summary */}
+      <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-slate-200 mb-3">Top Threat Vectors Across Fleet</h3>
+        <div className="grid grid-cols-4 gap-3">
+          {['prompt_injection', 'data_exfiltration', 'privilege_escalation', 'supply_chain'].map(vector => {
+            const avgRisk = threatSurfaces.length > 0
+              ? threatSurfaces.reduce((s, ts) => {
+                  const v = ts.threat_vectors?.find((tv: any) => tv.vector === vector);
+                  return s + (v?.risk || 0);
+                }, 0) / threatSurfaces.length
+              : 0;
+            const mitigatedCount = threatSurfaces.filter(ts => {
+              const v = ts.threat_vectors?.find((tv: any) => tv.vector === vector);
+              return v?.mitigated;
+            }).length;
+
+            return (
+              <div key={vector} className="bg-slate-900/50 border border-slate-700/30 rounded-lg p-3">
+                <div className="text-xs text-slate-200 font-medium mb-2 capitalize">{vector.replace('_', ' ')}</div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${avgRisk > 50 ? 'bg-red-400' : avgRisk > 30 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                      style={{ width: `${avgRisk}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-mono text-slate-300">{avgRisk.toFixed(0)}</span>
+                </div>
+                <div className="text-xs text-slate-500">
+                  Mitigated: <span className="text-emerald-300">{mitigatedCount}/{threatSurfaces.length}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
