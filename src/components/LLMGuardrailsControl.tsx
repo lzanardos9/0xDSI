@@ -11,7 +11,8 @@ import PromptScanner from './guardrails/PromptScanner';
 import PIIRedactionEngine from './guardrails/PIIRedactionEngine';
 import TokenBudgetControls from './guardrails/TokenBudgetControls';
 import ModelAccessGovernance from './guardrails/ModelAccessGovernance';
-import AIGatewayControlPlane from './guardrails/AIGatewayControlPlane';
+import GatewayInteractiveWrapper from './GatewayInteractiveWrapper';
+import GatewayDrilldownPanel from './GatewayDrilldownPanel';
 
 type TabId = 'gateway' | 'dashboard' | 'policies' | 'scanner' | 'pii' | 'budgets' | 'models';
 
@@ -36,6 +37,7 @@ const TABS: TabConfig[] = [
 
 const LLMGuardrailsControl = () => {
   const [activeTab, setActiveTab] = useState<TabId>('gateway');
+  const [drilldown, setDrilldown] = useState<{ type: string; item: any } | null>(null);
   const [headerStats, setHeaderStats] = useState({
     activePolicies: 0,
     blockedToday: 0,
@@ -165,7 +167,7 @@ const LLMGuardrailsControl = () => {
       {renderHeader()}
       {renderTabs()}
       <div className="min-h-[600px]">
-        {activeTab === 'gateway' && <AIGatewayControlPlane />}
+        {activeTab === 'gateway' && <GatewayInteractiveWrapper onDrilldown={(d) => setDrilldown(d)} />}
         {activeTab === 'dashboard' && <GuardrailsDashboard />}
         {activeTab === 'policies' && <PolicyManager />}
         {activeTab === 'scanner' && <PromptScanner />}
@@ -173,6 +175,7 @@ const LLMGuardrailsControl = () => {
         {activeTab === 'budgets' && <TokenBudgetControls />}
         {activeTab === 'models' && <ModelAccessGovernance />}
       </div>
+      <GatewayDrilldownPanel data={drilldown as any} onClose={() => setDrilldown(null)} />
     </div>
   );
 };
