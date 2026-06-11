@@ -73,6 +73,7 @@ import TrendEngineCET from './TrendEngineCET';
 import MCPRegistry from './MCPRegistry';
 import PhishingSimulator from './PhishingSimulator';
 import AttackUniverse from './AttackUniverse';
+import AgentControlPlane from './AgentControlPlane';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -86,7 +87,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'phishing'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'phishing' | 'agentcontrolplane'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -389,6 +390,7 @@ const Dashboard = () => {
       section: 'Administration',
       roles: ['admin', 'ciso'],
       items: [
+        { id: 'agentcontrolplane', label: 'Agent Control Plane', icon: Gauge },
         { id: 'multitenant', label: 'Multi-Tenant Manager', icon: Building2 },
         { id: 'usermanagement', label: 'Platform Users', icon: Users },
         { id: 'mcp', label: 'MCP Registry', icon: Layers },
@@ -1036,6 +1038,7 @@ const Dashboard = () => {
           {selectedView === 'sapconnector' && <SAPSecurityConnector />}
           {selectedView === 'reportbuilder' && <ReportBuilder />}
           {selectedView === 'platformeconomics' && <PlatformEconomics />}
+          {selectedView === 'agentcontrolplane' && <AgentControlPlane />}
           {selectedView === 'glasswing' && <GlasswingPanel />}
           {selectedView === 'negcorrelation' && (
             <div className="h-[calc(100vh-180px)] overflow-y-auto custom-scrollbar">
