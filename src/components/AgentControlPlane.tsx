@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Activity, Brain, Cpu, TrendingUp, AlertTriangle, CheckCircle, XCircle, Play, Pause, RotateCcw, Search, Send, ChevronRight, Zap, DollarSign, Clock, BarChart3, Eye, Lock, Unlock, ArrowUpRight, ArrowDownRight, Terminal, MessageSquare, Bot, Fingerprint, ShieldCheck, Users, Layers, RefreshCw, Network, GitBranch, ShieldAlert, Workflow } from 'lucide-react';
+import { Shield, Activity, Brain, Cpu, TrendingUp, AlertTriangle, CheckCircle, XCircle, Play, Pause, RotateCcw, Search, Send, ChevronRight, Zap, DollarSign, Clock, BarChart3, Eye, Lock, Unlock, ArrowUpRight, ArrowDownRight, Terminal, MessageSquare, Bot, Fingerprint, ShieldCheck, Users, Layers, RefreshCw, Network, GitBranch, ShieldAlert, Workflow, Store, Gauge, FileCheck, GraduationCap, Microscope, Radio, TrendingDown, ClipboardCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { AgentMarketplaceTab, AgentAutonomySimTab, AgentComplianceTab, AgentLearningTab } from './AgentControlPlaneSprint3';
+import { AgentForensicsTab, AgentFleetOrchTab, AgentDriftTab, AgentSLATab } from './AgentControlPlaneSprint4';
 
 interface AgentIdentity {
   id: string;
@@ -40,7 +42,7 @@ interface ConversationMessage {
   timestamp: Date;
 }
 
-type TabType = 'registry' | 'lifecycle' | 'commander' | 'economics' | 'trust' | 'permissions' | 'collaboration' | 'threatsurface';
+type TabType = 'registry' | 'lifecycle' | 'commander' | 'economics' | 'trust' | 'permissions' | 'collaboration' | 'threatsurface' | 'marketplace' | 'autonomy' | 'compliance' | 'learning' | 'forensics' | 'fleet' | 'drift' | 'sla';
 
 export default function AgentControlPlane() {
   const [activeTab, setActiveTab] = useState<TabType>('registry');
@@ -146,6 +148,14 @@ export default function AgentControlPlane() {
     { id: 'threatsurface', label: 'Threat Surface', icon: ShieldAlert },
     { id: 'commander', label: 'SOC Commander', icon: Terminal },
     { id: 'economics', label: 'Economics', icon: DollarSign },
+    { id: 'marketplace', label: 'Marketplace', icon: Store },
+    { id: 'autonomy', label: 'Autonomy Sim', icon: Gauge },
+    { id: 'compliance', label: 'Compliance', icon: FileCheck },
+    { id: 'learning', label: 'Learning', icon: GraduationCap },
+    { id: 'forensics', label: 'Forensics', icon: Microscope },
+    { id: 'fleet', label: 'Fleet Orch.', icon: Radio },
+    { id: 'drift', label: 'Drift Detection', icon: TrendingDown },
+    { id: 'sla', label: 'SLA Mgmt', icon: ClipboardCheck },
   ];
 
   const getHealthColor = (status: string) => {
@@ -308,6 +318,30 @@ export default function AgentControlPlane() {
         )}
         {activeTab === 'threatsurface' && (
           <AgentThreatSurfaceTab agents={agents} />
+        )}
+        {activeTab === 'marketplace' && (
+          <AgentMarketplaceTab />
+        )}
+        {activeTab === 'autonomy' && (
+          <AgentAutonomySimTab />
+        )}
+        {activeTab === 'compliance' && (
+          <AgentComplianceTab />
+        )}
+        {activeTab === 'learning' && (
+          <AgentLearningTab />
+        )}
+        {activeTab === 'forensics' && (
+          <AgentForensicsTab />
+        )}
+        {activeTab === 'fleet' && (
+          <AgentFleetOrchTab />
+        )}
+        {activeTab === 'drift' && (
+          <AgentDriftTab />
+        )}
+        {activeTab === 'sla' && (
+          <AgentSLATab />
         )}
       </div>
     </div>
