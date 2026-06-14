@@ -154,7 +154,7 @@ export function AgentAutonomySimTab() {
             </div>
             <p className="text-[11px] text-slate-400 mb-2">{sim.scenario_description || 'Autonomy boundary simulation'}</p>
             <div className="flex items-center gap-4 text-[10px] text-slate-500">
-              <span>Blast Radius: <span className="text-slate-300">{sim.blast_radius || 'contained'}</span></span>
+              <span>Blast Radius: <span className="text-slate-300">{typeof sim.blast_radius === 'object' ? Object.entries(sim.blast_radius || {}).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(', ') || 'contained' : (sim.blast_radius || 'contained')}</span></span>
               <span>Duration: <span className="text-slate-300">{sim.duration_ms ? `${sim.duration_ms}ms` : 'N/A'}</span></span>
               <span>Outcome: <span className={sim.outcome === 'passed' ? 'text-emerald-400' : sim.outcome === 'failed' ? 'text-red-400' : 'text-slate-300'}>{sim.outcome || 'pending'}</span></span>
             </div>
