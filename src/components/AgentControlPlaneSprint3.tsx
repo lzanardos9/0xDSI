@@ -289,11 +289,11 @@ export function AgentLearningTab() {
         </div>
         <div className="bg-slate-800/40 border border-slate-700/30 rounded p-3">
           <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Avg Accuracy</div>
-          <div className="text-lg font-bold text-emerald-400">{metrics.length ? (metrics.reduce((s, m) => s + (m.accuracy || 0), 0) / metrics.length * 100).toFixed(1) : '0'}%</div>
+          <div className="text-lg font-bold text-emerald-400">{metrics.length ? (metrics.reduce((s, m) => s + (m.accuracy || 0), 0) / metrics.length).toFixed(1) : '0'}%</div>
         </div>
         <div className="bg-slate-800/40 border border-slate-700/30 rounded p-3">
           <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Avg F1 Score</div>
-          <div className="text-lg font-bold text-blue-400">{metrics.length ? (metrics.reduce((s, m) => s + (m.f1_score || 0), 0) / metrics.length * 100).toFixed(1) : '0'}%</div>
+          <div className="text-lg font-bold text-blue-400">{metrics.length ? (metrics.reduce((s, m) => s + (m.f1_score || 0), 0) / metrics.length).toFixed(1) : '0'}%</div>
         </div>
         <div className="bg-slate-800/40 border border-slate-700/30 rounded p-3">
           <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Patterns Learned</div>
@@ -314,19 +314,19 @@ export function AgentLearningTab() {
             <div className="grid grid-cols-6 gap-3 text-[10px]">
               <div>
                 <span className="text-slate-500">Accuracy</span>
-                <div className="text-slate-200 font-medium">{((metric.accuracy || 0) * 100).toFixed(1)}%</div>
+                <div className="text-slate-200 font-medium">{(metric.accuracy || 0).toFixed(1)}%</div>
               </div>
               <div>
                 <span className="text-slate-500">Precision</span>
-                <div className="text-slate-200 font-medium">{((metric.precision_score || 0) * 100).toFixed(1)}%</div>
+                <div className="text-slate-200 font-medium">{(metric.precision_score || 0).toFixed(1)}%</div>
               </div>
               <div>
                 <span className="text-slate-500">Recall</span>
-                <div className="text-slate-200 font-medium">{((metric.recall_score || 0) * 100).toFixed(1)}%</div>
+                <div className="text-slate-200 font-medium">{(metric.recall_score || 0).toFixed(1)}%</div>
               </div>
               <div>
                 <span className="text-slate-500">F1</span>
-                <div className="text-slate-200 font-medium">{((metric.f1_score || 0) * 100).toFixed(1)}%</div>
+                <div className="text-slate-200 font-medium">{(metric.f1_score || 0).toFixed(1)}%</div>
               </div>
               <div>
                 <span className="text-slate-500">Patterns</span>
@@ -334,7 +334,7 @@ export function AgentLearningTab() {
               </div>
               <div>
                 <span className="text-slate-500">Drift</span>
-                <div className={`font-medium ${(metric.drift_score || 0) > 0.3 ? 'text-red-400' : (metric.drift_score || 0) > 0.15 ? 'text-amber-400' : 'text-emerald-400'}`}>{((metric.drift_score || 0) * 100).toFixed(1)}%</div>
+                <div className={`font-medium ${(metric.drift_score || 0) > 3 ? 'text-red-400' : (metric.drift_score || 0) > 1.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{(metric.drift_score || 0).toFixed(2)}%</div>
               </div>
             </div>
           </div>
