@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Activity, Brain, Cpu, TrendingUp, AlertTriangle, CheckCircle, XCircle, Play, Pause, RotateCcw, Search, Send, ChevronRight, Zap, DollarSign, Clock, BarChart3, Eye, Lock, Unlock, ArrowUpRight, ArrowDownRight, Terminal, MessageSquare, Bot, Fingerprint, ShieldCheck, Users, Layers, RefreshCw, Network, GitBranch, ShieldAlert, Workflow, Store, Gauge, FileCheck, GraduationCap, Microscope, Radio, TrendingDown, ClipboardCheck } from 'lucide-react';
+import { Shield, Activity, Brain, Cpu, TrendingUp, AlertTriangle, CheckCircle, XCircle, Play, Pause, RotateCcw, Search, Send, ChevronRight, Zap, DollarSign, Clock, BarChart3, Eye, Lock, Unlock, ArrowUpRight, ArrowDownRight, Terminal, MessageSquare, Bot, Fingerprint, ShieldCheck, Users, Layers, RefreshCw, Network, GitBranch, ShieldAlert, Workflow, Store, Gauge, FileCheck, GraduationCap, Microscope, Radio, TrendingDown, ClipboardCheck, Globe } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { AgentMarketplaceTab, AgentAutonomySimTab, AgentComplianceTab, AgentLearningTab } from './AgentControlPlaneSprint3';
 import { AgentForensicsTab, AgentFleetOrchTab, AgentDriftTab, AgentSLATab } from './AgentControlPlaneSprint4';
+import { OmnigentMetaHarnessTab } from './AgentControlPlaneSprint5';
 
 interface AgentIdentity {
   id: string;
@@ -42,7 +43,7 @@ interface ConversationMessage {
   timestamp: Date;
 }
 
-type TabType = 'registry' | 'lifecycle' | 'commander' | 'economics' | 'trust' | 'permissions' | 'collaboration' | 'threatsurface' | 'marketplace' | 'autonomy' | 'compliance' | 'learning' | 'forensics' | 'fleet' | 'drift' | 'sla';
+type TabType = 'registry' | 'lifecycle' | 'commander' | 'economics' | 'trust' | 'permissions' | 'collaboration' | 'threatsurface' | 'marketplace' | 'autonomy' | 'compliance' | 'learning' | 'forensics' | 'fleet' | 'drift' | 'sla' | 'omnigent';
 
 export default function AgentControlPlane() {
   const [activeTab, setActiveTab] = useState<TabType>('registry');
@@ -156,6 +157,7 @@ export default function AgentControlPlane() {
     { id: 'fleet', label: 'Fleet Orch.', icon: Radio },
     { id: 'drift', label: 'Drift Detection', icon: TrendingDown },
     { id: 'sla', label: 'SLA Mgmt', icon: ClipboardCheck },
+    { id: 'omnigent', label: 'Omnigent', icon: Globe },
   ];
 
   const getHealthColor = (status: string) => {
@@ -252,22 +254,26 @@ export default function AgentControlPlane() {
         </div>
       </div>
 
-      {/* Tab Bar */}
-      <div className="flex gap-1 mb-4 bg-slate-800/30 p-1 rounded-lg border border-slate-700/30">
+      {/* Tab Bar - scrollable */}
+      <div className="mb-4 overflow-x-auto bg-slate-800/30 p-1 rounded-lg border border-slate-700/30 no-scrollbar" style={{ scrollbarWidth: 'thin' }}>
+        <div className="flex gap-1 min-w-max">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
               activeTab === tab.id
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                ? tab.id === 'omnigent'
+                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                  : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30'
             }`}
           >
-            <tab.icon className="w-4 h-4" />
+            <tab.icon className="w-3.5 h-3.5" />
             {tab.label}
           </button>
         ))}
+        </div>
       </div>
 
       {/* Tab Content */}
@@ -342,6 +348,9 @@ export default function AgentControlPlane() {
         )}
         {activeTab === 'sla' && (
           <AgentSLATab />
+        )}
+        {activeTab === 'omnigent' && (
+          <OmnigentMetaHarnessTab agents={agents} />
         )}
       </div>
     </div>
