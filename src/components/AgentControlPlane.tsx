@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Activity, Brain, Cpu, TrendingUp, AlertTriangle, CheckCircle, XCircle, Play, Pause, RotateCcw, Search, Send, ChevronRight, Zap, DollarSign, Clock, BarChart3, Eye, Lock, Unlock, ArrowUpRight, ArrowDownRight, Terminal, MessageSquare, Bot, Fingerprint, ShieldCheck, Users, Layers, RefreshCw, Network, GitBranch, ShieldAlert, Workflow, Store, Gauge, FileCheck, GraduationCap, Microscope, Radio, TrendingDown, ClipboardCheck, Globe } from 'lucide-react';
+import { Shield, Activity, Brain, Cpu, TrendingUp, AlertTriangle, CheckCircle, XCircle, Play, Pause, RotateCcw, Search, Send, ChevronRight, Zap, DollarSign, Clock, BarChart3, Eye, Lock, Unlock, ArrowUpRight, ArrowDownRight, Terminal, MessageSquare, Bot, Fingerprint, ShieldCheck, Users, Layers, RefreshCw, Network, GitBranch, ShieldAlert, Workflow, Store, Gauge, FileCheck, GraduationCap, Microscope, Radio, TrendingDown, ClipboardCheck, Globe, UserPlus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { AgentMarketplaceTab, AgentAutonomySimTab, AgentComplianceTab, AgentLearningTab } from './AgentControlPlaneSprint3';
 import { AgentForensicsTab, AgentFleetOrchTab, AgentDriftTab, AgentSLATab } from './AgentControlPlaneSprint4';
 import { OmnigentMetaHarnessTab } from './AgentControlPlaneSprint5';
+import { AgentRegistrationCRUD } from './AgentRegistrationCRUD';
 
 interface AgentIdentity {
   id: string;
@@ -43,7 +44,7 @@ interface ConversationMessage {
   timestamp: Date;
 }
 
-type TabType = 'registry' | 'lifecycle' | 'commander' | 'economics' | 'trust' | 'permissions' | 'collaboration' | 'threatsurface' | 'marketplace' | 'autonomy' | 'compliance' | 'learning' | 'forensics' | 'fleet' | 'drift' | 'sla' | 'omnigent';
+type TabType = 'registry' | 'register' | 'lifecycle' | 'commander' | 'economics' | 'trust' | 'permissions' | 'collaboration' | 'threatsurface' | 'marketplace' | 'autonomy' | 'compliance' | 'learning' | 'forensics' | 'fleet' | 'drift' | 'sla' | 'omnigent';
 
 export default function AgentControlPlane() {
   const [activeTab, setActiveTab] = useState<TabType>('registry');
@@ -142,6 +143,7 @@ export default function AgentControlPlane() {
 
   const tabs: { id: TabType; label: string; icon: any }[] = [
     { id: 'registry', label: 'Agent Registry', icon: Fingerprint },
+    { id: 'register', label: 'Register Agent', icon: UserPlus },
     { id: 'lifecycle', label: 'Lifecycle & Governance', icon: ShieldCheck },
     { id: 'trust', label: 'Trust Intelligence', icon: Shield },
     { id: 'permissions', label: 'Permission Gov.', icon: Lock },
@@ -265,6 +267,8 @@ export default function AgentControlPlane() {
               activeTab === tab.id
                 ? tab.id === 'omnigent'
                   ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                  : tab.id === 'register'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                   : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/30'
             }`}
@@ -296,6 +300,9 @@ export default function AgentControlPlane() {
             getStateColor={getStateColor}
             getTrustColor={getTrustColor}
           />
+        )}
+        {activeTab === 'register' && (
+          <AgentRegistrationCRUD onAgentChange={loadAgents} />
         )}
         {activeTab === 'lifecycle' && (
           <AgentLifecycleTab agents={agents} getStateColor={getStateColor} getHealthColor={getHealthColor} />
