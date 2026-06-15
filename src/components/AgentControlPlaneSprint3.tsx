@@ -14,7 +14,7 @@ export function AgentMarketplaceTab() {
   }, []);
 
   const fetchListings = async () => {
-    const { data } = await supabase.from('agent_marketplace').select('*').order('downloads', { ascending: false });
+    const { data } = await supabase.from('agent_marketplace').select('*').order('download_count', { ascending: false });
     if (data) setListings(data);
     setLoading(false);
   };
@@ -22,7 +22,7 @@ export function AgentMarketplaceTab() {
   const categories = ['all', ...new Set(listings.map(l => l.category).filter(Boolean))];
   const filtered = listings.filter(l => {
     const matchCat = categoryFilter === 'all' || l.category === categoryFilter;
-    const matchSearch = !searchTerm || l.name?.toLowerCase().includes(searchTerm.toLowerCase()) || l.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchSearch = !searchTerm || l.display_name?.toLowerCase().includes(searchTerm.toLowerCase()) || l.short_description?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchCat && matchSearch;
   });
 
@@ -58,19 +58,21 @@ export function AgentMarketplaceTab() {
             >
               <div className="flex items-start justify-between mb-1">
                 <div>
-                  <span className="text-xs font-medium text-slate-200">{listing.name}</span>
+                  <span className="text-xs font-medium text-slate-200">{listing.display_name}</span>
                   <span className="ml-2 px-1.5 py-0.5 text-[10px] rounded bg-slate-700/50 text-slate-400">{listing.category}</span>
+                  {listing.is_featured && <span className="ml-1.5 px-1.5 py-0.5 text-[10px] rounded bg-amber-500/20 text-amber-300">Featured</span>}
                 </div>
                 <div className="flex items-center gap-1 text-amber-400">
                   <Star className="w-3 h-3 fill-current" />
-                  <span className="text-[10px]">{listing.rating?.toFixed(1) || 'N/A'}</span>
+                  <span className="text-[10px]">{listing.avg_rating?.toFixed(1) || 'N/A'}</span>
                 </div>
               </div>
-              <p className="text-[11px] text-slate-400 line-clamp-2 mb-2">{listing.description}</p>
+              <p className="text-[11px] text-slate-400 line-clamp-2 mb-2">{listing.short_description}</p>
               <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                <span className="flex items-center gap-1"><Download className="w-3 h-3" />{listing.downloads || 0}</span>
-                <span className="flex items-center gap-1"><Shield className="w-3 h-3" />{listing.verified ? 'Verified' : 'Unverified'}</span>
+                <span className="flex items-center gap-1"><Download className="w-3 h-3" />{listing.download_count || 0}</span>
+                <span className="flex items-center gap-1"><Shield className="w-3 h-3" />{listing.is_certified ? 'Certified' : 'Community'}</span>
                 <span>v{listing.version || '1.0.0'}</span>
+                <span className="text-slate-600">{listing.maturity_level}</span>
               </div>
             </div>
           ))}
@@ -79,20 +81,32 @@ export function AgentMarketplaceTab() {
       </div>
       {selectedListing && (
         <div className="w-80 bg-slate-800/30 border border-slate-700/30 rounded p-4 overflow-y-auto">
-          <h3 className="text-sm font-semibold text-slate-100 mb-1">{selectedListing.name}</h3>
+          <h3 className="text-sm font-semibold text-slate-100 mb-1">{selectedListing.display_name}</h3>
           <div className="flex items-center gap-2 mb-3">
             <span className="px-1.5 py-0.5 text-[10px] rounded bg-blue-500/20 text-blue-300">{selectedListing.category}</span>
-            {selectedListing.verified && <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-500/20 text-emerald-300 flex items-center gap-0.5"><CheckCircle className="w-2.5 h-2.5" />Verified</span>}
+            {selectedListing.is_certified && <span className="px-1.5 py-0.5 text-[10px] rounded bg-emerald-500/20 text-emerald-300 flex items-center gap-0.5"><CheckCircle className="w-2.5 h-2.5" />Certified</span>}
           </div>
-          <p className="text-xs text-slate-400 mb-4">{selectedListing.description}</p>
+          <p className="text-xs text-slate-400 mb-4">{selectedListing.long_description || selectedListing.short_description}</p>
           <div className="space-y-2 text-xs">
-            <div className="flex justify-between"><span className="text-slate-500">Author</span><span className="text-slate-300">{selectedListing.author || 'Unknown'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Publisher</span><span className="text-slate-300">{selectedListing.publisher || 'Unknown'}</span></div>
             <div className="flex justify-between"><span className="text-slate-500">Version</span><span className="text-slate-300">{selectedListing.version || '1.0.0'}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Downloads</span><span className="text-slate-300">{selectedListing.downloads || 0}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Rating</span><span className="text-amber-400 flex items-center gap-1"><Star className="w-3 h-3 fill-current" />{selectedListing.rating?.toFixed(1)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">License</span><span className="text-slate-300">{selectedListing.license || 'MIT'}</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Price</span><span className="text-emerald-400">{selectedListing.price ? `$${selectedListing.price}` : 'Free'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Downloads</span><span className="text-slate-300">{selectedListing.download_count || 0}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Rating</span><span className="text-amber-400 flex items-center gap-1"><Star className="w-3 h-3 fill-current" />{selectedListing.avg_rating?.toFixed(1)} ({selectedListing.total_ratings} reviews)</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Maturity</span><span className="text-slate-300">{selectedListing.maturity_level || 'beta'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Cost</span><span className="text-emerald-400">{selectedListing.estimated_cost_per_month ? `$${selectedListing.estimated_cost_per_month}/mo` : 'Free'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Setup Time</span><span className="text-slate-300">{selectedListing.setup_time_minutes || 5} min</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Min Autonomy</span><span className="text-slate-300">Level {selectedListing.min_autonomy_level || 1}</span></div>
           </div>
+          {selectedListing.capabilities && selectedListing.capabilities.length > 0 && (
+            <div className="mt-3">
+              <span className="text-[10px] text-slate-500 uppercase">Capabilities</span>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {selectedListing.capabilities.map((cap: string) => (
+                  <span key={cap} className="px-1.5 py-0.5 text-[10px] rounded bg-slate-700/50 text-slate-300">{cap}</span>
+                ))}
+              </div>
+            </div>
+          )}
           <button className="w-full mt-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded transition-colors">
             Deploy Agent
           </button>
@@ -152,11 +166,12 @@ export function AgentAutonomySimTab() {
                 Risk: {sim.risk_score || 0}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 mb-2">{sim.scenario_description || 'Autonomy boundary simulation'}</p>
+            <p className="text-[11px] text-slate-400 mb-2">{sim.simulation_name || 'Autonomy boundary simulation'}</p>
             <div className="flex items-center gap-4 text-[10px] text-slate-500">
               <span>Blast Radius: <span className="text-slate-300">{typeof sim.blast_radius === 'object' ? Object.entries(sim.blast_radius || {}).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(', ') || 'contained' : (sim.blast_radius || 'contained')}</span></span>
-              <span>Duration: <span className="text-slate-300">{sim.duration_ms ? `${sim.duration_ms}ms` : 'N/A'}</span></span>
-              <span>Outcome: <span className={sim.outcome === 'passed' ? 'text-emerald-400' : sim.outcome === 'failed' ? 'text-red-400' : 'text-slate-300'}>{sim.outcome || 'pending'}</span></span>
+              <span>Resolution: <span className="text-slate-300">{sim.time_to_resolution_minutes ? `${sim.time_to_resolution_minutes}m` : 'N/A'}</span></span>
+              <span>Outcome: <span className={sim.status === 'completed' ? 'text-emerald-400' : sim.status === 'failed' ? 'text-red-400' : 'text-slate-300'}>{sim.predicted_outcome || sim.status || 'pending'}</span></span>
+              <span>Guardrails: <span className="text-slate-300">{sim.guardrails_triggered ?? 0}</span></span>
             </div>
           </div>
         ))}
@@ -184,10 +199,10 @@ export function AgentComplianceTab() {
   const frameworks = ['all', ...new Set(mappings.map(m => m.framework).filter(Boolean))];
   const filtered = frameworkFilter === 'all' ? mappings : mappings.filter(m => m.framework === frameworkFilter);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'compliant': return <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />;
-      case 'non_compliant': return <XCircle className="w-3.5 h-3.5 text-red-400" />;
+  const getStatusIcon = (result: string) => {
+    switch (result) {
+      case 'pass': return <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />;
+      case 'fail': return <XCircle className="w-3.5 h-3.5 text-red-400" />;
       case 'partial': return <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />;
       default: return <AlertTriangle className="w-3.5 h-3.5 text-slate-400" />;
     }
@@ -206,9 +221,9 @@ export function AgentComplianceTab() {
           {frameworks.map(f => <option key={f} value={f}>{f === 'all' ? 'All Frameworks' : f}</option>)}
         </select>
         <div className="flex items-center gap-4 text-[10px] text-slate-500">
-          <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-400" />Compliant: {mappings.filter(m => m.status === 'compliant').length}</span>
-          <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3 text-amber-400" />Partial: {mappings.filter(m => m.status === 'partial').length}</span>
-          <span className="flex items-center gap-1"><XCircle className="w-3 h-3 text-red-400" />Non-compliant: {mappings.filter(m => m.status === 'non_compliant').length}</span>
+          <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3 text-emerald-400" />Pass: {mappings.filter(m => m.assessment_result === 'pass').length}</span>
+          <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3 text-amber-400" />Partial: {mappings.filter(m => m.assessment_result === 'partial').length}</span>
+          <span className="flex items-center gap-1"><XCircle className="w-3 h-3 text-red-400" />Fail: {mappings.filter(m => m.assessment_result === 'fail').length}</span>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -219,18 +234,25 @@ export function AgentComplianceTab() {
               <th className="text-left py-2 px-2 text-slate-500 font-medium">Framework</th>
               <th className="text-left py-2 px-2 text-slate-500 font-medium">Control ID</th>
               <th className="text-left py-2 px-2 text-slate-500 font-medium">Control Name</th>
-              <th className="text-left py-2 px-2 text-slate-500 font-medium">Evidence</th>
+              <th className="text-left py-2 px-2 text-slate-500 font-medium">Coverage</th>
               <th className="text-left py-2 px-2 text-slate-500 font-medium">Last Assessed</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map(mapping => (
               <tr key={mapping.id} className="border-b border-slate-800/30 hover:bg-slate-800/20">
-                <td className="py-2 px-2">{getStatusIcon(mapping.status)}</td>
+                <td className="py-2 px-2">{getStatusIcon(mapping.assessment_result)}</td>
                 <td className="py-2 px-2 text-slate-300">{mapping.framework}</td>
                 <td className="py-2 px-2 text-slate-400 font-mono">{mapping.control_id}</td>
                 <td className="py-2 px-2 text-slate-300">{mapping.control_name}</td>
-                <td className="py-2 px-2 text-slate-400 max-w-[200px] truncate">{mapping.evidence || 'Pending'}</td>
+                <td className="py-2 px-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-16 h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${(mapping.coverage_percentage || 0) >= 90 ? 'bg-emerald-500' : (mapping.coverage_percentage || 0) >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${mapping.coverage_percentage || 0}%` }} />
+                    </div>
+                    <span className="text-slate-400">{mapping.coverage_percentage || 0}%</span>
+                  </div>
+                </td>
                 <td className="py-2 px-2 text-slate-500">{mapping.last_assessed_at ? new Date(mapping.last_assessed_at).toLocaleDateString() : '—'}</td>
               </tr>
             ))}
@@ -251,7 +273,7 @@ export function AgentLearningTab() {
   }, []);
 
   const fetchMetrics = async () => {
-    const { data } = await supabase.from('agent_learning_metrics').select('*, agent_identities(display_name, agent_slug)').order('recorded_at', { ascending: false });
+    const { data } = await supabase.from('agent_learning_metrics').select('*, agent_identities(display_name, agent_slug)').order('created_at', { ascending: false }).limit(50);
     if (data) setMetrics(data);
     setLoading(false);
   };
@@ -270,12 +292,12 @@ export function AgentLearningTab() {
           <div className="text-lg font-bold text-emerald-400">{metrics.length ? (metrics.reduce((s, m) => s + (m.accuracy || 0), 0) / metrics.length * 100).toFixed(1) : '0'}%</div>
         </div>
         <div className="bg-slate-800/40 border border-slate-700/30 rounded p-3">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Training Cycles</div>
-          <div className="text-lg font-bold text-blue-400">{metrics.reduce((s, m) => s + (m.training_cycles || 0), 0)}</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Avg F1 Score</div>
+          <div className="text-lg font-bold text-blue-400">{metrics.length ? (metrics.reduce((s, m) => s + (m.f1_score || 0), 0) / metrics.length * 100).toFixed(1) : '0'}%</div>
         </div>
         <div className="bg-slate-800/40 border border-slate-700/30 rounded p-3">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Models Updated</div>
-          <div className="text-lg font-bold text-cyan-400">{metrics.filter(m => m.model_updated).length}</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Patterns Learned</div>
+          <div className="text-lg font-bold text-cyan-400">{metrics.reduce((s, m) => s + (m.patterns_learned || 0), 0).toLocaleString()}</div>
         </div>
       </div>
       <div className="space-y-2">
@@ -285,30 +307,34 @@ export function AgentLearningTab() {
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
                 <span className="text-xs font-medium text-slate-200">{metric.agent_identities?.display_name || metric.agent_id?.slice(0, 8)}</span>
-                <span className="px-1.5 py-0.5 text-[10px] rounded bg-slate-700/50 text-slate-400">{metric.model_type || 'neural'}</span>
+                <span className="px-1.5 py-0.5 text-[10px] rounded bg-slate-700/50 text-slate-400">{metric.model_version || 'v1'}</span>
               </div>
-              <span className="text-[10px] text-slate-500">{metric.recorded_at ? new Date(metric.recorded_at).toLocaleString() : ''}</span>
+              <span className="text-[10px] text-slate-500">{metric.metric_date || ''}</span>
             </div>
-            <div className="grid grid-cols-5 gap-3 text-[10px]">
+            <div className="grid grid-cols-6 gap-3 text-[10px]">
               <div>
                 <span className="text-slate-500">Accuracy</span>
                 <div className="text-slate-200 font-medium">{((metric.accuracy || 0) * 100).toFixed(1)}%</div>
               </div>
               <div>
-                <span className="text-slate-500">Loss</span>
-                <div className="text-slate-200 font-medium">{(metric.loss || 0).toFixed(4)}</div>
+                <span className="text-slate-500">Precision</span>
+                <div className="text-slate-200 font-medium">{((metric.precision_score || 0) * 100).toFixed(1)}%</div>
               </div>
               <div>
-                <span className="text-slate-500">Epochs</span>
-                <div className="text-slate-200 font-medium">{metric.training_cycles || 0}</div>
+                <span className="text-slate-500">Recall</span>
+                <div className="text-slate-200 font-medium">{((metric.recall_score || 0) * 100).toFixed(1)}%</div>
               </div>
               <div>
-                <span className="text-slate-500">Dataset Size</span>
-                <div className="text-slate-200 font-medium">{metric.dataset_size ? `${(metric.dataset_size / 1000).toFixed(1)}K` : 'N/A'}</div>
+                <span className="text-slate-500">F1</span>
+                <div className="text-slate-200 font-medium">{((metric.f1_score || 0) * 100).toFixed(1)}%</div>
               </div>
               <div>
-                <span className="text-slate-500">Updated</span>
-                <div className={metric.model_updated ? 'text-emerald-400 font-medium' : 'text-slate-400'}>{metric.model_updated ? 'Yes' : 'No'}</div>
+                <span className="text-slate-500">Patterns</span>
+                <div className="text-slate-200 font-medium">{metric.patterns_learned || 0}</div>
+              </div>
+              <div>
+                <span className="text-slate-500">Drift</span>
+                <div className={`font-medium ${(metric.drift_score || 0) > 0.3 ? 'text-red-400' : (metric.drift_score || 0) > 0.15 ? 'text-amber-400' : 'text-emerald-400'}`}>{((metric.drift_score || 0) * 100).toFixed(1)}%</div>
               </div>
             </div>
           </div>

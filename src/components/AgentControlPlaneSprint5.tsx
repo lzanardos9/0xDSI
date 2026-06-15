@@ -1,20 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Globe, Shield, Users, Lock, Activity, Layers, ArrowRight, RotateCcw, Bug } from 'lucide-react';
+import { Globe, Shield, Users, Lock, Activity, Layers, ArrowRight, RotateCcw, Bug, Zap } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-
-interface OmnigentSession { id: string; session_name: string; session_type: string; status: string; agents_composed: unknown; security_level: string; collaboration_mode: string; created_at: string; }
-interface OmnigentPolicy { id: string; policy_name: string; policy_type: string; scope: string; enforcement_level: string; is_active: boolean; }
-interface OmnigentPeerReview { id: string; reviewer_agent: string; target_agent: string; review_type: string; verdict: string; confidence_score: number; }
-interface OmnigentDetonation { id: string; detonation_name: string; target_agent: string; sandbox_type: string; status: string; blast_radius_max: string; blast_radius_current: unknown; findings_count: number; risk_score: number; }
 
 type SubView = 'fusion' | 'detonation' | 'policy' | 'peerreview' | 'replay';
 
 export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
   const [subView, setSubView] = useState<SubView>('fusion');
-  const [sessions, setSessions] = useState<OmnigentSession[]>([]);
-  const [policies, setPolicies] = useState<OmnigentPolicy[]>([]);
-  const [reviews, setReviews] = useState<OmnigentPeerReview[]>([]);
-  const [detonations, setDetonations] = useState<OmnigentDetonation[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [policies, setPolicies] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [detonations, setDetonations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { fetchData(); }, []);
@@ -23,9 +18,9 @@ export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
     setLoading(true);
     const [a, b, c, d] = await Promise.all([
       supabase.from('omnigent_sessions').select('*').order('created_at', { ascending: false }).limit(10),
-      supabase.from('omnigent_policies').select('*').order('policy_name'),
+      supabase.from('omnigent_policies').select('*').order('priority', { ascending: true }),
       supabase.from('omnigent_peer_reviews').select('*').order('created_at', { ascending: false }).limit(10),
-      supabase.from('omnigent_detonations').select('*').order('started_at', { ascending: false }).limit(10),
+      supabase.from('omnigent_detonations').select('*').order('created_at', { ascending: false }).limit(10),
     ]);
     if (a.data) setSessions(a.data);
     if (b.data) setPolicies(b.data);
@@ -42,8 +37,8 @@ export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
     { id: 'replay', label: 'Temporal Replay', icon: RotateCcw },
   ];
 
-  function renderField(val: unknown): string {
-    if (Array.isArray(val)) return val.join(', ');
+  function renderAgents(val: unknown): string {
+    if (Array.isArray(val)) return val.map(a => typeof a === 'object' ? (a as any).slug || (a as any).name || JSON.stringify(a) : a).join(', ');
     if (typeof val === 'string') return val;
     if (typeof val === 'object' && val !== null) return JSON.stringify(val);
     return String(val ?? '-');
@@ -63,7 +58,6 @@ export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
         </button>
       </div>
 
-      {/* Sub-navigation tabs */}
       <div className="flex gap-1 bg-slate-800/40 p-1 rounded-lg border border-slate-700/30 overflow-x-auto">
         {subViews.map(sv => (
           <button
@@ -101,15 +95,23 @@ export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
                       s.status === 'active' ? 'bg-emerald-500/20 text-emerald-300' :
                       s.status === 'composing' ? 'bg-blue-500/20 text-blue-300' :
                       s.status === 'paused' ? 'bg-amber-500/20 text-amber-300' :
+                      s.status === 'completed' ? 'bg-slate-600/50 text-slate-400' :
                       'bg-slate-600/50 text-slate-400'
                     }`}>{s.status}</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 text-[10px] text-slate-400">
                     <span className="flex items-center gap-1"><Layers className="w-3 h-3" />{s.session_type}</span>
-                    <span className="flex items-center gap-1"><Lock className="w-3 h-3" />{s.security_level}</span>
-                    <span className="flex items-center gap-1"><Users className="w-3 h-3" />{s.collaboration_mode}</span>
+                    <span className="flex items-center gap-1"><Lock className="w-3 h-3" />Trust L{s.trust_gate_level || '?'}</span>
+                    <span className="flex items-center gap-1"><Zap className="w-3 h-3" />{s.sandbox_provider || 'default'}</span>
+                    {s.total_cost_usd && <span className="text-emerald-400">${Number(s.total_cost_usd).toFixed(2)}</span>}
+                    {s.token_count && <span>{Number(s.token_count).toLocaleString()} tokens</span>}
                   </div>
-                  <div className="mt-2 text-[10px] text-slate-500">Agents: {renderField(s.agents_composed)}</div>
+                  <div className="mt-2 text-[10px] text-slate-500">
+                    Agents: {renderAgents(s.agents_composed)}
+                  </div>
+                  {s.policy_violations > 0 && (
+                    <div className="mt-1 text-[10px] text-red-400">Policy violations: {s.policy_violations}</div>
+                  )}
                 </div>
               ))}
             </div>
@@ -123,25 +125,32 @@ export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
               ) : detonations.map(d => (
                 <div key={d.id} className="bg-slate-800/30 border border-slate-700/30 rounded p-3">
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-semibold text-slate-200">{d.detonation_name}</h4>
+                    <h4 className="text-xs font-semibold text-slate-200">{d.scenario_name}</h4>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-slate-400">Risk: {d.risk_score}/100</span>
+                      <span className="text-[10px] text-slate-400">Autonomy L{d.autonomy_level_tested}</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded ${
-                        d.status === 'running' ? 'bg-orange-500/20 text-orange-300' :
-                        d.status === 'completed' ? 'bg-emerald-500/20 text-emerald-300' :
-                        d.status === 'contained' ? 'bg-blue-500/20 text-blue-300' :
-                        'bg-slate-600/50 text-slate-400'
-                      }`}>{d.status}</span>
+                        d.passed === true ? 'bg-emerald-500/20 text-emerald-300' :
+                        d.passed === false ? 'bg-red-500/20 text-red-300' :
+                        'bg-amber-500/20 text-amber-300'
+                      }`}>{d.passed === true ? 'PASSED' : d.passed === false ? 'FAILED' : 'RUNNING'}</span>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-3 text-[10px] text-slate-400">
-                    <span>Target: {d.target_agent}</span>
-                    <span>Sandbox: {d.sandbox_type}</span>
-                    <span>Max blast: {d.blast_radius_max}</span>
-                    <span>Findings: {d.findings_count}</span>
+                    <span>Agent: <span className="text-teal-300">{d.agent_under_test}</span></span>
+                    <span>Sandbox: {d.sandbox_provider}</span>
+                    <span>Type: {d.scenario_type}</span>
+                    <span>Duration: {d.duration_seconds ? `${d.duration_seconds}s` : 'active'}</span>
                   </div>
-                  {d.blast_radius_current && (
-                    <div className="mt-2 text-[10px] text-slate-500">Current radius: {renderField(d.blast_radius_current)}</div>
+                  {d.kill_switch_triggered && (
+                    <div className="mt-1.5 text-[10px] text-red-400 flex items-center gap-1">
+                      <Shield className="w-3 h-3" /> Kill switch activated
+                    </div>
+                  )}
+                  {d.drift_from_baseline && (
+                    <div className="mt-1 text-[10px] text-slate-500">Drift from baseline: <span className={Number(d.drift_from_baseline) > 20 ? 'text-red-400' : 'text-amber-400'}>{Number(d.drift_from_baseline).toFixed(1)}%</span></div>
+                  )}
+                  {d.trust_score_delta && (
+                    <div className="mt-0.5 text-[10px] text-slate-500">Trust delta: <span className={Number(d.trust_score_delta) < 0 ? 'text-red-400' : 'text-emerald-400'}>{Number(d.trust_score_delta) > 0 ? '+' : ''}{Number(d.trust_score_delta).toFixed(1)}</span></div>
                   )}
                 </div>
               ))}
@@ -155,13 +164,20 @@ export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
                 <div className="text-center py-8 text-xs text-slate-500">No policies configured. Define guardrails for inter-agent communication.</div>
               ) : policies.map(p => (
                 <div key={p.id} className="bg-slate-800/30 border border-slate-700/30 rounded p-3 flex items-center justify-between">
-                  <div>
-                    <h4 className="text-xs font-medium text-slate-200">{p.policy_name}</h4>
-                    <div className="flex gap-3 text-[10px] text-slate-400 mt-1">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="text-xs font-medium text-slate-200">{p.policy_name}</h4>
+                      <span className="px-1.5 py-0.5 text-[10px] rounded bg-slate-700/50 text-slate-400">P{p.priority || 0}</span>
+                    </div>
+                    <div className="flex gap-3 text-[10px] text-slate-400">
                       <span>{p.policy_type}</span>
                       <span>Scope: {p.scope}</span>
-                      <span>Enforcement: {p.enforcement_level}</span>
+                      <span>Handler: {p.handler || '—'}</span>
+                      {p.violations_count > 0 && <span className="text-red-400">{p.violations_count} violations</span>}
                     </div>
+                    {p.trigger_condition && (
+                      <div className="mt-1 text-[10px] text-slate-500">Trigger: {p.trigger_condition}</div>
+                    )}
                   </div>
                   <span className={`text-[10px] px-2 py-0.5 rounded ${p.is_active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-600/50 text-slate-400'}`}>
                     {p.is_active ? 'Active' : 'Inactive'}
@@ -180,21 +196,28 @@ export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
                 <div key={r.id} className="bg-slate-800/30 border border-slate-700/30 rounded p-3">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono text-teal-400">{r.reviewer_agent}</span>
+                      <span className="text-[10px] font-mono text-teal-400">{r.reviewer_agent_slug}</span>
                       <ArrowRight className="w-3 h-3 text-slate-500" />
-                      <span className="text-[10px] font-mono text-cyan-400">{r.target_agent}</span>
+                      <span className="text-[10px] font-mono text-cyan-400">{r.author_agent_slug}</span>
                     </div>
                     <span className={`text-[10px] px-2 py-0.5 rounded ${
                       r.verdict === 'approved' ? 'bg-emerald-500/20 text-emerald-300' :
                       r.verdict === 'rejected' ? 'bg-red-500/20 text-red-300' :
                       r.verdict === 'needs_revision' ? 'bg-amber-500/20 text-amber-300' :
+                      r.verdict === 'escalated' ? 'bg-orange-500/20 text-orange-300' :
                       'bg-slate-600/50 text-slate-400'
-                    }`}>{r.verdict}</span>
+                    }`}>{r.verdict || 'pending'}</span>
                   </div>
+                  <p className="text-[11px] text-slate-300 mb-2">{r.finding_summary}</p>
                   <div className="flex gap-3 text-[10px] text-slate-400">
-                    <span>{r.review_type}</span>
-                    <span>Confidence: {(r.confidence_score * 100).toFixed(0)}%</span>
+                    <span>{r.finding_type}</span>
+                    <span>Severity: <span className={r.severity === 'critical' ? 'text-red-400' : r.severity === 'high' ? 'text-orange-400' : 'text-slate-300'}>{r.severity}</span></span>
+                    <span>Consensus: {r.consensus_score ? `${(Number(r.consensus_score) * 100).toFixed(0)}%` : '—'}</span>
+                    {r.escalated_to_human && <span className="text-orange-400">Escalated</span>}
                   </div>
+                  {r.review_reasoning && (
+                    <p className="text-[10px] text-slate-500 mt-1.5 italic">{r.review_reasoning}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -208,9 +231,17 @@ export function OmnigentMetaHarnessTab({ agents }: { agents?: unknown[] }) {
               <div className="space-y-2">
                 {sessions.length === 0 ? (
                   <p className="text-xs text-slate-500">No sessions available for replay</p>
-                ) : sessions.slice(0, 4).map(s => (
-                  <button key={s.id} className="w-full text-left px-3 py-2 rounded bg-slate-700/30 hover:bg-slate-700/50 transition-colors text-xs text-slate-300">
-                    {s.session_name} - {s.status} ({new Date(s.created_at).toLocaleDateString()})
+                ) : sessions.slice(0, 5).map(s => (
+                  <button key={s.id} className="w-full text-left px-3 py-2.5 rounded bg-slate-700/30 hover:bg-slate-700/50 transition-colors">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-300">{s.session_name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${s.status === 'active' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-600/50 text-slate-400'}`}>{s.status}</span>
+                    </div>
+                    <div className="flex gap-3 mt-1 text-[10px] text-slate-500">
+                      <span>{s.session_type}</span>
+                      <span>{s.duration_seconds ? `${s.duration_seconds}s` : 'ongoing'}</span>
+                      <span>{s.created_at ? new Date(s.created_at).toLocaleDateString() : ''}</span>
+                    </div>
                   </button>
                 ))}
               </div>
