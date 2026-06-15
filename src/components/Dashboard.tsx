@@ -424,8 +424,8 @@ const Dashboard = () => {
         <div className="flex items-center justify-between px-5 py-5 border-b border-slate-800/40 flex-shrink-0">
           {sidebarOpen ? (
             <div className="flex items-center space-x-3">
-              <div className="relative">
-                <img src="/Databricks-Emblem.png" alt="0xDSI logo" className="w-9 h-9 rounded" />
+              <div className="relative flex items-center">
+                <img src="/Databricks-Emblem.png" alt="0xDSI logo" className="h-8 w-auto object-contain" />
                 <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#0C1222]" />
               </div>
               <div>
@@ -434,8 +434,8 @@ const Dashboard = () => {
               </div>
             </div>
           ) : (
-            <div className="relative mx-auto">
-              <img src="/Databricks-Emblem.png" alt="0xDSI logo" className="w-9 h-9 rounded" />
+            <div className="relative mx-auto flex items-center justify-center">
+              <img src="/Databricks-Emblem.png" alt="0xDSI logo" className="h-8 w-auto object-contain" />
               <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#0C1222]" />
             </div>
           )}

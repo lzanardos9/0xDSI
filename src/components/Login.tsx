@@ -257,7 +257,7 @@ const Login = () => {
       <div className="w-full max-w-5xl relative">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <img src="/Databricks-Emblem.png" alt="0xDSI" className="h-16 rounded-lg" />
+            <img src="/Databricks-Emblem.png" alt="0xDSI" className="h-16 w-auto object-contain" />
           </div>
           <h1 className="text-4xl font-bold text-white mb-2">0xDSI - Databricks SOC Intelligence</h1>
           <p className="text-slate-400">Three-Factor Authentication Required</p>
