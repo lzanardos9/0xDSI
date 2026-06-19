@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Radio, Server, RefreshCw, Plus, Terminal, Copy, CheckCircle2, AlertTriangle, XCircle, Cpu, Activity, HardDrive, Clock, Zap, Shield, Download, Trash2 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 interface Deployment {
   deployment_id: string;
@@ -167,12 +168,43 @@ export default function EdgeDeploymentsTab() {
   const fetchFleet = useCallback(async () => {
     setLoading(true);
     try {
-      const resp = await fetch(`${BACKEND_URL}/edge-connectors/fleet`);
-      if (resp.ok) {
-        const data = await resp.json();
-        setDeployments(data.deployments || []);
-        setStats(data.stats || MOCK_STATS);
-        setTotalEps(data.total_eps || 0);
+      const { data: dbDeployments } = await supabase
+        .from('edge_deployments')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (dbDeployments && dbDeployments.length > 0) {
+        const mapped: Deployment[] = dbDeployments.map(d => ({
+          deployment_id: d.id,
+          collector_id: d.agent_id,
+          dna_name: d.agent_name,
+          dna_version: d.version,
+          hostname: d.hostname || d.agent_id,
+          ip_address: d.ip_address || '0.0.0.0',
+          os_type: d.arch || 'x86_64-linux',
+          actual_state: d.status === 'running' ? 'running' : d.status === 'degraded' ? 'degraded' : d.status === 'offline' ? 'dead' : 'stopped',
+          desired_state: 'running',
+          binary_version: d.version,
+          site_name: d.site,
+          registered_at: d.created_at,
+          events_per_second: d.events_collected ? Math.round(d.events_collected / Math.max(d.uptime_secs || 1, 1)) : null,
+          bytes_per_second: null,
+          error_count: null,
+          buffer_usage_pct: d.buffer_usage_mb ? Math.round((d.buffer_usage_mb / 512) * 100) : null,
+          uptime_seconds: d.uptime_secs,
+          cpu_percent: d.cpu_percent,
+          memory_mb: d.memory_mb,
+          latency_ms: null,
+          connection_status: d.status,
+          last_heartbeat: d.last_heartbeat,
+        }));
+        setDeployments(mapped);
+        const running = mapped.filter(d => d.actual_state === 'running').length;
+        const degraded = mapped.filter(d => d.actual_state === 'degraded').length;
+        const dead = mapped.filter(d => d.actual_state === 'dead').length;
+        const stopped = mapped.filter(d => d.actual_state === 'stopped').length;
+        setStats({ total: mapped.length, running, degraded, dead, stopped });
+        setTotalEps(mapped.reduce((s, d) => s + (d.events_per_second || 0), 0));
         setLoading(false);
         return;
       }
@@ -204,14 +236,20 @@ export default function EdgeDeploymentsTab() {
     if (!selectedDna) return;
     setGenerating(true);
     try {
-      const resp = await fetch(`${BACKEND_URL}/edge-connectors/generate-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dna_name: selectedDna, site_name: siteName || 'default' }),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        setInstallCommands(data.install_commands);
+      const { data } = await supabase
+        .from('edge_install_tokens')
+        .insert({ site: siteName || 'default', arch: 'x86_64-linux', connectors: [selectedDna] })
+        .select()
+        .single();
+
+      if (data) {
+        const token = data.token;
+        setInstallCommands({
+          linux: `curl -sSL https://get.0xdsi.io/edge | bash -s -- --token ${token} --site ${siteName || 'default'}`,
+          docker: `docker run -d --name 0xdsi-edge --network host -e INSTALL_TOKEN=${token} -e SITE=${siteName || 'default'} -v /etc/0xdsi:/etc/0xdsi -v /var/lib/0xdsi:/var/lib/0xdsi ghcr.io/0xdsi/edge-collector:0.4.2`,
+          kubernetes: `helm install 0xdsi-edge oci://ghcr.io/0xdsi/charts/edge-collector --set installToken=${token} --set site=${siteName || 'default'}`,
+          windows: `iwr -useb https://get.0xdsi.io/edge.ps1 | iex; Install-0xDSIEdge -Token "${token}" -Site "${siteName || 'default'}"`,
+        });
       }
     } catch {}
     setGenerating(false);

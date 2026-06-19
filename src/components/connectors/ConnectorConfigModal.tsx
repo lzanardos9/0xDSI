@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Settings, Shield, Activity, Clock, CheckCircle, AlertTriangle, Play, Pause, RotateCcw, Save, Trash2, Globe, Lock, Server, Zap, Percent, AlertOctagon, Network, Radio, HardDrive, Bug, Gauge, Sparkles, Wifi, ArrowDownToLine } from 'lucide-react';
 import type { CatalogConnector } from '../../lib/connectorsCatalog';
+import { supabase } from '../../lib/supabase';
 
 const SAMPLING_PRIORITIES = [
   { id: 'high-severity', name: 'High Severity Events', description: 'Critical/High severity alerts, CVSS 7+, priority 1-2 events indicating active threats', icon: AlertTriangle, iconColor: 'text-red-400', iconBg: 'bg-red-500/20', activeBg: 'bg-red-500/5', activeBorder: 'border-red-500/40', examples: ['severity >= critical', 'CVSS >= 7.0'] },
@@ -20,19 +21,75 @@ const SAMPLING_PRIORITIES = [
 interface Props {
   connector: CatalogConnector;
   onClose: () => void;
+  deploymentId?: string;
 }
 
-export default function ConnectorConfigModal({ connector, onClose }: Props) {
+export default function ConnectorConfigModal({ connector, onClose, deploymentId }: Props) {
   const [activeSection, setActiveSection] = useState<'general' | 'auth' | 'ingestion' | 'eps' | 'edge' | 'parsing' | 'health'>('general');
   const [enabled, setEnabled] = useState(connector.status === 'connected');
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [deployments, setDeployments] = useState<Array<{id: string; agent_name: string; site: string}>>([]);
+  const [selectedDeployment, setSelectedDeployment] = useState(deploymentId || '');
+
+  // Editable config state
+  const [endpoint, setEndpoint] = useState('');
+  const [pollInterval, setPollInterval] = useState('60');
+  const [batchSize, setBatchSize] = useState('100');
+  const [maxRetries, setMaxRetries] = useState('3');
+  const [timeout, setTimeout_] = useState('30');
+  const [workers, setWorkers] = useState('2');
+  const [authMethod, setAuthMethod] = useState('api_key');
+  const [compression, setCompression] = useState('zstd');
+  const [queueStrategy, setQueueStrategy] = useState('persistent');
+  const [backpressure, setBackpressure] = useState('buffer');
+  const [bandwidthLimit, setBandwidthLimit] = useState('');
+  const [epsLimit, setEpsLimit] = useState('');
+
+  useEffect(() => {
+    supabase.from('edge_deployments').select('id, agent_name, site').eq('status', 'running').then(({ data }) => {
+      if (data) setDeployments(data);
+      if (data && data.length > 0 && !selectedDeployment) setSelectedDeployment(data[0].id);
+    });
+    const cfg = generateMockConfig(connector);
+    setEndpoint(cfg.endpoint);
+  }, []);
+
+  async function handleSave() {
+    if (!selectedDeployment) return;
+    setSaving(true);
+    const config = {
+      deployment_id: selectedDeployment,
+      connector_id: `${connector.id}-${Date.now().toString(36)}`,
+      connector_type: connector.id.replace(/-/g, '_'),
+      connector_name: connector.name,
+      vendor: connector.vendor,
+      category: connector.category,
+      enabled,
+      protocol: connector.protocol,
+      poll_interval_secs: parseInt(pollInterval) || 60,
+      batch_size: parseInt(batchSize) || 100,
+      max_retries: parseInt(maxRetries) || 3,
+      timeout_secs: parseInt(timeout) || 30,
+      workers: parseInt(workers) || 2,
+      auth_method: authMethod,
+      endpoint,
+      compression,
+      queue_strategy: queueStrategy,
+      backpressure_action: backpressure,
+      bandwidth_limit_mbps: bandwidthLimit ? parseFloat(bandwidthLimit) : null,
+      eps_limit: epsLimit ? parseInt(epsLimit) : null,
+      status: enabled ? 'active' : 'configured',
+    };
+    const { error } = await supabase.from('edge_connector_configs').insert(config);
+    setSaving(false);
+    if (!error) {
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
+    }
+  }
 
   const mockConfig = generateMockConfig(connector);
-
-  function handleSave() {
-    setSaving(true);
-    setTimeout(() => setSaving(false), 1200);
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -129,13 +186,23 @@ export default function ConnectorConfigModal({ connector, onClose }: Props) {
               <RotateCcw className="w-3 h-3" /> Reset Defaults
             </button>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <select value={selectedDeployment} onChange={e => setSelectedDeployment(e.target.value)} className="px-2 py-1.5 text-xs bg-slate-800 border border-slate-600 text-slate-300 rounded-lg">
+              <option value="">Deploy to...</option>
+              {deployments.map(d => <option key={d.id} value={d.id}>{d.agent_name} ({d.site})</option>)}
+            </select>
             <button onClick={onClose} className="px-4 py-1.5 text-xs text-slate-300 hover:bg-slate-700/50 rounded-lg border border-slate-600 transition-colors">
               Cancel
             </button>
-            <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-xs bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50">
-              <Save className="w-3 h-3" /> {saving ? 'Saving...' : 'Save Configuration'}
-            </button>
+            {saved ? (
+              <div className="px-4 py-1.5 text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg flex items-center gap-1.5">
+                <CheckCircle className="w-3 h-3" /> Saved to Edge
+              </div>
+            ) : (
+              <button onClick={handleSave} disabled={saving || !selectedDeployment} className="px-4 py-1.5 text-xs bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50">
+                <Save className="w-3 h-3" /> {saving ? 'Saving...' : 'Save Configuration'}
+              </button>
+            )}
           </div>
         </div>
       </div>
