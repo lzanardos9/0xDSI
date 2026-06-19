@@ -1,0 +1,15 @@
+[package]
+name = "oxdsi-parsers"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+oxdsi-core = { path = "../core" }
+oxdsi-ocsf = { path = "../ocsf" }
+serde.workspace = true
+serde_json.workspace = true
+nom.workspace = true
+bytes.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+chrono.workspace = true

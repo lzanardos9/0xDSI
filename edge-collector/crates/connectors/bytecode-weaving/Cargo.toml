@@ -1,0 +1,16 @@
+[package]
+name = "oxdsi-connector-bytecode-weaving"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+oxdsi-core = { path = "../../core" }
+oxdsi-ocsf = { path = "../../ocsf" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+chrono.workspace = true

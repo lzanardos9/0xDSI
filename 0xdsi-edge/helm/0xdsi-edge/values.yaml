@@ -1,0 +1,42 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/0xdsi/edge
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+resources:
+  limits:
+    cpu: "2"
+    memory: 128Mi
+  requests:
+    cpu: 250m
+    memory: 64Mi
+
+service:
+  type: ClusterIP
+  ports:
+    control: 9443
+    syslog_tcp: 514
+    syslog_tls: 6514
+    hec: 8088
+    netflow: 2055
+    snmp: 162
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+
+config:
+  transport: kafka
+  kafka:
+    brokers:
+      - "kafka:9092"
+    topic: "0xdsi-bronze-events"
+
+connectors: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

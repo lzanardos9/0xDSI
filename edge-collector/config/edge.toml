@@ -1,0 +1,275 @@
+# ============================================================================
+# 0xDSI Edge Collector - Default Configuration
+# Deploy to: /etc/0xdsi/edge.toml
+# ============================================================================
+
+[agent]
+id = "edge-001"
+name = "0xDSI Edge Collector"
+site = "datacenter-primary"
+log_level = "info"
+metrics_port = 9090
+health_port = 9091
+
+[transport]
+kind = "kafka"
+
+[transport.kafka]
+brokers = ["kafka-broker-1:9092", "kafka-broker-2:9092"]
+topic_prefix = "0xdsi.bronze"
+compression = "zstd"
+batch_size = 16384
+linger_ms = 100
+# sasl_mechanism = "PLAIN"
+# sasl_username = ""
+# sasl_password = ""
+
+# [transport.http]
+# endpoint = "https://your-databricks-workspace.cloud.databricks.com/api/2.0/serving-endpoints/ingest"
+# auth_token = "${DATABRICKS_TOKEN}"
+# batch_size = 1000
+# timeout_secs = 30
+
+[buffer]
+path = "/var/lib/0xdsi/buffer"
+max_size_mb = 1024
+flush_interval_secs = 5
+
+[control_plane]
+enabled = true
+grpc_endpoint = "https://control.0xdsi.io:443"
+heartbeat_secs = 30
+config_refresh_secs = 300
+
+[tls]
+skip_verify = false
+# ca_cert = "/etc/0xdsi/certs/ca.pem"
+# client_cert = "/etc/0xdsi/certs/client.pem"
+# client_key = "/etc/0xdsi/certs/client-key.pem"
+
+# ============================================================================
+# CONNECTORS - Enable the ones relevant to your environment
+# ============================================================================
+
+# ── SIEM ──
+[[connectors]]
+id = "splunk-hec-prod"
+connector_type = "splunk_enterprise"
+enabled = false
+protocol = "hec"
+poll_interval_secs = 10
+[connectors.params]
+hec_endpoint = "https://splunk.internal:8088"
+hec_token = "${SPLUNK_HEC_TOKEN}"
+index = "main"
+
+[[connectors]]
+id = "sentinel-prod"
+connector_type = "microsoft_sentinel"
+enabled = false
+protocol = "log_analytics_api"
+poll_interval_secs = 60
+[connectors.params]
+workspace_id = "${SENTINEL_WORKSPACE_ID}"
+tenant_id = "${AZURE_TENANT_ID}"
+client_id = "${AZURE_CLIENT_ID}"
+client_secret = "${AZURE_CLIENT_SECRET}"
+
+# ── Cloud AWS ──
+[[connectors]]
+id = "cloudtrail-prod"
+connector_type = "aws_cloudtrail"
+enabled = false
+protocol = "s3"
+poll_interval_secs = 60
+[connectors.params]
+bucket = "your-cloudtrail-bucket"
+region = "us-east-1"
+prefix = "AWSLogs/"
+role_arn = "${AWS_ROLE_ARN}"
+
+[[connectors]]
+id = "guardduty-prod"
+connector_type = "amazon_guardduty"
+enabled = false
+protocol = "eventbridge"
+poll_interval_secs = 30
+[connectors.params]
+region = "us-east-1"
+detector_id = "${GUARDDUTY_DETECTOR_ID}"
+
+[[connectors]]
+id = "vpc-flow-prod"
+connector_type = "aws_vpc_flow_logs"
+enabled = false
+protocol = "s3"
+poll_interval_secs = 300
+[connectors.params]
+bucket = "your-vpc-flow-logs-bucket"
+region = "us-east-1"
+
+# ── Cloud Azure ──
+[[connectors]]
+id = "azure-monitor-prod"
+connector_type = "azure_monitor"
+enabled = false
+protocol = "event_hub"
+poll_interval_secs = 10
+[connectors.params]
+event_hub_connection = "${AZURE_EVENT_HUB_CONNECTION}"
+consumer_group = "0xdsi-edge"
+
+[[connectors]]
+id = "entra-id-prod"
+connector_type = "azure_entra_id"
+enabled = false
+protocol = "graph_api"
+poll_interval_secs = 60
+[connectors.params]
+tenant_id = "${AZURE_TENANT_ID}"
+client_id = "${AZURE_CLIENT_ID}"
+client_secret = "${AZURE_CLIENT_SECRET}"
+
+# ── EDR ──
+[[connectors]]
+id = "crowdstrike-prod"
+connector_type = "crowdstrike_falcon"
+enabled = false
+protocol = "streaming_api"
+poll_interval_secs = 5
+[connectors.params]
+client_id = "${CS_CLIENT_ID}"
+client_secret = "${CS_CLIENT_SECRET}"
+base_url = "https://api.crowdstrike.com"
+
+[[connectors]]
+id = "sentinelone-prod"
+connector_type = "sentinelone"
+enabled = false
+protocol = "rest_api"
+poll_interval_secs = 30
+[connectors.params]
+api_url = "https://usea1.sentinelone.net"
+api_token = "${S1_API_TOKEN}"
+
+[[connectors]]
+id = "defender-endpoint-prod"
+connector_type = "defender_endpoint"
+enabled = false
+protocol = "streaming_api"
+poll_interval_secs = 10
+[connectors.params]
+tenant_id = "${AZURE_TENANT_ID}"
+client_id = "${AZURE_CLIENT_ID}"
+client_secret = "${AZURE_CLIENT_SECRET}"
+
+# ── Firewall ──
+[[connectors]]
+id = "paloalto-syslog"
+connector_type = "palo_alto_ngfw"
+enabled = false
+protocol = "syslog"
+poll_interval_secs = 0
+[connectors.params]
+listen_address = "0.0.0.0:514"
+listen_protocol = "udp"
+
+[[connectors]]
+id = "fortigate-syslog"
+connector_type = "fortinet_fortigate"
+enabled = false
+protocol = "syslog"
+poll_interval_secs = 0
+[connectors.params]
+listen_address = "0.0.0.0:515"
+listen_protocol = "udp"
+
+# ── PLC & OT Protocols ──
+[[connectors]]
+id = "s7comm-plc"
+connector_type = "s7comm"
+enabled = false
+protocol = "s7comm"
+poll_interval_secs = 1
+[connectors.params]
+plc_address = "192.168.1.100"
+port = 102
+rack = 0
+slot = 1
+passive_monitoring = true
+
+[[connectors]]
+id = "modbus-rtu"
+connector_type = "modbus"
+enabled = false
+protocol = "modbus_tcp"
+poll_interval_secs = 1
+[connectors.params]
+target_address = "192.168.1.200:502"
+unit_id = 1
+passive_monitoring = true
+
+[[connectors]]
+id = "opc-ua-server"
+connector_type = "opc_ua"
+enabled = false
+protocol = "opc_ua_binary"
+poll_interval_secs = 5
+[connectors.params]
+endpoint_url = "opc.tcp://plc.internal:4840"
+security_policy = "Basic256Sha256"
+security_mode = "SignAndEncrypt"
+
+[[connectors]]
+id = "dnp3-scada"
+connector_type = "dnp3"
+enabled = false
+protocol = "dnp3_tcp"
+poll_interval_secs = 1
+[connectors.params]
+master_address = "0.0.0.0:20000"
+passive_monitoring = true
+
+[[connectors]]
+id = "ethernet-ip-prod"
+connector_type = "ethernet_ip_cip"
+enabled = false
+protocol = "ethernet_ip"
+poll_interval_secs = 1
+[connectors.params]
+target_address = "192.168.1.150:44818"
+passive_monitoring = true
+
+# ── IAM ──
+[[connectors]]
+id = "okta-prod"
+connector_type = "okta"
+enabled = false
+protocol = "system_log_api"
+poll_interval_secs = 30
+[connectors.params]
+domain = "your-org.okta.com"
+api_token = "${OKTA_API_TOKEN}"
+
+# ── Observability ──
+[[connectors]]
+id = "datadog-prod"
+connector_type = "datadog"
+enabled = false
+protocol = "rest_api"
+poll_interval_secs = 60
+[connectors.params]
+api_key = "${DD_API_KEY}"
+app_key = "${DD_APP_KEY}"
+site = "datadoghq.com"
+
+# ── Threat Intelligence ──
+[[connectors]]
+id = "misp-prod"
+connector_type = "misp"
+enabled = false
+protocol = "rest_api"
+poll_interval_secs = 300
+[connectors.params]
+url = "https://misp.internal"
+api_key = "${MISP_API_KEY}"

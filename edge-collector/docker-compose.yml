@@ -1,0 +1,71 @@
+version: "3.8"
+
+services:
+  0xdsi-edge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/0xdsi/edge-collector:latest
+    container_name: 0xdsi-edge
+    restart: unless-stopped
+    ports:
+      - "9090:9090"   # Prometheus metrics
+      - "9091:9091"   # Health endpoint
+      - "514:514/udp" # Syslog UDP (firewalls)
+      - "515:515/udp" # Syslog UDP (secondary)
+      - "601:601/tcp" # Syslog TCP (reliable)
+      - "6514:6514"   # Syslog TLS
+      - "4317:4317"   # OpenTelemetry gRPC
+    volumes:
+      - ./config/edge.toml:/etc/0xdsi/edge.toml:ro
+      - edge-buffer:/var/lib/0xdsi/buffer
+      - edge-logs:/var/log/0xdsi
+      - ./certs:/etc/0xdsi/certs:ro
+    environment:
+      - RUST_LOG=info
+      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-}
+      - AWS_ROLE_ARN=${AWS_ROLE_ARN:-}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET:-}
+      - CS_CLIENT_ID=${CS_CLIENT_ID:-}
+      - CS_CLIENT_SECRET=${CS_CLIENT_SECRET:-}
+      - S1_API_TOKEN=${S1_API_TOKEN:-}
+      - OKTA_API_TOKEN=${OKTA_API_TOKEN:-}
+      - MISP_API_KEY=${MISP_API_KEY:-}
+      - DD_API_KEY=${DD_API_KEY:-}
+      - DD_APP_KEY=${DD_APP_KEY:-}
+      - SENTINEL_WORKSPACE_ID=${SENTINEL_WORKSPACE_ID:-}
+      - GUARDDUTY_DETECTOR_ID=${GUARDDUTY_DETECTOR_ID:-}
+      - AZURE_EVENT_HUB_CONNECTION=${AZURE_EVENT_HUB_CONNECTION:-}
+    networks:
+      - 0xdsi-network
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 2G
+        reservations:
+          cpus: "1.0"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/0xdsi-edge", "--validate-config"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  edge-buffer:
+    driver: local
+  edge-logs:
+    driver: local
+
+networks:
+  0xdsi-network:
+    driver: bridge

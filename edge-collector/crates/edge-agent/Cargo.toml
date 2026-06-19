@@ -1,0 +1,55 @@
+[package]
+name = "oxdsi-edge-agent"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "0xdsi-edge"
+path = "src/main.rs"
+
+[dependencies]
+oxdsi-core = { path = "../core" }
+oxdsi-transport = { path = "../transport" }
+oxdsi-ocsf = { path = "../ocsf" }
+oxdsi-parsers = { path = "../parsers" }
+oxdsi-plugins = { path = "../plugins" }
+oxdsi-connector-siem = { path = "../connectors/siem" }
+oxdsi-connector-cloud-aws = { path = "../connectors/cloud-aws" }
+oxdsi-connector-cloud-azure = { path = "../connectors/cloud-azure" }
+oxdsi-connector-cloud-gcp = { path = "../connectors/cloud-gcp" }
+oxdsi-connector-edr = { path = "../connectors/edr" }
+oxdsi-connector-firewall = { path = "../connectors/firewall" }
+oxdsi-connector-iam = { path = "../connectors/iam" }
+oxdsi-connector-email-security = { path = "../connectors/email-security" }
+oxdsi-connector-vuln = { path = "../connectors/vuln" }
+oxdsi-connector-threat-intel = { path = "../connectors/threat-intel" }
+oxdsi-connector-waf = { path = "../connectors/waf" }
+oxdsi-connector-dlp = { path = "../connectors/dlp" }
+oxdsi-connector-container = { path = "../connectors/container" }
+oxdsi-connector-devsecops = { path = "../connectors/devsecops" }
+oxdsi-connector-ndr = { path = "../connectors/ndr" }
+oxdsi-connector-casb = { path = "../connectors/casb" }
+oxdsi-connector-soar = { path = "../connectors/soar" }
+oxdsi-connector-observability = { path = "../connectors/observability" }
+oxdsi-connector-ics-ot = { path = "../connectors/ics-ot" }
+oxdsi-connector-plc-ot-protocols = { path = "../connectors/plc-ot-protocols" }
+oxdsi-connector-dns-security = { path = "../connectors/dns-security" }
+oxdsi-connector-endpoint-mgmt = { path = "../connectors/endpoint-mgmt" }
+oxdsi-connector-grc = { path = "../connectors/grc" }
+oxdsi-connector-collaboration = { path = "../connectors/collaboration" }
+oxdsi-connector-database-security = { path = "../connectors/database-security" }
+oxdsi-connector-zero-trust = { path = "../connectors/zero-trust" }
+oxdsi-connector-dpi = { path = "../connectors/dpi" }
+oxdsi-connector-bytecode-weaving = { path = "../connectors/bytecode-weaving" }
+oxdsi-connector-ai-document = { path = "../connectors/ai-document" }
+oxdsi-connector-network-taps = { path = "../connectors/network-taps" }
+
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+config.workspace = true
+toml.workspace = true

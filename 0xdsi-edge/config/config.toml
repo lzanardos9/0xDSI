@@ -1,0 +1,219 @@
+# ═══════════════════════════════════════════════════════════════
+# 0xDSI Edge Collector Configuration
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Pipeline Settings ─────────────────────────────────────────
+[pipeline]
+channel_capacity = 100000    # Internal event channel size
+batch_size = 1000            # Events per batch to shipper
+flush_interval_ms = 1000     # Max time before flush (ms)
+
+# ─── Buffer (RocksDB persistence) ──────────────────────────────
+[buffer]
+path = "/var/lib/0xdsi-edge/buffer"
+max_size_mb = 512            # Spill-to-disk limit
+compression = true
+
+# ─── Shipper (transport to Databricks Bronze layer) ────────────
+[shipper]
+transport = "kafka"          # kafka | eventhub | https
+
+[shipper.kafka]
+brokers = ["kafka:9092"]
+topic = "0xdsi-bronze-events"
+compression = "lz4"
+# security_protocol = "SASL_SSL"
+# sasl_mechanism = "PLAIN"
+# sasl_username = "..."
+# sasl_password = "..."
+
+# [shipper.eventhub]
+# connection_string = "Endpoint=sb://..."
+# namespace = "0xdsi-prod"
+# hub_name = "bronze-events"
+
+# [shipper.https]
+# endpoint = "https://your-databricks-workspace.azuredatabricks.net/api/2.0/ingest"
+# auth_token = "dapi..."
+# batch_size = 500
+
+# ─── Control Plane (gRPC management from 0xDSI UI) ────────────
+[control]
+enabled = true
+port = 9443
+# auth_token = "..."
+# tls_cert = "/etc/0xdsi-edge/tls/cert.pem"
+# tls_key = "/etc/0xdsi-edge/tls/key.pem"
+
+# ═══════════════════════════════════════════════════════════════
+# CONNECTORS
+# Enable/disable any combination. Each connector type maps to a
+# specific protocol handler in the 0xDSI Edge binary.
+# ═══════════════════════════════════════════════════════════════
+
+# ─── Example: Syslog TCP receiver ─────────────────────────────
+[[connectors]]
+id = "syslog-main"
+connector_type = "syslog_tcp"
+enabled = true
+[connectors.params]
+bind_addr = "0.0.0.0"
+port = 514
+tls = false
+max_connections = 1000
+
+# ─── Example: Syslog TLS receiver ─────────────────────────────
+[[connectors]]
+id = "syslog-tls"
+connector_type = "syslog_tcp"
+enabled = true
+[connectors.params]
+bind_addr = "0.0.0.0"
+port = 6514
+tls = true
+cert_path = "/etc/0xdsi-edge/tls/cert.pem"
+key_path = "/etc/0xdsi-edge/tls/key.pem"
+
+# ─── Example: AWS CloudTrail via S3 ───────────────────────────
+[[connectors]]
+id = "aws-cloudtrail-prod"
+connector_type = "aws_cloudtrail"
+enabled = false
+[connectors.params]
+region = "us-east-1"
+bucket = "my-cloudtrail-logs"
+prefix = "AWSLogs/"
+poll_interval_sec = 60
+# role_arn = "arn:aws:iam::123456789012:role/0xDSI-CloudTrail"
+
+# ─── Example: CrowdStrike Falcon Streaming ────────────────────
+[[connectors]]
+id = "crowdstrike-prod"
+connector_type = "crowdstrike_falcon"
+enabled = false
+[connectors.params]
+client_id = "..."
+client_secret = "..."
+base_url = "https://api.crowdstrike.com"
+stream_offset = 0
+
+# ─── Example: Palo Alto NGFW via Syslog ───────────────────────
+[[connectors]]
+id = "paloalto-fw1"
+connector_type = "paloalto_ngfw"
+enabled = false
+[connectors.params]
+mode = "syslog"
+bind_addr = "0.0.0.0"
+port = 5514
+
+# ─── Example: Okta System Log ─────────────────────────────────
+[[connectors]]
+id = "okta-prod"
+connector_type = "okta"
+enabled = false
+[connectors.params]
+domain = "mycompany.okta.com"
+api_token = "..."
+poll_interval_sec = 30
+
+# ─── Example: Modbus TCP (OT) ─────────────────────────────────
+[[connectors]]
+id = "modbus-plc-1"
+connector_type = "modbus_tcp"
+enabled = false
+[connectors.params]
+target_host = "192.168.1.100"
+target_port = 502
+passive_monitor = true
+interface = "eth1"
+
+# ─── Example: Siemens S7 (OT) ─────────────────────────────────
+[[connectors]]
+id = "siemens-s7-line1"
+connector_type = "siemens_s7"
+enabled = false
+[connectors.params]
+plc_address = "192.168.2.10"
+rack = 0
+slot = 1
+passive_monitor = true
+interface = "eth1"
+
+# ─── Example: DPI Engine ──────────────────────────────────────
+[[connectors]]
+id = "dpi-main"
+connector_type = "dpi_engine"
+enabled = false
+[connectors.params]
+interface = "eth0"
+bpf_filter = ""
+snap_len = 65535
+promiscuous = true
+
+# ─── Example: Bytecode JVM Instrumentation ────────────────────
+[[connectors]]
+id = "bytecode-payment-svc"
+connector_type = "bytecode_jvm"
+enabled = false
+[connectors.params]
+target_jvm_pid = 0
+agent_jar_path = "/opt/0xdsi/jvm-agent.jar"
+packages = ["com.mycompany.payment"]
+capture_strings = true
+capture_stack_traces = true
+
+# ─── Example: AI Document Analyzer ────────────────────────────
+[[connectors]]
+id = "ai-doc-contracts"
+connector_type = "ai_doc_contract"
+enabled = false
+[connectors.params]
+watch_path = "/data/documents/contracts"
+llm_endpoint = "https://api.openai.com/v1"
+llm_model = "gpt-4o"
+llm_api_key = "..."
+output_format = "ocsf"
+
+# ─── Example: Kafka Consumer ──────────────────────────────────
+[[connectors]]
+id = "kafka-security-events"
+connector_type = "kafka_consumer"
+enabled = false
+[connectors.params]
+brokers = ["kafka:9092"]
+topics = ["security-events", "auth-events"]
+group_id = "0xdsi-edge"
+auto_offset_reset = "latest"
+
+# ─── Example: HTTP Webhook Receiver ───────────────────────────
+[[connectors]]
+id = "webhook-receiver"
+connector_type = "http_webhook"
+enabled = true
+[connectors.params]
+bind_addr = "0.0.0.0"
+port = 8088
+auth_header = "X-0xDSI-Token"
+auth_token = "change-me"
+
+# ─── Example: NetFlow/IPFIX Collector ─────────────────────────
+[[connectors]]
+id = "netflow-collector"
+connector_type = "netflow_ipfix"
+enabled = false
+[connectors.params]
+bind_addr = "0.0.0.0"
+port = 2055
+protocol = "netflow_v9"
+
+# ─── Example: STIX/TAXII Threat Feed ─────────────────────────
+[[connectors]]
+id = "taxii-feed"
+connector_type = "stix_taxii"
+enabled = false
+[connectors.params]
+server_url = "https://taxii.example.com/taxii2/"
+collection_id = "..."
+api_root = "default"
+poll_interval_sec = 300

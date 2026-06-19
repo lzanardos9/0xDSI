@@ -1,0 +1,72 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/transport",
+    "crates/ocsf",
+    "crates/parsers",
+    "crates/plugins",
+    "crates/connectors/siem",
+    "crates/connectors/cloud-aws",
+    "crates/connectors/cloud-azure",
+    "crates/connectors/cloud-gcp",
+    "crates/connectors/edr",
+    "crates/connectors/firewall",
+    "crates/connectors/iam",
+    "crates/connectors/email-security",
+    "crates/connectors/vuln",
+    "crates/connectors/threat-intel",
+    "crates/connectors/waf",
+    "crates/connectors/dlp",
+    "crates/connectors/container",
+    "crates/connectors/devsecops",
+    "crates/connectors/ndr",
+    "crates/connectors/casb",
+    "crates/connectors/soar",
+    "crates/connectors/observability",
+    "crates/connectors/ics-ot",
+    "crates/connectors/plc-ot-protocols",
+    "crates/connectors/dns-security",
+    "crates/connectors/endpoint-mgmt",
+    "crates/connectors/grc",
+    "crates/connectors/collaboration",
+    "crates/connectors/database-security",
+    "crates/connectors/zero-trust",
+    "crates/connectors/dpi",
+    "crates/connectors/bytecode-weaving",
+    "crates/connectors/ai-document",
+    "crates/connectors/network-taps",
+    "crates/edge-agent",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["0xDSI Security <engineering@0xdsi.io>"]
+license = "Proprietary"
+
+[workspace.dependencies]
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+anyhow = "1.0"
+thiserror = "1.0"
+async-trait = "0.1"
+bytes = "1.6"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+rdkafka = { version = "0.36", features = ["cmake-build", "ssl-vendored"] }
+rustls = "0.23"
+nom = "7.1"
+wasmtime = "21"
+rocksdb = { version = "0.22", features = ["multi-threaded-cf"] }
+tonic = "0.11"
+prost = "0.12"
+dashmap = "5.5"
+parking_lot = "0.12"
+config = "0.14"
+toml = "0.8"
+clap = { version = "4.5", features = ["derive"] }

@@ -1,0 +1,76 @@
+[package]
+name = "oxdsi-edge"
+version = "0.1.0"
+edition = "2021"
+authors = ["0xDSI <team@0xdsi.io>"]
+description = "High-performance edge security telemetry collector for 0xDSI platform"
+license = "Proprietary"
+rust-version = "1.75"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+arrow = { version = "52", features = ["ipc"] }
+prost = "0.12"
+
+# Networking
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+tonic = { version = "0.11", features = ["tls"] }
+hyper = { version = "1", features = ["full"] }
+axum = "0.7"
+
+# Kafka / EventHub transport
+rdkafka = { version = "0.36", features = ["cmake-build"] }
+
+# Buffer / persistence
+rocksdb = "0.22"
+
+# Protocols
+nom = "7"
+pcap = "1"
+pnet = "0.35"
+snmp-parser = "0.10"
+
+# TLS
+rustls = "0.23"
+tokio-rustls = "0.26"
+
+# Logging & telemetry
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = "0.22"
+
+# WASM plugin runtime
+wasmtime = "19"
+
+# Config & CLI
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+bytes = "1"
+anyhow = "1"
+thiserror = "1"
+async-trait = "0.1"
+dashmap = "5"
+crossbeam-channel = "0.5"
+
+[build-dependencies]
+prost-build = "0.12"
+tonic-build = "0.11"
+
+[[bin]]
+name = "0xdsi-edge"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 1
+panic = "abort"
