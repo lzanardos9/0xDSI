@@ -440,6 +440,52 @@ total_collectors = spark.sql(f"SELECT COUNT(*) FROM {registry_table} WHERE statu
 healthy = spark.sql(f"SELECT COUNT(*) FROM {registry_table} WHERE status = 'healthy'").first()[0]
 open_incidents = spark.sql(f"SELECT COUNT(*) FROM {incidents_table} WHERE auto_resolved = false AND resolved_at IS NULL").first()[0]
 
+# Bidirectional sync with Supabase UI control plane
+supabase_sync_status = "disabled"
+if fleet_sync.enabled:
+    try:
+        # Push collector health to Supabase for UI real-time display
+        collectors_data = spark.sql(f"""
+            SELECT r.collector_id, r.collector_name, r.site_name, r.status,
+                   h.cpu_percent, h.memory_percent, h.queue_depth,
+                   h.events_per_second, h.error_count
+            FROM {registry_table} r
+            LEFT JOIN (
+                SELECT collector_id, cpu_percent, memory_percent, queue_depth,
+                       events_per_second, error_count,
+                       ROW_NUMBER() OVER (PARTITION BY collector_id ORDER BY received_at DESC) as rn
+                FROM {heartbeats_table}
+                WHERE received_at > current_timestamp() - INTERVAL 10 MINUTES
+            ) h ON r.collector_id = h.collector_id AND h.rn = 1
+            WHERE r.status NOT IN ('decommissioned', 'disabled')
+        """).collect()
+
+        for row in collectors_data:
+            fleet_sync.push_heartbeat(
+                deployment_id=row.collector_id,
+                agent_id=row.collector_id,
+                status=row.status or "unknown",
+                cpu=row.cpu_percent or 0.0,
+                memory=row.memory_percent or 0.0,
+                buffer_mb=(row.queue_depth or 0) / 1000.0,
+                eps=row.events_per_second or 0.0,
+                active_connectors=1,
+                error_count=row.error_count or 0,
+            )
+
+        # Pull any new connector configs created from the UI
+        configs_synced = fleet_sync.sync_configs_to_delta(config_table)
+
+        # Apply pending config pushes from UI
+        pending = fleet_sync.pull_pending_config_pushes()
+        for p in pending:
+            fleet_sync.ack_config_push(p["id"], status="applied")
+
+        supabase_sync_status = f"synced ({len(collectors_data)} pushed, {configs_synced} pulled, {len(pending)} configs applied)"
+    except Exception as e:
+        supabase_sync_status = f"error: {str(e)[:100]}"
+        print(f"  Supabase sync error: {e}")
+
 result = {
     "notebook": "09_edge_collector_framework",
     "mode": mode,
@@ -447,6 +493,7 @@ result = {
     "total_collectors": total_collectors,
     "healthy_collectors": healthy,
     "open_incidents": open_incidents,
+    "supabase_sync": supabase_sync_status,
 }
 mon.log_complete(details=result)
 dbutils.notebook.exit(json.dumps(result))

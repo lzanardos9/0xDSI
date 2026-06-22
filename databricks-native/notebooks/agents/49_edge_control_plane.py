@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 
 # COMMAND ----------
 
-dbutils.widgets.text("mode", "health_check", "Mode: health_check | register | config_push | upgrade | generate_token | seed_dna")
+dbutils.widgets.text("mode", "health_check", "Mode: health_check | register | config_push | upgrade | generate_token | seed_dna | sync_supabase")
 dbutils.widgets.text("payload", "", "JSON payload for the operation")
 
 mode = dbutils.widgets.get("mode")
@@ -447,12 +447,43 @@ result = {}
 
 if mode == "health_check":
     result = health_check()
+    # Sync health verdicts to Supabase UI
+    if fleet_sync.enabled:
+        deployments = spark.sql(f"""
+            SELECT collector_id, actual_state, hostname, site_name
+            FROM {deployments_table}
+            WHERE actual_state != 'dead'
+        """).collect()
+        for d in deployments:
+            fleet_sync.push_deployment_status(
+                agent_id=d.collector_id,
+                status=d.actual_state,
+            )
+        # Pull any new deployments created from UI
+        fleet_sync.sync_deployments_to_delta(deployments_table)
 elif mode == "register":
     data = json.loads(payload) if payload else {}
     result = register_collector(data)
+    # Push new registration to Supabase
+    if fleet_sync.enabled and result.get("registered"):
+        fleet_sync.push_deployment_status(
+            agent_id=result["collector_id"],
+            status="running",
+        )
 elif mode == "config_push":
     data = json.loads(payload) if payload else {}
     result = config_push(data)
+    # Check for pending UI config pushes and apply them
+    if fleet_sync.enabled:
+        pending = fleet_sync.pull_pending_config_pushes()
+        for p in pending:
+            config_push({
+                "collector_id": p.get("deployment_id"),
+                "desired_state": "running",
+            })
+            fleet_sync.ack_config_push(p["id"], status="applied")
+        if pending:
+            result["ui_configs_applied"] = len(pending)
 elif mode == "upgrade":
     data = json.loads(payload) if payload else {}
     result = rolling_upgrade(data)
@@ -461,6 +492,21 @@ elif mode == "generate_token":
     result = generate_install_token(data)
 elif mode == "seed_dna":
     result = seed_dna_registry()
+elif mode == "sync_supabase":
+    # Explicit bidirectional sync mode
+    if fleet_sync.enabled:
+        deployments_synced = fleet_sync.sync_deployments_to_delta(deployments_table)
+        pending = fleet_sync.pull_pending_config_pushes()
+        for p in pending:
+            fleet_sync.ack_config_push(p["id"], status="applied")
+        fleet_sync.push_delta_health_to_supabase(telemetry_table, deployments_table)
+        result = {
+            "deployments_synced": deployments_synced,
+            "pending_configs_applied": len(pending),
+            "health_pushed": True,
+        }
+    else:
+        result = {"error": "Supabase sync not configured (missing secrets)"}
 else:
     result = {"error": f"Unknown mode: {mode}"}
 
