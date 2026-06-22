@@ -76,10 +76,6 @@ KNOWN_SECRETS = {
 
     # GeoIP
     "maxmind_license_key": SecretRef("soc-secrets", "maxmind_license_key", "MaxMind GeoLite2 license key", required=False),
-
-    # Supabase (UI Control Plane sync)
-    "supabase_url": SecretRef("soc-secrets", "supabase_url", "Supabase project URL for fleet sync", required=False),
-    "supabase_service_role_key": SecretRef("soc-secrets", "supabase_service_role_key", "Supabase service role key for fleet sync", required=False),
 }
 
 

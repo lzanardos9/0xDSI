@@ -40,7 +40,6 @@ from delta_helpers import (
 from monitoring import Monitor, create_audit_table
 from secrets import SecretsManager, SecretNotFound, KNOWN_SECRETS
 from sdp_stream import create_sdp_stream, create_sdp_stream_with_fallback, SDPStreamConfig
-from supabase_sync import SupabaseFleetSync
 
 # COMMAND ----------
 
@@ -52,8 +51,6 @@ mon = Monitor(spark, cfg)
 mon.log_start()
 
 secrets_mgr = SecretsManager(dbutils, cfg.secret_scope)
-
-fleet_sync = SupabaseFleetSync(spark, secrets_mgr, cfg)
 
 llm = SOCLLMClient(cfg)
 
