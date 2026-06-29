@@ -38,11 +38,13 @@ ZeroBus (Kafka backbone) ──────────────────�
 | LAYER 3: PRE-BRONZE STREAM |                              | Ingestion Pipeline     |
 | PROCESSING (sub-second)    |                              | (Delta persistence)    |
 |                            |                              +========================+
-| CET (trend graphlets)      |                                          |
-| CEP (pattern matching)     |                                          v
-| Graph CEP (NetworkX)       |                              +========================+
-| Threat Intel Match         |                              | BRONZE (raw + CET      |
-+=============================+                              | signals)               |
+| CET Native C Runtime       |                                          |
+|  (pthread/mmap, DSL,       |                                          v
+|   Standing Trend v7)       |                              +========================+
+| CEP (pattern matching)     |                              | BRONZE (raw + CET      |
+| Graph CEP (NetworkX)       |                              | signals + evidence     |
+| Threat Intel Match         |                              | paths)                 |
++=============================+                              +========================+
     |                                                        +========================+
     |   Trend scores, matched patterns                                  |
     |   persist ALONGSIDE raw events                                    v
@@ -105,43 +107,109 @@ ZeroBus (Kafka backbone) ──────────────────�
 
 ### What It Does (Plain English)
 
-CET watches the STREAM of incoming security events and looks for **chains** -- sequences of related steps that, individually, might look innocent but collectively form an attack path. Think of it like connecting dots on a map: a single dot means nothing, but five dots forming a line toward the treasure vault tells a story.
+CET is a **security-native runtime written in C** that watches the raw event stream and finds **attack chains** -- sequences of related steps that, individually, look innocent but collectively form a coordinated attack path. Think of it like a pattern-matching engine for stories told across thousands of log lines: "3 failed logins, then a privilege escalation, then data access, then external transfer -- all by the same user on the same host within 10 minutes."
+
+Unlike traditional SIEM rules that trigger on single events, CET uses its own **domain-specific language (DSL)** to describe multi-step attack narratives, then matches them against a continuously-updating **temporal security graph** at wire speed.
 
 ### How It Works (Engineering)
 
-**Algorithm:** GraphFrames + Kleene-closure BFS (Breadth-First Search)
+**Runtime:** Native C with pthread and mmap for deterministic, zero-GC graph matching. The engine is compiled via CMake and exposes Python bindings (`bindings/python/`) for integration with Spark Declarative Pipelines.
 
-1. **Graph Construction:** Every entity (IP address, username, hostname) becomes a node. Every event connecting two entities becomes a directed edge with a timestamp.
+**Repository structure:** `c_engine/` (core runtime), `bindings/python/` (PySpark bridge), `contracts/` (interface definitions), `notebooks/` (Databricks integration), `jobs/` (DAB deployment bundles).
 
-2. **Multi-hop Motif Finding:** CET defines "query patterns" -- for example, a Lateral Movement Chain requires 3-6 hops through edges labeled `lateral_movement`, `remote_execution`, or `pass_the_hash`. It uses GraphFrame's motif-finding API to detect 2-hop and 3-hop time-ordered paths within a sliding window (default 300 seconds).
+**Core Components:**
 
-3. **Scoring:** Each discovered path gets a composite score:
+1. **CET DSL (Domain-Specific Language):** A purpose-built query language for describing temporal attack chains with quantifiers, absence conditions, and entity relations:
+
    ```
-   Score = (hops / max_hops) * (max_severity / 5.0) * time_decay_factor
+   ATTACK_CHAIN privilege_escalation_to_exfiltration
+   MATCH
+       AuthFail+          AS failed_auth
+       THEN PrivEsc       AS escalation
+       THEN DataAccess+   AS sensitive_access
+       THEN ExternalTransfer AS transfer
+   WHERE
+       same_user(failed_auth, escalation, sensitive_access, transfer)
+       same_host(failed_auth, escalation)
+   ABSENT
+       MFAChallenge BETWEEN failed_auth AND escalation
+   SCORE
+       base 50
+       + asset_criticality
+       + data_sensitivity
+       + abnormal_hour
    ```
-   Fast attack chains (under 60 seconds) score higher because speed indicates automation.
 
-4. **Graphlet Segmentation:** Events are grouped into time-windowed sub-graphs ("graphlets"). Cross-window node reuse is measured -- if the same entities appear in consecutive windows, it signals persistent adversary activity.
+   **DSL Syntax Elements:**
+   - `A+` -- one or more occurrences (Kleene plus)
+   - `A?` -- zero or one occurrence (optional step)
+   - `A{m,n}` -- bounded repetition (between m and n occurrences)
+   - `(A|B)` -- alternatives (either event type matches)
+   - `WHERE` -- predicates binding entities across steps
+   - `ABSENT` -- negative/absence conditions (event must NOT appear between steps)
+   - `RELATIONS` -- entity constraints: `same_user`, `same_host`, `same_session`, `parent_process`, `same_asset`
+   - `SCORE` -- composite scoring with dynamic risk factors
 
-5. **Connected Components:** The algorithm identifies isolated clusters of communicating entities. Large clusters (3+ entities) flag coordinated attack campaigns.
+2. **Security Graph Builder:** Continuously constructs a temporal graph where nodes are entities (users, hosts, IPs, processes) and edges are events with timestamps and semantic labels. The graph supports both temporal edges (time-ordered causality) and semantic edges (entity membership, asset ownership).
 
-**Pre-defined Attack Patterns:**
-- `lm_001`: Lateral Movement Chain (3-6 hops via remote execution, SMB, RDP)
-- `pe_001`: Privilege Escalation Path (2-4 hops via token manipulation, credential access)
-- `exfil_001`: Exfiltration Pipeline (2-5 hops via data staging, compression, DNS tunnel)
-- `persist_001`: Persistence Installation (2-4 hops via scheduled tasks, registry mods, service creation)
+3. **Standing Trend Runtime (v7):** A mutable temporal graph state that bridges historical lakehouse replay and live streaming intelligence. It maintains "standing queries" -- CET patterns that are always active, continuously evaluating against the evolving graph state. When a partial match accumulates enough steps, it escalates without waiting for the full chain to complete.
+
+4. **ZeroBus Connector:** Transport-pluggable ingestion layer. In Databricks deployment, it connects directly to ZeroBus (Kafka backbone), consuming raw events at wire speed before they reach Delta table writes. This is what makes CET a **pre-Bronze** processor.
+
+5. **Spark Declarative Pipelines (SDP) Integration:** The Python bindings bridge the C runtime into Spark streaming jobs. CET trend signals (matched patterns, partial matches, anomaly scores) are emitted as structured outputs that land in Bronze alongside raw events.
+
+6. **Temporal Security Knowledge Graph (Output):** CET doesn't just produce alerts -- it produces a rich graph structure containing:
+   - **Entities** with risk accumulation over time
+   - **Relations** with temporal ordering and confidence
+   - **Trends** -- named patterns with match progress
+   - **Evidence paths** -- the exact event sequence that triggered the match
+   - **Risk explanations** -- human-readable narratives for each detection
+   - **Investigation prompts** -- suggested next-step queries for analysts
+
+7. **Counterfactual Replay:** A detection engineering capability that answers: "If this CET query existed last month, what would it have detected?" The engine replays historical event streams from the lakehouse through the C runtime, producing a full detection report without affecting production state. This lets security engineers validate new queries before deployment.
+
+**Pre-defined Attack Chain Patterns (Examples):**
+- Privilege Escalation to Exfiltration (as shown above)
+- Cloud Control Plane Abuse (`AssumeRole+ → PolicyChange → ResourceCreation{2,5} → DataExport`)
+- Endpoint Process Chain (`ProcessCreate+ → DLLLoad? → RegistryMod → NetworkConnect`)
+- Lateral Movement (`AuthFail{3,} → AuthSuccess → RemoteExec+ → CredentialDump`)
+- Insider Risk (data hoarding with absent peer review/approval events)
+- Detection Engineering Replay (historical validation of new queries)
+
+**Performance Characteristics:**
+- Native C with pthread: deterministic latency, no garbage collection pauses
+- mmap-backed graph state: kernel-managed memory, survives process restarts
+- Sub-millisecond per-event processing for single patterns
+- Horizontal scaling via Spark partition-level parallelism
 
 ### Why It Matters
 
-Traditional security tools look at **individual events**. CET looks at **event relationships over time**. An attacker who moves slowly from one machine to another, then escalates privileges, then stages data -- each individual step might be below the alert threshold. CET catches the CHAIN, not just the links.
+Traditional security tools look at **individual events** or simple **time-window aggregates**. CET looks at **temporal narratives** -- ordered sequences with causal relationships, absence conditions, and entity bindings. An attacker who moves slowly from machine to machine, escalates privileges, then stages data -- each individual step stays below any single-event threshold. CET catches the STORY, not just the words.
+
+The **ABSENT** condition is particularly powerful: it detects attacks where a security control was BYPASSED (e.g., privilege escalation without an MFA challenge, data access without a preceding approval workflow). This is something no rule-based SIEM can express naturally.
+
+**Counterfactual Replay** transforms detection engineering from guesswork into science -- you can prove a new query's value against historical data before it ever touches production.
+
+| Capability | Traditional Alerting | 0xDSI CET |
+|---|---|---|
+| Pattern language | Flat regex / single-event rules | Full DSL with quantifiers, alternatives, absence, relations |
+| Temporal reasoning | Fixed time windows (5m, 1h) | Causal ordering with dynamic time bounds |
+| Absence detection | Not supported | First-class `ABSENT` conditions |
+| Entity binding | Manual field matching | Declarative `RELATIONS` across chain steps |
+| Scoring | Static severity levels | Dynamic composite scoring with contextual factors |
+| Validation | Deploy and hope | Counterfactual Replay against historical data |
+| Runtime | JVM / interpreted | Native C, zero-GC, mmap-backed |
 
 ### Value Over Databricks Acquisitions
 
 | Databricks Has | 0xDSI CET Adds |
 |---|---|
-| **Lakewatch:** Rule-based correlation on stored data | **Pre-Bronze graph analysis** on streaming data -- detects BEFORE events hit storage |
-| **Panther Labs:** Pattern matching on individual log lines | **Multi-hop path discovery** across entities -- sees the forest, not just trees |
-| **SiftD.ai:** Visual notebook exploration | **Automated Kleene-closure** mathematically finds ALL paths up to N hops |
+| **Lakewatch:** Rule-based correlation on stored Delta tables | **Pre-Bronze native C runtime** -- detects on the raw stream BEFORE events hit storage |
+| **Panther Labs:** Python-based detection rules on individual log events | **Full attack-chain DSL** with quantifiers, absence conditions, and entity relations -- describes entire attack narratives, not single events |
+| **SiftD.ai:** Visual exploration of historical data | **Counterfactual Replay** -- scientifically validates new detection queries against historical streams before deployment |
+| Standard Structured Streaming (JVM-based) | **Native C with pthread/mmap** -- deterministic sub-millisecond latency, no GC pauses |
+| No temporal graph state | **Standing Trend Runtime v7** -- mutable temporal graph that bridges live streaming and historical replay |
+| No absence-based detection | **ABSENT conditions** -- detects attacks that BYPASS security controls (missing MFA, skipped approval) |
 
 ---
 
@@ -547,58 +615,101 @@ In machine learning, model disagreement is one of the strongest signals of **epi
 
 This is the architectural innovation that makes 0xDSI uniquely fast. BEFORE raw events are even stored in the database (Bronze layer), two engines process them simultaneously in a parallel "fast lane":
 
-1. **CET** builds real-time entity graphs and finds attack chains
-2. **CEP** matches complex event patterns in sub-second time
+1. **CET (Native C Runtime)** maintains a live temporal security graph and matches attack chain queries using its DSL
+2. **CEP (Spark Structured Streaming)** matches complex event patterns with temporal windows and thresholds
+3. **Graph CEP (NetworkX)** tracks real-time entity centrality and community drift
+4. **Threat Intel Matching** performs IOC lookups on the raw stream
 
-Their outputs (trend scores, matched patterns, entity drift signals) land in Bronze ALONGSIDE the raw events, so by the time data reaches the normalization layer, it's already enriched with behavioral intelligence.
+Their outputs (trend signals, matched attack chains, partial match progress, entity risk scores) land in Bronze ALONGSIDE the raw events, so by the time data reaches normalization, it's already enriched with behavioral intelligence.
 
 ### How It Works (Engineering)
 
 ```
-Raw Kafka Stream ────┬────> CET Engine
-                     |       - Builds entity graph (GraphFrames)
-                     |       - Finds multi-hop paths (BFS/Kleene-closure)
-                     |       - Computes trend scores
-                     |       - Identifies attack clusters
-                     |       
-                     ├────> CEP Engine
-                     |       - Pattern matching (temporal windows)
-                     |       - Stateful sequence detection
-                     |       - Threshold-based correlation
-                     |       
-                     ├────> Graph CEP (NetworkX)
-                     |       - Real-time centrality tracking
-                     |       - Community detection drift
-                     |       - Path anomaly identification
-                     |       
-                     └────> Threat Intel Matching
-                             - IOC lookup on streaming data
-                             - Real-time blocklist enforcement
-
-ALL outputs ──────────────> Bronze Delta Table
-                             (raw events + enrichment signals)
+ZeroBus (Kafka) ─────────────────────────────────────────────────────
+    |                                                                 
+    ├──> ZeroBus Connector (transport-pluggable)                      
+    |       |                                                         
+    |       ├────> CET Native C Runtime (pthread/mmap)                
+    |       |       - Ingests events into Standing Trend Runtime v7   
+    |       |       - Maintains mutable temporal security graph       
+    |       |       - Evaluates standing CET DSL queries continuously 
+    |       |       - Emits: matched chains, partial matches,         
+    |       |         entity risk, evidence paths, investigation prompts
+    |       |                                                         
+    |       ├────> CEP Engine (Spark Structured Streaming)            
+    |       |       - Stateful sequence detection (time windows)      
+    |       |       - Threshold-based correlation                     
+    |       |       - Watermarked late-event handling                 
+    |       |                                                         
+    |       ├────> Graph CEP (NetworkX in-memory)                     
+    |       |       - Real-time centrality tracking                   
+    |       |       - Community detection drift                       
+    |       |       - Path anomaly identification                     
+    |       |                                                         
+    |       └────> Threat Intel Matching                              
+    |               - IOC lookup on streaming data                    
+    |               - Real-time blocklist enforcement                 
+    |                                                                 
+    └──> Normal Ingestion (30-60s latency) ──> Delta tables           
+                                                                      
+ALL stream outputs ──────────> Bronze Delta Table                     
+                                (raw events + CET signals + CEP       
+                                 matches + threat intel hits)          
 ```
 
-**Key Design Principle:** The stream processing layer DOES NOT block ingestion. It runs in parallel. If CET takes 2 seconds to find a path, the raw event still lands in Bronze immediately. The CET signal joins it asynchronously.
+**CET Integration via Python Bindings:**
 
-**Sliding Window Configuration:**
-- Default window: 300 seconds (5 minutes)
-- Processing trigger: every 30 seconds
-- Max files per trigger: 100 (backpressure control)
-- Checkpoint: HDFS-backed for exactly-once semantics
+The CET C runtime exposes Python bindings (`bindings/python/`) that integrate with Spark Declarative Pipelines (SDP). The flow:
+
+1. SDP stream builder consumes from ZeroBus (direct Kafka, bypassing Delta latency)
+2. Events are passed to the CET runtime via Python bindings in micro-batches
+3. The Standing Trend Runtime (v7) updates its mutable temporal graph
+4. Active CET DSL queries evaluate against the updated graph
+5. Matched patterns, partial matches, and risk signals are emitted as structured DataFrames
+6. Outputs are written to Bronze alongside raw events via `safe_append()`
+
+**Standing Trend Runtime v7 -- The Key Innovation:**
+
+The Standing Trend Runtime bridges two worlds:
+- **Historical replay:** CET queries can be replayed against lakehouse data (Counterfactual Replay) to validate detection coverage
+- **Live streaming:** The same queries run continuously against the evolving temporal graph, maintaining partial match state across event boundaries
+
+This means a CET query like `AuthFail{3,} → PrivEsc → DataAccess+` doesn't need all events in a single micro-batch. The Standing Runtime tracks: "We've seen 4 AuthFails from user X -- if a PrivEsc arrives, the pattern advances." This stateful matching across batch boundaries is what traditional Spark Structured Streaming cannot do natively.
+
+**Fusion Output Schema (lands in Bronze):**
+- `trend_id` -- unique identifier for the matched/partial trend
+- `chain_name` -- which CET DSL query matched
+- `match_progress` -- percentage of pattern completed (partial matches surface early warnings)
+- `entities` -- all bound entities (users, hosts, IPs) in the chain
+- `evidence_events` -- IDs of events constituting the evidence path
+- `score` -- composite risk score (base + contextual factors from DSL SCORE clause)
+- `risk_explanation` -- human-readable narrative
+- `investigation_prompt` -- suggested analyst next-step query
+- `timestamp_first` / `timestamp_last` -- temporal span of the matched chain
+
+**Key Design Principle:** The CET stream processing layer DOES NOT block ingestion. It runs in parallel via dedicated pthread workers. If a complex chain evaluation takes time, the raw event still lands in Bronze immediately. CET signals join asynchronously. The mmap-backed graph state ensures no data loss on process restart.
 
 ### Why It Matters
 
-This is the architectural decision that lets 0xDSI detect attacks BEFORE they're even "officially" in the database. By the time Lakewatch or any downstream tool queries the data, it's already been analyzed for trends and patterns. This isn't just faster -- it fundamentally changes what's possible because the Silver/Gold layers START with enriched data rather than having to re-process everything.
+This is the architectural decision that lets 0xDSI detect attacks BEFORE they're "officially" in the database. By the time Lakewatch or any downstream analytics queries the data, it's already been analyzed for multi-step attack chains with a purpose-built native runtime. This isn't just faster -- it fundamentally changes what's possible:
+
+- **Silver/Gold layers START with enriched data** rather than having to re-process everything
+- **Partial matches provide early warnings** -- you don't wait for the full attack to complete
+- **Investigation prompts are pre-generated** -- analysts get context immediately, not after manual triage
+- **Counterfactual Replay validates queries offline** -- new detections are proven before deployment
+
+The combination of a native C runtime (for deterministic latency) with a purpose-built DSL (for expressive attack narratives) and Spark Declarative Pipelines (for scalable data orchestration) creates a detection layer that no individual Databricks acquisition can replicate.
 
 ### Value Over Databricks Acquisitions
 
 | Databricks Has | 0xDSI CET/CEP Fusion Adds |
 |---|---|
-| **Lakewatch:** Processes from Delta tables (storage latency included) | **Pre-storage stream processing** -- analysis happens BEFORE data is written |
-| **Panther Labs:** Processes after ingestion | **Parallel enrichment** -- raw events arrive in Bronze ALREADY scored |
-| Standard Medallion architecture (Bronze → Silver → Gold) | **Pre-Bronze intelligence layer** that feeds enriched data INTO the Medallion |
-| Structured Streaming (generic) | **Security-specific CEP + graph analysis** optimized for attack chain detection |
+| **Lakewatch:** Processes from Delta tables (storage latency included) | **Pre-storage native C runtime** -- analysis happens BEFORE data is written, at sub-ms latency |
+| **Panther Labs:** Python detection rules (interpreted, GC pauses) | **Native C with pthread/mmap** -- deterministic, zero-GC, wire-speed evaluation |
+| Standard Medallion architecture (Bronze → Silver → Gold) | **Pre-Bronze intelligence layer** that feeds enriched data (attack chains, evidence paths, risk scores) INTO the Medallion |
+| Structured Streaming (generic, stateless per-batch) | **Standing Trend Runtime v7** -- stateful cross-batch pattern matching with mutable temporal graph |
+| No attack-chain DSL | **CET DSL** -- quantifiers, absence conditions, entity relations, composite scoring in a single query |
+| No pre-deployment validation | **Counterfactual Replay** -- "if this query existed last month, what would it have caught?" |
 
 ---
 
