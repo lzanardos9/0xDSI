@@ -7,7 +7,7 @@
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [CET - Compounding Event Trends](#1-cet---compounding-event-trends)
+2. [CET - Complete Event Trending](#1-cet---complete-event-trending)
 3. [SDP + CEP Rules (Streaming Detection Pipeline)](#2-sdp--cep-rules-streaming-detection-pipeline)
 4. [Detection Confluence (7-Lens Bayesian Fusion)](#3-detection-confluence-7-lens-bayesian-fusion)
 5. [MC-RNN Behavioral Memory](#4-mc-rnn-behavioral-memory)
@@ -103,7 +103,7 @@ ZeroBus (Kafka backbone) ──────────────────�
 
 ---
 
-## 1. CET - Compounding Event Trends
+## 1. CET - Complete Event Trending
 
 ### What It Does (Plain English)
 
