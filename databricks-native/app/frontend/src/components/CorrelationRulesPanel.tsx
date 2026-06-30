@@ -5,13 +5,15 @@ import {
   Activity, Target, Eye, RefreshCw, BarChart3,
   Brain, Network, Clock, Fingerprint, EyeOff,
   Dice1 as Dice, Layers, Swords, Merge, FileCode, History,
-  Download
+  Download, Upload
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import MLModelExplainer from './MLModelExplainer';
 import { ML_MODELS } from '../lib/mlModelData';
 import { DaCLifecycleBadge, VersionBadge, TestResultBadge, FormatBadge, GitRefBadge } from './correlation/DaCStatusBadge';
 import RuleVersionDrawer from './correlation/RuleVersionDrawer';
+import CreateRuleModal from './correlation/CreateRuleModal';
+import ImportRuleModal from './correlation/ImportRuleModal';
 
 interface Rule {
   id: string;
@@ -176,6 +178,8 @@ const CorrelationRulesPanel = () => {
   const [showRuleTypeDropdown, setShowRuleTypeDropdown] = useState(false);
   const [selectedDacStatus, setSelectedDacStatus] = useState('');
   const [showDacDropdown, setShowDacDropdown] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [drawerRule, setDrawerRule] = useState<Rule | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -547,6 +551,22 @@ const CorrelationRulesPanel = () => {
               Clear
             </button>
           )}
+
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors shadow-lg shadow-blue-600/20"
+          >
+            <Zap className="w-4 h-4" />
+            Create Rule
+          </button>
+
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold hover:bg-amber-500/20 transition-colors"
+          >
+            <Upload className="w-4 h-4" />
+            Import
+          </button>
 
           <button
             onClick={() => rules.length > 0 && downloadAllYaml(rules)}
@@ -933,6 +953,16 @@ const RuleCard = ({
           )}
         </div>
       )}
+      <CreateRuleModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={() => { loadRules(); loadStats(); }}
+      />
+      <ImportRuleModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImported={() => { loadRules(); loadStats(); }}
+      />
     </div>
   );
 };
