@@ -689,6 +689,16 @@ const CorrelationRulesPanel = () => {
           </div>
         </div>
       )}
+      <CreateRuleModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={() => { loadRules(); loadStats(); }}
+      />
+      <ImportRuleModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImported={() => { loadRules(); loadStats(); }}
+      />
     </div>
   );
 };
@@ -953,16 +963,6 @@ const RuleCard = ({
           )}
         </div>
       )}
-      <CreateRuleModal
-        open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onCreated={() => { loadRules(); loadStats(); }}
-      />
-      <ImportRuleModal
-        open={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        onImported={() => { loadRules(); loadStats(); }}
-      />
     </div>
   );
 };
