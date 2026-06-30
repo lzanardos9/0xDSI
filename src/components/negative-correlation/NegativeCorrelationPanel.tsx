@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, BookOpen, AlertTriangle, GitBranch, Clock, Eye, EyeOff, Zap, MapPin, Activity, Download, History, RefreshCw } from 'lucide-react';
+import { Shield, BookOpen, AlertTriangle, GitBranch, Clock, Eye, EyeOff, Zap, MapPin, Activity, Download, History, RefreshCw, Plus, Upload } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { DaCLifecycleBadge, VersionBadge, TestResultBadge, FormatBadge, GitRefBadge } from '../correlation/DaCStatusBadge';
 import RuleVersionDrawer from '../correlation/RuleVersionDrawer';
+import CreateRuleModal from '../correlation/CreateRuleModal';
+import ImportRuleModal from '../correlation/ImportRuleModal';
 import NegativeCorrelationRules from './NegativeCorrelationRules';
 import NegativeCorrelationDetections from './NegativeCorrelationDetections';
 import NegativeCorrelationGraph from './NegativeCorrelationGraph';
@@ -165,6 +167,8 @@ export default function NegativeCorrelationPanel() {
   const [negRules, setNegRules] = useState<NegRule[]>([]);
   const [detections, setDetections] = useState<Detection[]>([]);
   const [drawerRule, setDrawerRule] = useState<LibraryRule | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -428,6 +432,20 @@ export default function NegativeCorrelationPanel() {
             </div>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold transition-all shadow-lg shadow-cyan-600/20"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Create Rule
+              </button>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold hover:bg-amber-500/20 transition-colors"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Import
+              </button>
+              <button
                 onClick={handleDownloadAll}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/50 border border-slate-700/30 text-slate-400 hover:text-white text-xs transition-colors"
               >
@@ -500,6 +518,18 @@ export default function NegativeCorrelationPanel() {
           onRollback={async (_ruleId: string, _versionId: string) => { loadData(); }}
         />
       )}
+      <CreateRuleModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreated={() => loadData()}
+        defaultRuleType="negative_correlation"
+        defaultCategory="Threat Detection"
+      />
+      <ImportRuleModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImported={() => loadData()}
+      />
     </div>
   );
 }
