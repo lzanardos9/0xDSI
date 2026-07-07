@@ -33,7 +33,7 @@
 # 0xDSI Agentic SOC Platform - Databricks Native Edition
 
 > **Production-grade Security Operations Center running entirely within Databricks.**
-> 116 notebooks. 49 autonomous agents. 10 correlation engines. 8 detection models. 32 Connector DNA specs. Real-time streaming. LLM-powered investigation. Zero external dependencies. Zero egress. Full data sovereignty.
+> 136 notebooks. 56 autonomous agents. 10 correlation engines. 8 detection models. 11 memory-cache RNN modules. 32 Connector DNA specs. Real-time streaming. LLM-powered investigation. Zero external dependencies. Zero egress. Full data sovereignty.
 
 ---
 
@@ -43,16 +43,20 @@
 ╔═════════════════════════════════════════════════════════════════════════════════════════╗
 ║                          0xDSI PLATFORM METRICS                                         ║
 ╠══════════════════╦═══════════╦══════════════════════════════════════════════════════════╣
-║  Notebooks       ║    116    ║  Autonomous agents, correlation, detection, ingestion    ║
-║  AI Agents       ║     49    ║  LLM-powered, Q-Learning, Graph CEP, NLP                 ║
+║  Notebooks       ║    136    ║  Agents, correlation, detection, memory-cache, ingestion  ║
+║  AI Agents       ║     56    ║  LLM-powered, Q-Learning, Graph CEP, NLP, Phishing       ║
 ║  Correlation     ║     10    ║  CEP, temporal, graph, negative, fusion, supply chain    ║
 ║  Detection       ║      8    ║  UEBA, IDS, bytecode, KS-recall, OT anomaly              ║
+║  Memory Cache    ║     11    ║  RNN architecture, streaming detector, explainability    ║
 ║  Delta Tables    ║   140+    ║  Unity Catalog governed, medallion architecture          ║
 ║  Connector DNA   ║     32    ║  Universal binary + declarative YAML = any source        ║
 ║  Edge Fleet      ║     36    ║  712,850 EPS aggregate throughput (demo)                 ║
+║  Analytics       ║      6    ║  Trend, swarm, chronoweave, financial, geo, Monte Carlo  ║
+║  ML Training     ║      5    ║  MLflow tracked, feature store, GraphRAG zero-day        ║
 ║  Shared Modules  ║     10    ║  LLM, monitoring, streaming, SQL safety                  ║
-║  DLT Stages      ║      3    ║  Bronze -> Silver -> Gold with expectations              ║
+║  DLT Pipelines   ║      4    ║  Bronze -> Silver -> Gold + Attack Universe real-time    ║
 ║  Serving Tiers   ║      4    ║  <10ms -> 50ms -> 100ms -> 1000ms                        ║
+║  Frontend        ║   150+    ║  React/TypeScript components, 80+ views                  ║
 ╚══════════════════╩═══════════╩══════════════════════════════════════════════════════════╝
 ```
 
@@ -253,7 +257,7 @@
 
 ---
 
-## Agent Neural Network: 49 Autonomous Agents
+## Agent Neural Network: 56 Autonomous Agents
 
 ```
                              ┌─────────────────────────────┐
@@ -581,18 +585,19 @@ Every notebook starts with `%run ../_shared/bootstrap` to initialize all service
   │       │   └── contexts/ ───────────── Auth, state management
   │       └── public/ ─────────────────── Static assets
   │
-  ├── notebooks/ ──────────────────────── 116 Databricks notebooks
+  ├── notebooks/ ──────────────────────── 136 Databricks notebooks
   │   ├── _shared/ (10) ──────────────── Infrastructure modules
   │   ├── setup/ (5) ─────────────────── Initialization & seeding
-  │   ├── agents/ (49) ───────────────── Autonomous AI agents
+  │   ├── agents/ (56) ───────────────── Autonomous AI agents (01-49 + 53-60)
   │   ├── ingestion/ (11) ────────────── Data ingestion pipeline
   │   ├── correlation/ (10) ──────────── Correlation engines
   │   ├── detection/ (8) ─────────────── Detection models
-  │   ├── analytics/ (5) ─────────────── Advanced analytics
+  │   ├── analytics/ (6) ─────────────── Advanced analytics + Monte Carlo
+  │   ├── memory_cache/ (11) ─────────── RNN memory architecture + streaming
   │   ├── ml_training/ (5) ───────────── ML pipelines (MLflow)
   │   ├── ops/ (5) ───────────────────── Operational jobs
   │   ├── response/ (5) ──────────────── Automated response
-  │   └── pipelines/ (3) ─────────────── DLT Bronze/Silver/Gold
+  │   └── pipelines/ (4) ─────────────── DLT Bronze/Silver/Gold + Attack Universe
   │
   └── resources/ ──────────────────────── Databricks Asset Bundle resources
       ├── app.yml ─────────────────────── Databricks App resource definition
@@ -873,6 +878,64 @@ Pre-built threat models for regulated industries:
 | 47 | Autonomous Response Learner | Batch | Q-Learning response (paper-informed) |
 | 48 | UEBA Entity Onboarding | Batch | Behavioral baseline initialization |
 | 49 | Edge Control Plane | Batch | Fleet management, DNA versioning, heartbeats |
+
+### Tier 8: AI Security & Predictive (53-60)
+| # | Agent | Type | Purpose |
+|---|-------|------|---------|
+| 53 | Phishing Campaign Engine | Batch | Phishing simulation & detection |
+| 55 | Phishing Response Analyzer | Batch | Phishing response effectiveness analysis |
+| 56 | AI Gateway Guardian | Batch | AI/LLM gateway protection & monitoring |
+| 57 | Shadow AI Detector | Batch | Unauthorized AI usage detection |
+| 58 | Prompt Forensics Indexer | Batch | Prompt history indexing & forensics |
+| 59 | Vector Pattern Similarity | Batch | Embedding-based pattern matching |
+| 60 | Attack Path Forecaster | Batch | Predictive attack path analysis |
+
+---
+
+## Memory Cache: RNN Architecture (11 modules)
+
+Neural memory caching system for sub-second threat detection using recurrent neural networks:
+
+```
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │  MEMORY CACHE PIPELINE (RNN-Based Threat Memory)                                 │
+  │                                                                                  │
+  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
+  │  │ 61. RNN      │───►│ 62. Feature  │───►│ 63. Training │───►│ 64. UEBA     │   │
+  │  │ Architecture │    │ Tokenizer    │    │ Pipeline     │    │ Baseline     │   │
+  │  └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘   │
+  │                                                                                  │
+  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
+  │  │ 65. Cache    │───►│ 66. Streaming│───►│ 67. Attack   │───►│ 68. Response │   │
+  │  │ Manager      │    │ Detector     │    │ Chain Recall │    │ Policy       │   │
+  │  └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘   │
+  │                                                                                  │
+  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                       │
+  │  │ 69. Model    │───►│ 70. Serving  │───►│ 71. Explain- │                       │
+  │  │ Monitoring   │    │ Endpoint     │    │ ability      │                       │
+  │  └──────────────┘    └──────────────┘    └──────────────┘                       │
+  │                                                                                  │
+  │  PURPOSE: Maintain neural "memory" of entity behavior patterns for instant       │
+  │  anomaly detection. The RNN encodes temporal sequences of user/entity actions    │
+  │  and fires on deviation from learned behavioral baselines.                       │
+  │                                                                                  │
+  │  LATENCY: <50ms inference (cached model) | Training: every 24hr (incremental)    │
+  └─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+| # | Module | Purpose |
+|---|--------|---------|
+| 61 | RNN Architecture | LSTM/GRU network definition for sequence modeling |
+| 62 | Feature Tokenizer | Event-to-token conversion for neural input |
+| 63 | Training Pipeline | MLflow-tracked incremental model training |
+| 64 | UEBA Baseline | Per-entity behavioral baseline from RNN embeddings |
+| 65 | Cache Manager | In-memory model cache with LRU eviction |
+| 66 | Streaming Detector | Real-time inference on event streams |
+| 67 | Attack Chain Recall | Historical attack pattern retrieval via embeddings |
+| 68 | Response Policy | Automated response decisions from model output |
+| 69 | Model Monitoring | Drift detection and performance degradation alerts |
+| 70 | Serving Endpoint | Model serving endpoint registration |
+| 71 | Explainability | SHAP/attention-based explanation of detections |
 
 ---
 
