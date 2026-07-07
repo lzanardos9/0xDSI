@@ -540,9 +540,12 @@ Every notebook starts with `%run ../_shared/bootstrap` to initialize all service
   │
   ├── databricks.yml ──────────────────── DAB bundle manifest (dev/staging/prod)
   ├── deploy.sh ───────────────────────── One-command deployment script
+  ├── Makefile ─────────────────────────── Build & deploy targets
   ├── README.md ───────────────────────── This file
   ├── AGENT_ARCHITECTURE.md ───────────── Agent design documentation
   ├── PRODUCTION_CONNECTOR_PLAN.md ────── Connector deployment strategy
+  ├── DATABRICKS_SECURITY_STACK_vs_0xDSI.md ─ Security architecture comparison
+  ├── 0xDSI_DETECTION_ENGINE_EXPLAINED.md ─── Detection methodology reference
   │
   ├── app/ ────────────────────────────── Databricks App (web application)
   │   ├── app.yaml ────────────────────── App runtime config
@@ -557,14 +560,24 @@ Every notebook starts with `%run ../_shared/bootstrap` to initialize all service
   │       ├── src/
   │       │   ├── App.tsx ─────────────── Main application with 80+ views
   │       │   ├── components/ ─────────── 150+ React components
-  │       │   │   ├── command-center/ ── SOC Command Center (threat radar, etc.)
-  │       │   │   ├── connectors/ ─────── Edge Mesh, DNA Catalog, Fleet Telemetry
-  │       │   │   ├── financial-threat/─ Financial threat intelligence
-  │       │   │   ├── glasswing/ ──────── Vulnerability management
-  │       │   │   ├── guardrails/ ─────── LLM safety & governance
-  │       │   │   ├── honeypot/ ───────── Honeypot/honeytoken management
-  │       │   │   └── ... ─────────────── 15 more feature directories
-  │       │   ├── lib/ ────────────────── Shared utilities & mock data
+  │       │   │   ├── command-center/ ── SOC Command Center + SCIF intel (26)
+  │       │   │   ├── correlation/ ────── Correlation rules, Create/Import modals (5)
+  │       │   │   ├── connectors/ ─────── Edge Mesh, DNA Catalog, Vibe Builder (7)
+  │       │   │   ├── dashboard-builder/ WYSIWYG dashboards + migration (12)
+  │       │   │   ├── financial-threat/─ Brazilian + global financial fraud (17)
+  │       │   │   ├── glasswing/ ──────── Vulnerability management pipeline (8)
+  │       │   │   ├── guardrails/ ─────── LLM safety & governance (6)
+  │       │   │   ├── honeypot/ ───────── Honeypot/honeytoken management (6)
+  │       │   │   ├── industry-threats/─ 9 industry-specific threat modules (9)
+  │       │   │   ├── negative-correlation/ Absence-based detection (5)
+  │       │   │   ├── feature-lab/ ────── Development lifecycle + BMAD (7)
+  │       │   │   ├── threat-radar/ ───── Intelligence radar + HUD (6)
+  │       │   │   ├── threat-escalation/ Data contracts + graph scoring (2)
+  │       │   │   ├── user-behavior/ ─── UEBA + psychology profiling (5)
+  │       │   │   ├── swarm/ ──────────── Swarm AI + continuous intel (2)
+  │       │   │   ├── confluence/ ─────── KS statistical validation (1)
+  │       │   │   └── vr/ ─────────────── VR immersive SOC interface (1)
+  │       │   ├── lib/ ────────────────── 60+ shared utilities, parsers, mock data
   │       │   └── contexts/ ───────────── Auth, state management
   │       └── public/ ─────────────────── Static assets
   │
@@ -586,6 +599,199 @@ Every notebook starts with `%run ../_shared/bootstrap` to initialize all service
       ├── jobs.yml ────────────────────── 60+ Workflow job definitions
       └── pipelines.yml ───────────────── DLT pipeline definition
 ```
+
+---
+
+## Frontend Application: SOC Operations Console
+
+The Databricks App ships a full-featured React/TypeScript frontend with 150+ components organized into specialized feature areas. The UI is built with Tailwind CSS, Lucide React icons, and Three.js for 3D visualizations.
+
+### Command Center (20+ components)
+
+The central nerve center providing real-time situational awareness:
+
+```
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │  SOC COMMAND CENTER                                                              │
+  │                                                                                  │
+  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+  │  │ Threat Radar │  │ Threat       │  │ Risk Posture │  │ DEFCON Alert │         │
+  │  │ (global vis) │  │ Heartbeat    │  │ Gauge        │  │ System       │         │
+  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘         │
+  │                                                                                  │
+  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+  │  │ Kill Chain   │  │ Predictive   │  │ Monte Carlo  │  │ Low & Slow   │         │
+  │  │ Waterfall    │  │ Analytics    │  │ Forecasting  │  │ Tracker      │         │
+  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘         │
+  │                                                                                  │
+  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐         │
+  │  │ CEP Live     │  │ Event Funnel │  │ Defense      │  │ Embedding    │         │
+  │  │ Graph        │  │ Processing   │  │ Shield       │  │ Constellation│         │
+  │  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘         │
+  │                                                                                  │
+  │  Intelligence Compartments (SCIF):                                               │
+  │  • Classified Info Flow • Clearance Matrix • Counter-Intel Dashboard              │
+  │  • Need-to-Know Compartments • SCIF Access Control • SIGINT Interceptor          │
+  │                                                                                  │
+  └─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Dashboard Builder (WYSIWYG)
+
+Custom dashboard creation with drag-and-drop layout, real-time preview, and Databricks SQL export:
+
+| Feature | Description |
+|---------|-------------|
+| Widget Palette | Charts, stats, tables, text, KPIs, heatmaps |
+| Grid Layout | 12-column responsive grid with drag-and-resize |
+| Chart Types | Line, bar, area, pie, scatter, radar, treemap |
+| Data Sources | SQL queries against Unity Catalog tables |
+| Databricks Export | Generate Databricks SQL dashboard definitions |
+| Dashboard Migration | Import from Grafana, Kibana, Splunk, Redash, Metabase, Superset |
+| Save/Load | Persist dashboard configurations with versioning |
+
+### Correlation Rules Library & Detection-as-Code
+
+Full lifecycle management for correlation rules with version tracking and promotion pipeline:
+
+```
+  ┌─────────────────────────────────────────────────────────────────────────────────┐
+  │  DETECTION-AS-CODE (DaC) LIFECYCLE                                               │
+  │                                                                                  │
+  │   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌────────────┐                │
+  │   │  DRAFT   │───►│ TESTING  │───►│ STAGING  │───►│ PRODUCTION │                │
+  │   │          │    │          │    │          │    │            │                │
+  │   │ Author   │    │ Unit +   │    │ Shadow   │    │ Live       │                │
+  │   │ Review   │    │ Backtest │    │ Mode     │    │ Alerting   │                │
+  │   │ Version  │    │ Validate │    │ Burn-in  │    │ Full audit │                │
+  │   └──────────┘    └──────────┘    └──────────┘    └────────────┘                │
+  │                                                                                  │
+  │  RULE TYPES (10):                                                                │
+  │  • Deterministic  • ML Anomaly   • ML Classification  • Vector Similarity        │
+  │  • Graph Correlation  • Temporal Sequence  • Behavioral Baseline                 │
+  │  • Bayesian Probabilistic  • Ensemble Multi-Model  • Negative Correlation        │
+  │                                                                                  │
+  │  IMPORT FORMATS: Sigma YAML | Splunk SPL | Elastic KQL | QRadar AQL | Custom     │
+  │                                                                                  │
+  │  CREATION MODES:                                                                 │
+  │  • AI-Assisted (intelligent defaults, auto-MITRE mapping)                        │
+  │  • Manual (full control with YAML preview)                                       │
+  │  • Import (paste from existing SIEM)                                             │
+  │                                                                                  │
+  └─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Create Rule Modal** (Premium UI):
+- Animated gradient header with completion progress
+- Visual rule type selector with icon cards
+- Confidence slider (0-100%)
+- Severity picker with color-coded buttons
+- MITRE ATT&CK tactic/technique selection (14 tactics)
+- YAML live preview toggle
+- 12 security categories (Threat Detection, Identity & Access, Network Security, etc.)
+- Step-based sidebar navigation
+
+### Negative Correlation Engine (UI)
+
+Dedicated panel for absence-based detection with full CRUD:
+
+| Tab | Purpose |
+|-----|---------|
+| Overview | Active negative rules, detection stats, coverage gaps |
+| Rules | Rule library with create/import/edit/delete, DaC status |
+| Detections | Triggered absence detections with timeline |
+| Graph | Relationship graph of expected-but-missing events |
+| Timeline | Temporal view of detection windows |
+
+Includes full Create Rule and Import Rule modals with `negative_correlation` as default type.
+
+### Financial Threat Intelligence (17 components)
+
+Brazilian and global financial fraud detection suite:
+
+- **Boleto Fraud Engine** - Brazilian Boleto payment fraud detection
+- **PIX Fraud Intelligence** - Real-time PIX transaction monitoring
+- **Banking Trojans** - Brazilian banking trojan tracking (Grandoreiro, Mekotio, etc.)
+- **Insider Credential Selling** - Dark web credential marketplace monitoring
+- **Identity Graph Explorer** - Entity relationship mapping
+- **Transaction Risk Monitor** - Real-time transaction scoring
+- **Conciliation Engine** - Automated reconciliation
+- **Case Evidence Graph** - Evidence chain visualization
+
+### Vulnerability Management: Glasswing (8 components)
+
+End-to-end vulnerability lifecycle:
+
+- **Scanner Control** - Orchestrate scan jobs across infrastructure
+- **Results Dashboard** - Prioritized vulnerability findings
+- **Exploit Impact Graph** - Visual blast radius analysis
+- **Remediation Rules** - Auto-generate fix recommendations
+- **Scan History** - Historical trend analysis
+- **Mythosphere Pipeline** - Vulnerability intelligence pipeline
+
+### LLM Safety & Guardrails (6 components)
+
+AI governance and safety controls:
+
+- **Prompt Scanner** - Real-time prompt injection detection
+- **PII Redaction Engine** - Automatic PII masking before LLM calls
+- **Model Access Governance** - Policy-based model access control
+- **Token Budget Controls** - Per-agent/per-user token limits
+- **Policy Manager** - Security policy CRUD
+
+### Honeypot Management (6 components)
+
+Deception technology orchestration:
+
+- **Geospatial Map** - Global honeypot deployment visualization
+- **Interaction Feed** - Real-time attacker interaction stream
+- **Honeytoken Management** - Deploy and track honeytokens
+- **Statistics Dashboard** - Attack pattern analytics
+
+### Industry-Specific Threat Modules (9 verticals)
+
+Pre-built threat models for regulated industries:
+
+| Vertical | Key Threats |
+|----------|-------------|
+| Healthcare | HIPAA violations, medical device attacks, ransomware |
+| Financial | Fraud, insider trading, transaction manipulation |
+| Manufacturing | ICS/SCADA attacks, supply chain compromise |
+| Energy | Grid attacks, NERC CIP compliance, OT threats |
+| Telecom | SIM swap, SS7 exploitation, 5G threats |
+| Retail | POS malware, card skimming, e-commerce fraud |
+| Education | Student data theft, research IP theft |
+| Aviation | ACARS attacks, GPS spoofing, ADS-B injection |
+| Consumer Goods | Brand abuse, counterfeit detection |
+
+### Additional Feature Areas
+
+| Module | Components | Description |
+|--------|-----------|-------------|
+| Agent Management | 10+ | 3D network graph, status monitoring, code config, execution history |
+| Threat Intelligence | 20+ | MITRE ATT&CK matrix, IOC panel, threat feeds, globe visualization |
+| User Behavior (UEBA) | 5+ | Entity onboarding, psychological profiling, cross-domain activity |
+| Feature Lab | 7 | Development lifecycle, BMAD agent testing, architecture diagrams |
+| Connectors & Data | 7 | DNA catalog, vibe builder (NL connector creation), fleet telemetry |
+| Swarm AI | 2 | Multi-agent swarm analytics, continuous AI intelligence |
+| VR Interface | 1 | Immersive VR SOC command screen (Three.js) |
+| Attack Visualization | 5+ | 3D attack graphs, vector graphs, pattern visualization |
+| Reports | 2 | Executive report builder, automated generation |
+| Compliance | 1 | SOX, PCI-DSS, LGPD, HIPAA tracking |
+| Multi-Tenant | 1 | Tenant isolation, per-tenant configuration |
+
+### Frontend Library: 60+ Utilities
+
+| Category | Modules |
+|----------|---------|
+| API Clients | databricksClient, etlClient, llmGateway, databricksExporter |
+| AI/ML | vectorEngine, aiCorrelationAgent, agentOrchestrator, agentCommunication |
+| Visualization | soc3dEffects, soc3dHelpers, globeGeometry, cepStreamMapping |
+| Threat Intel | cepAttackEnrichment, threatEscalation, geopoliticalRisk |
+| Data Parsers | redashParser, kibanaParser, splunkParser, grafanaParser, metabaseParser, supersetParser |
+| Notebooks | 14 registry files mapping UI to backend notebook execution |
+| Security | guardrailsData, responseApprovals, playbookLibrary |
+| Voice/NL | voiceConversation (voice-based SOC interaction) |
 
 ---
 
