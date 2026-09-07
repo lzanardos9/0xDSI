@@ -20,7 +20,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -549,7 +549,7 @@ const TransactionRiskMonitor: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await lakehouse
         .from('financial_transactions')
         .select('*')
         .order('created_at', { ascending: false });

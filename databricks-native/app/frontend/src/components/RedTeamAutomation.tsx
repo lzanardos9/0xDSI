@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Activity, Target, Cpu, Zap, TrendingUp, Shield, AlertTriangle, CheckCircle, Flame } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import ExploitForge from './ExploitForge';
 
 interface FuzzingCampaign {
@@ -82,10 +82,10 @@ export default function RedTeamAutomation() {
       setLoading(true);
 
       const [fuzzRes, pentestRes, toolsRes, chainsRes] = await Promise.all([
-        supabase.from('fuzzing_campaigns').select('*').order('start_time', { ascending: false }),
-        supabase.from('pentest_campaigns').select('*').order('start_time', { ascending: false }),
-        supabase.from('ai_generated_tools').select('*').order('effectiveness_score', { ascending: false }),
-        supabase.from('attack_chains').select('*').order('start_time', { ascending: false })
+        lakehouse.from('fuzzing_campaigns').select('*').order('start_time', { ascending: false }),
+        lakehouse.from('pentest_campaigns').select('*').order('start_time', { ascending: false }),
+        lakehouse.from('ai_generated_tools').select('*').order('effectiveness_score', { ascending: false }),
+        lakehouse.from('attack_chains').select('*').order('start_time', { ascending: false })
       ]);
 
       console.log('[RedTeam] Data loaded:', {

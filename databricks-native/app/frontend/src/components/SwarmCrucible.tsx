@@ -11,7 +11,7 @@ import {
   RaceTimelinePanel,
   DefenseScoringPanel,
 } from './swarm/CAIPanels';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import {
   BattlefieldSelector,
   ChampionDetailModal,
@@ -180,7 +180,7 @@ export default function SwarmCrucible() {
 
   useEffect(() => {
     (async () => {
-      const { data: run } = await supabase
+      const { data: run } = await lakehouse
         .from('swarm_runs')
         .insert({
           run_name: `Crucible ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`,
@@ -194,7 +194,7 @@ export default function SwarmCrucible() {
         .maybeSingle();
       if (run) setRunId(run.id);
 
-      const { data: rules } = await supabase
+      const { data: rules } = await lakehouse
         .from('correlation_rules')
         .select('id,rule_name,mitre_technique,severity')
         .limit(60);
@@ -207,7 +207,7 @@ export default function SwarmCrucible() {
         })));
       }
 
-      const { data: micros } = await supabase
+      const { data: micros } = await lakehouse
         .from('micro_patterns')
         .select('id,pattern_name,support_count')
         .limit(20);
@@ -412,7 +412,7 @@ export default function SwarmCrucible() {
     if (tick === 0 || tick % 40 !== 0) return;
     const redMean = cohorts.red.reduce((s, c) => s + c.fitness, 0) / COHORTS_PER_SIDE;
     const blueMean = cohorts.blue.reduce((s, c) => s + c.fitness, 0) / COHORTS_PER_SIDE;
-    void supabase.from('swarm_runs').update({
+    void lakehouse.from('swarm_runs').update({
       current_tick: tick,
       current_generation: generation,
       red_mean_fitness: redMean,
@@ -455,7 +455,7 @@ export default function SwarmCrucible() {
     setChampions((prev) => [...newChamps, ...prev].slice(0, 10));
 
     if (runId) {
-      void supabase.from('swarm_champions').insert(newChamps.map((c) => ({
+      void lakehouse.from('swarm_champions').insert(newChamps.map((c) => ({
         run_id: runId,
         side: c.side,
         rank: 1,

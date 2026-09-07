@@ -272,7 +272,7 @@ class LakehouseDataClient {
 // ─── Export Lakehouse client (Databricks-native only, no Supabase) ───
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const supabase = new LakehouseDataClient() as any;
+export const lakehouse = new LakehouseDataClient() as any;
 
 export type SecurityEvent = {
   id: string;

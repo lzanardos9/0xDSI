@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import { Brain, AlertTriangle, Eye, Lock, Code, Shield, Clock, AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface Props {
@@ -79,7 +79,7 @@ export function LLMRiskUserDetail({ userEmail }: Props) {
     setLoading(true);
 
     (async () => {
-      const { data: profileData } = await supabase
+      const { data: profileData } = await lakehouse
         .from('llm_risk_profiles')
         .select('*')
         .ilike('user_email', userEmail)
@@ -98,13 +98,13 @@ export function LLMRiskUserDetail({ userEmail }: Props) {
       setProfile(profileData as LLMProfile);
 
       const [interactionsRes, incidentsRes] = await Promise.all([
-        supabase
+        lakehouse
           .from('llm_interactions')
           .select('*')
           .eq('user_id', profileData.user_id)
           .order('timestamp', { ascending: false })
           .limit(15),
-        supabase
+        lakehouse
           .from('llm_risk_incidents')
           .select('*')
           .eq('user_id', profileData.user_id)

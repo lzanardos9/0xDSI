@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Scan, Play, Eye, AlertTriangle, TrendingUp, Database, Settings, X, Activity, Zap, CheckCircle, Clock, Bot, FileCode } from 'lucide-react';
 import PatternGraph3D from './PatternGraph3D';
 import RawDataAnalysis from './RawDataAnalysis';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { generateMockDiscoveryProfiles, generateMockDiscoveredPatterns } from '../lib/mockData';
 import { aiCorrelationAgent } from '../lib/aiCorrelationAgent';
 import MLModelExplainer from './MLModelExplainer';
@@ -175,8 +175,8 @@ const PatternDiscoveryPanel = () => {
   const loadData = async () => {
     try {
       const [profilesResult, patternsResult] = await Promise.all([
-        supabase.from('discovery_profiles').select('*'),
-        supabase.from('discovered_patterns').select('*').order('created_at', { ascending: false }).limit(50),
+        lakehouse.from('discovery_profiles').select('*'),
+        lakehouse.from('discovered_patterns').select('*').order('created_at', { ascending: false }).limit(50),
       ]);
 
       setProfiles(profilesResult.data && profilesResult.data.length > 0 ? profilesResult.data : generateMockDiscoveryProfiles());
@@ -192,7 +192,7 @@ const PatternDiscoveryPanel = () => {
 
   const loadCorrelationRules = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('correlation_rules')
         .select('*')
         .order('created_at', { ascending: false });

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { List, Plus, Search, TrendingUp, Shield, AlertTriangle, Clock, X, Eye, Settings } from 'lucide-react';
-import { supabase, SessionList, SessionListEntry, SessionListRule, SessionCorrelation } from '../lib/supabase';
+import { lakehouse, SessionList, SessionListEntry, SessionListRule, SessionCorrelation } from '../lib/lakehouse';
 import { generateMockSessionLists, generateMockSessionListEntries, generateMockSessionCorrelations } from '../lib/mockData';
 
 const SessionListsPanel = () => {
@@ -18,7 +18,7 @@ const SessionListsPanel = () => {
 
   const loadSessionLists = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('session_lists')
         .select('*')
         .order('created_at', { ascending: false });
@@ -238,7 +238,7 @@ const CreateSessionListModal = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { error } = await supabase.from('session_lists').insert([
+      const { error } = await lakehouse.from('session_lists').insert([
         {
           ...formData,
           tracking_attributes: ['user_id', 'source_ip', 'device_id'],
@@ -370,7 +370,7 @@ const SessionListDetailsModal = ({
     setLoading(true);
     try {
       if (activeTab === 'entries') {
-        const { data, error } = await supabase
+        const { data, error } = await lakehouse
           .from('session_list_entries')
           .select('*')
           .eq('session_list_id', list.id)
@@ -380,7 +380,7 @@ const SessionListDetailsModal = ({
         if (error) throw error;
         setEntries(data && data.length > 0 ? data : generateMockSessionListEntries(list.id));
       } else if (activeTab === 'correlations') {
-        const { data, error } = await supabase
+        const { data, error } = await lakehouse
           .from('session_correlations')
           .select('*')
           .eq('session_list_id', list.id)

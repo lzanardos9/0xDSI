@@ -3216,23 +3216,17 @@ async def genie_query(request: Request):
         planning_prompt = f"""Given this security question, select 2-5 relevant queries to answer it.
 Available queries: {json.dumps(list(GENIE_QUERY_CATALOG.keys()))}
 
-If none of the pre-built queries suffice, generate a SQL query.
-Available tables in Unity Catalog ({CATALOG}.{SCHEMA}): events, alerts, cases,
-correlation_rules, ioc_entries, threat_feeds, user_behavior_anomalies,
-agent_status, agent_configs, threat_campaigns, network_flows, assets,
-response_actions, malware_samples, vulnerability_scans, entity_spine,
-entity_edges, unified_evidence_objects, fuse_results, model_disagreements,
-entity_drift_scores, bytecode_analysis, knowledge_store, tuning_proposals,
-compliance_posture, compliance_violations, edge_collector_registry
+Select ONLY from the query keys listed above. Do not invent new keys and do
+not write raw SQL. If nothing fits well, choose the closest 2-3 keys.
 
 Question: {question}
 
-Respond as JSON: {{"queries": ["query_key1", "query_key2"], "custom_sql": null_or_string}}"""
+Respond as JSON: {{"queries": ["query_key1", "query_key2"]}}"""
 
         plan_response = w.serving_endpoints.query(
             name=LLM_ENDPOINT,
             messages=[
-                {"role": "system", "content": "You are a security data query planner for Databricks Genie. Select relevant queries or generate SQL for the security data lake."},
+                {"role": "system", "content": "You are a security data query planner for Databricks Genie. Select the most relevant pre-built query keys from the provided allowlist. Never write raw SQL."},
                 {"role": "user", "content": planning_prompt}
             ],
             max_tokens=300,
@@ -3276,14 +3270,10 @@ Respond as JSON: {{"queries": ["query_key1", "query_key2"], "custom_sql": null_o
                 except:
                     query_results[q_key] = []
 
-        # Execute custom SQL if provided (with safety check)
-        custom_sql = plan.get("custom_sql")
-        if custom_sql and custom_sql.strip().upper().startswith("SELECT"):
-            try:
-                safe_sql = custom_sql.replace("FROM ", f"FROM {CATALOG}.{SCHEMA}.")
-                query_results["custom"] = query(safe_sql)
-            except:
-                pass
+        # Note: arbitrary model-generated SQL is intentionally NOT executed.
+        # Genie answers only from the curated GENIE_QUERY_CATALOG allowlist so a
+        # crafted question can never coerce the model into reading arbitrary
+        # tables or smuggling injection into the warehouse.
 
         # Stage 3: Synthesize response using Foundation Model
         synthesis_prompt = f"""Based on this security data, answer the analyst's question.

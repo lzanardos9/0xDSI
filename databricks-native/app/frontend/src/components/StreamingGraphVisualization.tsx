@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { Activity, GitBranch, AlertTriangle, Network, Zap, TrendingUp, Database, Link2, Clock, Cpu, Brain, Sliders, Target, Shield, Eye, CheckCircle, XCircle, Radio } from 'lucide-react';
 import CEPLiveGraph from './CEPLiveGraph';
 import RealTimeGraphStreaming from './RealTimeGraphStreaming';
@@ -72,9 +72,9 @@ export default function StreamingGraphVisualization() {
     try {
       setLoading(true);
       const [verticesRes, edgesRes, cepRes] = await Promise.all([
-        supabase.from('streaming_graph_vertices').select('*').eq('is_active', true).order('risk_score', { ascending: false }).limit(50),
-        supabase.from('streaming_graph_edges').select('*').limit(100),
-        supabase.from('cep_pattern_matches').select('*').order('created_at', { ascending: false }).limit(15)
+        lakehouse.from('streaming_graph_vertices').select('*').eq('is_active', true).order('risk_score', { ascending: false }).limit(50),
+        lakehouse.from('streaming_graph_edges').select('*').limit(100),
+        lakehouse.from('cep_pattern_matches').select('*').order('created_at', { ascending: false }).limit(15)
       ]);
 
       if (verticesRes.data) {
@@ -197,7 +197,7 @@ export default function StreamingGraphVisualization() {
       const ruleDesc = correlationRuleDesc || generateRuleDescription(selectedCEPPattern);
       const attackVector = selectedCEPPattern.match_details?.attack_vector || [];
 
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('correlation_rules')
         .insert({
           rule_name: ruleName,

@@ -23,7 +23,7 @@ import {
   Activity,
   BarChart3
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface SystemSettings {
   id?: string;
@@ -135,7 +135,7 @@ export default function ProductionSettings() {
 
   const loadSettings = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('system_settings')
         .select('*')
         .single();
@@ -153,7 +153,7 @@ export default function ProductionSettings() {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('system_settings')
         .upsert({
           ...settings,

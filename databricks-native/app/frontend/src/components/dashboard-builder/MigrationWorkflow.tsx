@@ -8,7 +8,7 @@ import type { SourceTool, UniversalDashboard, UniversalWidget } from '../../lib/
 import { SOURCE_TOOL_META } from '../../lib/dashboardSchema';
 import { parseDashboard, detectSourceTool } from '../../lib/parsers';
 import type { ParseResult } from '../../lib/parsers';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import { callFunction } from '../../lib/llmGateway';
 import DatabricksExportPanel from './DatabricksExportPanel';
 
@@ -81,7 +81,7 @@ export default function MigrationWorkflow({ onComplete, onBack }: MigrationWorkf
     setParseResult(result);
 
     if (result.success) {
-      supabase.from('dashboard_migrations').insert({
+      lakehouse.from('dashboard_migrations').insert({
         source_tool: sourceTool,
         source_filename: fileName,
         original_content: fileContent.substring(0, 50000),
@@ -152,7 +152,7 @@ export default function MigrationWorkflow({ onComplete, onBack }: MigrationWorkf
       };
       setParseResult(result);
 
-      supabase.from('dashboard_migrations').insert({
+      lakehouse.from('dashboard_migrations').insert({
         source_tool: 'screenshot',
         source_filename: screenshotFileName,
         original_content: `[Screenshot: ${screenshotFileName}]`,
@@ -235,7 +235,7 @@ export default function MigrationWorkflow({ onComplete, onBack }: MigrationWorkf
         const avgConfidence = translatedWidgets.reduce((sum, w) => sum + (w.translationConfidence || 0), 0) / translatedWidgets.length;
 
         if (migrationId) {
-          await supabase.from('dashboard_migrations').update({
+          await lakehouse.from('dashboard_migrations').update({
             translation_status: 'completed',
             translated_schema: result,
             confidence_score: avgConfidence,

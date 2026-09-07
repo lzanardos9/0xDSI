@@ -92,8 +92,8 @@ def sink(batch_df, batch_id):
     batch_df.write.mode("append").saveAsTable(TBL("negative_correlation_detections"))
     rows = batch_df.toPandas().to_dict(orient="records")
     import requests, json
-    SUPA_URL = dbutils.secrets.get("kv", "supabase-url")
-    SUPA_KEY = dbutils.secrets.get("kv", "supabase-service-key")
+    SUPA_URL = dbutils.secrets.get("kv", "lakehouse-url")
+    SUPA_KEY = dbutils.secrets.get("kv", "lakehouse-service-key")
     requests.post(f"{SUPA_URL}/rest/v1/negative_correlation_detections",
                   headers={"apikey": SUPA_KEY, "Authorization": f"Bearer {SUPA_KEY}",
                            "Content-Type": "application/json",

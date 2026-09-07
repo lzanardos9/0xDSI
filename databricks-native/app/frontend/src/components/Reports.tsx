@@ -33,7 +33,7 @@ import {
   Mail,
   Bell
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface Report {
   id: string;
@@ -416,7 +416,7 @@ export default function Reports() {
 
   const loadCustomReports = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('custom_reports')
         .select('*')
         .order('created_at', { ascending: false });
@@ -437,7 +437,7 @@ export default function Reports() {
 
   const saveCustomReport = async () => {
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('custom_reports')
         .insert({
           name: reportConfig.name,

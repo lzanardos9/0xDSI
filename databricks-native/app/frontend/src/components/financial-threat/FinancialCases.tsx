@@ -26,7 +26,7 @@ import {
   Plus,
   Send,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import CaseEvidenceGraph from './CaseEvidenceGraph';
 
 // ---------------------------------------------------------------------------
@@ -999,9 +999,9 @@ export default function FinancialCases() {
     setError(null);
     try {
       const [casesRes, evidenceRes, commentsRes] = await Promise.all([
-        supabase.from('financial_cases').select('*').order('opened_at', { ascending: false }),
-        supabase.from('financial_case_evidence').select('*').order('collected_at', { ascending: false }),
-        supabase.from('financial_case_comments').select('*').order('created_at', { ascending: true }),
+        lakehouse.from('financial_cases').select('*').order('opened_at', { ascending: false }),
+        lakehouse.from('financial_case_evidence').select('*').order('collected_at', { ascending: false }),
+        lakehouse.from('financial_case_comments').select('*').order('created_at', { ascending: true }),
       ]);
 
       if (casesRes.error) throw casesRes.error;
@@ -1089,7 +1089,7 @@ export default function FinancialCases() {
   }, []);
 
   const handleSaveCase = useCallback(async (id: string, data: EditFormData) => {
-    const { error: err } = await supabase
+    const { error: err } = await lakehouse
       .from('financial_cases')
       .update({
         title: data.title,
@@ -1126,7 +1126,7 @@ export default function FinancialCases() {
       comment_type: commentType,
       is_internal: false,
     };
-    const { data, error: err } = await supabase
+    const { data, error: err } = await lakehouse
       .from('financial_case_comments')
       .insert(newComment)
       .select()

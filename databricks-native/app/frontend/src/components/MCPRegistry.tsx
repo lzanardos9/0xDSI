@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, Ban, BookOpen, Boxes, Cable, CheckCircle2, ChevronRight, Cloud, Cpu, Database, FileCode, Filter, GitBranch, Globe as Globe2, Hexagon, Layers, Microscope, Network, Plug, Radar, Search, Server, Shield, Sparkles, Ticket, Workflow, Wrench, X, Zap } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 type ServerRow = {
   id: string;
@@ -145,13 +145,13 @@ export default function MCPRegistry() {
     let mounted = true;
     (async () => {
       const [s, t, r, p, i, b, c] = await Promise.all([
-        supabase.from('mcp_servers').select('*').order('total_invocations', { ascending: false }),
-        supabase.from('mcp_tools').select('*').order('name'),
-        supabase.from('mcp_resources').select('*').order('uri'),
-        supabase.from('mcp_prompts').select('*').order('name'),
-        supabase.from('mcp_tool_invocations').select('*').order('invoked_at', { ascending: false }).limit(200),
-        supabase.from('mcp_agent_bindings').select('*').order('agent_slug'),
-        supabase.from('mcp_clients').select('*').order('last_seen_at', { ascending: false }),
+        lakehouse.from('mcp_servers').select('*').order('total_invocations', { ascending: false }),
+        lakehouse.from('mcp_tools').select('*').order('name'),
+        lakehouse.from('mcp_resources').select('*').order('uri'),
+        lakehouse.from('mcp_prompts').select('*').order('name'),
+        lakehouse.from('mcp_tool_invocations').select('*').order('invoked_at', { ascending: false }).limit(200),
+        lakehouse.from('mcp_agent_bindings').select('*').order('agent_slug'),
+        lakehouse.from('mcp_clients').select('*').order('last_seen_at', { ascending: false }),
       ]);
       if (!mounted) return;
       setServers((s.data as ServerRow[]) ?? []);

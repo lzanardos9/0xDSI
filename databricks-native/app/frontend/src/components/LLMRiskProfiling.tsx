@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { Brain, AlertTriangle, TrendingUp, TrendingDown, Shield, Eye, Lock, Code, Clock, User, AlertCircle, ChevronRight } from 'lucide-react';
 import MLModelExplainer from './MLModelExplainer';
 import { ML_MODELS } from '../lib/mlModelData';
@@ -156,7 +156,7 @@ export default function LLMRiskProfiling() {
 
   const loadData = async () => {
     try {
-      const { data: profilesData, error } = await supabase
+      const { data: profilesData, error } = await lakehouse
         .from('llm_risk_profiles')
         .select('*')
         .order('current_risk_score', { ascending: false });
@@ -185,33 +185,33 @@ export default function LLMRiskProfiling() {
   const loadUserDetails = async (userId: string) => {
     try {
       const [interactionsResult, incidentsResult, psychProfileResult, psychFactorsResult, commSourcesResult, crossPlatformResult] = await Promise.all([
-        supabase
+        lakehouse
           .from('llm_interactions')
           .select('*')
           .eq('user_id', userId)
           .order('timestamp', { ascending: false })
           .limit(20),
-        supabase
+        lakehouse
           .from('llm_risk_incidents')
           .select('*')
           .eq('user_id', userId)
           .order('created_at', { ascending: false }),
-        supabase
+        lakehouse
           .from('user_psychological_profiles')
           .select('*')
           .eq('user_id', userId)
           .maybeSingle(),
-        supabase
+        lakehouse
           .from('psychological_risk_factors')
           .select('*')
           .eq('user_id', userId)
           .order('severity', { ascending: false }),
-        supabase
+        lakehouse
           .from('communication_sources')
           .select('*')
           .eq('user_id', userId)
           .maybeSingle(),
-        supabase
+        lakehouse
           .from('cross_platform_behavioral_patterns')
           .select('*')
           .eq('user_id', userId)

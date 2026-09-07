@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Database, List, Users, AlertCircle, CheckCircle, XCircle, TrendingUp } from 'lucide-react';
 import SessionListsPanel from './SessionListsPanel';
 import ActiveListsPanel from './ActiveListsPanel';
-import { supabase, Session } from '../lib/supabase';
+import { lakehouse, Session } from '../lib/lakehouse';
 import { generateMockSessions } from '../lib/mockData';
 
 const ListsPanel = () => {
@@ -80,7 +80,7 @@ const SessionMonitorContent = () => {
 
   const loadSessions = async () => {
     try {
-      let query = supabase
+      let query = lakehouse
         .from('sessions')
         .select('*')
         .order('start_time', { ascending: false })

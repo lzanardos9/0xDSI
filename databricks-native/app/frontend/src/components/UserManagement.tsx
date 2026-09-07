@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { callFunction } from '../lib/llmGateway';
 import { Users, Plus, CreditCard as Edit, Trash2, Shield, Lock, Unlock, Clock, Search, Filter, X, Check, AlertTriangle, Eye, EyeOff, UserCog, History, Award, Network, KeyRound } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import UserActivityLineage from './UserActivityLineage';
 
 interface UserProfile {
@@ -84,7 +84,7 @@ const UserManagement = () => {
 
   const loadUsers = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('user_profiles')
         .select('*')
         .order('created_at', { ascending: false });
@@ -98,7 +98,7 @@ const UserManagement = () => {
 
   const loadRoles = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('user_roles')
         .select('*')
         .order('role_name');
@@ -112,7 +112,7 @@ const UserManagement = () => {
 
   const loadAuditLogs = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('user_audit_log')
         .select('*')
         .order('timestamp', { ascending: false })
@@ -128,7 +128,7 @@ const UserManagement = () => {
   const handleCreateUser = async () => {
     try {
       const { password, ...profileData } = formData;
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('user_profiles')
         .insert([profileData]);
 
@@ -191,7 +191,7 @@ const UserManagement = () => {
     if (!selectedUser) return;
 
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('user_profiles')
         .update(formData)
         .eq('id', selectedUser.id);
@@ -212,7 +212,7 @@ const UserManagement = () => {
     if (!confirm('Are you sure you want to suspend this user?')) return;
 
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('user_profiles')
         .update({ account_status: 'suspended' })
         .eq('id', userId);
@@ -226,7 +226,7 @@ const UserManagement = () => {
 
   const handleActivateUser = async (userId: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('user_profiles')
         .update({ account_status: 'active', account_approved_at: new Date().toISOString() })
         .eq('id', userId);
@@ -242,7 +242,7 @@ const UserManagement = () => {
     if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
 
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('user_profiles')
         .delete()
         .eq('id', userId);

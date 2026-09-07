@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Activity, TrendingUp, TrendingDown, AlertCircle, BarChart3, Filter, RefreshCw } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface RawEvent {
   id: string;
@@ -54,7 +54,7 @@ const RawDataAnalysis = () => {
       const minutesAgo = getMinutesFromWindow(timeWindow);
       const cutoffTime = new Date(Date.now() - minutesAgo * 60 * 1000).toISOString();
 
-      const { data: eventsData } = await supabase
+      const { data: eventsData } = await lakehouse
         .from('events')
         .select('*')
         .gte('created_at', cutoffTime)

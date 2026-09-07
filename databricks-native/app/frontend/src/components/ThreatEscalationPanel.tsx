@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Calculator, TrendingUp, Shield, Server, AlertTriangle, Settings, X, Plus, Users, Brain, Network } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { ThreatEscalationEngine, ThreatEscalationInput } from '../lib/threatEscalation';
 import GraphScoringTab from './threat-escalation/GraphScoringTab';
 import DataContractsTab from './threat-escalation/DataContractsTab';
@@ -24,8 +24,8 @@ const ThreatEscalationPanel = () => {
 
   const loadData = async () => {
     const [assetsRes, formulasRes] = await Promise.all([
-      supabase.from('asset_registry').select('*').eq('is_active', true).limit(20),
-      supabase.from('threat_escalation_formulas').select('*'),
+      lakehouse.from('asset_registry').select('*').eq('is_active', true).limit(20),
+      lakehouse.from('threat_escalation_formulas').select('*'),
     ]);
 
     setAssets(assetsRes.data || []);
@@ -36,7 +36,7 @@ const ThreatEscalationPanel = () => {
     const result = await ThreatEscalationEngine.calculateAndStore(
       `event-${Date.now()}`,
       calcInput,
-      supabase
+      lakehouse
     );
     setCalculation(result);
   };
@@ -677,7 +677,7 @@ const RecentCalculations = () => {
   }, []);
 
   const loadCalculations = async () => {
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('event_priority_calculations')
       .select('*')
       .order('calculated_at', { ascending: false })

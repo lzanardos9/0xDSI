@@ -198,17 +198,17 @@ export class ThreatEscalationEngine {
   static async calculateAndStore(
     eventId: string,
     input: ThreatEscalationInput,
-    supabase: any
+    lakehouse: any
   ): Promise<PriorityCalculation | null> {
     try {
       const [formulaResult, assetResult, threatIntelResult] = await Promise.all([
-        supabase
+        lakehouse
           .from('threat_escalation_formulas')
           .select('*')
           .eq('is_active', true)
           .single(),
         input.targetAssetIp
-          ? supabase
+          ? lakehouse
               .from('asset_registry')
               .select('*')
               .eq('ip_address', input.targetAssetIp)
@@ -216,7 +216,7 @@ export class ThreatEscalationEngine {
               .maybeSingle()
           : Promise.resolve({ data: null }),
         input.sourceIp
-          ? supabase
+          ? lakehouse
               .from('threat_intelligence_sources')
               .select('*')
               .eq('indicator_value', input.sourceIp)
@@ -235,7 +235,7 @@ export class ThreatEscalationEngine {
         formula
       );
 
-      await supabase.from('event_priority_calculations').insert({
+      await lakehouse.from('event_priority_calculations').insert({
         event_id: eventId,
         formula_id: formula?.id,
         initial_severity: input.initialSeverity,

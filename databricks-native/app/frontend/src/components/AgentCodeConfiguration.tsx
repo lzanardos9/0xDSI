@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Code, Settings, FileCode, Terminal, Box, Database, Workflow, Copy, Check, Brain, Cpu, Plus, Search } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface Agent {
   id: string;
@@ -77,9 +77,9 @@ const AgentCodeConfiguration = () => {
   const loadAgents = async () => {
     try {
       const [canonicalRes, aiRes, implRes] = await Promise.all([
-        supabase.from('canonical_agents').select('*').order('category').order('name'),
-        supabase.from('ai_agents').select('*'),
-        supabase.from('agent_implementations').select('*'),
+        lakehouse.from('canonical_agents').select('*').order('category').order('name'),
+        lakehouse.from('ai_agents').select('*'),
+        lakehouse.from('agent_implementations').select('*'),
       ]);
 
       const canonicalRows = canonicalRes.data || [];

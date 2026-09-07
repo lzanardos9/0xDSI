@@ -5,7 +5,7 @@ import {
   Network, Brain, Zap, FlaskConical, GitBranch, Play, Loader2,
   Activity, Cpu, Gauge, Radio, Layers, Fingerprint, Pencil
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import CorrelationRuleGraph from './CorrelationRuleGraph';
 
 interface RuleCondition {
@@ -156,7 +156,7 @@ export default function DaCInspectorModal({
     };
 
     if (savedRuleId) {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('correlation_rules_library')
         .update({ ...rulePayload, updated_at: new Date().toISOString() })
         .eq('id', savedRuleId);
@@ -168,7 +168,7 @@ export default function DaCInspectorModal({
         onRuleSaved?.(savedRuleId, targetStage);
       }
     } else {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('correlation_rules_library')
         .insert(rulePayload)
         .select('id')
@@ -181,7 +181,7 @@ export default function DaCInspectorModal({
         setTimeout(() => setSaveSuccess(null), 3000);
         onRuleSaved?.(data.id, targetStage);
 
-        await supabase.from('correlation_rule_versions').insert({
+        await lakehouse.from('correlation_rule_versions').insert({
           rule_id: data.id,
           version: rulePayload.version,
           rule_name: ruleName,

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { Activity, Zap, Brain, Network, GitBranch, AlertTriangle, Clock, Shield, Target, TrendingUp } from 'lucide-react';
 import {
   STREAMS, STREAM_INDEX, assignStreamsWithSpread,
@@ -98,7 +98,7 @@ export default function CEPLiveGraph() {
   }, [hoveredEventId]);
 
   const loadAllPatterns = async () => {
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('cep_pattern_matches')
       .select('match_id, match_details, confidence_score')
       .order('confidence_score', { ascending: false });
@@ -109,7 +109,7 @@ export default function CEPLiveGraph() {
   };
 
   const loadSpecificPattern = async (matchId: string) => {
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('cep_pattern_matches')
       .select('*')
       .eq('match_id', matchId)

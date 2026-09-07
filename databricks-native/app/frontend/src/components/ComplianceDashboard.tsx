@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Shield, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, FileCheck, AlertOctagon, ChevronDown, ChevronUp, ArrowLeft, User, Calendar, Target, Layers } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface Framework {
   id: string;
@@ -77,7 +77,7 @@ export default function ComplianceDashboard() {
   }, [selectedFramework]);
 
   const loadFrameworkDetails = async (frameworkId: string) => {
-    const { data: controls } = await supabase
+    const { data: controls } = await lakehouse
       .from('compliance_controls')
       .select('*')
       .eq('framework_id', frameworkId)
@@ -88,14 +88,14 @@ export default function ComplianceDashboard() {
 
   const loadComplianceData = async () => {
     try {
-      const { data: fwData } = await supabase
+      const { data: fwData } = await lakehouse
         .from('compliance_frameworks')
         .select('*')
         .order('framework_code');
 
       if (fwData) setFrameworks(fwData);
 
-      const { data: statusData } = await supabase
+      const { data: statusData } = await lakehouse
         .from('compliance_assessments')
         .select(`
           *,
@@ -162,7 +162,7 @@ export default function ComplianceDashboard() {
         setComplianceStatus(aggregated);
       }
 
-      const { data: gapsData } = await supabase
+      const { data: gapsData } = await lakehouse
         .from('compliance_gaps')
         .select(`
           *,

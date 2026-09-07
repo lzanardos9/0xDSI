@@ -4,7 +4,7 @@ import {
   Lock, Activity, AlertTriangle, Ban, ChevronRight,
   Zap, TrendingUp, Clock
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import GuardrailsDashboard from './guardrails/GuardrailsDashboard';
 import PolicyManager from './guardrails/PolicyManager';
 import PromptScanner from './guardrails/PromptScanner';
@@ -59,10 +59,10 @@ const LLMGuardrailsControl = () => {
 
   const loadHeaderStats = async () => {
     const [policiesRes, scansRes, piiRes, modelsRes] = await Promise.all([
-      supabase.from('guardrail_policies').select('id', { count: 'exact', head: true }).eq('enabled', true),
-      supabase.from('guardrail_scan_results').select('id', { count: 'exact', head: true }).eq('verdict', 'block'),
-      supabase.from('pii_redaction_log').select('id', { count: 'exact', head: true }),
-      supabase.from('model_access_rules').select('id', { count: 'exact', head: true }),
+      lakehouse.from('guardrail_policies').select('id', { count: 'exact', head: true }).eq('enabled', true),
+      lakehouse.from('guardrail_scan_results').select('id', { count: 'exact', head: true }).eq('verdict', 'block'),
+      lakehouse.from('pii_redaction_log').select('id', { count: 'exact', head: true }),
+      lakehouse.from('model_access_rules').select('id', { count: 'exact', head: true }),
     ]);
     setHeaderStats({
       activePolicies: policiesRes.count || 18,

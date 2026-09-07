@@ -5,7 +5,7 @@ import {
   Waves, Sigma, FlaskConical, Beaker, Bot, Cpu, Skull, ShieldAlert, Globe,
   Binary, GitMerge, Search, X, BarChart3
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import KSValidationPanel from './confluence/KSValidationPanel';
 
 type Lens = {
@@ -150,13 +150,13 @@ export default function DetectionConfluence() {
   useEffect(() => {
     (async () => {
       const [l, s, v, w, m, a, c] = await Promise.all([
-        supabase.from('confluence_lenses').select('*').order('display_name'),
-        supabase.from('confluence_signals').select('*').order('emitted_at', { ascending: false }).limit(400),
-        supabase.from('confluence_verdicts').select('*').order('fused_score', { ascending: false }),
-        supabase.from('confluence_lens_weights').select('*').eq('tenant_id', 'default'),
-        supabase.from('confluence_ml_invocations').select('*').order('invoked_at', { ascending: false }).limit(500),
-        supabase.from('confluence_agent_actions').select('*').order('phase').limit(300),
-        supabase.from('confluence_attack_chains').select('*').order('fused_score', { ascending: false }),
+        lakehouse.from('confluence_lenses').select('*').order('display_name'),
+        lakehouse.from('confluence_signals').select('*').order('emitted_at', { ascending: false }).limit(400),
+        lakehouse.from('confluence_verdicts').select('*').order('fused_score', { ascending: false }),
+        lakehouse.from('confluence_lens_weights').select('*').eq('tenant_id', 'default'),
+        lakehouse.from('confluence_ml_invocations').select('*').order('invoked_at', { ascending: false }).limit(500),
+        lakehouse.from('confluence_agent_actions').select('*').order('phase').limit(300),
+        lakehouse.from('confluence_attack_chains').select('*').order('fused_score', { ascending: false }),
       ]);
       setLenses((l.data ?? []) as Lens[]);
       setSignals((s.data ?? []) as Signal[]);

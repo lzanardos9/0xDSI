@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 
 export interface CWCentroid {
   id: string;
@@ -98,7 +98,7 @@ function randomEmbedding(bias?: number[]): number[] {
 }
 
 export async function createSession(name: string): Promise<string> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('chronoweave_sessions')
     .insert({ name, status: 'running' })
     .select('id')
@@ -108,7 +108,7 @@ export async function createSession(name: string): Promise<string> {
 }
 
 export async function loadCentroids(): Promise<CWCentroid[]> {
-  const { data } = await supabase.from('chronoweave_bad_centroids').select('*');
+  const { data } = await lakehouse.from('chronoweave_bad_centroids').select('*');
   return (data || []) as CWCentroid[];
 }
 
@@ -161,7 +161,7 @@ export async function maybeSpawnCentroid(existing: CWCentroid[]): Promise<CWCent
   const candidates = EMERGING_CENTROID_POOL.filter(c => !existingNames.has(c.name));
   if (!candidates.length) return null;
   const pick = candidates[Math.floor(Math.random() * candidates.length)];
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('chronoweave_bad_centroids')
     .insert(pick)
     .select('*')
@@ -171,7 +171,7 @@ export async function maybeSpawnCentroid(existing: CWCentroid[]): Promise<CWCent
 }
 
 export async function loadSessionNodes(sessionId: string, limit = 2000): Promise<CWNode[]> {
-  const { data } = await supabase
+  const { data } = await lakehouse
     .from('chronoweave_nodes')
     .select('*')
     .eq('session_id', sessionId)
@@ -181,7 +181,7 @@ export async function loadSessionNodes(sessionId: string, limit = 2000): Promise
 }
 
 export async function loadSessionEdges(sessionId: string, limit = 4000): Promise<CWEdge[]> {
-  const { data } = await supabase
+  const { data } = await lakehouse
     .from('chronoweave_edges')
     .select('*')
     .eq('session_id', sessionId)
@@ -242,7 +242,7 @@ export async function tickSession(
     });
   }
 
-  const { data: insertedNodes, error: nodesErr } = await supabase
+  const { data: insertedNodes, error: nodesErr } = await lakehouse
     .from('chronoweave_nodes')
     .insert(newNodes)
     .select('*');
@@ -279,16 +279,16 @@ export async function tickSession(
 
   let edges: CWEdge[] = [];
   if (newEdges.length) {
-    const { data: insertedEdges } = await supabase.from('chronoweave_edges').insert(newEdges).select('*');
+    const { data: insertedEdges } = await lakehouse.from('chronoweave_edges').insert(newEdges).select('*');
     edges = (insertedEdges || []) as CWEdge[];
   }
   let hits: CWHit[] = [];
   if (newHits.length) {
-    const { data: insertedHits } = await supabase.from('chronoweave_similarity_hits').insert(newHits).select('*');
+    const { data: insertedHits } = await lakehouse.from('chronoweave_similarity_hits').insert(newHits).select('*');
     hits = (insertedHits || []) as CWHit[];
   }
 
-  await supabase
+  await lakehouse
     .from('chronoweave_sessions')
     .update({ last_tick_at: new Date().toISOString(), tick_count: tickIndex + 1 })
     .eq('id', sessionId);
@@ -297,5 +297,5 @@ export async function tickSession(
 }
 
 export async function purgeSession(sessionId: string) {
-  await supabase.from('chronoweave_sessions').delete().eq('id', sessionId);
+  await lakehouse.from('chronoweave_sessions').delete().eq('id', sessionId);
 }

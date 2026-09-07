@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Shield, Search, Filter, AlertTriangle, CheckCircle, XCircle, Hash } from 'lucide-react';
-import { supabase, IOC, IOCMatch } from '../lib/supabase';
+import { lakehouse, IOC, IOCMatch } from '../lib/lakehouse';
 import { generateMockIOCs, generateMockIOCMatches } from '../lib/mockData';
 
 const IOCPanel = () => {
@@ -24,7 +24,7 @@ const IOCPanel = () => {
 
   const loadIOCs = async () => {
     try {
-      let query = supabase
+      let query = lakehouse
         .from('iocs')
         .select('*')
         .eq('is_active', true)
@@ -52,7 +52,7 @@ const IOCPanel = () => {
 
   const loadMatches = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('ioc_matches')
         .select('*')
         .order('matched_at', { ascending: false })
@@ -67,7 +67,7 @@ const IOCPanel = () => {
 
   const deactivateIOC = async (iocId: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('iocs')
         .update({ is_active: false, updated_at: new Date().toISOString() })
         .eq('id', iocId);

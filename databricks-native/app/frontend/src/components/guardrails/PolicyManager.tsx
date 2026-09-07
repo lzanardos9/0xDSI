@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Shield, Plus, Search, ChevronDown, ChevronUp, ToggleLeft, ToggleRight, CreditCard as Edit3, Trash2, Copy, Clock, Zap, AlertTriangle, Lock, Filter } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import type { GuardrailPolicy } from '../../lib/guardrailsData';
 import { POLICY_TYPE_CONFIG } from '../../lib/guardrailsData';
 
@@ -19,13 +19,13 @@ const PolicyManager = () => {
   }, []);
 
   const loadPolicies = async () => {
-    const { data } = await supabase.from('guardrail_policies').select('*').order('priority');
+    const { data } = await lakehouse.from('guardrail_policies').select('*').order('priority');
     if (data) setPolicies(data);
   };
 
   const togglePolicy = async (id: string, enabled: boolean) => {
     setPolicies(prev => prev.map(p => p.id === id ? { ...p, enabled: !enabled } : p));
-    await supabase.from('guardrail_policies').update({ enabled: !enabled }).eq('id', id);
+    await lakehouse.from('guardrail_policies').update({ enabled: !enabled }).eq('id', id);
   };
 
   const runTestScan = () => {

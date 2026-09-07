@@ -3,7 +3,7 @@ import {
   Eye, EyeOff, Shield, AlertTriangle, FileText, Lock,
   Search, Filter, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import type { PIIRedaction, GuardrailPolicy } from '../../lib/guardrailsData';
 
 const ENTITY_CONFIG: Record<string, { label: string; color: string; icon: string; example: string }> = {
@@ -44,8 +44,8 @@ const PIIRedactionEngine = () => {
 
   const loadData = async () => {
     const [redactionsRes, policiesRes] = await Promise.all([
-      supabase.from('pii_redaction_log').select('*').order('redacted_at', { ascending: false }).limit(50),
-      supabase.from('guardrail_policies').select('*').eq('policy_type', 'pii_redaction').order('priority'),
+      lakehouse.from('pii_redaction_log').select('*').order('redacted_at', { ascending: false }).limit(50),
+      lakehouse.from('guardrail_policies').select('*').eq('policy_type', 'pii_redaction').order('priority'),
     ]);
     if (redactionsRes.data) setRedactions(redactionsRes.data);
     if (policiesRes.data) setPolicies(policiesRes.data);

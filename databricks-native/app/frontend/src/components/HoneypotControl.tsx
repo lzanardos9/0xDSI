@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Shield, Eye, Radio, RefreshCw } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import HoneypotStats from './honeypot/HoneypotStats';
 import HoneypotMap from './honeypot/HoneypotMap';
 import HoneypotTable from './honeypot/HoneypotTable';
@@ -20,9 +20,9 @@ const HoneypotControl = () => {
   const fetchData = async () => {
     setLoading(true);
     const [hpRes, htRes, intRes] = await Promise.all([
-      supabase.from('honeypots').select('*').order('interaction_count', { ascending: false }),
-      supabase.from('honeytokens').select('*').order('trigger_count', { ascending: false }),
-      supabase.from('honeypot_interactions').select('*').order('created_at', { ascending: false }).limit(200),
+      lakehouse.from('honeypots').select('*').order('interaction_count', { ascending: false }),
+      lakehouse.from('honeytokens').select('*').order('trigger_count', { ascending: false }),
+      lakehouse.from('honeypot_interactions').select('*').order('created_at', { ascending: false }).limit(200),
     ]);
     setHoneypots(hpRes.data || []);
     setHoneytokens(htRes.data || []);

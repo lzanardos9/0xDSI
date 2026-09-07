@@ -74,8 +74,8 @@ def sink(batch_df, batch_id):
     batch_df.write.mode("append").saveAsTable(TBL("detection_confluence_events"))
     # escalate to Supabase escalation queue
     import requests, json
-    SUPA_URL = dbutils.secrets.get("kv", "supabase-url")
-    SUPA_KEY = dbutils.secrets.get("kv", "supabase-service-key")
+    SUPA_URL = dbutils.secrets.get("kv", "lakehouse-url")
+    SUPA_KEY = dbutils.secrets.get("kv", "lakehouse-service-key")
     payload = rows.to_dict(orient="records")
     requests.post(
         f"{SUPA_URL}/rest/v1/threat_escalations",

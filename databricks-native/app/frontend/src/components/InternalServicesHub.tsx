@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { BookOpen, Code, Cpu, Package, Layers, Zap, CheckCircle, AlertCircle } from 'lucide-react';
 
 interface Service {
@@ -24,10 +24,10 @@ export default function InternalServicesHub() {
 
   const loadAllServices = async () => {
     const [notebooksRes, modelsRes, trainingRes, appsRes] = await Promise.all([
-      supabase.from('cowboy_notebooks').select('*').limit(10),
-      supabase.from('hedwick_model_registry').select('*').limit(10),
-      supabase.from('bolt_gpu_training').select('*').limit(10),
-      supabase.from('db_apps_registry').select('*').limit(10)
+      lakehouse.from('cowboy_notebooks').select('*').limit(10),
+      lakehouse.from('hedwick_model_registry').select('*').limit(10),
+      lakehouse.from('bolt_gpu_training').select('*').limit(10),
+      lakehouse.from('db_apps_registry').select('*').limit(10)
     ]);
 
     if (notebooksRes.data) setNotebooks(notebooksRes.data);

@@ -5,7 +5,7 @@ import {
   Coins, BarChart3, Grid3x3, ArrowRight, Cpu, Lock, Bug,
   Gauge, CircleDot, Minus,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 type PatchValidation = {
   id: string;
@@ -90,7 +90,7 @@ export function PatchValidatorPanel() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('swarm_patch_validations')
         .select('*')
         .order('generation', { ascending: true });
@@ -224,7 +224,7 @@ export function CWEHeatmapPanel() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('swarm_cwe_difficulty')
         .select('*')
         .order('red_success_rate', { ascending: false });
@@ -375,7 +375,7 @@ export function TokenCostPanel() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('swarm_token_costs')
         .select('*')
         .order('tick', { ascending: true });
@@ -547,7 +547,7 @@ export function RaceTimelinePanel() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('swarm_race_conditions')
         .select('*')
         .order('red_start_tick', { ascending: true });
@@ -677,7 +677,7 @@ export function DefenseScoringPanel() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('swarm_defense_scores')
         .select('*')
         .order('combined_score', { ascending: false });

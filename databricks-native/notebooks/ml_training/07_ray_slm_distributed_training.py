@@ -22,7 +22,7 @@
 # MAGIC incident sequences are up-weighted (default 3x) during sampling so the model leans
 # MAGIC hardest on the cases we know are real.
 # MAGIC
-# MAGIC **Live visibility:** training telemetry is streamed into the Supabase-backed
+# MAGIC **Live visibility:** training telemetry is streamed into the Unity Catalog Delta
 # MAGIC `dslm_ray_runs`, `dslm_ray_workers`, and `dslm_ray_timeline` tables, which power the
 # MAGIC "Ray Training Theater" tab in the SOC app.
 

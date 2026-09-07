@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Scan, Shield, GitBranch, History, Zap, ExternalLink, Workflow } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import GlasswingStats from './GlasswingStats';
 import GlasswingScanner from './GlasswingScanner';
 import GlasswingResults from './GlasswingResults';
@@ -88,9 +88,9 @@ export default function GlasswingPanel() {
     setLoading(true);
     try {
       const [scansRes, vulnsRes, exploitsRes] = await Promise.all([
-        supabase.from('glasswing_scans').select('*').order('created_at', { ascending: false }),
-        supabase.from('glasswing_vulnerabilities').select('*').order('cvss_score', { ascending: false }),
-        supabase.from('glasswing_exploits').select('*').order('impact_score', { ascending: false }),
+        lakehouse.from('glasswing_scans').select('*').order('created_at', { ascending: false }),
+        lakehouse.from('glasswing_vulnerabilities').select('*').order('cvss_score', { ascending: false }),
+        lakehouse.from('glasswing_exploits').select('*').order('impact_score', { ascending: false }),
       ]);
 
       const scansData = scansRes.data || [];

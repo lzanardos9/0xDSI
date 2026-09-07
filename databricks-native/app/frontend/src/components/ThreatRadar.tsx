@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { callFunction } from '../lib/llmGateway';
 import { CheckCircle2, XCircle, Radio, GraduationCap, Zap } from 'lucide-react';
 import RadarHUD from './threat-radar/RadarHUD';
@@ -23,7 +23,7 @@ export default function ThreatRadar() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('threat_radar_items')
       .select('*')
       .order('published_at', { ascending: false })
@@ -32,10 +32,10 @@ export default function ThreatRadar() {
     setItems(list);
     if (!selectedId && list.length) setSelectedId(list[0].id);
 
-    const { data: runs } = await supabase.from('threat_radar_runs').select('finished_at, run_type').eq('run_type', 'fetch').not('finished_at', 'is', null).order('finished_at', { ascending: false }).limit(1);
+    const { data: runs } = await lakehouse.from('threat_radar_runs').select('finished_at, run_type').eq('run_type', 'fetch').not('finished_at', 'is', null).order('finished_at', { ascending: false }).limit(1);
     setLastRun(runs?.[0]?.finished_at || null);
 
-    const { count } = await supabase.from('threat_radar_proposals').select('*', { count: 'exact', head: true }).eq('status', 'draft');
+    const { count } = await lakehouse.from('threat_radar_proposals').select('*', { count: 'exact', head: true }).eq('status', 'draft');
     setProposalsCount(count || 0);
     setLoading(false);
   };

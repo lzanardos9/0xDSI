@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 import { callFunction } from './llmGateway';
 
 export class ETLClient {
@@ -51,7 +51,7 @@ export class ETLClient {
 
   async getQueueDepths() {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .rpc('get_queue_depths');
 
       if (error) throw error;
@@ -64,7 +64,7 @@ export class ETLClient {
 
   async getProcessingStats(limit: number = 20) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('processing_stats')
         .select('*')
         .order('stat_timestamp', { ascending: false })
@@ -104,7 +104,7 @@ export class ETLClient {
   }
 
   subscribeToRawBuffer(callback: (event: any) => void) {
-    return supabase
+    return lakehouse
       .channel('raw_buffer_changes')
       .on('postgres_changes', {
         event: 'INSERT',
@@ -117,7 +117,7 @@ export class ETLClient {
   }
 
   subscribeToEvents(callback: (event: any) => void) {
-    return supabase
+    return lakehouse
       .channel('events_changes')
       .on('postgres_changes', {
         event: 'INSERT',
@@ -130,7 +130,7 @@ export class ETLClient {
   }
 
   subscribeToAlerts(callback: (alert: any) => void) {
-    return supabase
+    return lakehouse
       .channel('alerts_changes')
       .on('postgres_changes', {
         event: 'INSERT',

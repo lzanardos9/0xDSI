@@ -7,7 +7,7 @@ import {
   spawnDataPacket, updateDataPacket, disposePacket, animateScene,
   buildThoughtBubble, updateThoughtBubble, buildVRSeat, animateVRSeat,
 } from '../lib/soc3dHelpers';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { callFunction } from '../lib/llmGateway';
 import {
   EnergyBeam, FloorPulse, FloatingLabel, HologramParts,
@@ -158,7 +158,7 @@ export default function SOCAgents3D() {
     let cancelled = false;
     let lastCount = 0;
     const load = async () => {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('soc_agent_registry')
         .select('*')
         .order('is_custom', { ascending: true })

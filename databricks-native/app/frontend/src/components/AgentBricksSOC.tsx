@@ -18,7 +18,7 @@ import {
   RefreshCw,
   Network
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import AgentNetworkGraph3D from './AgentNetworkGraph3D';
 import { communicationBus, type AgentCommunication } from '../lib/agentCommunication';
 
@@ -110,8 +110,8 @@ const AgentBricksSOC = () => {
   const loadData = async () => {
     try {
       const [agentsResult, tasksResult] = await Promise.all([
-        supabase.from('agent_configs').select('*').order('performance_score', { ascending: false }),
-        supabase.from('agent_status').select('*').order('updated_at', { ascending: false }).limit(20),
+        lakehouse.from('agent_configs').select('*').order('performance_score', { ascending: false }),
+        lakehouse.from('agent_status').select('*').order('updated_at', { ascending: false }).limit(20),
       ]);
 
       if (agentsResult.data) {

@@ -5,7 +5,7 @@ import {
   Eye, FileText, Activity, X, GitBranch, Star, DollarSign, Loader2, Hash,
   Network, Tag,
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { lakehouse } from "../lib/lakehouse";
 import { callFunction } from "../lib/llmGateway";
 
 // --- Attack Graph types ---
@@ -465,7 +465,7 @@ export default function AIIncidentSummarizer() {
     const queries: any[] = [];
     for (const ip of ipMatches.slice(0, 2)) {
       queries.push(
-        supabase
+        lakehouse
           .from("events")
           .select("event_type, severity, source_ip, dest_ip, hostname, username, description, event_timestamp")
           .or(`source_ip.eq.${ip},dest_ip.eq.${ip}`)
@@ -474,7 +474,7 @@ export default function AIIncidentSummarizer() {
     }
     for (const host of hostMatches.slice(0, 1)) {
       queries.push(
-        supabase
+        lakehouse
           .from("events")
           .select("event_type, severity, source_ip, dest_ip, hostname, username, description, event_timestamp")
           .ilike("hostname", `%${host}%`)

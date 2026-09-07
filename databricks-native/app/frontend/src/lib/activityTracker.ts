@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 
 const SESSION_KEY = 'activity_session_id';
 const TOKEN_KEY = 'activity_session_token';
@@ -77,7 +77,7 @@ export async function ensureSession(): Promise<string> {
   }
   const token = getOrCreateToken();
   const ip = await getIp();
-  const { data } = await supabase
+  const { data } = await lakehouse
     .from('user_activity_sessions')
     .insert({
       user_id: cachedUser.id,
@@ -101,7 +101,7 @@ export async function attachSessionToUser(userId: string, username: string) {
   cachedUser = { id: userId, username };
   const sid = await ensureSession();
   if (!sid) return;
-  await supabase
+  await lakehouse
     .from('user_activity_sessions')
     .update({ user_id: userId, username })
     .eq('id', sid);
@@ -110,7 +110,7 @@ export async function attachSessionToUser(userId: string, username: string) {
 export async function endSession() {
   const sid = cachedSessionId;
   if (!sid) return;
-  await supabase
+  await lakehouse
     .from('user_activity_sessions')
     .update({ ended_at: new Date().toISOString(), is_active: false })
     .eq('id', sid);
@@ -146,7 +146,7 @@ export function trackEvent(input: EventInput) {
       duration_ms: input.durationMs ?? 0,
     };
 
-    const { data: ev } = await supabase
+    const { data: ev } = await lakehouse
       .from('user_activity_events')
       .insert(payload)
       .select('id, view_id')
@@ -155,7 +155,7 @@ export function trackEvent(input: EventInput) {
     if (!ev) return;
 
     if (lastEventId && lastViewId !== payload.view_id) {
-      await supabase.from('user_activity_lineage').insert({
+      await lakehouse.from('user_activity_lineage').insert({
         user_id: cachedUser.id,
         username: cachedUser.username,
         from_event_id: lastEventId,
@@ -176,7 +176,7 @@ export function trackEvent(input: EventInput) {
       : null;
 
     const updates: Record<string, unknown> = { last_active_at: new Date().toISOString() };
-    const { data: cur } = await supabase
+    const { data: cur } = await lakehouse
       .from('user_activity_sessions')
       .select('event_count,click_count,view_count')
       .eq('id', sid)
@@ -184,7 +184,7 @@ export function trackEvent(input: EventInput) {
     if (cur) {
       updates.event_count = (cur.event_count ?? 0) + 1;
       if (incCol) updates[incCol] = (cur[incCol as keyof typeof cur] as number ?? 0) + 1;
-      await supabase.from('user_activity_sessions').update(updates).eq('id', sid);
+      await lakehouse.from('user_activity_sessions').update(updates).eq('id', sid);
     }
   });
 }

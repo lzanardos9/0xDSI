@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import { Brain, AlertTriangle, AlertCircle, TrendingDown, TrendingUp, MessageSquare, Mail, Video, Activity } from 'lucide-react';
 
 interface Props {
@@ -141,7 +141,7 @@ export function PsychologicalUserDetail({ userEmail }: Props) {
     setLoading(true);
 
     (async () => {
-      const { data: llmRow } = await supabase
+      const { data: llmRow } = await lakehouse
         .from('llm_risk_profiles')
         .select('user_id')
         .ilike('user_email', userEmail)
@@ -158,9 +158,9 @@ export function PsychologicalUserDetail({ userEmail }: Props) {
       }
 
       const [psychRes, factorsRes, commRes] = await Promise.all([
-        supabase.from('user_psychological_profiles').select('*').eq('user_id', llmRow.user_id).maybeSingle(),
-        supabase.from('psychological_risk_factors').select('*').eq('user_id', llmRow.user_id).order('severity', { ascending: false }),
-        supabase.from('psychological_profiles').select('*').eq('user_id', llmRow.user_id).maybeSingle(),
+        lakehouse.from('user_psychological_profiles').select('*').eq('user_id', llmRow.user_id).maybeSingle(),
+        lakehouse.from('psychological_risk_factors').select('*').eq('user_id', llmRow.user_id).order('severity', { ascending: false }),
+        lakehouse.from('psychological_profiles').select('*').eq('user_id', llmRow.user_id).maybeSingle(),
       ]);
 
       if (cancelled) return;

@@ -5,7 +5,7 @@
  * Provides real-time agent status and monitoring via polling
  */
 
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 import { callFunction } from './llmGateway';
 import { communicationBus, type AgentCommunication, generateMockCommunication } from './agentCommunication';
 
@@ -124,7 +124,7 @@ class AgentOrchestratorService {
 
   async getAgentStatus(): Promise<AgentStatus[]> {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('agent_configs')
         .select('*')
         .order('agent_type');
@@ -146,7 +146,7 @@ class AgentOrchestratorService {
 
   async getPipelineStatus() {
     try {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('agent_status')
         .select('*')
         .order('updated_at', { ascending: false })
@@ -159,7 +159,7 @@ class AgentOrchestratorService {
 
   async getHealthSummary() {
     try {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('agent_configs')
         .select('agent_type,enabled,health_status,performance_score');
       return data || [];
@@ -199,7 +199,7 @@ class AgentOrchestratorService {
 
   subscribeToTaskUpdates(callback: (task: any) => void) {
     const pollInterval = window.setInterval(async () => {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('agent_status')
         .select('*')
         .order('updated_at', { ascending: false })

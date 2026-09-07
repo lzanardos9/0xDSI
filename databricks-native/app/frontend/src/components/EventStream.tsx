@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Activity, Filter, Search, RefreshCw } from 'lucide-react';
-import { supabase, SecurityEvent } from '../lib/supabase';
+import { lakehouse, SecurityEvent } from '../lib/lakehouse';
 import { generateMockEvents } from '../lib/mockData';
 
 const EventStream = () => {
@@ -20,7 +20,7 @@ const EventStream = () => {
 
   const loadEvents = async () => {
     try {
-      let query = supabase
+      let query = lakehouse
         .from('events')
         .select('*')
         .order('event_timestamp', { ascending: false })

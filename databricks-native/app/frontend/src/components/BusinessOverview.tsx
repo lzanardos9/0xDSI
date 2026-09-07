@@ -18,7 +18,7 @@ import {
   Target,
   Lock,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 const BusinessOverview = () => {
   const [riskFactors, setRiskFactors] = useState<any[]>([]);

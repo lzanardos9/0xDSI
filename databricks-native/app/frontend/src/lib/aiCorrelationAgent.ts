@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 
 interface DiscoveredPattern {
   id: string;
@@ -198,7 +198,7 @@ export class AICorrelationAgent {
     executionTimeMs: number
   ): Promise<void> {
     try {
-      await supabase.from('ai_agent_activity').insert({
+      await lakehouse.from('ai_agent_activity').insert({
         agent_type: this.agentType,
         activity_type: activityType,
         source_data: sourceData,
@@ -214,7 +214,7 @@ export class AICorrelationAgent {
 
   async processAllPatterns(): Promise<void> {
     try {
-      const { data: patterns, error } = await supabase
+      const { data: patterns, error } = await lakehouse
         .from('discovered_patterns')
         .select('*')
         .gte('confidence_score', 60)
@@ -228,7 +228,7 @@ export class AICorrelationAgent {
       }
 
       for (const pattern of patterns) {
-        const { data: existingRule } = await supabase
+        const { data: existingRule } = await lakehouse
           .from('correlation_rules')
           .select('id')
           .eq('source_pattern_id', pattern.id)
@@ -238,7 +238,7 @@ export class AICorrelationAgent {
           const rule = await this.analyzePatternAndGenerateRule(pattern);
 
           if (rule) {
-            await supabase.from('correlation_rules').insert(rule);
+            await lakehouse.from('correlation_rules').insert(rule);
             console.log(`Generated correlation rule for pattern: ${pattern.pattern_name}`);
           }
         }
@@ -250,14 +250,14 @@ export class AICorrelationAgent {
 
   async getAgentStatistics(): Promise<any> {
     try {
-      const { data: activityData } = await supabase
+      const { data: activityData } = await lakehouse
         .from('ai_agent_activity')
         .select('*')
         .eq('agent_type', this.agentType)
         .order('created_at', { ascending: false })
         .limit(100);
 
-      const { data: rulesData } = await supabase
+      const { data: rulesData } = await lakehouse
         .from('correlation_rules')
         .select('*')
         .eq('generated_by', 'ai_agent');

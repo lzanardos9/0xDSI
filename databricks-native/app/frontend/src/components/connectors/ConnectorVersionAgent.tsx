@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle, AlertTriangle, XCircle, ArrowUp, Clock, Cpu, GitBranch, Zap, ChevronDown, ChevronRight, Code, Shield } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 interface VersionCheck {
   id: string;
@@ -32,7 +32,7 @@ export default function ConnectorVersionAgent() {
 
   async function loadChecks() {
     setLoading(true);
-    const { data } = await supabase.from('connector_version_checks').select('*').order('checked_at', { ascending: false });
+    const { data } = await lakehouse.from('connector_version_checks').select('*').order('checked_at', { ascending: false });
     if (data) setChecks(data);
     setLoading(false);
   }

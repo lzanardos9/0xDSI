@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { User, Activity, MapPin, Monitor, AlertTriangle, CheckCircle, Clock, Shield, Eye, XCircle, Network, Brain, LineChart, UserPlus } from 'lucide-react';
 import UserEventNetwork from './UserEventNetwork';
 import MLModelExplainer from './MLModelExplainer';
@@ -86,7 +86,7 @@ const UserBehavior = () => {
     fetchUserData(selectedUser.behavior_profile_id);
     fetchPsychFactorCount(selectedUser.email);
 
-    const eventsSubscription = supabase
+    const eventsSubscription = lakehouse
       .channel(`user_behavior_events_${selectedUser.behavior_profile_id}`)
       .on('postgres_changes', {
         event: 'INSERT',
@@ -103,7 +103,7 @@ const UserBehavior = () => {
 
   const fetchUsers = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('unified_user_risk')
         .select('*')
         .order('composite_risk_score', { ascending: false });
@@ -122,9 +122,9 @@ const UserBehavior = () => {
   const fetchUserData = async (behaviorProfileId: string) => {
     try {
       const [eventsResult, riskResult, correlationsResult] = await Promise.all([
-        supabase.from('user_behavior_events').select('*').eq('user_profile_id', behaviorProfileId).order('timestamp', { ascending: false }).limit(20),
-        supabase.from('user_risk_assessments').select('*').eq('user_profile_id', behaviorProfileId).order('assessment_time', { ascending: false }).limit(1).maybeSingle(),
-        supabase.from('behavior_correlations').select('*').eq('user_profile_id', behaviorProfileId).order('detected_at', { ascending: false }),
+        lakehouse.from('user_behavior_events').select('*').eq('user_profile_id', behaviorProfileId).order('timestamp', { ascending: false }).limit(20),
+        lakehouse.from('user_risk_assessments').select('*').eq('user_profile_id', behaviorProfileId).order('assessment_time', { ascending: false }).limit(1).maybeSingle(),
+        lakehouse.from('behavior_correlations').select('*').eq('user_profile_id', behaviorProfileId).order('detected_at', { ascending: false }),
       ]);
 
       setEvents(eventsResult.data || []);
@@ -136,13 +136,13 @@ const UserBehavior = () => {
   };
 
   const fetchPsychFactorCount = async (email: string) => {
-    const { data: llmRow } = await supabase
+    const { data: llmRow } = await lakehouse
       .from('llm_risk_profiles')
       .select('user_id')
       .ilike('user_email', email)
       .maybeSingle();
     if (!llmRow) { setPsychFactorCount(0); return; }
-    const { count } = await supabase
+    const { count } = await lakehouse
       .from('psychological_risk_factors')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', llmRow.user_id);

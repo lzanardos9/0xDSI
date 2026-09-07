@@ -71,13 +71,13 @@ export class VectorEmbeddingEngine {
 
   static async processRawEvent(
     event: RawSecurityEvent,
-    supabase: any
+    lakehouse: any
   ): Promise<string> {
     const eventText = this.formatEventForEmbedding(event);
     const embedding = await this.generateEmbedding(eventText);
     const summary = await this.generateEventSummary(event);
 
-    const { data, error } = await supabase
+    const { data, error } = await lakehouse
       .from('raw_security_events')
       .insert({
         event_timestamp: event.event_timestamp,
@@ -95,7 +95,7 @@ export class VectorEmbeddingEngine {
 
     if (error) throw error;
 
-    await this.checkCorrelationRules(data.id, embedding, supabase);
+    await this.checkCorrelationRules(data.id, embedding, lakehouse);
 
     return data.id;
   }
@@ -140,16 +140,16 @@ export class VectorEmbeddingEngine {
   private static async checkCorrelationRules(
     eventId: string,
     embedding: number[],
-    supabase: any
+    lakehouse: any
   ): Promise<void> {
     try {
-      const { data: rules } = await supabase.rpc('match_correlation_rules', {
+      const { data: rules } = await lakehouse.rpc('match_correlation_rules', {
         event_embedding: `[${embedding.join(',')}]`,
       });
 
       if (rules && rules.length > 0) {
         for (const rule of rules) {
-          await supabase.from('vector_correlations').insert({
+          await lakehouse.from('vector_correlations').insert({
             rule_id: rule.rule_id,
             event_ids: [eventId],
             correlation_type: 'similarity_match',
@@ -166,13 +166,13 @@ export class VectorEmbeddingEngine {
 
   static async semanticSearch(
     query: string,
-    supabase: any,
+    lakehouse: any,
     threshold: number = 0.8,
     limit: number = 10
   ): Promise<SemanticSearchResult[]> {
     const queryEmbedding = await this.generateEmbedding(query);
 
-    const { data, error } = await supabase.rpc('search_similar_events', {
+    const { data, error } = await lakehouse.rpc('search_similar_events', {
       query_embedding: `[${queryEmbedding.join(',')}]`,
       match_threshold: threshold,
       match_count: limit,
@@ -189,12 +189,12 @@ export class VectorEmbeddingEngine {
   static async createHuntQuery(
     queryName: string,
     naturalLanguageQuery: string,
-    supabase: any,
+    lakehouse: any,
     timeRange?: { start: string; end: string }
   ): Promise<string> {
     const queryEmbedding = await this.generateEmbedding(naturalLanguageQuery);
 
-    const { data, error } = await supabase
+    const { data, error } = await lakehouse
       .from('threat_hunt_queries')
       .insert({
         query_name: queryName,
@@ -214,12 +214,12 @@ export class VectorEmbeddingEngine {
     setTimeout(async () => {
       const results = await this.semanticSearch(
         naturalLanguageQuery,
-        supabase,
+        lakehouse,
         0.75,
         20
       );
 
-      await supabase
+      await lakehouse
         .from('threat_hunt_queries')
         .update({
           status: 'completed',
@@ -239,12 +239,12 @@ export class VectorEmbeddingEngine {
     examplePatterns: string[],
     ruleType: string,
     threshold: number,
-    supabase: any
+    lakehouse: any
   ): Promise<string> {
     const combinedText = `${description} Examples: ${examplePatterns.join('; ')}`;
     const patternEmbedding = await this.generateEmbedding(combinedText);
 
-    const { data, error } = await supabase
+    const { data, error } = await lakehouse
       .from('vector_correlation_rules')
       .insert({
         rule_name: ruleName,
@@ -285,10 +285,10 @@ export class VectorEmbeddingEngine {
 
   static async findSimilarEvents(
     eventId: string,
-    supabase: any,
+    lakehouse: any,
     threshold: number = 0.85
   ): Promise<any[]> {
-    const { data: targetEvent } = await supabase
+    const { data: targetEvent } = await lakehouse
       .from('raw_security_events')
       .select('event_embedding, event_summary')
       .eq('id', eventId)
@@ -296,7 +296,7 @@ export class VectorEmbeddingEngine {
 
     if (!targetEvent || !targetEvent.event_embedding) return [];
 
-    const { data: similarEvents } = await supabase.rpc('search_similar_events', {
+    const { data: similarEvents } = await lakehouse.rpc('search_similar_events', {
       query_embedding: targetEvent.event_embedding,
       match_threshold: threshold,
       match_count: 20,
@@ -309,13 +309,13 @@ export class VectorEmbeddingEngine {
 export class AICorrelationEngine {
   static async analyzeAttackChain(
     eventIds: string[],
-    supabase: any
+    lakehouse: any
   ): Promise<{
     chain: any[];
     narrative: string;
     severity: string;
   }> {
-    const { data: events } = await supabase
+    const { data: events } = await lakehouse
       .from('raw_security_events')
       .select('*')
       .in('id', eventIds)
@@ -355,16 +355,16 @@ export class AICorrelationEngine {
   }
 
   static async clusterEvents(
-    supabase: any,
+    lakehouse: any,
     threshold: number = 0.9
   ): Promise<number> {
     try {
-      await supabase.rpc('cluster_similar_events', {
+      await lakehouse.rpc('cluster_similar_events', {
         cluster_threshold: threshold,
         min_cluster_size: 3,
       });
 
-      const { count } = await supabase
+      const { count } = await lakehouse
         .from('raw_security_events')
         .select('similarity_cluster', { count: 'exact', head: true })
         .not('similarity_cluster', 'is', null);

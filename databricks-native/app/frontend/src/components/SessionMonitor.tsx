@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, AlertCircle, CheckCircle, XCircle, TrendingUp, List } from 'lucide-react';
-import { supabase, Session } from '../lib/supabase';
+import { lakehouse, Session } from '../lib/lakehouse';
 import { generateMockSessions } from '../lib/mockData';
 import SessionListsPanel from './SessionListsPanel';
 
@@ -18,7 +18,7 @@ const SessionMonitor = () => {
 
   const loadSessions = async () => {
     try {
-      let query = supabase
+      let query = lakehouse
         .from('sessions')
         .select('*')
         .order('start_time', { ascending: false })

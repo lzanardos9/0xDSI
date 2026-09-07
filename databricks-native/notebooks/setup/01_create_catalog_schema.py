@@ -3235,6 +3235,83 @@ print("Created: pipeline_health")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Ray Distributed SLM Training Telemetry
+# MAGIC Powers the "Ray Training Theater" tab. Created here so the dashboard has
+# MAGIC empty (not missing) tables to read before the training notebook first runs.
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS dslm_ray_runs (
+    id STRING,
+    run_name STRING,
+    status STRING,
+    model_name STRING,
+    base_params_millions INT,
+    dataset_name STRING,
+    training_strategy STRING,
+    num_workers INT,
+    gpus_per_worker INT,
+    accelerator STRING,
+    global_batch_size INT,
+    total_steps INT,
+    tokens_total_billions DOUBLE,
+    proven_incident_weight DOUBLE,
+    notes STRING,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+print("Created: dslm_ray_runs")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS dslm_ray_workers (
+    run_id STRING,
+    worker_index INT,
+    role STRING,
+    node_ip STRING,
+    gpu_model STRING,
+    shard_name STRING,
+    created_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+print("Created: dslm_ray_workers")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS dslm_ray_timeline (
+    run_id STRING,
+    step INT,
+    loss DOUBLE,
+    learning_rate DOUBLE,
+    tokens_per_sec DOUBLE,
+    gpu_util_avg DOUBLE,
+    grad_norm DOUBLE,
+    allreduce_ms DOUBLE,
+    phase STRING,
+    worker_stats STRING,
+    created_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES (
+    'delta.autoOptimize.optimizeWrite' = 'true',
+    'delta.autoOptimize.autoCompact' = 'true'
+)
+""")
+print("Created: dslm_ray_timeline")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Setup Complete
 # MAGIC All tables have been created in Unity Catalog.
 

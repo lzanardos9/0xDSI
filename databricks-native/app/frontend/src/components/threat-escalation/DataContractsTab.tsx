@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, Banknote, Brain, Bug, Building2, CheckCircle2, ChevronRight, Cloud, Coins, Cpu, CreditCard, DoorClosed, Download, CreditCard as Edit3, FileSpreadsheet, FileWarning, Gauge, GitBranch, HeartPulse, KeyRound, Landmark, Layers, Loader2, Network, Package, Plus, Power, Radar, Save, Scale, Search, Shield, ShieldAlert, ShieldCheck, Sparkles, Timer, Trash2, TrendingUp, UserCog, Users, UserX, Waves, X, XCircle, Zap } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 type Engine = 'regular' | 'graph' | 'user' | 'hybrid';
 interface Contract {
@@ -93,7 +93,7 @@ export default function DataContractsTab() {
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase.from('threat_escalation_contracts').select('*').order('contract_code');
+    const { data } = await lakehouse.from('threat_escalation_contracts').select('*').order('contract_code');
     setContracts((data || []) as Contract[]);
     if (data && data.length) {
       setSelected(prev => prev ? (data.find((d: any) => d.id === prev.id) || data[0]) as Contract : data[0] as Contract);
@@ -134,9 +134,9 @@ export default function DataContractsTab() {
     };
     let error: any;
     if ((draft as any).id) {
-      ({ error } = await supabase.from('threat_escalation_contracts').update(payload).eq('id', (draft as any).id));
+      ({ error } = await lakehouse.from('threat_escalation_contracts').update(payload).eq('id', (draft as any).id));
     } else {
-      ({ error } = await supabase.from('threat_escalation_contracts').insert(payload));
+      ({ error } = await lakehouse.from('threat_escalation_contracts').insert(payload));
     }
     if (error) { flash('err', error.message); return; }
     flash('ok', `Contract "${draft.contract_name}" saved`);
@@ -146,7 +146,7 @@ export default function DataContractsTab() {
 
   const deleteContract = async (c: Contract) => {
     if (!confirm(`Delete contract "${c.contract_name}"? This cannot be undone.`)) return;
-    const { error } = await supabase.from('threat_escalation_contracts').delete().eq('id', c.id);
+    const { error } = await lakehouse.from('threat_escalation_contracts').delete().eq('id', c.id);
     if (error) { flash('err', error.message); return; }
     flash('ok', `Deleted "${c.contract_name}"`);
     setSelected(null);
@@ -175,7 +175,7 @@ export default function DataContractsTab() {
 
   const toggleActive = async (c: Contract) => {
     const next = !c.is_active;
-    await supabase.from('threat_escalation_contracts').update({ is_active: next }).eq('id', c.id);
+    await lakehouse.from('threat_escalation_contracts').update({ is_active: next }).eq('id', c.id);
     setContracts(prev => prev.map(p => p.id === c.id ? { ...p, is_active: next } : p));
     if (selected?.id === c.id) setSelected({ ...c, is_active: next });
   };

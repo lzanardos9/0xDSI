@@ -7,7 +7,7 @@ import ChartRenderer from './ChartRenderer';
 import StatWidget from './StatWidget';
 import TableWidget from './TableWidget';
 import TextWidget from './TextWidget';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 interface WidgetCardProps {
   widget: UniversalWidget;
@@ -39,10 +39,10 @@ export default function WidgetCard({ widget, editing, onRemove, onEdit, onDragSt
     setError(null);
 
     try {
-      const { data: result, error: queryError } = await supabase.rpc('exec_sql', { query: sql });
+      const { data: result, error: queryError } = await lakehouse.rpc('exec_sql', { query: sql });
       if (queryError) {
         const tableName = sql.match(/FROM\s+(\w+)/i)?.[1] || 'events';
-        const { data: fallback, error: fbError } = await supabase
+        const { data: fallback, error: fbError } = await lakehouse
           .from(tableName)
           .select('*')
           .limit(20);

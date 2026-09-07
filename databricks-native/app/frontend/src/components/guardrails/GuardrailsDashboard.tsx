@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, Activity, Clock, Zap, Eye,
   Lock, Unlock, FileWarning, Brain
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import type { GuardrailPolicy, ScanResult, GuardrailIncident } from '../../lib/guardrailsData';
 import { VERDICT_CONFIG, POLICY_TYPE_CONFIG } from '../../lib/guardrailsData';
 
@@ -38,9 +38,9 @@ const GuardrailsDashboard = () => {
 
   const loadData = async () => {
     const [policiesRes, scansRes, incidentsRes] = await Promise.all([
-      supabase.from('guardrail_policies').select('*').order('priority'),
-      supabase.from('guardrail_scan_results').select('*').order('scanned_at', { ascending: false }).limit(50),
-      supabase.from('guardrail_incidents').select('*').order('created_at', { ascending: false }).limit(20),
+      lakehouse.from('guardrail_policies').select('*').order('priority'),
+      lakehouse.from('guardrail_scan_results').select('*').order('scanned_at', { ascending: false }).limit(50),
+      lakehouse.from('guardrail_incidents').select('*').order('created_at', { ascending: false }).limit(20),
     ]);
     if (policiesRes.data) setPolicies(policiesRes.data);
     if (scansRes.data) setScans(scansRes.data);

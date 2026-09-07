@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import { callFunction } from '../../lib/llmGateway';
 import {
   BookOpen, Brain, Cpu, Target, ExternalLink, CheckCircle2, XCircle, Loader2, AlertTriangle, Flame,
@@ -35,8 +35,8 @@ export default function IntelligenceDossier({
     if (!item?.id) return;
     setLoading(true);
     const [p, h] = await Promise.all([
-      supabase.from('threat_radar_proposals').select('*').eq('item_id', item.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('threat_radar_exposure_hits').select('*').eq('item_id', item.id).order('discovered_at', { ascending: false }),
+      lakehouse.from('threat_radar_proposals').select('*').eq('item_id', item.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      lakehouse.from('threat_radar_exposure_hits').select('*').eq('item_id', item.id).order('discovered_at', { ascending: false }),
     ]);
     setProposal(p.data);
     setHits(h.data || []);
@@ -87,9 +87,9 @@ export default function IntelligenceDossier({
           hunt_query: proposal.hunt_query,
         },
       };
-      const { data: insertedRule, error } = await supabase.from('correlation_rules').insert(ruleRow).select('id').maybeSingle();
+      const { data: insertedRule, error } = await lakehouse.from('correlation_rules').insert(ruleRow).select('id').maybeSingle();
       if (error) throw error;
-      await supabase.from('threat_radar_proposals').update({
+      await lakehouse.from('threat_radar_proposals').update({
         status: 'promoted', promoted_rule_id: insertedRule?.id, reviewed_at: new Date().toISOString(),
       }).eq('id', proposal.id);
       onPromote(`Promoted to staged correlation rule`);
@@ -101,7 +101,7 @@ export default function IntelligenceDossier({
 
   const reject = async () => {
     if (!proposal) return;
-    await supabase.from('threat_radar_proposals').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', proposal.id);
+    await lakehouse.from('threat_radar_proposals').update({ status: 'rejected', reviewed_at: new Date().toISOString() }).eq('id', proposal.id);
     onPromote('Proposal rejected');
     await load();
   };

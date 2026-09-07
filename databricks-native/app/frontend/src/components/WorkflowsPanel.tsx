@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Workflow, Play, Plus, Settings, Zap, CheckCircle, XCircle, Clock } from 'lucide-react';
-import { supabase, N8nWorkflow, WorkflowTrigger, WorkflowExecution } from '../lib/supabase';
+import { lakehouse, N8nWorkflow, WorkflowTrigger, WorkflowExecution } from '../lib/lakehouse';
 import { generateMockWorkflows, generateMockWorkflowExecutions } from '../lib/mockData';
 
 const WorkflowsPanel = () => {
@@ -23,7 +23,7 @@ const WorkflowsPanel = () => {
 
   const loadWorkflows = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('n8n_workflows')
         .select('*')
         .order('created_at', { ascending: false });
@@ -40,7 +40,7 @@ const WorkflowsPanel = () => {
 
   const loadExecutions = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('workflow_executions')
         .select('*')
         .order('started_at', { ascending: false })
@@ -56,7 +56,7 @@ const WorkflowsPanel = () => {
 
   const toggleWorkflow = async (workflowId: string, enabled: boolean) => {
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('n8n_workflows')
         .update({ enabled: !enabled, updated_at: new Date().toISOString() })
         .eq('id', workflowId);
@@ -70,7 +70,7 @@ const WorkflowsPanel = () => {
 
   const executeWorkflow = async (workflow: N8nWorkflow) => {
     try {
-      const execution = await supabase
+      const execution = await lakehouse
         .from('workflow_executions')
         .insert([
           {
@@ -102,7 +102,7 @@ const WorkflowsPanel = () => {
 
       const responseData = await response.json();
 
-      await supabase
+      await lakehouse
         .from('workflow_executions')
         .update({
           execution_status: response.ok ? 'success' : 'failed',
@@ -381,7 +381,7 @@ const CreateWorkflowModal = ({ onClose, onCreated }: { onClose: () => void; onCr
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { error } = await supabase.from('n8n_workflows').insert([
+      const { error } = await lakehouse.from('n8n_workflows').insert([
         {
           ...formData,
           configuration: {},

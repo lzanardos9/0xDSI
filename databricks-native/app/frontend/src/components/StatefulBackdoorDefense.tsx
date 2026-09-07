@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ShieldAlert, Brain, Eye, Database, AlertTriangle, CheckCircle, XCircle, Clock, Activity, Fingerprint, Link2, Zap, ChevronRight, RefreshCw, Shield } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface MemoryIntegrityEvent {
   id: string;
@@ -77,10 +77,10 @@ export default function StatefulBackdoorDefense() {
   async function loadData() {
     setLoading(true);
     const [memRes, divRes, canRes, ruleRes] = await Promise.all([
-      supabase.from('memory_integrity_events').select('*').order('created_at', { ascending: false }),
-      supabase.from('behavioral_divergence_detections').select('*').order('created_at', { ascending: false }),
-      supabase.from('trigger_canary_deployments').select('*').order('deployed_at', { ascending: false }),
-      supabase.from('stateful_backdoor_correlation_rules').select('*').order('severity', { ascending: true }),
+      lakehouse.from('memory_integrity_events').select('*').order('created_at', { ascending: false }),
+      lakehouse.from('behavioral_divergence_detections').select('*').order('created_at', { ascending: false }),
+      lakehouse.from('trigger_canary_deployments').select('*').order('deployed_at', { ascending: false }),
+      lakehouse.from('stateful_backdoor_correlation_rules').select('*').order('severity', { ascending: true }),
     ]);
     if (memRes.data) setMemoryEvents(memRes.data);
     if (divRes.data) setDivergences(divRes.data);

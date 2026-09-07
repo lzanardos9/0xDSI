@@ -4,7 +4,7 @@ import {
   Search, ChevronDown, ChevronUp, Users, Building2, CheckCircle,
   XCircle, Clock, AlertTriangle, Brain, ExternalLink
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import type { ModelAccessRule } from '../../lib/guardrailsData';
 import { TIER_CONFIG, MODEL_STATUS_CONFIG } from '../../lib/guardrailsData';
 
@@ -20,7 +20,7 @@ const ModelAccessGovernance = () => {
   }, []);
 
   const loadModels = async () => {
-    const { data } = await supabase.from('model_access_rules').select('*').order('usage_count', { ascending: false });
+    const { data } = await lakehouse.from('model_access_rules').select('*').order('usage_count', { ascending: false });
     if (data) setModels(data);
   };
 

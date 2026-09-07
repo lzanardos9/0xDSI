@@ -13,7 +13,7 @@ import {
   ChevronRight,
   Clock
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface RiskMetrics {
   overallScore: number;
@@ -48,9 +48,9 @@ const RiskOverview = () => {
     loadRiskMetrics();
 
     const channels = [
-      supabase.channel('alerts_risk').on('postgres_changes', { event: '*', schema: 'public', table: 'alerts' }, () => loadRiskMetrics()),
-      supabase.channel('events_risk').on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => loadRiskMetrics()),
-      supabase.channel('cases_risk').on('postgres_changes', { event: '*', schema: 'public', table: 'cases' }, () => loadRiskMetrics()),
+      lakehouse.channel('alerts_risk').on('postgres_changes', { event: '*', schema: 'public', table: 'alerts' }, () => loadRiskMetrics()),
+      lakehouse.channel('events_risk').on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => loadRiskMetrics()),
+      lakehouse.channel('cases_risk').on('postgres_changes', { event: '*', schema: 'public', table: 'cases' }, () => loadRiskMetrics()),
     ];
 
     channels.forEach(channel => channel.subscribe());
@@ -67,10 +67,10 @@ const RiskOverview = () => {
       setLoading(true);
 
       const [alerts, events, cases, behaviors] = await Promise.all([
-        supabase.from('alerts').select('severity, status, created_at'),
-        supabase.from('events').select('severity, event_type, created_at'),
-        supabase.from('cases').select('priority, status, created_at'),
-        supabase.from('user_behavior_events').select('anomaly_score, event_type, timestamp').order('timestamp', { ascending: false }).limit(10),
+        lakehouse.from('alerts').select('severity, status, created_at'),
+        lakehouse.from('events').select('severity, event_type, created_at'),
+        lakehouse.from('cases').select('priority, status, created_at'),
+        lakehouse.from('user_behavior_events').select('anomaly_score, event_type, timestamp').order('timestamp', { ascending: false }).limit(10),
       ]);
 
       const criticalAlerts = alerts.data?.filter(a => a.severity === 'critical' && a.status !== 'resolved').length || 0;

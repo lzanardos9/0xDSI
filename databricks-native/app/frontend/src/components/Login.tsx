@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Shield, User, Lock, Camera, Activity, CheckCircle, XCircle, Eye, EyeOff, Loader } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 type AuthStep = 1 | 2 | 3 | 'success' | 'failed';
 
@@ -142,7 +142,7 @@ const Login = () => {
       await logAuthAttempt(authState.userId, true, true, false, false);
 
       if (authState.userId) {
-        await supabase
+        await lakehouse
           .from('user_profiles')
           .update({ face_encoding: faceImage.substring(0, 100) })
           .eq('id', authState.userId);
@@ -175,7 +175,7 @@ const Login = () => {
       await logAuthAttempt(authState.userId, true, true, true, true);
 
       if (authState.userId) {
-        await supabase
+        await lakehouse
           .from('user_profiles')
           .update({
             last_login: new Date().toISOString(),
@@ -187,7 +187,7 @@ const Login = () => {
       const loginEmail = authState.username.includes('@')
         ? authState.username
         : `${authState.username}@soc.local`;
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { error: signInError } = await lakehouse.auth.signInWithPassword({
         email: loginEmail,
         password: authState.password
       });
@@ -220,7 +220,7 @@ const Login = () => {
     factor3: boolean,
     success: boolean
   ) => {
-    await supabase.from('auth_attempts').insert({
+    await lakehouse.from('auth_attempts').insert({
       user_id: userId,
       username: authState.username,
       factor_1_success: factor1,

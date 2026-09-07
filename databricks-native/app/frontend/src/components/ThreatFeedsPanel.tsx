@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Rss, RefreshCw, CheckCircle, XCircle, Clock, Plus, Settings } from 'lucide-react';
-import { supabase, ThreatFeed, FeedSyncLog } from '../lib/supabase';
+import { lakehouse, ThreatFeed, FeedSyncLog } from '../lib/lakehouse';
 import { generateMockThreatFeeds, generateMockSyncLogs } from '../lib/mockData';
 
 const ThreatFeedsPanel = () => {
@@ -22,7 +22,7 @@ const ThreatFeedsPanel = () => {
 
   const loadFeeds = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('threat_feeds')
         .select('*')
         .order('created_at', { ascending: false });
@@ -38,7 +38,7 @@ const ThreatFeedsPanel = () => {
 
   const loadSyncLogs = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('feed_sync_logs')
         .select('*')
         .order('started_at', { ascending: false })
@@ -53,7 +53,7 @@ const ThreatFeedsPanel = () => {
 
   const toggleFeed = async (feedId: string, enabled: boolean) => {
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('threat_feeds')
         .update({ enabled: !enabled, updated_at: new Date().toISOString() })
         .eq('id', feedId);
@@ -69,7 +69,7 @@ const ThreatFeedsPanel = () => {
     try {
       const startTime = Date.now();
 
-      const logEntry = await supabase
+      const logEntry = await lakehouse
         .from('feed_sync_logs')
         .insert([
           {
@@ -92,7 +92,7 @@ const ThreatFeedsPanel = () => {
         indicators_removed: Math.floor(Math.random() * 10),
       };
 
-      await supabase
+      await lakehouse
         .from('feed_sync_logs')
         .update({
           sync_status: 'success',
@@ -102,7 +102,7 @@ const ThreatFeedsPanel = () => {
         })
         .eq('id', logEntry.data.id);
 
-      await supabase
+      await lakehouse
         .from('threat_feeds')
         .update({
           last_sync_at: new Date().toISOString(),

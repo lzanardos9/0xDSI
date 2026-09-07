@@ -23,7 +23,7 @@ import {
   Zap,
   CheckCircle2,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import CISOAssistant from './CISOAssistant';
 
 type Counts = {
@@ -120,18 +120,18 @@ const ExecutiveDashboard = () => {
           frameworks,
           controls,
         ] = await Promise.all([
-          supabase.from('alerts').select('severity,status,created_at,resolved_at,false_positive'),
-          supabase.from('cases').select('status,severity,priority,created_at,acknowledged_at,ack_due_at,resolved_at,closed_at,kill_chain_phase,financial_impact_usd'),
-          supabase.from('asset_vulnerabilities').select('severity,status'),
-          supabase.from('user_profiles').select('id,role'),
-          supabase.from('correlation_rules').select('status,severity'),
-          supabase.from('threat_feeds').select('enabled,total_indicators'),
-          supabase.from('iocs').select('is_active'),
-          supabase.from('response_actions').select('action_status'),
-          supabase.from('confluence_attack_chains').select('containment_status,fused_score,kill_chain_stages'),
-          supabase.from('confluence_verdicts').select('priority,status,fused_score,kill_chain_stage,created_at'),
-          supabase.from('compliance_frameworks').select('id,framework_code,framework_name'),
-          supabase.from('compliance_controls').select('framework_id,implementation_status'),
+          lakehouse.from('alerts').select('severity,status,created_at,resolved_at,false_positive'),
+          lakehouse.from('cases').select('status,severity,priority,created_at,acknowledged_at,ack_due_at,resolved_at,closed_at,kill_chain_phase,financial_impact_usd'),
+          lakehouse.from('asset_vulnerabilities').select('severity,status'),
+          lakehouse.from('user_profiles').select('id,role'),
+          lakehouse.from('correlation_rules').select('status,severity'),
+          lakehouse.from('threat_feeds').select('enabled,total_indicators'),
+          lakehouse.from('iocs').select('is_active'),
+          lakehouse.from('response_actions').select('action_status'),
+          lakehouse.from('confluence_attack_chains').select('containment_status,fused_score,kill_chain_stages'),
+          lakehouse.from('confluence_verdicts').select('priority,status,fused_score,kill_chain_stage,created_at'),
+          lakehouse.from('compliance_frameworks').select('id,framework_code,framework_name'),
+          lakehouse.from('compliance_controls').select('framework_id,implementation_status'),
         ]);
 
         const a = alertsAll.data ?? [];
@@ -236,14 +236,14 @@ const ExecutiveDashboard = () => {
   }, [refreshTick]);
 
   useEffect(() => {
-    const ch = supabase
+    const ch = lakehouse
       .channel('exec-dashboard-stream')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'alerts' }, () => setRefreshTick((t) => t + 1))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cases' }, () => setRefreshTick((t) => t + 1))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'confluence_attack_chains' }, () => setRefreshTick((t) => t + 1))
       .subscribe();
     return () => {
-      supabase.removeChannel(ch);
+      lakehouse.removeChannel(ch);
     };
   }, []);
 

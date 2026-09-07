@@ -3,7 +3,7 @@ import {
   X, Wand2, Play, ChevronDown, ChevronUp, Database, Palette
 } from 'lucide-react';
 import type { UniversalWidget, ChartType } from '../../lib/dashboardSchema';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import { callFunction } from '../../lib/llmGateway';
 
 interface WidgetEditorProps {
@@ -67,7 +67,7 @@ export default function WidgetEditor({ widget, onSave, onClose }: WidgetEditorPr
     setTesting(true);
     setTestResult(null);
     try {
-      const { data, error } = await supabase.rpc('exec_sql', { query: sql });
+      const { data, error } = await lakehouse.rpc('exec_sql', { query: sql });
       if (error) {
         setTestResult(`Error: ${error.message}`);
       } else {

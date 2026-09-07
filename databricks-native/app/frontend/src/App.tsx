@@ -3,7 +3,7 @@ import { useAuth } from './contexts/AuthContext';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
 import { Loader } from 'lucide-react';
-import { IS_DATABRICKS } from './lib/supabase';
+import { IS_DATABRICKS } from './lib/lakehouse';
 import { installGlobalActivityTracking, ensureSession } from './lib/activityTracker';
 
 function App() {

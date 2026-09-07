@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'executed';
 
@@ -29,12 +29,12 @@ export interface RequestApprovalInput {
 }
 
 export async function requestApproval(input: RequestApprovalInput): Promise<ResponseActionApproval | null> {
-  const { data: userData } = await supabase.auth.getUser();
+  const { data: userData } = await lakehouse.auth.getUser();
   if (!userData.user) {
     throw new Error('Approval requests require authentication');
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('response_action_approvals')
     .insert({
       action_id: input.actionId,
@@ -53,7 +53,7 @@ export async function requestApproval(input: RequestApprovalInput): Promise<Resp
 }
 
 export async function getApproval(actionId: string): Promise<ResponseActionApproval | null> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('response_action_approvals')
     .select('*')
     .eq('action_id', actionId)
@@ -63,12 +63,12 @@ export async function getApproval(actionId: string): Promise<ResponseActionAppro
 }
 
 export async function approveAction(actionId: string): Promise<ResponseActionApproval | null> {
-  const { data: userData } = await supabase.auth.getUser();
+  const { data: userData } = await lakehouse.auth.getUser();
   if (!userData.user) {
     throw new Error('Approval requires authentication');
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('response_action_approvals')
     .update({
       status: 'approved',
@@ -85,12 +85,12 @@ export async function approveAction(actionId: string): Promise<ResponseActionApp
 }
 
 export async function rejectAction(actionId: string, reason: string): Promise<ResponseActionApproval | null> {
-  const { data: userData } = await supabase.auth.getUser();
+  const { data: userData } = await lakehouse.auth.getUser();
   if (!userData.user) {
     throw new Error('Rejection requires authentication');
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('response_action_approvals')
     .update({
       status: 'rejected',
@@ -111,7 +111,7 @@ export async function markExecuted(
   actionId: string,
   result: Record<string, unknown>,
 ): Promise<ResponseActionApproval | null> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('response_action_approvals')
     .update({
       status: 'executed',
@@ -150,7 +150,7 @@ export async function waitForApproval(
 }
 
 export async function listPendingApprovals(): Promise<ResponseActionApproval[]> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('response_action_approvals')
     .select('*')
     .eq('status', 'pending')
@@ -160,7 +160,7 @@ export async function listPendingApprovals(): Promise<ResponseActionApproval[]> 
 }
 
 export async function listAllApprovals(): Promise<ResponseActionApproval[]> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('response_action_approvals')
     .select('*')
     .order('requested_at', { ascending: false })

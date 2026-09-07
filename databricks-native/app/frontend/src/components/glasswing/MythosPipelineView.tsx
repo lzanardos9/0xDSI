@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Activity, Layers, Target, Zap, ShieldCheck, GitBranch, AlertTriangle, CheckCircle2, Clock, TrendingUp, Network } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 interface PipelineStats {
   totalFindings: number;
@@ -92,12 +92,12 @@ export default function MythosPipelineView() {
     setLoading(true);
     try {
       const [findingsRes, rootCausesRes, reachRes, patchesRes, wafRes, chainsRes] = await Promise.all([
-        supabase.from('glasswing_findings').select('*').order('confidence', { ascending: false }).limit(100),
-        supabase.from('glasswing_root_causes').select('*').order('avg_confidence', { ascending: false }),
-        supabase.from('glasswing_reachability').select('*').order('reachability_score', { ascending: false }),
-        supabase.from('glasswing_patches').select('*').order('created_at', { ascending: false }),
-        supabase.from('glasswing_waf_rules').select('*').order('created_at', { ascending: false }),
-        supabase.from('glasswing_exploit_chains').select('*'),
+        lakehouse.from('glasswing_findings').select('*').order('confidence', { ascending: false }).limit(100),
+        lakehouse.from('glasswing_root_causes').select('*').order('avg_confidence', { ascending: false }),
+        lakehouse.from('glasswing_reachability').select('*').order('reachability_score', { ascending: false }),
+        lakehouse.from('glasswing_patches').select('*').order('created_at', { ascending: false }),
+        lakehouse.from('glasswing_waf_rules').select('*').order('created_at', { ascending: false }),
+        lakehouse.from('glasswing_exploit_chains').select('*'),
       ]);
 
       const f = findingsRes.data || [];

@@ -4,7 +4,7 @@ import {
   Lock, Play, ChevronDown, ChevronUp, RefreshCw, ShieldAlert,
   ShieldCheck, Fingerprint, FlaskConical, Gauge
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import MLModelExplainer from './MLModelExplainer';
 import { ML_MODELS } from '../lib/mlModelData';
 
@@ -198,11 +198,11 @@ export default function ModelPoisoningGuard() {
   const loadData = async () => {
     setLoading(true);
     const [mRes, dRes, aRes, sRes, dfRes] = await Promise.all([
-      supabase.from('ml_model_registry').select('*').order('poisoning_risk'),
-      supabase.from('poisoning_detections').select('*').order('detected_at', { ascending: false }),
-      supabase.from('training_data_audits').select('*').order('audited_at', { ascending: false }),
-      supabase.from('model_simulations').select('*').order('simulated_at', { ascending: false }),
-      supabase.from('model_defense_configs').select('*').order('created_at'),
+      lakehouse.from('ml_model_registry').select('*').order('poisoning_risk'),
+      lakehouse.from('poisoning_detections').select('*').order('detected_at', { ascending: false }),
+      lakehouse.from('training_data_audits').select('*').order('audited_at', { ascending: false }),
+      lakehouse.from('model_simulations').select('*').order('simulated_at', { ascending: false }),
+      lakehouse.from('model_defense_configs').select('*').order('created_at'),
     ]);
     setModels(mRes.data || []);
     setDetections(dRes.data || []);

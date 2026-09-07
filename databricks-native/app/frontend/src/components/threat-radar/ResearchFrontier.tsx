@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import {
   BookOpen, Microscope, Cpu, FlaskConical, ChevronRight,
   ArrowUpRight, Lightbulb, Rocket, Clock, CheckCircle2, Eye,
@@ -93,8 +93,8 @@ export default function ResearchFrontier() {
   const loadData = async () => {
     setLoading(true);
     const [papersRes, proposalsRes] = await Promise.all([
-      supabase.from('academic_publications').select('*').order('relevance_score', { ascending: false }),
-      supabase.from('research_capability_proposals').select('*').order('priority_score', { ascending: false }),
+      lakehouse.from('academic_publications').select('*').order('relevance_score', { ascending: false }),
+      lakehouse.from('research_capability_proposals').select('*').order('priority_score', { ascending: false }),
     ]);
     setPapers(papersRes.data || []);
     setProposals(proposalsRes.data || []);

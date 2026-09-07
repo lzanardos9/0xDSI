@@ -5,7 +5,7 @@ import {
   LineChart, Lock, Network, Sparkles, Target, Workflow, Zap, ChevronRight,
   Scale, Play, Pause, RotateCcw
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 type TrainingRun = {
   id: string; run_name: string; stage: string; status: string; base_model: string;
@@ -71,12 +71,12 @@ export default function DetectionSLM() {
     let mounted = true;
     (async () => {
       const [r, c, m, p, v, d] = await Promise.all([
-        supabase.from('dslm_training_runs').select('*').order('started_at', { ascending: false }),
-        supabase.from('dslm_checkpoints').select('*').order('step'),
-        supabase.from('dslm_eval_metrics').select('*').order('step'),
-        supabase.from('dslm_predictions').select('*').order('predicted_at', { ascending: false }),
-        supabase.from('dslm_vocab').select('*').order('frequency', { ascending: false }),
-        supabase.from('dslm_distillation_jobs').select('*'),
+        lakehouse.from('dslm_training_runs').select('*').order('started_at', { ascending: false }),
+        lakehouse.from('dslm_checkpoints').select('*').order('step'),
+        lakehouse.from('dslm_eval_metrics').select('*').order('step'),
+        lakehouse.from('dslm_predictions').select('*').order('predicted_at', { ascending: false }),
+        lakehouse.from('dslm_vocab').select('*').order('frequency', { ascending: false }),
+        lakehouse.from('dslm_distillation_jobs').select('*'),
       ]);
       if (!mounted) return;
       setRuns((r.data as TrainingRun[]) ?? []);

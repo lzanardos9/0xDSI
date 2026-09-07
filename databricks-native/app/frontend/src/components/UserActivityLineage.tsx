@@ -3,7 +3,7 @@ import {
   Activity, Users, MousePointerClick, ArrowRight, Clock, Globe,
   LogIn, LogOut, Eye, Network, Filter, RefreshCw, MapPin, Monitor
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 type Sess = {
   id: string;
@@ -86,9 +86,9 @@ export default function UserActivityLineage() {
   const load = async () => {
     setLoading(true);
     const [s, e, l] = await Promise.all([
-      supabase.from('user_activity_sessions').select('*').order('started_at', { ascending: false }).limit(100),
-      supabase.from('user_activity_events').select('*').order('occurred_at', { ascending: false }).limit(1000),
-      supabase.from('user_activity_lineage').select('id,from_event_id,to_event_id,from_view,to_view,edge_type,delta_ms').limit(1000),
+      lakehouse.from('user_activity_sessions').select('*').order('started_at', { ascending: false }).limit(100),
+      lakehouse.from('user_activity_events').select('*').order('occurred_at', { ascending: false }).limit(1000),
+      lakehouse.from('user_activity_lineage').select('id,from_event_id,to_event_id,from_view,to_view,edge_type,delta_ms').limit(1000),
     ]);
     setSessions((s.data ?? []) as Sess[]);
     setEvents((e.data ?? []) as Evt[]);
@@ -99,14 +99,14 @@ export default function UserActivityLineage() {
   useEffect(() => { load(); }, []);
   useEffect(() => {
     const t = setInterval(load, 5000);
-    const ch = supabase
+    const ch = lakehouse
       .channel('activity-lineage-stream')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_activity_events' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_activity_sessions' }, () => load())
       .subscribe();
     return () => {
       clearInterval(t);
-      supabase.removeChannel(ch);
+      lakehouse.removeChannel(ch);
     };
   }, []);
 

@@ -6,7 +6,7 @@ import type { UniversalWidget, WidgetType, ChartType, UniversalDashboard } from 
 import DashboardGrid from './DashboardGrid';
 import WidgetPalette from './WidgetPalette';
 import WidgetEditor from './WidgetEditor';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import DatabricksExportPanel from './DatabricksExportPanel';
 
 interface DashboardBuilderProps {
@@ -88,7 +88,7 @@ export default function DashboardBuilder({ initialDashboard, dashboardId, onSave
       };
 
       if (dashboardId) {
-        await supabase
+        await lakehouse
           .from('custom_dashboards')
           .update({
             name,
@@ -100,10 +100,10 @@ export default function DashboardBuilder({ initialDashboard, dashboardId, onSave
           })
           .eq('id', dashboardId);
 
-        await supabase.from('dashboard_widgets').delete().eq('dashboard_id', dashboardId);
+        await lakehouse.from('dashboard_widgets').delete().eq('dashboard_id', dashboardId);
 
         if (widgets.length > 0) {
-          await supabase.from('dashboard_widgets').insert(
+          await lakehouse.from('dashboard_widgets').insert(
             widgets.map(w => ({
               dashboard_id: dashboardId,
               title: w.title,
@@ -116,7 +116,7 @@ export default function DashboardBuilder({ initialDashboard, dashboardId, onSave
           );
         }
       } else {
-        const { data: newDash } = await supabase
+        const { data: newDash } = await lakehouse
           .from('custom_dashboards')
           .insert({
             name,
@@ -130,7 +130,7 @@ export default function DashboardBuilder({ initialDashboard, dashboardId, onSave
           .maybeSingle();
 
         if (newDash && widgets.length > 0) {
-          await supabase.from('dashboard_widgets').insert(
+          await lakehouse.from('dashboard_widgets').insert(
             widgets.map(w => ({
               dashboard_id: newDash.id,
               title: w.title,

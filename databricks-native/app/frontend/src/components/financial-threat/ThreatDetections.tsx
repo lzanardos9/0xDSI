@@ -31,7 +31,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import ThreatAttackChainGraph from './ThreatAttackChainGraph';
 
 // ---------------------------------------------------------------------------
@@ -631,7 +631,7 @@ const ThreatDetections: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await lakehouse
         .from('financial_threat_detections')
         .select('*')
         .order('created_at', { ascending: false });

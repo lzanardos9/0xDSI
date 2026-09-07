@@ -3,7 +3,7 @@ import {
   X, Upload, FileCode, AlertTriangle, CheckCircle, Loader2,
   Copy, Check, ArrowRight, FileText, Braces, Terminal
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 interface ImportRuleModalProps {
   open: boolean;
@@ -311,7 +311,7 @@ const ImportRuleModal = ({ open, onClose, onImported }: ImportRuleModalProps) =>
       };
     });
 
-    const { error: dbErr } = await supabase.from('correlation_rules_library').insert(rows);
+    const { error: dbErr } = await lakehouse.from('correlation_rules_library').insert(rows);
     setSaving(false);
     if (dbErr) {
       setError(`Save failed: ${dbErr.message}`);

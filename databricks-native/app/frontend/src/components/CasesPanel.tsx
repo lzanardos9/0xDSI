@@ -37,7 +37,7 @@ import {
   Link2,
   Flame,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 type CaseStatus = 'new' | 'investigating' | 'contained' | 'resolved' | 'closed';
 type CasePriority = 'low' | 'medium' | 'high' | 'critical';
@@ -242,7 +242,7 @@ export default function CasesPanel() {
   }, []);
 
   const loadCases = async () => {
-    const { data, error } = await supabase
+    const { data, error } = await lakehouse
       .from('cases')
       .select('*')
       .order('created_at', { ascending: false })
@@ -942,12 +942,12 @@ function CaseDetailDrawer({
 
   const loadAll = async () => {
     const [ev, io, at, ac, wa, au] = await Promise.all([
-      supabase.from('case_evidence').select('*').eq('case_id', caseRow.id).order('collected_at', { ascending: false }),
-      supabase.from('case_iocs').select('*').eq('case_id', caseRow.id).order('first_seen', { ascending: false }),
-      supabase.from('case_attack_techniques').select('*').eq('case_id', caseRow.id),
-      supabase.from('case_actions').select('*').eq('case_id', caseRow.id).order('created_at', { ascending: false }),
-      supabase.from('case_watchers').select('*').eq('case_id', caseRow.id),
-      supabase.from('case_audit_log').select('*').eq('case_id', caseRow.id).order('created_at', { ascending: false }).limit(50),
+      lakehouse.from('case_evidence').select('*').eq('case_id', caseRow.id).order('collected_at', { ascending: false }),
+      lakehouse.from('case_iocs').select('*').eq('case_id', caseRow.id).order('first_seen', { ascending: false }),
+      lakehouse.from('case_attack_techniques').select('*').eq('case_id', caseRow.id),
+      lakehouse.from('case_actions').select('*').eq('case_id', caseRow.id).order('created_at', { ascending: false }),
+      lakehouse.from('case_watchers').select('*').eq('case_id', caseRow.id),
+      lakehouse.from('case_audit_log').select('*').eq('case_id', caseRow.id).order('created_at', { ascending: false }).limit(50),
     ]);
     if (ev.data) setEvidence(ev.data as CaseEvidence[]);
     if (io.data) setIocs(io.data as CaseIOC[]);
@@ -971,7 +971,7 @@ function CaseDetailDrawer({
     if (newStatus === 'closed') {
       update.closed_at = new Date().toISOString();
     }
-    const { data, error } = await supabase
+    const { data, error } = await lakehouse
       .from('cases')
       .update(update)
       .eq('id', caseRow.id)
@@ -979,7 +979,7 @@ function CaseDetailDrawer({
       .maybeSingle();
     if (!error && data) {
       onChange(data as CaseRow);
-      await supabase.from('case_audit_log').insert({
+      await lakehouse.from('case_audit_log').insert({
         case_id: caseRow.id,
         actor: 'analyst@acme.com',
         action: 'status.changed',
@@ -1674,11 +1674,11 @@ function ActionsTab({
   onChange: () => void;
 }) {
   const approve = async (id: string) => {
-    await supabase
+    await lakehouse
       .from('case_actions')
       .update({ status: 'approved', approved_by: 'analyst@acme.com', approved_at: new Date().toISOString() })
       .eq('id', id);
-    await supabase.from('case_audit_log').insert({
+    await lakehouse.from('case_audit_log').insert({
       case_id: caseId,
       actor: 'analyst@acme.com',
       action: 'action.approved',
@@ -1689,7 +1689,7 @@ function ActionsTab({
   };
 
   const execute = async (id: string) => {
-    await supabase
+    await lakehouse
       .from('case_actions')
       .update({ status: 'completed', executed_by: 'response-agent', executed_at: new Date().toISOString(), result_summary: 'Executed via SOAR connector with audit trail.' })
       .eq('id', id);
@@ -1818,7 +1818,7 @@ function CollabTab({
   const [body, setBody] = useState('');
 
   useEffect(() => {
-    supabase
+    lakehouse
       .from('case_comments')
       .select('*')
       .eq('case_id', caseId)
@@ -1828,7 +1828,7 @@ function CollabTab({
 
   const post = async () => {
     if (!body.trim()) return;
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('case_comments')
       .insert({ case_id: caseId, author: 'analyst@acme.com', comment: body, is_internal: true })
       .select()
@@ -1836,7 +1836,7 @@ function CollabTab({
     if (data) {
       setComments((c) => [data as typeof comments[0], ...c]);
       setBody('');
-      await supabase.from('case_audit_log').insert({
+      await lakehouse.from('case_audit_log').insert({
         case_id: caseId,
         actor: 'analyst@acme.com',
         action: 'comment.added',
@@ -1972,7 +1972,7 @@ function CreateCaseModal({
   const [tlp, setTlp] = useState<TLP>('amber');
 
   useEffect(() => {
-    supabase
+    lakehouse
       .from('case_templates')
       .select('*')
       .order('template_name')
@@ -1993,7 +1993,7 @@ function CreateCaseModal({
     const containMin = selectedTemplate?.contain_minutes || 240;
     const resolveMin = selectedTemplate?.resolve_minutes || 1440;
     const caseNumber = `CASE-${now.getFullYear()}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`;
-    const { data, error } = await supabase
+    const { data, error } = await lakehouse
       .from('cases')
       .insert({
         case_number: caseNumber,
@@ -2021,7 +2021,7 @@ function CreateCaseModal({
       if (selectedTemplate?.default_attack_techniques?.length) {
         await Promise.all(
           selectedTemplate.default_attack_techniques.map((tid) =>
-            supabase.from('case_attack_techniques').insert({
+            lakehouse.from('case_attack_techniques').insert({
               case_id: newCase.id,
               technique_id: tid,
               technique_name: tid,
@@ -2031,7 +2031,7 @@ function CreateCaseModal({
           ),
         );
       }
-      await supabase.from('case_audit_log').insert({
+      await lakehouse.from('case_audit_log').insert({
         case_id: newCase.id,
         actor: 'analyst@acme.com',
         action: 'case.created',

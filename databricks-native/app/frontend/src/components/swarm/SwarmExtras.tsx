@@ -5,7 +5,7 @@ import {
   Layers, Zap, Crosshair, Binary, Radar, Activity, ChevronRight, Server,
   Users, Building2, Cloud, Factory, Globe, Cpu, Database,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 export type Side = 'red' | 'blue';
 
@@ -79,7 +79,7 @@ export function BattlefieldSelector({
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data } = await lakehouse
         .from('swarm_battlefields')
         .select('*')
         .eq('is_active', true)

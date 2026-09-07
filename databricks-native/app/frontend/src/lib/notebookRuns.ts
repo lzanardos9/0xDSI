@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 
 export type NotebookRunType = 'export' | 'manual' | 'scheduled' | 'api';
 export type NotebookRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -26,9 +26,9 @@ export async function recordNotebookExport(
   notebookTitle: string,
   format: 'py' | 'json' | 'ipynb',
 ): Promise<NotebookRun | null> {
-  const { data: userData } = await supabase.auth.getUser();
+  const { data: userData } = await lakehouse.auth.getUser();
 
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('databricks_notebook_runs')
     .insert({
       notebook_id: notebookId,
@@ -53,7 +53,7 @@ export async function recordNotebookExport(
 }
 
 export async function listRecentRuns(limit = 50): Promise<NotebookRun[]> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('databricks_notebook_runs')
     .select('*')
     .order('created_at', { ascending: false })
@@ -63,7 +63,7 @@ export async function listRecentRuns(limit = 50): Promise<NotebookRun[]> {
 }
 
 export async function listRunsForNotebook(notebookId: string, limit = 20): Promise<NotebookRun[]> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('databricks_notebook_runs')
     .select('*')
     .eq('notebook_id', notebookId)

@@ -26,7 +26,7 @@ import {
   Zap,
   Target,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import type {
   CredentialSellingCase,
   DarkWebHit,
@@ -1133,8 +1133,8 @@ export default function InsiderCredentialSelling() {
     setError(null);
     try {
       const [casesRes, hitsRes] = await Promise.all([
-        supabase.from('credential_selling_cases').select('*').order('created_at', { ascending: false }),
-        supabase.from('credential_dark_web_hits').select('*').order('discovered_at', { ascending: false }),
+        lakehouse.from('credential_selling_cases').select('*').order('created_at', { ascending: false }),
+        lakehouse.from('credential_dark_web_hits').select('*').order('discovered_at', { ascending: false }),
       ]);
       if (casesRes.error) throw casesRes.error;
       if (hitsRes.error) throw hitsRes.error;

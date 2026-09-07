@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Zap, Shield, Lock, Ban, Bell, AlertOctagon } from 'lucide-react';
-import { supabase, ResponseAction, WorkflowExecution } from '../lib/supabase';
+import { lakehouse, ResponseAction, WorkflowExecution } from '../lib/lakehouse';
 import { generateMockResponseActions } from '../lib/mockData';
 
 const ResponseAutomation = () => {
@@ -16,7 +16,7 @@ const ResponseAutomation = () => {
 
   const loadActions = async () => {
     try {
-      let query = supabase
+      let query = lakehouse
         .from('response_actions')
         .select('*')
         .order('created_at', { ascending: false })
@@ -39,7 +39,7 @@ const ResponseAutomation = () => {
 
   const rollbackAction = async (actionId: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('response_actions')
         .update({
           action_status: 'rolled_back',

@@ -26,7 +26,7 @@ import {
   Monitor,
   Globe,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -445,7 +445,7 @@ const IdentityTrustScores: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await lakehouse
         .from('financial_identity_profiles')
         .select('*');
 

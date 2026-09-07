@@ -5,7 +5,7 @@ import {
   ShieldAlert, Sigma, Sparkles, Target, Timer, TrendingUp, Users, Waves, Zap,
   CheckCircle2, XCircle,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 type Weights = Record<string, number>;
 type Thresholds = Record<string, number>;
@@ -216,7 +216,7 @@ export default function GraphScoringTab() {
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await lakehouse
       .from('graph_pattern_scoring_profiles')
       .select('*')
       .order('is_active', { ascending: false })
@@ -305,7 +305,7 @@ export default function GraphScoringTab() {
   const save = async () => {
     if (!working) return;
     setSaving(true);
-    const { error } = await supabase
+    const { error } = await lakehouse
       .from('graph_pattern_scoring_profiles')
       .update({
         weights: working.weights,
@@ -325,8 +325,8 @@ export default function GraphScoringTab() {
   const activate = async () => {
     if (!working) return;
     setSaving(true);
-    await supabase.from('graph_pattern_scoring_profiles').update({ is_active: false }).neq('id', working.id);
-    const { error } = await supabase.from('graph_pattern_scoring_profiles').update({ is_active: true }).eq('id', working.id);
+    await lakehouse.from('graph_pattern_scoring_profiles').update({ is_active: false }).neq('id', working.id);
+    const { error } = await lakehouse.from('graph_pattern_scoring_profiles').update({ is_active: true }).eq('id', working.id);
     setSaving(false);
     if (error) { setToast({ kind: 'err', msg: error.message }); }
     else { setToast({ kind: 'ok', msg: `"${working.profile_name}" is now the active profile` }); await load(); }

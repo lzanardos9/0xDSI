@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 
 const MOCK_PERSONNEL = [
   {
@@ -129,20 +129,20 @@ export const startMockPersonnelMovement = () => {
 
       const position = person.path[nextIndex];
 
-      const zone = await supabase
+      const zone = await lakehouse
         .from('physical_zones')
         .select('id')
         .eq('zone_name', position.zone)
         .maybeSingle();
 
-      const { data: existing } = await supabase
+      const { data: existing } = await lakehouse
         .from('personnel_tracking')
         .select('id')
         .eq('person_id', person.person_id)
         .maybeSingle();
 
       if (existing) {
-        await supabase
+        await lakehouse
           .from('personnel_tracking')
           .update({
             position: { x: position.x, y: position.y },
@@ -152,7 +152,7 @@ export const startMockPersonnelMovement = () => {
           })
           .eq('person_id', person.person_id);
       } else {
-        await supabase
+        await lakehouse
           .from('personnel_tracking')
           .insert({
             person_id: person.person_id,
@@ -166,7 +166,7 @@ export const startMockPersonnelMovement = () => {
       }
 
       if (person.badge_type === 'unknown' && Math.random() > 0.7) {
-        const { data: existingEvent } = await supabase
+        const { data: existingEvent } = await lakehouse
           .from('physical_security_events')
           .select('id')
           .eq('person_id', person.person_id)
@@ -174,13 +174,13 @@ export const startMockPersonnelMovement = () => {
           .maybeSingle();
 
         if (!existingEvent) {
-          const cameraData = await supabase
+          const cameraData = await lakehouse
             .from('cctv_cameras')
             .select('id')
             .eq('camera_id', 'CAM-007')
             .maybeSingle();
 
-          await supabase
+          await lakehouse
             .from('physical_security_events')
             .insert({
               event_type: 'unauthorized_access',

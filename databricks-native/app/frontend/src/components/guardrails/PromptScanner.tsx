@@ -3,7 +3,7 @@ import {
   Scan, Shield, AlertTriangle, Ban, CheckCircle, Clock,
   ChevronDown, ChevronUp, Eye, Zap, Filter, RefreshCw
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import type { ScanResult } from '../../lib/guardrailsData';
 import { VERDICT_CONFIG } from '../../lib/guardrailsData';
 
@@ -32,7 +32,7 @@ const PromptScanner = () => {
   }, [liveMode]);
 
   const loadScans = async () => {
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('guardrail_scan_results')
       .select('*')
       .order('scanned_at', { ascending: false })

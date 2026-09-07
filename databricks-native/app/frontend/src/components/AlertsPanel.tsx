@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AlertTriangle, CheckCircle, Clock, XCircle, User } from 'lucide-react';
-import { supabase, Alert } from '../lib/supabase';
+import { lakehouse, Alert } from '../lib/lakehouse';
 import { generateMockAlerts } from '../lib/mockData';
 
 const AlertsPanel = () => {
@@ -16,7 +16,7 @@ const AlertsPanel = () => {
 
   const loadAlerts = async () => {
     try {
-      let query = supabase
+      let query = lakehouse
         .from('alerts')
         .select('*')
         .order('created_at', { ascending: false })
@@ -39,7 +39,7 @@ const AlertsPanel = () => {
 
   const updateAlertStatus = async (alertId: string, newStatus: string) => {
     try {
-      const { error } = await supabase
+      const { error } = await lakehouse
         .from('alerts')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', alertId);

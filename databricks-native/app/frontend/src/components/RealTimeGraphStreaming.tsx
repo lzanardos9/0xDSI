@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import {
   Activity, Zap, Network, AlertTriangle, Database, Brain, Cpu,
   Radio, Shield, Eye, TrendingUp, Clock, GitBranch, Layers, ChevronRight,
@@ -129,8 +129,8 @@ export default function RealTimeGraphStreaming() {
 
   const loadData = async () => {
     const [snapRes, metricRes] = await Promise.all([
-      supabase.from('rt_graph_snapshots').select('*').order('risk_score', { ascending: false }),
-      supabase.from('rt_streaming_metrics').select('*').order('recorded_at', { ascending: false }).limit(30),
+      lakehouse.from('rt_graph_snapshots').select('*').order('risk_score', { ascending: false }),
+      lakehouse.from('rt_streaming_metrics').select('*').order('recorded_at', { ascending: false }).limit(30),
     ]);
     if (snapRes.data) setSnapshots(snapRes.data);
     if (metricRes.data) setMetrics(metricRes.data);

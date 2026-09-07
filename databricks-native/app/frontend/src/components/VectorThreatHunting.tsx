@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, Zap, Brain, Target, GitBranch, Plus, Play, Eye, TrendingUp, Layers } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { VectorEmbeddingEngine, AICorrelationEngine } from '../lib/vectorEngine';
 import MicroPatternsPanel from './MicroPatternsPanel';
 import MLModelExplainer from './MLModelExplainer';
@@ -602,11 +602,11 @@ const VectorThreatHunting = () => {
 
   const loadData = async () => {
     const [corrData, rulesData, eventsCount, huntQueriesData, eventsData] = await Promise.all([
-      supabase.from('vector_correlations').select('*').order('created_at', { ascending: false }).limit(10),
-      supabase.from('vector_correlation_rules').select('*').eq('enabled', true),
-      supabase.from('events').select('id', { count: 'exact', head: true }),
-      supabase.from('threat_hunt_queries').select('*').order('created_at', { ascending: false }),
-      supabase.from('events').select('*').order('event_timestamp', { ascending: false }).limit(50),
+      lakehouse.from('vector_correlations').select('*').order('created_at', { ascending: false }).limit(10),
+      lakehouse.from('vector_correlation_rules').select('*').eq('enabled', true),
+      lakehouse.from('events').select('id', { count: 'exact', head: true }),
+      lakehouse.from('threat_hunt_queries').select('*').order('created_at', { ascending: false }),
+      lakehouse.from('events').select('*').order('event_timestamp', { ascending: false }).limit(50),
     ]);
 
     setCorrelations(corrData.data || []);
@@ -647,7 +647,7 @@ const VectorThreatHunting = () => {
                                    (query.includes('file') && (query.includes('sensitive') || query.includes('normally')));
 
       // Semantic-style search using full-text and pattern matching
-      const { data: results, error } = await supabase
+      const { data: results, error } = await lakehouse
         .from('events')
         .select('*')
         .or(`description.ilike.%${query}%,event_type.ilike.%${query}%,source.ilike.%${query}%,source_ip.ilike.%${query}%,raw_log.ilike.%${query}%`)
@@ -726,7 +726,7 @@ const VectorThreatHunting = () => {
 
       // Create hunt query record
       if (huntQuery.length > 5 && results && results.length > 0) {
-        await supabase.from('threat_hunt_queries').insert({
+        await lakehouse.from('threat_hunt_queries').insert({
           query_name: `Hunt: ${huntQuery.substring(0, 50)}`,
           natural_language_query: huntQuery,
           hunt_type: 'semantic_search',
@@ -1520,7 +1520,7 @@ const PromptBasedRuleCreator = ({ onRuleCreated }: { onRuleCreated: () => void }
         [prompt],
         ruleType,
         threshold,
-        supabase
+        lakehouse
       );
 
       setPrompt('');

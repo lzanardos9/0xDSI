@@ -5,7 +5,7 @@ import {
   FileCode, BookOpen, RotateCcw, ArrowUpRight, ArrowDownRight,
   ExternalLink, User, Calendar, Tag
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import {
   DaCLifecycleBadge, ReviewBadge, TestResultBadge,
   VersionBadge, FormatBadge, GitRefBadge
@@ -99,7 +99,7 @@ const RuleVersionDrawer = ({
 
   const loadVersions = async () => {
     setLoadingVersions(true);
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('correlation_rule_versions')
       .select('*')
       .eq('rule_id', rule.id)

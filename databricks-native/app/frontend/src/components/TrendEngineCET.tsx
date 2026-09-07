@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import {
   GitBranch,
   Activity,
@@ -110,18 +110,18 @@ export default function TrendEngineCET() {
   useEffect(() => {
     (async () => {
       const [f, p, q, t, g, pr, a, m, me, gn, ge, bn] = await Promise.all([
-        supabase.from('trend_feasibility').select('*').order('sort_order'),
-        supabase.from('trend_phases').select('*').order('sort_order'),
-        supabase.from('trend_queries').select('*').order('query_id'),
-        supabase.from('trend_complete').select('*').order('detected_at', { ascending: false }),
-        supabase.from('trend_graphlets').select('*').order('window_start', { ascending: false }),
-        supabase.from('trend_prds').select('*').order('sort_order'),
-        supabase.from('trend_architecture_layers').select('*').order('sort_order'),
-        supabase.from('trend_still_missing').select('*').order('sort_order'),
-        supabase.from('trend_runtime_metrics').select('*').order('sort_order'),
-        supabase.from('trend_graph_nodes').select('*'),
-        supabase.from('trend_graph_edges').select('*').order('ts_offset_s'),
-        supabase.from('trend_benchmarks').select('*').order('sort_order'),
+        lakehouse.from('trend_feasibility').select('*').order('sort_order'),
+        lakehouse.from('trend_phases').select('*').order('sort_order'),
+        lakehouse.from('trend_queries').select('*').order('query_id'),
+        lakehouse.from('trend_complete').select('*').order('detected_at', { ascending: false }),
+        lakehouse.from('trend_graphlets').select('*').order('window_start', { ascending: false }),
+        lakehouse.from('trend_prds').select('*').order('sort_order'),
+        lakehouse.from('trend_architecture_layers').select('*').order('sort_order'),
+        lakehouse.from('trend_still_missing').select('*').order('sort_order'),
+        lakehouse.from('trend_runtime_metrics').select('*').order('sort_order'),
+        lakehouse.from('trend_graph_nodes').select('*'),
+        lakehouse.from('trend_graph_edges').select('*').order('ts_offset_s'),
+        lakehouse.from('trend_benchmarks').select('*').order('sort_order'),
       ]);
       setFeasibility(f.data ?? []);
       setPhases(p.data ?? []);

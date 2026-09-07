@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { UserPlus, Loader2, Check, X, Sparkles, AlertCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 interface Props {
   creationId: string;
@@ -59,7 +59,7 @@ RESPONSE RULES:
 - Coordinate with the rest of the roster: Atlas (triage), Sage (enrichment), Commander (orchestrator), Nova (investigation), Vanguard (response). Hand off to them by name when appropriate.
 - Use technical jargon naturally.`;
 
-    const { error: insErr } = await supabase.from('soc_agent_registry').insert({
+    const { error: insErr } = await lakehouse.from('soc_agent_registry').insert({
       agent_key: agentKey,
       name,
       role,

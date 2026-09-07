@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Database, Plus, Trash2, CreditCard as Edit2, Shield } from 'lucide-react';
-import { supabase, ActiveList } from '../lib/supabase';
+import { lakehouse, ActiveList } from '../lib/lakehouse';
 import { generateMockActiveLists } from '../lib/mockData';
 
 const ActiveListsPanel = () => {
@@ -15,7 +15,7 @@ const ActiveListsPanel = () => {
 
   const loadLists = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('active_lists')
         .select('*')
         .order('created_at', { ascending: false });
@@ -141,7 +141,7 @@ const CreateListModal = ({ onClose, onCreated }: { onClose: () => void; onCreate
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { error } = await supabase.from('active_lists').insert([
+      const { error } = await lakehouse.from('active_lists').insert([
         {
           ...formData,
           entries: [],

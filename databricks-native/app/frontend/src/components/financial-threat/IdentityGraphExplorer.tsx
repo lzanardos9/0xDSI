@@ -15,7 +15,7 @@ import {
   CircleDot,
   Layers,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -541,8 +541,8 @@ export default function IdentityGraphExplorer() {
     setError(null);
     try {
       const [edgeRes, profileRes] = await Promise.all([
-        supabase.from('financial_identity_graph_edges').select('*'),
-        supabase
+        lakehouse.from('financial_identity_graph_edges').select('*'),
+        lakehouse
           .from('financial_identity_profiles')
           .select('entity_id, entity_name, trust_score, identity_status'),
       ]);

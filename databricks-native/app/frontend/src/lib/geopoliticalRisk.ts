@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lakehouse } from './lakehouse';
 import { callFunction } from './llmGateway';
 
 export interface GeopoliticalEvent {
@@ -58,7 +58,7 @@ export function categoryMeta(id: string) {
 }
 
 export async function fetchGeopoliticalEvents(limit = 200): Promise<GeopoliticalEvent[]> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('geopolitical_events')
     .select('*')
     .order('occurred_at', { ascending: false })
@@ -68,7 +68,7 @@ export async function fetchGeopoliticalEvents(limit = 200): Promise<Geopolitical
 }
 
 export async function fetchExposureZones(): Promise<ExposureZone[]> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('acmeco_exposure_zones')
     .select('*')
     .eq('active', true);
@@ -97,7 +97,7 @@ export interface CyberGeoCorrelation {
 }
 
 export async function fetchCyberGeoCorrelations(): Promise<CyberGeoCorrelation[]> {
-  const { data, error } = await supabase
+  const { data, error } = await lakehouse
     .from('cyber_geo_correlations')
     .select('*')
     .order('occurred_at', { ascending: false });

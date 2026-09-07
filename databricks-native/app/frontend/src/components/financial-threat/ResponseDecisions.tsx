@@ -23,7 +23,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import ResponseTimelineGraph from './ResponseTimelineGraph';
 
 // ---------------------------------------------------------------------------
@@ -400,7 +400,7 @@ const ResponseDecisions: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await lakehouse
         .from('financial_response_decisions')
         .select('*')
         .order('created_at', { ascending: false });

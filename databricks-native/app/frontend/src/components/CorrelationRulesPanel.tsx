@@ -7,7 +7,7 @@ import {
   Dice1 as Dice, Layers, Swords, Merge, FileCode, History,
   Download, Upload
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import MLModelExplainer from './MLModelExplainer';
 import { ML_MODELS } from '../lib/mlModelData';
 import { DaCLifecycleBadge, VersionBadge, TestResultBadge, FormatBadge, GitRefBadge } from './correlation/DaCStatusBadge';
@@ -184,7 +184,7 @@ const CorrelationRulesPanel = () => {
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
   const loadStats = useCallback(async () => {
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('correlation_rules_library')
       .select('severity, enabled, category')
       .limit(50000);
@@ -203,7 +203,7 @@ const CorrelationRulesPanel = () => {
 
   const loadCategories = useCallback(async () => {
     if (categories.length > 0) return;
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('correlation_rules_library')
       .select('category')
       .limit(50000);
@@ -216,7 +216,7 @@ const CorrelationRulesPanel = () => {
   const loadRules = useCallback(async () => {
     setLoading(true);
     const columns = 'id,rule_name,rule_description,category,subcategory,severity,confidence_score,mitre_tactics,mitre_techniques,data_sources,rule_logic,enabled,tags,author,trigger_count,false_positive_rate,last_triggered,rule_type,complexity_score,version,dac_status,changelog,test_cases,deployment_history,review_status,reviewed_by,reviewed_at,git_ref,source_format,compliance_frameworks,response_playbook,last_tested_at,test_result';
-    let query = supabase
+    let query = lakehouse
       .from('correlation_rules_library')
       .select(columns, { count: 'estimated' })
       .order('confidence_score', { ascending: false })
@@ -265,7 +265,7 @@ const CorrelationRulesPanel = () => {
 
   const toggleRule = async (ruleId: string, currentEnabled: boolean) => {
     setToggling(ruleId);
-    const { error } = await supabase
+    const { error } = await lakehouse
       .from('correlation_rules_library')
       .update({ enabled: !currentEnabled, updated_at: new Date().toISOString() })
       .eq('id', ruleId);
@@ -301,7 +301,7 @@ const CorrelationRulesPanel = () => {
     parts[2] = 0;
     const newVersion = parts.join('.');
 
-    await supabase.from('correlation_rule_versions').insert({
+    await lakehouse.from('correlation_rule_versions').insert({
       rule_id: ruleId,
       version: newVersion,
       rule_name: rule.rule_name,
@@ -326,7 +326,7 @@ const CorrelationRulesPanel = () => {
       { environment: targetStatus, date: new Date().toISOString(), deployed_by: 'admin', status: 'success' }
     ];
 
-    await supabase.from('correlation_rules_library').update({
+    await lakehouse.from('correlation_rules_library').update({
       dac_status: targetStatus,
       version: newVersion,
       changelog: newChangelog,
@@ -340,10 +340,10 @@ const CorrelationRulesPanel = () => {
   };
 
   const handleRollback = async (ruleId: string, versionId: string) => {
-    const { data: versionData } = await supabase.from('correlation_rule_versions').select('*').eq('id', versionId).maybeSingle();
+    const { data: versionData } = await lakehouse.from('correlation_rule_versions').select('*').eq('id', versionId).maybeSingle();
     if (!versionData) return;
 
-    await supabase.from('correlation_rules_library').update({
+    await lakehouse.from('correlation_rules_library').update({
       rule_name: versionData.rule_name,
       rule_description: versionData.rule_description,
       rule_logic: versionData.rule_logic,
@@ -352,7 +352,7 @@ const CorrelationRulesPanel = () => {
       updated_at: new Date().toISOString(),
     }).eq('id', ruleId);
 
-    await supabase.from('correlation_rule_versions').insert({
+    await lakehouse.from('correlation_rule_versions').insert({
       rule_id: ruleId,
       version: versionData.version,
       rule_name: versionData.rule_name,

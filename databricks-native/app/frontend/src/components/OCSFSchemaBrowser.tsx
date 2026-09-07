@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Shield, Search, Database, Tag, List, Filter, CheckCircle, AlertCircle, FileText } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface OCSFCategory {
   id: string;
@@ -60,11 +60,11 @@ export default function OCSFSchemaBrowser() {
   const loadOCSFData = async () => {
     try {
       const [categoriesRes, classesRes, attributesRes, mappingsRes, statsRes] = await Promise.all([
-        supabase.from('ocsf_categories').select('*').order('category_uid'),
-        supabase.from('ocsf_event_classes').select('*').order('class_uid'),
-        supabase.from('ocsf_attributes').select('*').order('attribute_name'),
-        supabase.from('ocsf_source_mappings').select('*').order('source_vendor'),
-        supabase.rpc('get_ocsf_event_stats') as any
+        lakehouse.from('ocsf_categories').select('*').order('category_uid'),
+        lakehouse.from('ocsf_event_classes').select('*').order('class_uid'),
+        lakehouse.from('ocsf_attributes').select('*').order('attribute_name'),
+        lakehouse.from('ocsf_source_mappings').select('*').order('source_vendor'),
+        lakehouse.rpc('get_ocsf_event_stats') as any
       ]);
 
       if (categoriesRes.data) setCategories(categoriesRes.data);
@@ -75,7 +75,7 @@ export default function OCSFSchemaBrowser() {
       if (!statsRes.error && statsRes.data) {
         setEventStats(statsRes.data);
       } else {
-        const manualStats = await supabase
+        const manualStats = await lakehouse
           .from('events')
           .select('ocsf_class_uid, ocsf_class_name')
           .not('ocsf_class_uid', 'is', null);

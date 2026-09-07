@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { Shield, AlertTriangle, CheckCircle, Clock, Target, Zap, Activity, TrendingUp, Database, Lock, Eye, Network } from 'lucide-react';
 import MLModelExplainer from './MLModelExplainer';
 import { ML_MODELS } from '../lib/mlModelData';
@@ -76,7 +76,7 @@ const SmartThreatModeling = () => {
 
   const fetchThreatModels = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('threat_models')
         .select('*')
         .order('created_at', { ascending: false });
@@ -92,7 +92,7 @@ const SmartThreatModeling = () => {
 
   const fetchScenarios = async (modelId: string) => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('threat_scenarios')
         .select('*')
         .eq('threat_model_id', modelId)
@@ -107,7 +107,7 @@ const SmartThreatModeling = () => {
 
   const fetchMitigations = async (scenarioId: string) => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await lakehouse
         .from('threat_mitigations')
         .select('*')
         .eq('scenario_id', scenarioId)

@@ -3,7 +3,7 @@ import {
   Coins, TrendingUp, AlertTriangle, Users, Building2,
   Brain, AppWindow, ChevronDown, ChevronUp, Clock, Zap
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import type { TokenBudget } from '../../lib/guardrailsData';
 
 const SCOPE_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
@@ -55,7 +55,7 @@ const TokenBudgetControls = () => {
   }, []);
 
   const loadBudgets = async () => {
-    const { data } = await supabase.from('token_budgets').select('*').order('scope_type').order('scope_name');
+    const { data } = await lakehouse.from('token_budgets').select('*').order('scope_type').order('scope_name');
     if (data) setBudgets(data);
   };
 

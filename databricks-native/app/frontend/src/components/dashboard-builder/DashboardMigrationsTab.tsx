@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { UniversalDashboard, SavedDashboard, MigrationJob, DashboardTemplate, SourceTool } from '../../lib/dashboardSchema';
 import { SOURCE_TOOL_META } from '../../lib/dashboardSchema';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import DashboardBuilder from './DashboardBuilder';
 import MigrationWorkflow from './MigrationWorkflow';
 import DashboardGrid from './DashboardGrid';
@@ -36,9 +36,9 @@ export default function DashboardMigrationsTab() {
     setLoading(true);
     try {
       const [dashRes, migRes, tmpRes] = await Promise.all([
-        supabase.from('custom_dashboards').select('*').order('updated_at', { ascending: false }),
-        supabase.from('dashboard_migrations').select('*').order('created_at', { ascending: false }),
-        supabase.from('dashboard_templates').select('*').order('usage_count', { ascending: false }),
+        lakehouse.from('custom_dashboards').select('*').order('updated_at', { ascending: false }),
+        lakehouse.from('dashboard_migrations').select('*').order('created_at', { ascending: false }),
+        lakehouse.from('dashboard_templates').select('*').order('usage_count', { ascending: false }),
       ]);
 
       setDashboards((dashRes.data as SavedDashboard[]) || []);
@@ -56,12 +56,12 @@ export default function DashboardMigrationsTab() {
   }, [loadData]);
 
   const handleDeleteDashboard = async (id: string) => {
-    await supabase.from('custom_dashboards').delete().eq('id', id);
+    await lakehouse.from('custom_dashboards').delete().eq('id', id);
     setDashboards(prev => prev.filter(d => d.id !== id));
   };
 
   const handleOpenDashboard = async (dash: SavedDashboard) => {
-    const { data: widgets } = await supabase
+    const { data: widgets } = await lakehouse
       .from('dashboard_widgets')
       .select('*')
       .eq('dashboard_id', dash.id);
@@ -96,7 +96,7 @@ export default function DashboardMigrationsTab() {
   };
 
   const handleViewDashboard = async (dash: SavedDashboard) => {
-    const { data: widgets } = await supabase
+    const { data: widgets } = await lakehouse
       .from('dashboard_widgets')
       .select('*')
       .eq('dashboard_id', dash.id);
@@ -131,7 +131,7 @@ export default function DashboardMigrationsTab() {
   };
 
   const handleDatabricksExport = async (dash: SavedDashboard) => {
-    const { data: widgets } = await supabase
+    const { data: widgets } = await lakehouse
       .from('dashboard_widgets')
       .select('*')
       .eq('dashboard_id', dash.id);
@@ -187,7 +187,7 @@ export default function DashboardMigrationsTab() {
     });
     setView('builder');
 
-    supabase.from('dashboard_templates')
+    lakehouse.from('dashboard_templates')
       .update({ usage_count: template.usage_count + 1 })
       .eq('id', template.id)
       .then();

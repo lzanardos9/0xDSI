@@ -4,7 +4,7 @@ import {
   FileCode, GitBranch, Play, Loader2, Copy, Check, Plus, Trash2,
   Brain, Network, BarChart3, Layers, Zap, Target, Eye, Activity
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 
 interface CreateRuleModalProps {
   open: boolean;
@@ -317,7 +317,7 @@ export default function CreateRuleModal({ open, onClose, onCreated, defaultRuleT
       updated_at: now,
     };
 
-    const { error: insertError } = await supabase
+    const { error: insertError } = await lakehouse
       .from('correlation_rules_library')
       .insert(ruleData);
 

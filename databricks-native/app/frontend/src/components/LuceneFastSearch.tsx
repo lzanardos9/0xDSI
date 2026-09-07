@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { Search, Zap, Database, Clock } from 'lucide-react';
 
 interface SearchMetric {
@@ -34,7 +34,7 @@ export default function LuceneFastSearch() {
   }, []);
 
   const loadIndices = async () => {
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('lucene_indices')
       .select('*')
       .eq('status', 'active');
@@ -42,7 +42,7 @@ export default function LuceneFastSearch() {
   };
 
   const loadMetrics = async () => {
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('search_performance_metrics')
       .select('*')
       .order('timestamp', { ascending: false })
@@ -53,7 +53,7 @@ export default function LuceneFastSearch() {
   const performSearch = async () => {
     const startTime = performance.now();
 
-    let query = supabase.from('events').select('*');
+    let query = lakehouse.from('events').select('*');
 
     if (searchQuery) {
       query = query.or(`event_type.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
@@ -66,7 +66,7 @@ export default function LuceneFastSearch() {
     setSearchTime(duration);
     if (data) setSearchResults(data);
 
-    await supabase.from('search_performance_metrics').insert({
+    await lakehouse.from('search_performance_metrics').insert({
       index_name: selectedIndex,
       query_text: searchQuery,
       query_type: 'full_text',

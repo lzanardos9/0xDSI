@@ -5,7 +5,7 @@ import {
   Zap, FlaskConical, X, RefreshCw, Download, Copy, Check,
   CheckCircle2, FileCode, Layers, Globe, Wand2,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { callFunction } from '../lib/llmGateway';
 import PlanReview from './feature-lab/PlanReview';
 import CodeViewer from './feature-lab/CodeViewer';
@@ -87,7 +87,7 @@ export default function FeatureLab() {
   useEffect(() => { loadCreations(); }, []);
 
   const loadCreations = async () => {
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('feature_lab_creations')
       .select('*')
       .order('created_at', { ascending: false })
@@ -230,16 +230,16 @@ export default function FeatureLab() {
     setView('create');
     setPhase('preview');
     if (creation.generated_html) setTimeout(() => renderToIframe(creation.generated_html), 100);
-    supabase.from('feature_lab_creations').update({ view_count: (creation.view_count || 0) + 1 }).eq('id', creation.id).then(() => {});
+    lakehouse.from('feature_lab_creations').update({ view_count: (creation.view_count || 0) + 1 }).eq('id', creation.id).then(() => {});
   };
 
   const deleteCreation = async (id: string) => {
-    await supabase.from('feature_lab_creations').delete().eq('id', id);
+    await lakehouse.from('feature_lab_creations').delete().eq('id', id);
     setCreations(prev => prev.filter(c => c.id !== id));
   };
 
   const togglePin = async (creation: Creation) => {
-    await supabase.from('feature_lab_creations').update({ is_pinned: !creation.is_pinned }).eq('id', creation.id);
+    await lakehouse.from('feature_lab_creations').update({ is_pinned: !creation.is_pinned }).eq('id', creation.id);
     setCreations(prev => prev.map(c => c.id === creation.id ? { ...c, is_pinned: !c.is_pinned } : c));
   };
 

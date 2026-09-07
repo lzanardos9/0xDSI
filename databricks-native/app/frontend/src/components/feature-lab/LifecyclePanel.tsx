@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Check, Circle, Loader2, Rocket, ShieldCheck, TestTube, FileText, Link2, Copy } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import { callFunction } from '../../lib/llmGateway';
 
 interface LifecyclePanelProps {

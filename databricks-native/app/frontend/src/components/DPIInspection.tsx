@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Activity, AlertTriangle, Shield, FileText, Image, Video, Database, Lock, Mail, CheckCircle, XCircle, AlertOctagon, Eye } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface PacketCapture {
   id: string;
@@ -61,9 +61,9 @@ const DPIInspection = () => {
 
   const loadDPIData = async () => {
     const [flowsData, packetsData, detectionsData] = await Promise.all([
-      supabase.from('dpi_flows').select('*').order('start_time', { ascending: false }),
-      supabase.from('packet_captures').select('*').order('capture_time', { ascending: false }).limit(50),
-      supabase.from('dlp_detections').select('*').order('detected_at', { ascending: false })
+      lakehouse.from('dpi_flows').select('*').order('start_time', { ascending: false }),
+      lakehouse.from('packet_captures').select('*').order('capture_time', { ascending: false }).limit(50),
+      lakehouse.from('dlp_detections').select('*').order('detected_at', { ascending: false })
     ]);
 
     setFlows(flowsData.data || []);

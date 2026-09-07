@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Network, Server, Database, Shield, Globe, Cloud, HardDrive, Layers, Cpu, Zap, Wind, Thermometer, Power, Camera, AlertTriangle, User } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { startMockPersonnelMovement } from '../lib/mockPhysicalSecurity';
 import DPIInspection from './DPIInspection';
 
@@ -18,7 +18,7 @@ const NetworkTopology = () => {
   useEffect(() => {
     loadAssets();
 
-    const assetsSubscription = supabase
+    const assetsSubscription = lakehouse
       .channel('assets_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'asset_registry' }, (payload) => {
         console.log('🔄 Asset change detected:', payload);
@@ -26,7 +26,7 @@ const NetworkTopology = () => {
       })
       .subscribe();
 
-    const vulnsSubscription = supabase
+    const vulnsSubscription = lakehouse
       .channel('vulnerabilities_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'asset_vulnerabilities' }, (payload) => {
         console.log('🚨 Vulnerability change detected:', payload);
@@ -39,7 +39,7 @@ const NetworkTopology = () => {
       const cleanupMovement = startMockPersonnelMovement();
       const interval = setInterval(loadPhysicalSecurity, 2000);
 
-      const physicalEventsSubscription = supabase
+      const physicalEventsSubscription = lakehouse
         .channel('physical_events_changes')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'physical_security_events' }, (payload) => {
           console.log('🚪 Physical security event:', payload);
@@ -64,12 +64,12 @@ const NetworkTopology = () => {
 
   const loadAssets = async () => {
     const [assetsData, vulnsData] = await Promise.all([
-      supabase
+      lakehouse
         .from('asset_registry')
         .select('*')
         .eq('is_active', true)
         .order('location'),
-      supabase
+      lakehouse
         .from('asset_vulnerabilities')
         .select('*')
         .order('cvss_score', { ascending: false })
@@ -87,11 +87,11 @@ const NetworkTopology = () => {
 
   const loadPhysicalSecurity = async () => {
     const [personnelData, camerasData, eventsData, zonesData, physicalVulnsData] = await Promise.all([
-      supabase.from('personnel_tracking').select('*').order('last_seen', { ascending: false }),
-      supabase.from('cctv_cameras').select('*'),
-      supabase.from('physical_security_events').select('*, physical_zones(zone_name)').eq('status', 'active').order('created_at', { ascending: false }),
-      supabase.from('physical_zones').select('*'),
-      supabase.from('physical_asset_vulnerabilities').select('*').order('severity', { ascending: false })
+      lakehouse.from('personnel_tracking').select('*').order('last_seen', { ascending: false }),
+      lakehouse.from('cctv_cameras').select('*'),
+      lakehouse.from('physical_security_events').select('*, physical_zones(zone_name)').eq('status', 'active').order('created_at', { ascending: false }),
+      lakehouse.from('physical_zones').select('*'),
+      lakehouse.from('physical_asset_vulnerabilities').select('*').order('severity', { ascending: false })
     ]);
 
     setPersonnel(personnelData.data || []);

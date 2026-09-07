@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FileCode2, Cpu, Shield, Terminal, Upload, Copy, Check, AlertTriangle, ChevronRight, Crosshair, Binary, MemoryStick } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 interface CrashAnalysis {
   id: string;
@@ -68,7 +68,7 @@ export default function CrashAnalysisPanel() {
 
   const loadAnalyses = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data } = await lakehouse
       .from('crash_analyses')
       .select('*')
       .eq('analysis_status', 'complete')
@@ -95,7 +95,7 @@ export default function CrashAnalysisPanel() {
       if (result.id) {
         setShowUpload(false);
         await loadAnalyses();
-        const { data } = await supabase
+        const { data } = await lakehouse
           .from('crash_analyses')
           .select('*')
           .eq('id', result.id)

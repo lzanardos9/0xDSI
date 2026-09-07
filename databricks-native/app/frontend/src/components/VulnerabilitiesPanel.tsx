@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { Shield, AlertTriangle, TrendingUp, Database, Search, ExternalLink } from 'lucide-react';
 
 interface AssetVulnerability {
@@ -55,9 +55,9 @@ export default function VulnerabilitiesPanel() {
       setLoading(true);
 
       const [assetRes, nvdRes, physicalRes] = await Promise.all([
-        supabase.from('asset_vulnerabilities').select('*').order('cvss_score', { ascending: false }),
-        supabase.from('nist_nvd_vulnerabilities').select('*').order('cvss_v3_score', { ascending: false }).limit(50),
-        supabase.from('physical_asset_vulnerabilities').select('*').limit(20)
+        lakehouse.from('asset_vulnerabilities').select('*').order('cvss_score', { ascending: false }),
+        lakehouse.from('nist_nvd_vulnerabilities').select('*').order('cvss_v3_score', { ascending: false }).limit(50),
+        lakehouse.from('physical_asset_vulnerabilities').select('*').limit(20)
       ]);
 
       console.log('Asset Vulns:', assetRes);

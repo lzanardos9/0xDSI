@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { FileText, Shield, Building2, Upload, ClipboardPaste, X, AlertTriangle, CheckCircle, TrendingUp, TrendingDown, ArrowRight, Copy, RotateCcw, FileSearch, AlertCircle, Star, Bookmark, Network, Scale, FileWarning, Bug, ClipboardCheck, Lock, Database, Loader2, Plus } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 import { callFunction } from '../lib/llmGateway';
 
 interface Finding {
@@ -126,7 +126,7 @@ export default function DocumentAnalysis() {
     setApplying(idx);
     setEnrichMsg(null);
     try {
-      const { data: assets } = await supabase
+      const { data: assets } = await lakehouse
         .from('asset_registry')
         .select('id, asset_name, known_vulnerabilities, criticality, metadata, doc_enrichment_count')
         .or(`asset_name.ilike.%${ae.asset_name}%,ip_address.eq.${ae.asset_name}`)
@@ -141,7 +141,7 @@ export default function DocumentAnalysis() {
           ? (asset.criticality === 'low' ? 'medium' : asset.criticality === 'medium' ? 'high' : asset.criticality === 'high' ? 'very_high' : asset.criticality)
           : asset.criticality;
 
-        await supabase.from('asset_registry').update({
+        await lakehouse.from('asset_registry').update({
           known_vulnerabilities: newVulns,
           criticality: nextCriticality,
           metadata: { ...currentMeta, doc_intel_notes: ae.notes, last_enrichment_source: result.document_name },
@@ -150,7 +150,7 @@ export default function DocumentAnalysis() {
           updated_at: new Date().toISOString(),
         }).eq('id', asset.id);
 
-        await supabase.from('asset_enrichment_log').insert({
+        await lakehouse.from('asset_enrichment_log').insert({
           asset_id: asset.id,
           asset_name: asset.asset_name,
           document_name: result.document_name,
@@ -162,7 +162,7 @@ export default function DocumentAnalysis() {
         setApplied(prev => new Set(prev).add(idx));
         setEnrichMsg(`Updated "${asset.asset_name}" in Asset Registry`);
       } else {
-        await supabase.from('asset_registry').insert({
+        await lakehouse.from('asset_registry').insert({
           asset_name: ae.asset_name,
           asset_type: 'server',
           ip_address: '0.0.0.0',
@@ -174,7 +174,7 @@ export default function DocumentAnalysis() {
           last_doc_enrichment: new Date().toISOString(),
         });
 
-        await supabase.from('asset_enrichment_log').insert({
+        await lakehouse.from('asset_enrichment_log').insert({
           asset_name: ae.asset_name,
           document_name: result.document_name,
           document_type: result.document_type,

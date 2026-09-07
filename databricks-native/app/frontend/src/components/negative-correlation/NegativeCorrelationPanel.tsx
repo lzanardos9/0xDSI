@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Shield, BookOpen, AlertTriangle, GitBranch, Clock, Eye, EyeOff, Zap, MapPin, Activity, Download, History, RefreshCw, Plus, Upload } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { lakehouse } from '../../lib/lakehouse';
 import { DaCLifecycleBadge, VersionBadge, TestResultBadge, FormatBadge, GitRefBadge } from '../correlation/DaCStatusBadge';
 import RuleVersionDrawer from '../correlation/RuleVersionDrawer';
 import CreateRuleModal from '../correlation/CreateRuleModal';
@@ -174,14 +174,14 @@ export default function NegativeCorrelationPanel() {
     setLoading(true);
     try {
       const [libRes, negRes, detRes] = await Promise.all([
-        supabase.from('correlation_rules_library')
+        lakehouse.from('correlation_rules_library')
           .select('*')
           .eq('rule_type', 'negative_correlation')
           .order('confidence_score', { ascending: false }),
-        supabase.from('negative_correlation_rules')
+        lakehouse.from('negative_correlation_rules')
           .select('*')
           .order('detection_count', { ascending: false }),
-        supabase.from('negative_correlation_detections')
+        lakehouse.from('negative_correlation_detections')
           .select('*')
           .order('detection_time', { ascending: false }),
       ]);
@@ -217,7 +217,7 @@ export default function NegativeCorrelationPanel() {
     const parts = rule.version.split('.').map(Number);
     const newVersion = isProduction ? `${parts[0] + 1}.0.0` : `${parts[0]}.${parts[1] + 1}.0`;
 
-    await supabase.from('correlation_rule_versions').insert({
+    await lakehouse.from('correlation_rule_versions').insert({
       rule_id: rule.id,
       version: newVersion,
       rule_name: rule.rule_name,
@@ -247,7 +247,7 @@ export default function NegativeCorrelationPanel() {
       commit: rule.git_ref,
     }];
 
-    await supabase.from('correlation_rules_library')
+    await lakehouse.from('correlation_rules_library')
       .update({
         dac_status: nextStatus,
         version: newVersion,

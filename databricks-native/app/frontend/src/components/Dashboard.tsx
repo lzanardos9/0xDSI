@@ -72,7 +72,7 @@ import SwarmCrucible from './SwarmCrucible';
 import TrendEngineCET from './TrendEngineCET';
 import MCPRegistry from './MCPRegistry';
 import AttackUniverse from './AttackUniverse';
-import { supabase } from '../lib/supabase';
+import { lakehouse } from '../lib/lakehouse';
 
 const Dashboard = () => {
   const { user, signOut } = useAuth();
@@ -102,7 +102,7 @@ const Dashboard = () => {
   useEffect(() => {
     const loadUserRole = async () => {
       if (user?.id) {
-        const { data } = await supabase
+        const { data } = await lakehouse
           .from('user_profiles')
           .select('role')
           .eq('id', user.id)
@@ -152,7 +152,7 @@ const Dashboard = () => {
     loadRecentActivities();
     loadThreatGeoData();
 
-    const alertsSubscription = supabase
+    const alertsSubscription = lakehouse
       .channel('alerts_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alerts' }, () => {
         loadRecentActivities();
@@ -160,7 +160,7 @@ const Dashboard = () => {
       })
       .subscribe();
 
-    const eventsSubscription = supabase
+    const eventsSubscription = lakehouse
       .channel('events_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'events' }, () => {
         loadRecentActivities();
@@ -168,21 +168,21 @@ const Dashboard = () => {
       })
       .subscribe();
 
-    const casesSubscription = supabase
+    const casesSubscription = lakehouse
       .channel('cases_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cases' }, () => {
         loadRecentActivities();
       })
       .subscribe();
 
-    const agentsSubscription = supabase
+    const agentsSubscription = lakehouse
       .channel('agent_tasks_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agent_tasks' }, () => {
         loadRecentActivities();
       })
       .subscribe();
 
-    const usersSubscription = supabase
+    const usersSubscription = lakehouse
       .channel('user_behavior_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_behavior_events' }, () => {
         loadRecentActivities();
@@ -208,10 +208,10 @@ const Dashboard = () => {
   const loadStats = async () => {
     try {
       const [eventsResult, sessionsResult, alertsResult, blockedResult] = await Promise.all([
-        supabase.from('events').select('id', { count: 'exact', head: true }),
-        supabase.from('user_sessions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-        supabase.from('alerts').select('id', { count: 'exact', head: true }).eq('severity', 'critical').eq('status', 'new'),
-        supabase.from('response_actions').select('id', { count: 'exact', head: true }).in('status', ['success', 'completed', 'executed']),
+        lakehouse.from('events').select('id', { count: 'exact', head: true }),
+        lakehouse.from('user_sessions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+        lakehouse.from('alerts').select('id', { count: 'exact', head: true }).eq('severity', 'critical').eq('status', 'new'),
+        lakehouse.from('response_actions').select('id', { count: 'exact', head: true }).in('status', ['success', 'completed', 'executed']),
       ]);
 
       setStats({
@@ -242,11 +242,11 @@ const Dashboard = () => {
   const loadRecentActivities = async () => {
     try {
       const [alerts, events, cases, agents, users] = await Promise.all([
-        supabase.from('alerts').select('id, title, severity, created_at').order('created_at', { ascending: false }).limit(3),
-        supabase.from('events').select('id, event_type, severity, created_at').order('created_at', { ascending: false }).limit(3),
-        supabase.from('cases').select('id, title, priority, created_at').order('created_at', { ascending: false }).limit(2),
-        supabase.from('agent_status').select('id, status, last_heartbeat, events_processed').order('last_heartbeat', { ascending: false }).limit(2),
-        supabase.from('user_behavior_anomalies').select('id, anomaly_type, risk_score, detected_at').order('detected_at', { ascending: false }).limit(2),
+        lakehouse.from('alerts').select('id, title, severity, created_at').order('created_at', { ascending: false }).limit(3),
+        lakehouse.from('events').select('id, event_type, severity, created_at').order('created_at', { ascending: false }).limit(3),
+        lakehouse.from('cases').select('id, title, priority, created_at').order('created_at', { ascending: false }).limit(2),
+        lakehouse.from('agent_status').select('id, status, last_heartbeat, events_processed').order('last_heartbeat', { ascending: false }).limit(2),
+        lakehouse.from('user_behavior_anomalies').select('id, anomaly_type, risk_score, detected_at').order('detected_at', { ascending: false }).limit(2),
       ]);
 
       const activities = [
