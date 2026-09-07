@@ -87,7 +87,7 @@
     ║   │                topic: security-events  |  SASL_SSL                     │      ║
     ║   └──────────┬─────────────────────────────────────────┬───────────────────┘      ║
     ║              │                                         │                          ║
-    ║              │ (persistence, 30-60s)                   │ (real-time, 1-5s)        ║
+    ║              │ (persistence, 30-60s)                   │ (micro-batch, ~10-60s)   ║
     ║              ▼                                         ▼                          ║
     ║   ┌──────────────────────┐              ┌──────────────────────────────────┐      ║
     ║   │ INGESTION PIPELINE   │              │ SDP (Streaming Detection)        │      ║
@@ -99,7 +99,7 @@
     ║   │ 05 Kafka Connector   │              │ sdp-supply-chain (3rd party)     │      ║
     ║   │ 06 Threat Feeds      │              │ sdp-cloud-posture(CSPM drift)    │      ║
     ║   │ 07 Lakebase Sync     │              │                                  │      ║
-    ║   │ 08 Bronze Partition  │              │ Latency: 1-5 seconds             │      ║
+    ║   │ 08 Bronze Partition  │              │ Latency: ~10-60s micro-batch     │      ║
     ║   │ 09 Edge Collector    │              └────────────────┬─────────────────┘      ║
     ║   │ 10 OT/PLC Protocol   │                               │                        ║
     ║   │ 11 LLM Usage Intcpt  │                               │                        ║
@@ -181,6 +181,9 @@
 ---
 
 ## Edge Mesh Architecture: Connector DNA System
+
+> Note: The site topology and per-collector EPS figures below are illustrative
+> demo/synthetic values, not measured production throughput.
 
 ```
                     ┌────────────────────────────────────────────────────────┐
@@ -348,7 +351,7 @@
   │  Latency: 30-60s           │                   │   - Supply chain            │
   │                            │                   │   - Cloud posture           │
   │  ──► Delta: events.bronze  │                   │                             │
-  │  ──► Delta: events.silver  │                   │  Latency: 1-5s              │
+  │  ──► Delta: events.silver  │                   │  Latency: ~10-60s (batch)   │
   │  ──► Delta: events.gold    │                   │  ──► Delta: alerts          │
   └────────────────────────────┘                   └──────────────┬─────────────┘
                                                                   │
@@ -402,7 +405,7 @@
   │  │ Real-time alerts    │  │  in 7 days)         │  │ Admin escalation    │      │
   │  │                     │  │                     │  │ paths               │      │
   │  │ Source: Kafka       │  │ Source: Delta       │  │ Source: Delta       │      │
-  │  │ Latency: 1-5s      │  │ Schedule: 30min     │  │ Schedule: 15min     │       │
+  │  │ Latency: ~10-60s   │  │ Schedule: 30min     │  │ Schedule: 15min     │       │
   │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘      │
   │                                                                                 │
   │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐      │
@@ -479,7 +482,7 @@ Based on Apple's AISec '22 paper ["Bridging Automated to Autonomous Cyber Defens
   │                    │   Execute via   │                   │   Queue for     │    │
   │                    │   Vanguard(07)  │                   │   analyst via   │    │
   │                    │                 │                   │   ALHF(25)      │    │
-  │                    │   Latency: <2s  │                   │                 │    │
+  │                    │   Latency:~10s+ │                   │                 │    │
   │                    └─────────────────┘                   └─────────────────┘    │
   │                                                                                 │
   │   TRAINING: 3-Phase (paper-informed)                                            │
@@ -953,7 +956,7 @@ Neural memory caching system for near-real-time (micro-batch) threat detection u
   ╠════════════════════════════════════╦═══════════════╦═══════════════════════════════╣
   ║  Operation                         ║   Latency     ║   Method                      ║
   ╠════════════════════════════════════╬═══════════════╬═══════════════════════════════╣
-  ║  Known IOC match (IP/domain/hash)  ║   1-5 sec     ║   SDP Streaming + Bloom       ║
+  ║  Known IOC match (IP/domain/hash)  ║   10-60 sec   ║   SDP Streaming + Bloom       ║
   ║  Multi-stage attack (CEP)          ║   10-60 sec   ║   Windowed correlation        ║
   ║  Behavioral anomaly (UEBA)         ║   5-10 min    ║   Batch detection             ║
   ║  Full investigation + response     ║   1-5 min     ║   Agent pipeline              ║
