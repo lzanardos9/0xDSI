@@ -103,23 +103,15 @@ joined = (cyber.alias("c")
     },
     {
       type: 'code',
-      content: `# Cell 5: Sink to Delta + Supabase
-def push_supabase(batch_df, batch_id):
-    import requests, json, os
-    rows = batch_df.limit(500).toPandas()
-    if len(rows) == 0: return
-    SUPABASE_URL = dbutils.secrets.get("kv", "supabase-url")
-    SUPABASE_KEY = dbutils.secrets.get("kv", "supabase-service-key")
-    requests.post(
-        f"{SUPABASE_URL}/rest/v1/cyber_geo_correlations",
-        headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-                 "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"},
-        data=json.dumps(rows.to_dict(orient="records"), default=str), timeout=30,
-    ).raise_for_status()
+      content: `# Cell 5: Sink to Delta (Unity Catalog)
+# The FastAPI backend reads cyber_geo_correlations directly from Unity Catalog.
+def write_delta(batch_df, batch_id):
+    if batch_df.isEmpty():
+        return
     batch_df.write.mode("append").saveAsTable(TBL("cyber_geo_correlations"))
 
 (joined.writeStream
-  .foreachBatch(push_supabase)
+  .foreachBatch(write_delta)
   .option("checkpointLocation", "/chk/cyber_geo_correlations")
   .trigger(processingTime="60 seconds")
   .start())`,

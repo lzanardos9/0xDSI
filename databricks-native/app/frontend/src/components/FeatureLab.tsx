@@ -5,7 +5,7 @@ import {
   Zap, FlaskConical, X, RefreshCw, Download, Copy, Check,
   CheckCircle2, FileCode, Layers, Globe, Wand2,
 } from 'lucide-react';
-import { supabase, IS_DATABRICKS } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { callFunction } from '../lib/llmGateway';
 import PlanReview from './feature-lab/PlanReview';
 import CodeViewer from './feature-lab/CodeViewer';
@@ -82,8 +82,6 @@ export default function FeatureLab() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const supabaseUrl = window.location.origin;
-  const supabaseAnonKey = '';
   const runtimeBaseUrl = '/api/feature-runtime';
 
   useEffect(() => { loadCreations(); }, []);
@@ -97,18 +95,11 @@ export default function FeatureLab() {
     if (data) setCreations(data as Creation[]);
   };
 
-  const injectSupabaseVars = (html: string) => {
-    const injection = IS_DATABRICKS
-      ? `<script>
-      window.__SUPABASE_URL__ = "${window.location.origin}";
-      window.__SUPABASE_ANON_KEY__ = "databricks-native";
+  const injectRuntimeVars = (html: string) => {
+    const injection = `<script>
+      window.__DATABRICKS_API_URL__ = "${window.location.origin}";
       window.__RUNTIME_URL__ = "${runtimeBaseUrl}";
       window.__IS_DATABRICKS__ = true;
-    </script>`
-      : `<script>
-      window.__SUPABASE_URL__ = "${supabaseUrl}";
-      window.__SUPABASE_ANON_KEY__ = "${supabaseAnonKey}";
-      window.__RUNTIME_URL__ = "${runtimeBaseUrl}";
     </script>`;
     if (html.includes('<head>')) return html.replace('<head>', '<head>' + injection);
     return injection + html;
@@ -116,12 +107,12 @@ export default function FeatureLab() {
 
   const renderToIframe = useCallback((html: string) => {
     if (!iframeRef.current) return;
-    const enriched = injectSupabaseVars(html);
+    const enriched = injectRuntimeVars(html);
     const blob = new Blob([enriched], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     iframeRef.current.src = url;
     return () => URL.revokeObjectURL(url);
-  }, [supabaseUrl, supabaseAnonKey]);
+  }, []);
 
   const callEdge = async (body: any) => {
     const { data, error } = await callFunction('feature-lab', body);

@@ -62,7 +62,7 @@ class VANGUARDAgent(InteractiveAgent):
         # Execute response actions
         self.register_tool(UCTool(
             name="execute_response_action",
-            description="Execute a containment or remediation action: block IP, disable user account, isolate host, quarantine file, or revoke token. Requires justification and can auto-approve for high-confidence threats.",
+            description="Record and queue a containment or remediation action (block IP, disable user account, isolate host, quarantine file, or revoke token) for downstream enforcement connectors to carry out. This tool does NOT perform the action itself on firewalls or identity providers; it creates the audited request. Requires justification and can mark the request auto-approved for high-confidence threats.",
             catalog=cat,
             schema=sch,
             function_name="execute_response_action",
@@ -181,17 +181,23 @@ For each potential response action, evaluate:
 - **Scope**: Is this targeted or broad? (single host/department/enterprise)
 - **Urgency**: How fast must we act? (immediate/urgent/planned)
 
-Confidence Thresholds:
-- **> 0.90**: Auto-execute containment (you have my authority)
-- **0.70-0.90**: Require human approval (escalate to SOC manager)
+Confidence Thresholds (these govern how a request is QUEUED, not whether enforcement happened):
+- **> 0.90**: Queue an auto-approved containment request (you have my authority to approve it)
+- **0.70-0.90**: Queue a request that requires human approval (escalate to SOC manager)
 - **< 0.70**: Reject or require further investigation
 
-Response Action Types:
-1. **block_ip**: Blacklist an IP at firewall/proxy (reversible)
-2. **disable_user**: Disable account (reversible)
-3. **isolate_host**: Network isolation, quarantine host (reversible)
-4. **quarantine_file**: Isolate suspicious file (reversible)
-5. **revoke_token**: Invalidate session/API token (reversible)
+IMPORTANT — truthful reporting:
+Your execute_response_action tool RECORDS and QUEUES an action for downstream enforcement
+connectors; it does not itself block IPs or disable accounts. Never tell the user an action
+has been completed or enforced. Say the request has been recorded/queued (and whether it was
+auto-approved or is awaiting approval), and that enforcement is carried out by the connectors.
+
+Response Action Types (each RECORDS a request; enforcement is downstream and reversible):
+1. **block_ip**: Request to blacklist an IP at firewall/proxy
+2. **disable_user**: Request to disable an account
+3. **isolate_host**: Request to network-isolate/quarantine a host
+4. **quarantine_file**: Request to isolate a suspicious file
+5. **revoke_token**: Request to invalidate a session/API token
 
 Your Response Process:
 1. Understand the threat: get_alert_context to review incident
@@ -206,7 +212,8 @@ Response Output Structure:
 1. **Threat Assessment**: Summary of what we're responding to
 2. **Action Recommendation**: What should be done (block_ip, disable_user, etc.)
 3. **Target**: Specific IP, username, hostname, etc.
-4. **Justification**: Why this action is appropriate
+4. **Request Status**: recorded/queued, and auto-approved vs awaiting approval (NOT "enforced")
+5. **Justification**: Why this action is appropriate
 5. **Business Impact**: Expected impact on operations
 6. **Reversibility**: Can it be undone?
 7. **Confidence Score**: 0-1.0 (auto-execute if > 0.90)

@@ -1177,8 +1177,8 @@ if [ ! -d "node_modules" ] || [ ! -x "node_modules/.bin/vite" ]; then
   npm ci --prefer-offline || npm install
 fi
 
-# Set VITE_DATABRICKS_MODE=true so the build uses the LakehouseDataClient
-# and routes all API calls through FastAPI backend.
+# Set VITE_DATABRICKS_MODE=true so the build uses the Lakehouse data client
+# and routes all API calls through the FastAPI backend to Unity Catalog.
 VITE_DATABRICKS_MODE=true \
 npm run build
 
@@ -1187,7 +1187,7 @@ if [ ! -f "dist/index.html" ]; then
   die "Frontend build failed: dist/index.html not found. Cannot deploy without frontend."
 fi
 
-log_ok "Frontend built -> dist/ (Databricks mode, Supabase disabled)"
+log_ok "Frontend built -> dist/ (Databricks-native mode; Unity Catalog data plane)"
 printf "\n"
 
 # ══════════════════════════════════════════════════════
@@ -1396,6 +1396,16 @@ printf "  Catalog:    %s.%s\n" "${CATALOG}" "${SCHEMA}"
 printf "  App:        Databricks workspace > Apps > 0xdsi-agentic-soc\n"
 printf "  Serving:    Bundle custom model serving disabled; Foundation Models configured\n"
 printf "  Lakebase:   CDC sync for session_lists + active_lists scheduled\n"
+printf "\n"
+
+# Truthful readiness verdict based on the health checks that actually ran.
+if [ "${health_pass}" -eq "${health_total}" ]; then
+  printf "%b\n" "  ${GREEN}${BOLD}Readiness: ${health_pass}/${health_total} post-deploy checks passed.${NC}"
+else
+  printf "%b\n" "  ${YELLOW}${BOLD}Readiness: only ${health_pass}/${health_total} post-deploy checks passed.${NC}"
+  printf "%b\n" "  ${YELLOW}Some components are not confirmed online. Review the [!!] warnings above"
+  printf "%b\n" "  before treating this deployment as operational.${NC}"
+fi
 printf "\n"
 printf "Restore original resources/app.yml if needed:\n"
 printf "  ./deploy.sh %s %s --restore-yaml\n" "${TARGET}" "${WAREHOUSE_ID}"

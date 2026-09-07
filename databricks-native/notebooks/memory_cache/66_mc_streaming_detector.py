@@ -23,6 +23,7 @@
 
 import torch
 import numpy as np
+import zlib
 from pyspark.sql import SparkSession, DataFrame
 import pyspark.sql.functions as F
 from pyspark.sql.window import Window
@@ -229,16 +230,42 @@ class MCStreamingProcessor:
                 f"{len(alerts)} alerts generated"
             )
 
+    def _featurize(self, events: list, token_dim: int) -> torch.Tensor:
+        """
+        Deterministically encode real event payloads into a feature tensor.
+
+        This replaces the previous placeholder that fed random noise into the model
+        (which produced fabricated "anomalies"). Each event's OCSF-ish fields are
+        hashed into a fixed-width, L2-normalized vector so identical events map to
+        identical features and the model scores actual content, not noise.
+        """
+        seg = min(len(events), self.segment_size)
+        feats = torch.zeros(1, seg, token_dim, device=self.device)
+        for i in range(seg):
+            ev = events[i]
+            fields = ev.asDict() if hasattr(ev, "asDict") else dict(ev)
+            for key, value in fields.items():
+                if value is None:
+                    continue
+                token = f"{key}={value}".encode("utf-8")
+                idx = zlib.crc32(token) % token_dim
+                feats[0, i, idx] += 1.0
+        norm = feats.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+        return feats / norm
+
     @torch.no_grad()
     def _infer_entity(self, entity_id: str, events: list) -> Tuple[List[Dict], Dict]:
         """Run MC-RNN inference for a single entity's new events."""
         num_events = len(events)
         token_dim = self.config.input_dim
 
-        event_tokens = torch.randn(1, min(num_events, self.segment_size), token_dim, device=self.device)
+        # Real, deterministic featurization of the actual events (no random noise).
+        event_tokens = self._featurize(events, token_dim)
 
+        # Cold cache: real prior checkpoints are loaded from the state store when
+        # present; absent that, we start from zeros rather than fabricating memory.
         cache_size = min(8, self.config.max_cache_size)
-        cache_states = torch.randn(1, cache_size, self.config.hidden_dim, device=self.device) * 0.1
+        cache_states = torch.zeros(1, cache_size, self.config.hidden_dim, device=self.device)
         cache_mask = torch.ones(1, cache_size, dtype=torch.bool, device=self.device)
 
         output = self.model(

@@ -106,6 +106,17 @@ def _require_admin(user: dict):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+def _require_authenticated(user: dict):
+    """Fail closed: reject any write from a request that carries no verified
+    SSO identity. In production Databricks Apps inject X-Forwarded-* headers on
+    every authenticated request; their absence means the caller reached the
+    backend without going through workspace auth and must not mutate data."""
+    email = (user.get("email") or "").strip()
+    username = (user.get("username") or "").strip().lower()
+    if not email and username in ("", "unknown"):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+
 def _check_write_permission(user: dict, table_name: str):
     if table_name in ADMIN_TABLES and not user["is_admin"]:
         raise HTTPException(status_code=403, detail=f"Admin access required for table '{table_name}'")
@@ -171,7 +182,31 @@ async def lifespan(app: FastAPI):
         _connection.close()
 
 
-app = FastAPI(title="0xDSI Agentic SOC API", lifespan=lifespan)
+from fastapi.encoders import jsonable_encoder
+
+
+class SafeJSONResponse(JSONResponse):
+    """JSONResponse that runs content through FastAPI's jsonable_encoder first.
+
+    Databricks SQL rows contain datetime, date and Decimal values. Plain
+    JSONResponse calls json.dumps directly and raises on those types, turning
+    every endpoint that returns rows via JSONResponse(content=...) into a 500.
+    Encoding first makes datetimes ISO strings and Decimals numbers.
+    """
+
+    def render(self, content) -> bytes:
+        return super().render(jsonable_encoder(content))
+
+
+# Rebind the module-level name so every existing JSONResponse(content=...) call
+# site uses the safe encoder without touching ~100 call sites individually.
+JSONResponse = SafeJSONResponse
+
+app = FastAPI(
+    title="0xDSI Agentic SOC API",
+    lifespan=lifespan,
+    default_response_class=SafeJSONResponse,
+)
 
 _allowed_origins = ["*"] if not APP_DOMAIN else [
     f"https://{APP_DOMAIN}",
@@ -277,6 +312,8 @@ ALLOWED_TABLES = [
     "threat_escalation_contracts", "graph_pattern_scores",
     "threat_radar_items", "threat_radar_sources", "threat_radar_runs",
     "threat_radar_proposals",
+    # Ray distributed SLM training telemetry (written by the ml_training notebook)
+    "dslm_ray_runs", "dslm_ray_workers", "dslm_ray_timeline",
     # Phase 1: Entity Spine, Knowledge Store, UEO
     "entity_spine", "entity_edges", "entity_mentions",
     "knowledge_store", "knowledge_store_embeddings",
@@ -312,7 +349,7 @@ ALLOWED_TABLES = [
 
 
 def _parse_filters(filters: list[dict]) -> tuple[str, dict]:
-    """Parse Supabase-style filters into SQL WHERE clauses."""
+    """Parse the frontend query-builder filters into SQL WHERE clauses."""
     clauses = []
     params = {}
     for i, f in enumerate(filters):
@@ -370,9 +407,9 @@ def _parse_filters(filters: list[dict]) -> tuple[str, dict]:
 @app.post("/api/query/{table_name}")
 async def query_table(table_name: str, request: Request):
     """
-    Generic Supabase-compatible query endpoint.
+    Generic Unity Catalog query endpoint.
     Accepts a JSON body with: select, filters, order, limit, offset, single.
-    This powers the Supabase client proxy in Databricks mode.
+    This powers the frontend Lakehouse data client (SQL Warehouse -> Unity Catalog).
     """
     if table_name not in ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
@@ -433,6 +470,7 @@ async def mutate_table(table_name: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
 
     user = _get_user_from_request(request)
+    _require_authenticated(user)
     _check_write_permission(user, table_name)
 
     body = await request.json()
@@ -3263,6 +3301,30 @@ async def genie_executive_briefing(request: Request):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────
+# Route ordering fix
+# ──────────────────────────────────────────────
+# FastAPI/Starlette match routes in registration order. The generic table
+# catch-alls (/api/{table_name} and /api/{table_name}/{record_id}) were declared
+# before the domain-specific routes, so a request to /api/dashboard/stats or
+# /api/fuse-engine/results was captured by /api/{table_name}/{record_id}
+# (table_name="dashboard", record_id="stats") and 404'd because those segments
+# are not table names. Move the catch-alls to the end so every literal domain
+# route is matched first. The SPA fallback route is registered afterwards and
+# therefore stays truly last.
+
+def _reorder_generic_api_routes():
+    generic_paths = {"/api/{table_name}", "/api/{table_name}/{record_id}"}
+    routes = app.router.routes
+    generic = [r for r in routes if getattr(r, "path", None) in generic_paths]
+    for r in generic:
+        routes.remove(r)
+        routes.append(r)
+
+
+_reorder_generic_api_routes()
 
 
 # ──────────────────────────────────────────────

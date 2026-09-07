@@ -178,31 +178,12 @@ VALUES (src.event_id, src.occurred_at, src.severity, src.nearest_actor, src.dist
     },
     {
       type: 'code',
-      content: `# Cell 8: Push fusion events to Supabase for the live UI
-import requests
-SUPABASE_URL = dbutils.secrets.get("kv", "supabase-url")
-SUPABASE_KEY = dbutils.secrets.get("kv", "supabase-service-key")
-
-batch = (spark.table(TBL("chronoweave_fusion_events"))
-  .filter(F.col("fused_at") >= F.current_timestamp() - F.expr("INTERVAL 5 MINUTES"))
-  .limit(2000)
-  .toPandas())
-
-if len(batch):
-    payload = batch.to_dict(orient="records")
-    r = requests.post(
-        f"{SUPABASE_URL}/rest/v1/chronoweave_fusion_events",
-        headers={
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates",
-        },
-        data=json.dumps(payload, default=str),
-        timeout=30,
-    )
-    r.raise_for_status()
-    print(f"Pushed {len(payload)} fusion events to Supabase")`,
+      content: `# Cell 8: Publish fusion events to Unity Catalog for the live UI
+# The FastAPI backend reads chronoweave_fusion_events directly from Unity Catalog,
+# so the MERGE in the previous cell is all that is needed - no external database.
+recent = (spark.table(TBL("chronoweave_fusion_events"))
+  .filter(F.col("fused_at") >= F.current_timestamp() - F.expr("INTERVAL 5 MINUTES")))
+print(f"{recent.count()} fusion events published to Unity Catalog in the last 5 minutes")`,
     },
     {
       type: 'code',

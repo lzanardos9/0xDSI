@@ -44,6 +44,7 @@ dbutils.widgets.text("global_batch_size", "2048", "Global batch size across work
 dbutils.widgets.text("proven_incident_weight", "3.0", "Up-weight factor for confirmed incidents")
 dbutils.widgets.text("corpus_table", "gold.ocsf_event_language", "Pretraining corpus (UC)")
 dbutils.widgets.text("model_name", "0xDSI-CET-SLM (124M)", "Model label")
+dbutils.widgets.dropdown("mode", "simulation", ["simulation", "live"], "Run mode")
 
 num_workers = int(dbutils.widgets.get("num_workers"))
 gpus_per_worker = int(dbutils.widgets.get("gpus_per_worker"))
@@ -53,10 +54,17 @@ proven_incident_weight = float(dbutils.widgets.get("proven_incident_weight"))
 corpus_table = dbutils.widgets.get("corpus_table")
 model_name = dbutils.widgets.get("model_name")
 
+# "simulation" streams clearly-labeled synthetic frames so the app theater can be
+# demoed without a live GPU cluster. "live" runs real distributed training and only
+# streams metrics that Ray actually reported. We NEVER present simulated numbers as real.
+MODE = dbutils.widgets.get("mode").strip().lower()
+IS_SIMULATION = MODE != "live"
+
 mon.log_event("ray_config_loaded", {
     "num_workers": num_workers,
     "gpus_per_worker": gpus_per_worker,
     "total_steps": total_steps,
+    "mode": MODE,
 })
 
 # COMMAND ----------
@@ -66,27 +74,33 @@ mon.log_event("ray_config_loaded", {
 
 # COMMAND ----------
 
-import ray
-from ray.util.spark import setup_ray_cluster, shutdown_ray_cluster
+if IS_SIMULATION:
+    print(
+        "MODE=simulation: skipping Ray GPU cluster startup. This run streams "
+        "clearly-labeled synthetic frames for the app theater and does NOT train a model."
+    )
+else:
+    import ray
+    from ray.util.spark import setup_ray_cluster, shutdown_ray_cluster
 
-# One Ray worker node per data-parallel actor; each holds `gpus_per_worker` GPUs.
-setup_ray_cluster(
-    max_worker_nodes=num_workers,
-    num_gpus_worker_node=gpus_per_worker,
-    num_cpus_worker_node=8,
-)
-ray.init(ignore_reinit_error=True)
+    # One Ray worker node per data-parallel actor; each holds `gpus_per_worker` GPUs.
+    setup_ray_cluster(
+        max_worker_nodes=num_workers,
+        num_gpus_worker_node=gpus_per_worker,
+        num_cpus_worker_node=8,
+    )
+    ray.init(ignore_reinit_error=True)
 
-print("Ray cluster resources:", ray.cluster_resources())
+    print("Ray cluster resources:", ray.cluster_resources())
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 2. Telemetry sink -> Supabase (powers the app's Ray Training Theater)
+# MAGIC ## 2. Telemetry sink -> Unity Catalog (powers the app's Ray Training Theater)
 # MAGIC
-# MAGIC We write run metadata, the worker fleet, and per-step timeline frames to the same
-# MAGIC tables the frontend reads. Secrets come from the Databricks secret scope, never
-# MAGIC hard-coded.
+# MAGIC We write run metadata, the worker fleet, and per-step timeline frames to Delta
+# MAGIC tables in the same Unity Catalog schema the FastAPI backend reads from. This keeps
+# MAGIC the platform 100% Databricks-native: there is no external database in the loop.
 
 # COMMAND ----------
 
@@ -94,48 +108,109 @@ import os
 import math
 import json
 import time
-import requests
 
-SUPABASE_URL = secrets.get("supabase", "url")
-SUPABASE_SERVICE_KEY = secrets.get("supabase", "service_role_key")
+from pyspark.sql import Row, functions as F
+from pyspark.sql.types import (
+    StructType, StructField, StringType, IntegerType, DoubleType,
+)
 
-_HEADERS = {
-    "apikey": SUPABASE_SERVICE_KEY,
-    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
-    "Content-Type": "application/json",
-    "Prefer": "resolution=merge-duplicates",
-}
+RUNS_TABLE = get_table_path(cfg, "dslm_ray_runs")
+WORKERS_TABLE = get_table_path(cfg, "dslm_ray_workers")
+TIMELINE_TABLE = get_table_path(cfg, "dslm_ray_timeline")
+
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {RUNS_TABLE} (
+        id STRING, run_name STRING, status STRING, model_name STRING,
+        base_params_millions INT, dataset_name STRING, training_strategy STRING,
+        num_workers INT, gpus_per_worker INT, accelerator STRING,
+        global_batch_size INT, total_steps INT, tokens_total_billions DOUBLE,
+        proven_incident_weight DOUBLE, notes STRING,
+        created_at TIMESTAMP, updated_at TIMESTAMP
+    ) USING DELTA
+""")
+
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {WORKERS_TABLE} (
+        run_id STRING, worker_index INT, role STRING, node_ip STRING,
+        gpu_model STRING, shard_name STRING, created_at TIMESTAMP
+    ) USING DELTA
+""")
+
+spark.sql(f"""
+    CREATE TABLE IF NOT EXISTS {TIMELINE_TABLE} (
+        run_id STRING, step INT, loss DOUBLE, learning_rate DOUBLE,
+        tokens_per_sec DOUBLE, gpu_util_avg DOUBLE, grad_norm DOUBLE,
+        allreduce_ms DOUBLE, phase STRING, worker_stats STRING,
+        created_at TIMESTAMP
+    ) USING DELTA
+""")
+
+_RUNS_SCHEMA = StructType([
+    StructField("id", StringType()), StructField("run_name", StringType()),
+    StructField("status", StringType()), StructField("model_name", StringType()),
+    StructField("base_params_millions", IntegerType()), StructField("dataset_name", StringType()),
+    StructField("training_strategy", StringType()), StructField("num_workers", IntegerType()),
+    StructField("gpus_per_worker", IntegerType()), StructField("accelerator", StringType()),
+    StructField("global_batch_size", IntegerType()), StructField("total_steps", IntegerType()),
+    StructField("tokens_total_billions", DoubleType()), StructField("proven_incident_weight", DoubleType()),
+    StructField("notes", StringType()),
+])
+
+_WORKERS_SCHEMA = StructType([
+    StructField("run_id", StringType()), StructField("worker_index", IntegerType()),
+    StructField("role", StringType()), StructField("node_ip", StringType()),
+    StructField("gpu_model", StringType()), StructField("shard_name", StringType()),
+])
+
+_TIMELINE_SCHEMA = StructType([
+    StructField("run_id", StringType()), StructField("step", IntegerType()),
+    StructField("loss", DoubleType()), StructField("learning_rate", DoubleType()),
+    StructField("tokens_per_sec", DoubleType()), StructField("gpu_util_avg", DoubleType()),
+    StructField("grad_norm", DoubleType()), StructField("allreduce_ms", DoubleType()),
+    StructField("phase", StringType()), StructField("worker_stats", StringType()),
+])
 
 
-def _post(table: str, rows):
-    resp = requests.post(
-        f"{SUPABASE_URL}/rest/v1/{table}",
-        headers=_HEADERS,
-        data=json.dumps(rows),
-        timeout=30,
-    )
-    resp.raise_for_status()
+def _append(table: str, schema: StructType, rows):
+    if not rows:
+        return
+    df = spark.createDataFrame([Row(**r) for r in rows], schema=schema)
+    df = df.withColumn("created_at", F.current_timestamp())
+    if table == RUNS_TABLE:
+        df = df.withColumn("updated_at", F.current_timestamp())
+    df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(table)
 
 
 def register_run(run_id: str):
-    _post("dslm_ray_runs", [{
+    label = model_name if not IS_SIMULATION else f"{model_name} [SIMULATION]"
+    strategy = "Ray Train · TorchTrainer · DDP (NCCL all-reduce)"
+    if IS_SIMULATION:
+        strategy = "SIMULATION · synthetic telemetry (no GPUs, no gradients)"
+        notes = (
+            "SIMULATED demo run: frames below are synthetic and were NOT produced by "
+            "real training. Set the notebook `mode` widget to 'live' on a GPU cluster "
+            "to run genuine Ray-distributed pretraining."
+        )
+    else:
+        notes = "Distributed pretraining orchestrated by Ray on a Databricks GPU cluster."
+    _append(RUNS_TABLE, _RUNS_SCHEMA, [{
         "id": run_id,
-        "run_name": f"cet-slm-pretrain-{run_id[:8]}-ray",
-        "status": "running",
-        "model_name": model_name,
+        "run_name": f"cet-slm-pretrain-{run_id[:8]}-{'sim' if IS_SIMULATION else 'ray'}",
+        "status": "simulated" if IS_SIMULATION else "running",
+        "model_name": label,
         "base_params_millions": 124,
         "dataset_name": corpus_table,
-        "training_strategy": "Ray Train · TorchTrainer · DDP (NCCL all-reduce)",
+        "training_strategy": strategy,
         "num_workers": num_workers,
         "gpus_per_worker": gpus_per_worker,
-        "accelerator": "NVIDIA A100-80GB",
+        "accelerator": "NVIDIA A100-80GB" if not IS_SIMULATION else "none (simulation)",
         "global_batch_size": global_batch_size,
         "total_steps": total_steps,
         "tokens_total_billions": 3.0,
         "proven_incident_weight": proven_incident_weight,
-        "notes": "Distributed pretraining orchestrated by Ray on a Databricks GPU cluster.",
+        "notes": notes,
     }])
-    _post("dslm_ray_workers", [{
+    _append(WORKERS_TABLE, _WORKERS_SCHEMA, [{
         "run_id": run_id,
         "worker_index": w,
         "role": "head" if w == 0 else "worker",
@@ -146,7 +221,7 @@ def register_run(run_id: str):
 
 
 def push_frame(run_id: str, step: int, loss: float, worker_report):
-    _post("dslm_ray_timeline", [{
+    _append(TIMELINE_TABLE, _TIMELINE_SCHEMA, [{
         "run_id": run_id,
         "step": step,
         "loss": round(loss, 3),
@@ -155,18 +230,17 @@ def push_frame(run_id: str, step: int, loss: float, worker_report):
         "gpu_util_avg": worker_report["gpu_util"],
         "grad_norm": worker_report["grad_norm"],
         "allreduce_ms": worker_report["allreduce_ms"],
-        "phase": "pretrain",
-        "worker_stats": worker_report["per_worker"],
+        "phase": "pretrain_sim" if IS_SIMULATION else "pretrain",
+        "worker_stats": json.dumps(worker_report["per_worker"]),
     }])
 
 
 def finish_run(run_id: str):
-    requests.patch(
-        f"{SUPABASE_URL}/rest/v1/dslm_ray_runs?id=eq.{run_id}",
-        headers=_HEADERS,
-        data=json.dumps({"status": "completed"}),
-        timeout=30,
-    ).raise_for_status()
+    status = "simulated" if IS_SIMULATION else "completed"
+    spark.sql(
+        f"UPDATE {RUNS_TABLE} SET status = '{status}', updated_at = current_timestamp() "
+        f"WHERE id = '{run_id}'"
+    )
 
 # COMMAND ----------
 
@@ -175,42 +249,77 @@ def finish_run(run_id: str):
 
 # COMMAND ----------
 
-import torch
-import torch.nn as nn
-from ray import train
-from ray.train import ScalingConfig, RunConfig
-from ray.train.torch import TorchTrainer, prepare_model
+# The real distributed-training path is only imported/used in `live` mode. In
+# `simulation` mode we never touch Ray/torch and never claim a model was trained.
+if not IS_SIMULATION:
+    import torch
+    import torch.nn as nn
+    from ray import train
+    from ray.train import ScalingConfig, RunConfig
+    from ray.train.torch import TorchTrainer, prepare_model
 
+    VOCAB_SIZE = 4096
+    SEQ_LEN = 256
 
-def train_loop_per_worker(config):
-    ctx = train.get_context()
-    world_size = ctx.get_world_size()
-    rank = ctx.get_world_rank()
+    class _EventLM(nn.Module):
+        """Compact causal LM over tokenized OCSF event sequences (real, trainable)."""
 
-    # A compact GPT-style SLM for event-language modeling.
-    model = nn.Transformer(d_model=512, nhead=8, num_encoder_layers=6, num_decoder_layers=6)
-    model = prepare_model(model)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=6e-4, weight_decay=0.1)
+        def __init__(self, vocab_size=VOCAB_SIZE, d_model=512, nhead=8, layers=6, seq_len=SEQ_LEN):
+            super().__init__()
+            self.tok = nn.Embedding(vocab_size, d_model)
+            self.pos = nn.Embedding(seq_len, d_model)
+            enc = nn.TransformerEncoderLayer(d_model, nhead, batch_first=True)
+            self.backbone = nn.TransformerEncoder(enc, num_layers=layers)
+            self.head = nn.Linear(d_model, vocab_size)
+            self.seq_len = seq_len
 
-    # Each worker streams its shard of the gold corpus. Confirmed-incident sequences
-    # are oversampled by `proven_incident_weight` in the shard's sampler.
-    shard = train.get_dataset_shard("train")
+        def forward(self, tokens):
+            b, l = tokens.shape
+            pos = torch.arange(l, device=tokens.device).unsqueeze(0).expand(b, l)
+            h = self.tok(tokens) + self.pos(pos)
+            mask = torch.triu(torch.full((l, l), float("-inf"), device=tokens.device), diagonal=1)
+            return self.head(self.backbone(h, mask=mask))
 
-    steps = config["total_steps"]
-    for step in range(steps):
-        batch = shard.iter_torch_batches(batch_size=config["local_batch_size"])
-        # ... forward / backward / all-reduce handled by DDP under prepare_model ...
-        loss = 4.2 * math.exp(-step / (steps / 6.0)) + 0.82  # placeholder objective
-        optimizer.zero_grad()
-        # loss.backward(); optimizer.step()
+    def train_loop_per_worker(config):
+        ctx = train.get_context()
+        world_size = ctx.get_world_size()
+        rank = ctx.get_world_rank()
 
-        # Rank 0 reports fleet telemetry back to the driver for the app theater.
-        train.report({
-            "step": step,
-            "loss": loss,
-            "rank": rank,
-            "world_size": world_size,
-        })
+        model = prepare_model(_EventLM())
+        optimizer = torch.optim.AdamW(model.parameters(), lr=6e-4, weight_decay=0.1)
+        loss_fn = nn.CrossEntropyLoss()
+
+        # Each worker streams its shard of the gold corpus. Confirmed-incident sequences
+        # are oversampled by `proven_incident_weight` in the shard's sampler.
+        shard = train.get_dataset_shard("train")
+        batches = shard.iter_torch_batches(batch_size=config["local_batch_size"])
+
+        steps = config["total_steps"]
+        step = 0
+        for step, batch in zip(range(steps), batches):
+            tokens = batch["tokens"]  # (B, SEQ_LEN) int64 from the tokenized corpus
+            t0 = time.time()
+            logits = model(tokens[:, :-1])
+            loss = loss_fn(
+                logits.reshape(-1, logits.size(-1)),
+                tokens[:, 1:].reshape(-1),
+            )
+            optimizer.zero_grad()
+            loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+
+            elapsed = max(time.time() - t0, 1e-6)
+            tokens_this_step = tokens.numel()
+            # Report ONLY metrics we actually measured this step.
+            train.report({
+                "step": step,
+                "loss": float(loss.detach().item()),
+                "grad_norm": float(grad_norm),
+                "tokens_per_sec": tokens_this_step / elapsed,
+                "rank": rank,
+                "world_size": world_size,
+            })
 
 # COMMAND ----------
 
@@ -223,57 +332,79 @@ import uuid
 
 run_id = str(uuid.uuid4())
 register_run(run_id)
-print(f"Registered Ray run {run_id} -> streaming to dslm_ray_* tables")
-
-trainer = TorchTrainer(
-    train_loop_per_worker=train_loop_per_worker,
-    train_loop_config={
-        "total_steps": total_steps,
-        "local_batch_size": global_batch_size // num_workers,
-    },
-    scaling_config=ScalingConfig(
-        num_workers=num_workers,
-        use_gpu=True,
-        resources_per_worker={"GPU": gpus_per_worker},
-    ),
-    run_config=RunConfig(name=f"cet-slm-{run_id[:8]}"),
-)
+print(f"Registered Ray run {run_id} (mode={MODE}) -> dslm_ray_* tables")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 5. Stream telemetry to the app while training
+# MAGIC ## 5. Produce telemetry for the app theater
 # MAGIC
-# MAGIC In production you would attach a Ray `Callback` and push each `train.report`
-# MAGIC to `push_frame`. Here we sample the reported metrics at a fixed cadence so the
-# MAGIC theater animates smoothly without flooding the table.
+# MAGIC - **live**: run real distributed training, then stream the metrics Ray actually
+# MAGIC   reported (loss / grad_norm / tokens_per_sec measured on the workers).
+# MAGIC - **simulation**: stream clearly-labeled synthetic frames (the run is marked
+# MAGIC   `status=simulated` and `phase=pretrain_sim`) so the demo animates without GPUs.
+# MAGIC   These numbers are never presented as real training results.
 
 # COMMAND ----------
 
 report_every = max(1, total_steps // 60)
 
-for step in range(0, total_steps, report_every):
-    loss = 4.2 * math.exp(-step / (total_steps / 16.0)) + 0.82
-    per_worker = [{
-        "i": w,
-        "gpu": min(99, int(92 + 6 * math.sin(step / report_every + w))),
-        "mem": min(99, int(74 + 9 * math.sin(step / (2 * report_every) + w))),
-        "tps": int(50000 + 4200 * math.sin(step / report_every + w)),
-        "loss": round(loss + 0.05 * math.sin(step / report_every + w), 3),
-    } for w in range(num_workers)]
+if IS_SIMULATION:
+    # Synthetic frames — visibly labeled at the run level as a simulation.
+    for step in range(0, total_steps, report_every):
+        loss = 4.2 * math.exp(-step / (total_steps / 16.0)) + 0.82
+        per_worker = [{
+            "i": w,
+            "gpu": min(99, int(92 + 6 * math.sin(step / report_every + w))),
+            "mem": min(99, int(74 + 9 * math.sin(step / (2 * report_every) + w))),
+            "tps": int(50000 + 4200 * math.sin(step / report_every + w)),
+            "loss": round(loss + 0.05 * math.sin(step / report_every + w), 3),
+            "simulated": True,
+        } for w in range(num_workers)]
 
-    push_frame(run_id, step, loss, {
-        "lr": round(6e-4 * (0.5 + 0.5 * math.cos(math.pi * step / total_steps)), 6),
-        "cluster_tps": sum(pw["tps"] for pw in per_worker),
-        "gpu_util": round(sum(pw["gpu"] for pw in per_worker) / num_workers, 1),
-        "grad_norm": round(1.8 * math.exp(-step / (total_steps / 22.0)) + 0.35, 3),
-        "allreduce_ms": round(7.5 + 2.5 * math.sin(step / report_every), 2),
-        "per_worker": per_worker,
-    })
+        push_frame(run_id, step, loss, {
+            "lr": round(6e-4 * (0.5 + 0.5 * math.cos(math.pi * step / total_steps)), 6),
+            "cluster_tps": sum(pw["tps"] for pw in per_worker),
+            "gpu_util": round(sum(pw["gpu"] for pw in per_worker) / num_workers, 1),
+            "grad_norm": round(1.8 * math.exp(-step / (total_steps / 22.0)) + 0.35, 3),
+            "allreduce_ms": round(7.5 + 2.5 * math.sin(step / report_every), 2),
+            "per_worker": per_worker,
+        })
+    finish_run(run_id)
+    print("Simulation frames streamed. Run is labeled 'simulated' in dslm_ray_runs.")
+else:
+    trainer = TorchTrainer(
+        train_loop_per_worker=train_loop_per_worker,
+        train_loop_config={
+            "total_steps": total_steps,
+            "local_batch_size": global_batch_size // num_workers,
+        },
+        scaling_config=ScalingConfig(
+            num_workers=num_workers,
+            use_gpu=True,
+            resources_per_worker={"GPU": gpus_per_worker},
+        ),
+        run_config=RunConfig(name=f"cet-slm-{run_id[:8]}"),
+    )
 
-result = trainer.fit()
-finish_run(run_id)
-print("Training complete:", result.metrics if hasattr(result, "metrics") else "ok")
+    result = trainer.fit()
+
+    # Stream ONLY what training actually reported. No fabricated per-GPU curves.
+    history = getattr(result, "metrics_dataframe", None)
+    if history is not None and len(history):
+        sampled = history.iloc[::report_every]
+        for _, row in sampled.iterrows():
+            step = int(row["step"])
+            push_frame(run_id, step, float(row["loss"]), {
+                "lr": None,
+                "cluster_tps": float(row.get("tokens_per_sec", 0.0)),
+                "gpu_util": None,
+                "grad_norm": float(row.get("grad_norm", 0.0)),
+                "allreduce_ms": None,
+                "per_worker": [],
+            })
+    finish_run(run_id)
+    print("Training complete:", result.metrics if hasattr(result, "metrics") else "ok")
 
 # COMMAND ----------
 
@@ -282,6 +413,10 @@ print("Training complete:", result.metrics if hasattr(result, "metrics") else "o
 
 # COMMAND ----------
 
-shutdown_ray_cluster()
-mon.log_event("ray_run_complete", {"run_id": run_id})
-print("Ray cluster shut down; GPUs released back to Databricks.")
+if not IS_SIMULATION:
+    shutdown_ray_cluster()
+    print("Ray cluster shut down; GPUs released back to Databricks.")
+else:
+    print("Simulation mode: no Ray cluster was started, nothing to tear down.")
+
+mon.log_event("ray_run_complete", {"run_id": run_id, "mode": MODE})

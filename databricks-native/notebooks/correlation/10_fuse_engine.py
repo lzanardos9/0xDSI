@@ -52,6 +52,20 @@ from pyspark.sql.types import *
 from datetime import datetime, timedelta
 import json
 import math
+import uuid
+
+# Stable namespace so fuse_id / disagreement_id are deterministic across runs
+# and across processes (Python's built-in hash() is salted per-process and must
+# never be used for identifiers that other tables reference).
+FUSE_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "0xdsi://correlation/fuse_engine")
+
+
+def make_fuse_id(ueo_id):
+    return str(uuid.uuid5(FUSE_NAMESPACE, f"fuse::{ueo_id}"))
+
+
+def make_disagreement_id(ueo_id, high_class, low_class):
+    return str(uuid.uuid5(FUSE_NAMESPACE, f"disagree::{ueo_id}::{high_class}::{low_class}"))
 
 # COMMAND ----------
 
@@ -175,56 +189,80 @@ INDEPENDENCE_GROUPS = {
 INTRA_GROUP_DISCOUNT = 0.4
 
 
+def _ds_combine_pair(a, b):
+    """
+    Combine two mass functions on the frame {threat, benign} plus the
+    ignorance set Theta = {threat, benign}. Each argument is a 3-tuple
+    (m_threat, m_benign, m_theta) whose components sum to 1.
+
+    Returns ((m_threat, m_benign, m_theta), conflict_k) after applying
+    Dempster's rule with normalization. conflict_k is the mass assigned to
+    the empty set (threat vs benign contradiction) before normalization.
+    """
+    a_t, a_b, a_th = a
+    b_t, b_b, b_th = b
+
+    # Conflict: mass whose intersection is empty (one says threat, other benign)
+    k = a_t * b_b + a_b * b_t
+    norm = 1.0 - k
+    if norm <= 1e-12:
+        # Total conflict: nothing survives normalization. Fall back to full
+        # ignorance and report maximal conflict so it routes to investigation.
+        return (0.0, 0.0, 1.0), 1.0
+
+    # threat survives from threat∩threat, threat∩Theta, Theta∩threat
+    m_t = (a_t * b_t + a_t * b_th + a_th * b_t) / norm
+    # benign survives from benign∩benign, benign∩Theta, Theta∩benign
+    m_b = (a_b * b_b + a_b * b_th + a_th * b_b) / norm
+    # ignorance survives only from Theta∩Theta
+    m_th = (a_th * b_th) / norm
+    return (m_t, m_b, m_th), k
+
+
 def dempster_shafer_combine(signals_with_scores):
     """
-    Combine multiple evidence masses using Dempster's rule of combination.
+    Combine multiple evidence masses using Dempster's rule of combination
+    over the frame of discernment {threat, benign}.
 
-    Each signal contributes:
-      m_threat = score * independence_weight
-      m_uncertainty = 1 - m_threat
+    Each signal contributes, using its decayed score s in [0,1] and its
+    independence weight w in [0,1] as a reliability/confidence factor:
+      m(threat)  = s * w        (this signal argues threat)
+      m(benign)  = (1 - s) * w  (this signal argues benign)
+      m(Theta)   = 1 - w        (uncertainty from limited reliability)
+
+    Because signals can now assign mass to benign, contradictory evidence
+    produces genuine conflict mass K, which drives disagreement routing.
 
     Returns: (belief_threat, plausibility_threat, uncertainty, conflict_mass)
+      belief_threat        = lower bound on threat belief  = m(threat)
+      plausibility_threat  = upper bound on threat belief  = m(threat)+m(Theta)
+      uncertainty          = m(Theta)
+      conflict_mass        = aggregate conflict across the combination sequence
     """
     if not signals_with_scores:
         return (0.0, 0.0, 1.0, 0.0)
 
-    # Start with vacuous belief (total uncertainty)
-    combined_threat = 0.0
-    combined_benign = 0.0
-    combined_uncertainty = 1.0
-    total_conflict = 0.0
+    # Start vacuous: all mass on the ignorance set Theta.
+    combined = (0.0, 0.0, 1.0)
+    conflict_accum = 0.0
 
     for sig in signals_with_scores:
-        score = sig["decayed_score"] * sig["independence_weight"]
-        score = max(0.0, min(1.0, score))
+        s = max(0.0, min(1.0, (sig.get("decayed_score", 0.0) or 0.0)))
+        w = max(0.0, min(1.0, (sig.get("independence_weight", 0.0) or 0.0)))
 
-        m_threat = score
-        m_uncertainty = 1.0 - score
+        evidence = (s * w, (1.0 - s) * w, 1.0 - w)
+        combined, k = _ds_combine_pair(combined, evidence)
+        # Probability that any combination step landed in conflict.
+        conflict_accum = 1.0 - (1.0 - conflict_accum) * (1.0 - k)
 
-        # Dempster's combination
-        # K = conflict between current belief and new evidence
-        k = combined_benign * m_threat + combined_threat * 0.0  # simplified
-        normalizer = 1.0 - k if k < 1.0 else 0.001
-
-        new_threat = (combined_threat * m_uncertainty + combined_uncertainty * m_threat) / normalizer
-        new_benign = (combined_benign * m_uncertainty) / normalizer
-        new_uncertainty = (combined_uncertainty * m_uncertainty) / normalizer
-
-        total_conflict = 1.0 - (new_threat + new_benign + new_uncertainty)
-        total_conflict = max(0.0, min(1.0, abs(total_conflict) + k))
-
-        combined_threat = min(1.0, new_threat)
-        combined_benign = max(0.0, new_benign)
-        combined_uncertainty = max(0.0, new_uncertainty)
-
-    # Plausibility = belief + uncertainty (upper bound of belief)
-    plausibility = combined_threat + combined_uncertainty
+    belief_threat, belief_benign, uncertainty = combined
+    plausibility = belief_threat + uncertainty  # == 1 - belief_benign
 
     return (
-        round(combined_threat, 4),
+        round(belief_threat, 4),
         round(plausibility, 4),
-        round(combined_uncertainty, 4),
-        round(total_conflict, 4),
+        round(uncertainty, 4),
+        round(conflict_accum, 4),
     )
 
 
@@ -309,6 +347,7 @@ with mon.time("dempster_shafer_fusion"):
         ueo_id = ueo_row["ueo_id"]
         entity_id = ueo_row["entity_id"]
         entity_name = ueo_row.get("entity_name", "")
+        fuse_id = make_fuse_id(ueo_id)
 
         ueo_signals = signals_pd[signals_pd["ueo_id"] == ueo_id].to_dict("records")
 
@@ -405,8 +444,8 @@ with mon.time("dempster_shafer_fusion"):
                     disagreeing_lenses = [max_class, min_class]
 
                     disagreements.append({
-                        "disagreement_id": str(hash(f"{ueo_id}_{max_class}_{min_class}"))[:32],
-                        "fuse_id": None,  # filled after insert
+                        "disagreement_id": make_disagreement_id(ueo_id, max_class, min_class),
+                        "fuse_id": fuse_id,
                         "ueo_id": ueo_id,
                         "entity_id": entity_id,
                         "entity_name": entity_name,
@@ -426,7 +465,7 @@ with mon.time("dempster_shafer_fusion"):
                     })
 
         fuse_results.append({
-            "fuse_id": str(hash(f"fuse_{ueo_id}"))[:32] + ueo_id[:8],
+            "fuse_id": fuse_id,
             "ueo_id": ueo_id,
             "entity_id": entity_id,
             "entity_name": entity_name,
@@ -463,19 +502,95 @@ with mon.time("dempster_shafer_fusion"):
 
 # COMMAND ----------
 
+# Explicit schemas — never rely on createDataFrame inference. Inference reads
+# types from the first row (so a leading None flips a column to void and the
+# append fails) and cannot guarantee column order matches the Delta table.
+FUSE_SCHEMA = StructType([
+    StructField("fuse_id", StringType(), False),
+    StructField("ueo_id", StringType(), False),
+    StructField("entity_id", StringType(), False),
+    StructField("entity_name", StringType(), True),
+    StructField("belief_threat", DoubleType(), False),
+    StructField("belief_benign", DoubleType(), False),
+    StructField("plausibility_threat", DoubleType(), False),
+    StructField("uncertainty_mass", DoubleType(), False),
+    StructField("conflict_mass", DoubleType(), False),
+    StructField("ds_combined_score", DoubleType(), False),
+    StructField("independence_weighted_score", DoubleType(), False),
+    StructField("total_signals", IntegerType(), False),
+    StructField("independent_signals", IntegerType(), False),
+    StructField("independence_groups", IntegerType(), False),
+    StructField("causal_chain_length", IntegerType(), True),
+    StructField("causal_chain_events", ArrayType(StringType()), True),
+    StructField("kill_chain_progression", StringType(), True),
+    StructField("temporal_span_minutes", DoubleType(), True),
+    StructField("avg_signal_age_minutes", DoubleType(), True),
+    StructField("freshness_factor", DoubleType(), True),
+    StructField("has_disagreement", BooleanType(), True),
+    StructField("disagreement_type", StringType(), True),
+    StructField("disagreeing_lenses", ArrayType(StringType()), True),
+    StructField("entity_centrality", DoubleType(), True),
+    StructField("entity_is_high_value", BooleanType(), True),
+    StructField("confluence_consumed", BooleanType(), True),
+])
+
+DISAGREEMENT_SCHEMA = StructType([
+    StructField("disagreement_id", StringType(), False),
+    StructField("fuse_id", StringType(), False),
+    StructField("ueo_id", StringType(), False),
+    StructField("entity_id", StringType(), False),
+    StructField("entity_name", StringType(), True),
+    StructField("disagreement_type", StringType(), False),
+    StructField("high_signal_class", StringType(), True),
+    StructField("high_signal_score", DoubleType(), True),
+    StructField("low_signal_class", StringType(), True),
+    StructField("low_signal_score", DoubleType(), True),
+    StructField("score_gap", DoubleType(), False),
+    StructField("conflict_mass", DoubleType(), False),
+    StructField("entity_is_high_value", BooleanType(), True),
+    StructField("asset_criticality", StringType(), True),
+    StructField("explanation", StringType(), True),
+    StructField("routed_to", StringType(), True),
+    StructField("priority", StringType(), True),
+    StructField("resolved", BooleanType(), True),
+])
+
+
+def _coerce(rows, schema):
+    """Coerce dict values to the declared field types so the explicit schema
+    never trips over ints where doubles are expected or numpy scalars."""
+    typed = []
+    for r in rows:
+        out = {}
+        for field in schema.fields:
+            v = r.get(field.name)
+            if v is not None:
+                if isinstance(field.dataType, DoubleType):
+                    v = float(v)
+                elif isinstance(field.dataType, IntegerType):
+                    v = int(v)
+                elif isinstance(field.dataType, BooleanType):
+                    v = bool(v)
+                elif isinstance(field.dataType, StringType):
+                    v = str(v)
+            out[field.name] = v
+        typed.append(out)
+    return typed
+
+
 with mon.time("write_fuse"):
     if fuse_results:
-        fuse_df = spark.createDataFrame(fuse_results)
+        fuse_df = spark.createDataFrame(_coerce(fuse_results, FUSE_SCHEMA), schema=FUSE_SCHEMA)
         fuse_df = fuse_df.withColumn("created_at", current_timestamp())
-        fuse_df.write.mode("append").option("mergeSchema", "true").saveAsTable(fuse_table)
+        fuse_df.write.mode("append").saveAsTable(fuse_table)
 
     if disagreements:
-        disagree_df = spark.createDataFrame(disagreements)
+        disagree_df = spark.createDataFrame(_coerce(disagreements, DISAGREEMENT_SCHEMA), schema=DISAGREEMENT_SCHEMA)
         disagree_df = disagree_df.withColumn("created_at", current_timestamp())
+        disagree_df = disagree_df.withColumn("resolution", lit(None).cast("string"))
         disagree_df = disagree_df.withColumn("resolved_by", lit(None).cast("string"))
         disagree_df = disagree_df.withColumn("resolved_at", lit(None).cast("timestamp"))
-        disagree_df = disagree_df.withColumn("resolution", lit(None).cast("string"))
-        disagree_df.write.mode("append").option("mergeSchema", "true").saveAsTable(disagreement_table)
+        disagree_df.write.mode("append").saveAsTable(disagreement_table)
         print(f"  Routed {len(disagreements)} model disagreements to investigation queue")
 
 # COMMAND ----------
