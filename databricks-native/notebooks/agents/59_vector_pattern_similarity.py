@@ -121,35 +121,11 @@ class VectorPatternSimilarityAgent(BatchAgent):
             """)
             return [row.asDict() for row in df.collect()]
         except Exception as e:
+            # Fail closed: never substitute fabricated "current threats" into the
+            # similarity search when the real query fails, or the pipeline would
+            # surface invented threats as real.
             logger.warning(f"Failed to load current threats: {e}")
-            return self._get_synthetic_sequences()
-
-    def _get_synthetic_sequences(self) -> list[dict]:
-        """Fallback synthetic sequences for development/testing."""
-        return [
-            {
-                "alert_id": str(uuid.uuid4()),
-                "title": "Suspicious credential access followed by lateral movement",
-                "description": "Multiple Kerberoasting attempts detected from identity domain targeting endpoint assets",
-                "severity": "critical",
-                "mitre_tactics": "credential-access,lateral-movement",
-                "mitre_techniques": "T1558.003,T1021.002",
-                "source_domain": "identity",
-                "target_domain": "endpoint",
-                "event_chain": ["kerberoasting", "smb_lateral", "process_injection"],
-            },
-            {
-                "alert_id": str(uuid.uuid4()),
-                "title": "Cloud token abuse with data staging",
-                "description": "Stolen OAuth token used to access cloud storage, data staging detected",
-                "severity": "critical",
-                "mitre_tactics": "initial-access,collection,exfiltration",
-                "mitre_techniques": "T1078.004,T1074,T1567",
-                "source_domain": "cloud",
-                "target_domain": "data",
-                "event_chain": ["oauth_token_reuse", "storage_enumeration", "data_staging", "exfil_attempt"],
-            },
-        ]
+            return []
 
     def embed_sequence(self, sequence: dict) -> list[float]:
         """Generate embedding vector for a threat sequence."""

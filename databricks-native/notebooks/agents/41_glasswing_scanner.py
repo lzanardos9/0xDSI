@@ -517,8 +517,6 @@ KNOWN_VULNS = [
     {"cve_id": "CVE-2024-27198", "title": "JetBrains TeamCity Auth Bypass", "severity": "critical", "cvss_score": 9.8, "affects": "server", "exploitability": "active_exploitation", "remediation": "patch_available"},
 ]
 
-import random
-
 with mon.time("assess_vulnerabilities"):
     findings = []
     assets_data = assets.collect() if asset_count > 0 else []
@@ -528,16 +526,17 @@ with mon.time("assess_vulnerabilities"):
         asset_type = getattr(asset, 'asset_type', 'server')
 
         for vuln in KNOWN_VULNS:
-            # Probabilistic matching based on OS/type
-            match = False
-            if vuln["affects"] == "windows" and "windows" in os_lower:
-                match = random.random() < 0.3
-            elif vuln["affects"] == "linux" and ("ubuntu" in os_lower or "rhel" in os_lower):
-                match = random.random() < 0.25
-            elif vuln["affects"] == "network_device" and asset_type == "network_device":
-                match = random.random() < 0.4
-            elif vuln["affects"] == "server" and asset_type in ("server", "cloud_instance"):
-                match = random.random() < 0.2
+            # Deterministic attack-surface exposure: an asset is flagged as
+            # POTENTIALLY exposed when its OS/type falls in the CVE's affected
+            # class. This is an unconfirmed surface match (no software-version
+            # check is performed here), never a random guess presented as a
+            # confirmed finding.
+            match = (
+                (vuln["affects"] == "windows" and "windows" in os_lower)
+                or (vuln["affects"] == "linux" and ("ubuntu" in os_lower or "rhel" in os_lower))
+                or (vuln["affects"] == "network_device" and asset_type == "network_device")
+                or (vuln["affects"] == "server" and asset_type in ("server", "cloud_instance"))
+            )
 
             if match:
                 findings.append({
@@ -546,7 +545,7 @@ with mon.time("assess_vulnerabilities"):
                     "severity": vuln["severity"],
                     "cvss_score": vuln["cvss_score"],
                     "affected_assets": 1,
-                    "status": random.choice(["open", "open", "open", "in_progress", "remediated"]),
+                    "status": "open",
                     "exploitability": vuln["exploitability"],
                     "remediation": vuln["remediation"],
                     "asset_id": asset.id,

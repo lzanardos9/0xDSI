@@ -229,10 +229,10 @@ class VectorScoringAgent(BatchAgent):
                 risk_map = {"low": 0.2, "medium": 0.5, "high": 0.8, "critical": 1.0}
                 vector[20] = risk_map.get(str(entity.risk_level).lower(), 0.0)
 
-            # Fill remaining dimensions with gaussian noise-like patterns (deterministic)
-            # This represents computed behavioral features
-            np.random.seed(hash(entity.entity_id) % (2**32))
-            vector[50:] = np.random.normal(0.3, 0.2, embedding_dim - 50)
+            # Remaining dimensions are intentionally left as zeros. They are NOT
+            # filled with random noise: fabricated values here would masquerade as
+            # computed behavioral features and corrupt the similarity scores that
+            # this entity vector is compared against.
             vector = np.clip(vector, 0, 1)
 
         except Exception as e:

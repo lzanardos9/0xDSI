@@ -527,62 +527,17 @@ def run_attack_chain_detection(
     print(f"Attack Chain Detection: analyzing last {lookback_hours}h")
     print(f"  Patterns: {list(ATTACK_CHAIN_PATTERNS.keys())}")
 
-    all_detections = []
-
-    num_entities = 50
-    entity_states = {}
-
-    for i in range(num_entities):
-        entity_id = f"entity_{i:04d}"
-        num_caches = np.random.randint(5, 32)
-        cache_states = torch.randn(1, num_caches, config.hidden_dim, device=device) * 0.5
-        current_segment = torch.randn(1, config.segment_size, config.input_dim, device=device)
-
-        timestamps = [
-            datetime.now() - timedelta(hours=lookback_hours * (1 - j/num_caches))
-            for j in range(num_caches)
-        ]
-
-        entity_detections = detector.analyze_entity_cache_history(
-            entity_id, current_segment, cache_states, timestamps
-        )
-        all_detections.extend(entity_detections)
-        entity_states[entity_id] = cache_states[0, -1]
-
-    lateral_detections = detect_lateral_movement_chain(
-        model, entity_states, config,
-        similarity_threshold=0.85,
+    # This job previously fabricated 50 synthetic entities with random cache
+    # states and current segments, then wrote the resulting "detections" to the
+    # gold table as if they were real attack chains. Real detection requires
+    # per-entity MC-RNN cache history loaded from the state store, which is not
+    # wired here yet. We fail closed rather than emit fabricated detections.
+    raise NotImplementedError(
+        "Attack-chain detection requires real per-entity cache history from the "
+        f"MC state store; refusing to write fabricated detections to "
+        f"{catalog}.gold.mc_attack_chains. Wire real cache-state loading before "
+        "enabling this scheduled job."
     )
-    all_detections.extend(lateral_detections)
-
-    print(f"\nAttack Chain Results:")
-    print(f"  Total detections: {len(all_detections)}")
-    for attack_type in ATTACK_CHAIN_PATTERNS:
-        count = sum(1 for d in all_detections if d.attack_type == attack_type)
-        if count > 0:
-            print(f"  {attack_type}: {count}")
-
-    if all_detections:
-        chain_rows = [
-            (
-                d.chain_id, d.entity_id, d.attack_type, float(d.confidence),
-                json.dumps(d.stages), json.dumps(d.cache_evidence),
-                float(d.timeline_hours), json.dumps(d.mitre_techniques),
-                d.description, datetime.now(),
-            )
-            for d in all_detections
-        ]
-        chain_df = spark.createDataFrame(
-            chain_rows,
-            ["chain_id", "entity_id", "attack_type", "confidence",
-             "stages_json", "cache_evidence_json", "timeline_hours",
-             "mitre_techniques_json", "description", "detected_at"]
-        )
-        chain_df.write.format("delta").mode("append").saveAsTable(
-            f"{catalog}.gold.mc_attack_chains"
-        )
-
-    return all_detections
 
 
 # COMMAND ----------

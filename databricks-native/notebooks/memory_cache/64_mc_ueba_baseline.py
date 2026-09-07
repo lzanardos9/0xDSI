@@ -303,6 +303,25 @@ class MCUEBAAnomalyDetector:
 
 # COMMAND ----------
 
+def _featurize_events(events, segment_size: int, token_dim: int, device):
+    """Deterministically hash real event fields into a fixed-width feature tensor
+    (mirrors the streaming detector). No random noise: identical events map to
+    identical features so the model scores actual content, not fabricated data."""
+    import zlib
+    seg = min(len(events), segment_size)
+    feats = torch.zeros(1, segment_size, token_dim, device=device)
+    for i in range(seg):
+        ev = events[i]
+        fields = ev.asDict() if hasattr(ev, "asDict") else dict(ev)
+        for key, value in fields.items():
+            if value is None:
+                continue
+            idx = zlib.crc32(f"{key}={value}".encode("utf-8")) % token_dim
+            feats[0, i, idx] += 1.0
+    norm = feats.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+    return feats / norm
+
+
 def run_mc_ueba_detection(
     catalog: str = "security_catalog",
     model_name: str = "security_catalog_mc_rnn_security",
@@ -363,7 +382,19 @@ def run_mc_ueba_detection(
 
         entity_state = state_manager.load_entity_state(entity_id, device)
 
-        event_tokens = torch.randn(1, config.segment_size, config.input_dim, device=device)
+        # Deterministically featurize the entity's REAL recent events instead of
+        # feeding random noise into the model.
+        entity_events = (
+            events_df.where(SF.col("user_id") == entity_id)
+            .orderBy("event_timestamp")
+            .limit(config.segment_size)
+            .collect()
+        )
+        if not entity_events:
+            continue
+        event_tokens = _featurize_events(
+            entity_events, config.segment_size, config.input_dim, device
+        )
 
         anomalies = detector.detect_anomalies(entity_id, event_tokens, entity_state, config)
 

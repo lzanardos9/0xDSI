@@ -90,16 +90,19 @@ class EntitySegmentDataset(Dataset):
             )
             segments = []
             for row in entity_df:
-                token_array = np.random.randn(self.segment_size, self.input_dim).astype(np.float32)
-                if hasattr(row, "event_tokens") and row.event_tokens:
-                    token_array = np.array(row.event_tokens, dtype=np.float32)
-                    if token_array.ndim == 1:
-                        token_array = token_array.reshape(-1, self.input_dim)
-                    if len(token_array) < self.segment_size:
-                        pad = np.zeros((self.segment_size - len(token_array), self.input_dim), dtype=np.float32)
-                        token_array = np.concatenate([token_array, pad])
-                    elif len(token_array) > self.segment_size:
-                        token_array = token_array[:self.segment_size]
+                # Only train on real tokenized event features. Rows without them are
+                # skipped rather than back-filled with random noise, which would train
+                # the model on fabricated data.
+                if not (hasattr(row, "event_tokens") and row.event_tokens):
+                    continue
+                token_array = np.array(row.event_tokens, dtype=np.float32)
+                if token_array.ndim == 1:
+                    token_array = token_array.reshape(-1, self.input_dim)
+                if len(token_array) < self.segment_size:
+                    pad = np.zeros((self.segment_size - len(token_array), self.input_dim), dtype=np.float32)
+                    token_array = np.concatenate([token_array, pad])
+                elif len(token_array) > self.segment_size:
+                    token_array = token_array[:self.segment_size]
                 segments.append(token_array)
 
             if len(segments) >= 2:
@@ -115,10 +118,11 @@ class EntitySegmentDataset(Dataset):
         num_segments = min(len(segments), self.max_segments)
         segment_tensor = np.stack(segments[:num_segments])
 
+        # No supervised anomaly labels are fabricated. Training relies on the
+        # self-supervised objectives (next-event, reconstruction, contrastive);
+        # inventing random positive labels would teach the model to flag benign
+        # events as anomalies.
         labels = np.zeros((num_segments, self.segment_size), dtype=np.float32)
-        if np.random.random() < 0.1:
-            anomaly_seg = np.random.randint(0, num_segments)
-            labels[anomaly_seg, :] = 1.0
 
         return {
             "segments": torch.from_numpy(segment_tensor),
@@ -382,6 +386,13 @@ def train_mc_rnn_distributed(
 
     train_dataset = EntitySegmentDataset(data_path, segment_size=64, split="train")
     val_dataset = EntitySegmentDataset(data_path, segment_size=64, split="val")
+
+    if len(train_dataset) == 0:
+        raise RuntimeError(
+            f"No real tokenized training segments found at {data_path}. "
+            "Refusing to train on fabricated data. Populate the tokenized "
+            "segments table (event_tokens) before running this pipeline."
+        )
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
