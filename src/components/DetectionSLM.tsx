@@ -3,7 +3,7 @@ import {
   Activity, AlertTriangle, BarChart3, Beaker, Brain, Cpu, Database,
   Eye, FileCode, FlaskConical, Gauge, GitBranch, Hammer, Layers,
   LineChart, Lock, Network, Sparkles, Target, Workflow, Zap, ChevronRight,
-  Scale, Play, Pause, RotateCcw
+  Scale, Play, Pause, RotateCcw, Boxes, Radio, Server, Flame, ShieldCheck
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -29,6 +29,22 @@ type DistillJob = {
   id: string; teacher_model: string; student_params_millions: number; status: string;
   compression_ratio: number; retained_accuracy: number; latency_ms: number; cost_usd: number;
 };
+type RayRun = {
+  id: string; run_name: string; status: string; model_name: string; base_params_millions: number;
+  dataset_name: string; training_strategy: string; num_workers: number; gpus_per_worker: number;
+  accelerator: string; global_batch_size: number; total_steps: number; tokens_total_billions: number;
+  proven_incident_weight: number; notes: string;
+};
+type RayWorker = {
+  id: string; run_id: string; worker_index: number; role: string; node_ip: string;
+  gpu_model: string; shard_name: string;
+};
+type WorkerStat = { i: number; gpu: number; mem: number; tps: number; loss: number };
+type RayFrame = {
+  id: string; run_id: string; step: number; loss: number; learning_rate: number;
+  tokens_per_sec: number; gpu_util_avg: number; grad_norm: number; allreduce_ms: number;
+  phase: string; worker_stats: WorkerStat[];
+};
 
 const STAGE_DEF: Record<string, { label: string; color: string }> = {
   pretrain: { label: 'Pretrain', color: 'cyan' },
@@ -47,6 +63,7 @@ const TABS = [
   { id: 'compare', label: 'vs Current Engine', icon: Scale },
   { id: 'architecture', label: 'Architecture', icon: Network },
   { id: 'vocab', label: 'Tokenizer', icon: FileCode },
+  { id: 'ray', label: 'Ray Training Theater', icon: Boxes },
   { id: 'training', label: 'Training Runs', icon: Cpu },
   { id: 'eval', label: 'Evaluation', icon: BarChart3 },
   { id: 'inference', label: 'Live Inference', icon: Brain },
@@ -64,19 +81,25 @@ export default function DetectionSLM() {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [vocab, setVocab] = useState<Vocab[]>([]);
   const [distill, setDistill] = useState<DistillJob[]>([]);
+  const [rayRun, setRayRun] = useState<RayRun | null>(null);
+  const [rayWorkers, setRayWorkers] = useState<RayWorker[]>([]);
+  const [rayFrames, setRayFrames] = useState<RayFrame[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePrediction, setActivePrediction] = useState<Prediction | null>(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const [r, c, m, p, v, d] = await Promise.all([
+      const [r, c, m, p, v, d, rr, rw, rf] = await Promise.all([
         supabase.from('dslm_training_runs').select('*').order('started_at', { ascending: false }),
         supabase.from('dslm_checkpoints').select('*').order('step'),
         supabase.from('dslm_eval_metrics').select('*').order('step'),
         supabase.from('dslm_predictions').select('*').order('predicted_at', { ascending: false }),
         supabase.from('dslm_vocab').select('*').order('frequency', { ascending: false }),
         supabase.from('dslm_distillation_jobs').select('*'),
+        supabase.from('dslm_ray_runs').select('*').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('dslm_ray_workers').select('*').order('worker_index'),
+        supabase.from('dslm_ray_timeline').select('*').order('step'),
       ]);
       if (!mounted) return;
       setRuns((r.data as TrainingRun[]) ?? []);
@@ -85,6 +108,9 @@ export default function DetectionSLM() {
       setPredictions((p.data as Prediction[]) ?? []);
       setVocab((v.data as Vocab[]) ?? []);
       setDistill((d.data as DistillJob[]) ?? []);
+      setRayRun((rr.data as RayRun) ?? null);
+      setRayWorkers((rw.data as RayWorker[]) ?? []);
+      setRayFrames((rf.data as RayFrame[]) ?? []);
       setActivePrediction(((p.data as Prediction[]) ?? [])[0] ?? null);
       setLoading(false);
     })();
@@ -107,6 +133,7 @@ export default function DetectionSLM() {
       <Hero runs={runs} checkpoints={checkpoints} vocab={vocab} />
       <TabBar active={tab} onChange={setTab} />
 
+      {tab === 'ray' && <RayTheater run={rayRun} workers={rayWorkers} frames={rayFrames} />}
       {tab === 'overview' && <Overview runs={runs} />}
       {tab === 'compare' && <CompareTab />}
       {tab === 'architecture' && <Architecture />}
@@ -1140,6 +1167,173 @@ function Mini({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-2">
       <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
       <div className="text-sm font-bold text-slate-100 mt-0.5 truncate">{value}</div>
+    </div>
+  );
+}
+
+function RayTheater({ run, workers, frames }: { run: RayRun | null; workers: RayWorker[]; frames: RayFrame[] }) {
+  const [idx, setIdx] = useState(0);
+  const [running, setRunning] = useState(true);
+  const intervalRef = useRef<number | null>(null);
+
+  const maxIdx = Math.max(0, frames.length - 1);
+  const frame = frames[Math.min(idx, maxIdx)] ?? null;
+
+  useEffect(() => {
+    if (!running || frames.length === 0) return;
+    intervalRef.current = window.setInterval(() => {
+      setIdx(prev => {
+        if (prev >= maxIdx) { setRunning(false); return prev; }
+        return prev + 1;
+      });
+    }, 650);
+    return () => { if (intervalRef.current) window.clearInterval(intervalRef.current); };
+  }, [running, maxIdx, frames.length]);
+
+  if (!run || frames.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center">
+        <Boxes className="w-8 h-8 text-slate-600 mx-auto mb-3" />
+        <p className="text-sm text-slate-400">No Ray training run found yet.</p>
+      </div>
+    );
+  }
+
+  const reset = () => {
+    if (intervalRef.current) window.clearInterval(intervalRef.current);
+    setIdx(0);
+    setRunning(true);
+  };
+
+  const done = idx >= maxIdx;
+  const stats = frame?.worker_stats ?? [];
+  const lossPoints = frames.slice(0, idx + 1).map((f, i) => ({ x: i, y: Number(f.loss) }));
+  const progress = maxIdx === 0 ? 100 : (idx / maxIdx) * 100;
+  const tokensSeen = ((run.tokens_total_billions * (idx / (maxIdx || 1))) || 0).toFixed(2);
+  const totalGpus = run.num_workers * run.gpus_per_worker;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-cyan-400/20 bg-gradient-to-br from-slate-900/80 to-slate-900/30 p-5">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Boxes className="w-6 h-6 text-cyan-400" />
+              {!done && <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" /></span>}
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-50">Ray Training Theater</h3>
+              <p className="text-[11px] text-slate-400">{run.run_name} · Ray on Databricks · {run.accelerator}</p>
+            </div>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${done ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300' : 'border-cyan-400/40 bg-cyan-500/10 text-cyan-300 animate-pulse'}`}>
+              {done ? 'RUN COMPLETE' : 'TRAINING LIVE'}
+            </span>
+          </div>
+          <div className="flex gap-1.5">
+            <button onClick={() => setRunning(r => !r)} disabled={done} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-40">
+              {running ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+              {running ? 'Pause' : 'Resume'}
+            </button>
+            <button onClick={reset} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200">
+              <RotateCcw className="w-3.5 h-3.5" /> Restart
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 h-2 rounded-full bg-slate-800 overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 transition-all duration-500" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
+          <Stat icon={Cpu} label="Step" value={`${frame?.step ?? 0}`} sub={`of ${run.total_steps}`} accent="cyan" />
+          <Stat icon={Flame} label="Train loss" value={Number(frame?.loss ?? 0).toFixed(3)} sub={`grad norm ${Number(frame?.grad_norm ?? 0).toFixed(2)}`} accent="rose" />
+          <Stat icon={Zap} label="Throughput" value={`${(Number(frame?.tokens_per_sec ?? 0) / 1000).toFixed(0)}k`} sub="tokens / sec (cluster)" accent="emerald" />
+          <Stat icon={Gauge} label="GPU util" value={`${Number(frame?.gpu_util_avg ?? 0).toFixed(0)}%`} sub={`${totalGpus} GPUs · avg`} accent="amber" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Server className="w-4 h-4 text-cyan-400" />
+              <h3 className="text-sm font-bold text-slate-100">Ray worker fleet · data-parallel</h3>
+              <span className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-400">
+                <Radio className={`w-3.5 h-3.5 ${done ? 'text-slate-500' : 'text-emerald-400 animate-pulse'}`} />
+                NCCL all-reduce {Number(frame?.allreduce_ms ?? 0).toFixed(1)}ms
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {workers.map(w => {
+                const s = stats.find(st => st.i === w.worker_index);
+                const gpu = s?.gpu ?? 0;
+                const isHead = w.role === 'head';
+                return (
+                  <div key={w.id} className={`rounded-lg border p-2.5 ${isHead ? 'border-cyan-400/40 bg-cyan-500/5' : 'border-slate-700 bg-slate-900/60'}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-200">{isHead ? 'head' : `w${w.worker_index}`}</span>
+                      {isHead ? <ShieldCheck className="w-3 h-3 text-cyan-400" /> : <Cpu className="w-3 h-3 text-slate-500" />}
+                    </div>
+                    <div className="text-[9px] text-slate-500 mt-0.5 truncate">{w.node_ip}</div>
+                    <div className="mt-2 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                      <div className={`h-full ${done ? 'bg-slate-500' : 'bg-gradient-to-r from-cyan-500 to-emerald-400'} transition-all duration-500`} style={{ width: `${gpu}%` }} />
+                    </div>
+                    <div className="flex justify-between mt-1 text-[9px] text-slate-500">
+                      <span>{gpu}%</span>
+                      <span className="tabular-nums">{((s?.tps ?? 0) / 1000).toFixed(0)}k tok/s</span>
+                    </div>
+                    <div className="text-[9px] text-slate-500 mt-0.5 truncate">{w.shard_name}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <LineChart className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-bold text-slate-100">Aggregated training loss</h3>
+              <span className="ml-auto text-[11px] text-slate-400 tabular-nums">{tokensSeen}B / {run.tokens_total_billions}B tokens</span>
+            </div>
+            <LossCurve points={lossPoints} />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Boxes className="w-4 h-4 text-cyan-400" />
+              <h3 className="text-sm font-bold text-slate-100">Cluster config</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Mini label="Model" value={run.model_name} />
+              <Mini label="Params" value={`${run.base_params_millions}M`} />
+              <Mini label="Workers" value={`${run.num_workers} actors`} />
+              <Mini label="GPUs" value={`${totalGpus} × A100`} />
+              <Mini label="Global batch" value={`${run.global_batch_size}`} />
+              <Mini label="LR (now)" value={Number(frame?.learning_rate ?? 0).toExponential(1)} />
+            </div>
+            <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Strategy</div>
+              <div className="text-xs font-semibold text-cyan-200 mt-0.5">{run.training_strategy}</div>
+            </div>
+            <div className="mt-2 rounded-lg border border-emerald-400/25 bg-emerald-500/5 p-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-emerald-300">
+                <Target className="w-3 h-3" /> Curriculum weighting
+              </div>
+              <div className="text-xs text-slate-300 mt-1">Proven-incident sequences up-weighted <span className="font-bold text-emerald-300">{run.proven_incident_weight}×</span> vs. all events.</div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Database className="w-4 h-4 text-slate-400" />
+              <h3 className="text-sm font-bold text-slate-100">Dataset</h3>
+            </div>
+            <div className="text-xs font-mono text-slate-300 break-all">{run.dataset_name}</div>
+            <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">{run.notes}</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
