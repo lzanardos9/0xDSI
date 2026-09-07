@@ -1376,6 +1376,42 @@ resources:
               vector_search_endpoint: "0xdsi-vector-search"
               lookback_hours: "24"
 
+    graph_neighborhood_pipeline:
+      name: "[0xDSI] Agent 61 - Graph Neighborhood Embeddings + Index"
+      schedule:
+        quartz_cron_expression: "0 */20 * ? * *"
+        timezone_id: "UTC"
+      max_concurrent_runs: 1
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - scipy==1.14.1
+              - scikit-learn==1.5.2
+              - networkx==3.4.2
+      tasks:
+        - task_key: build_graph_embeddings
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ml_training/06_graph_neighborhood_embeddings.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+              embedding_dim: "128"
+        - task_key: sync_graph_index
+          depends_on:
+            - task_key: build_graph_embeddings
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/agents/61_graph_vector_index.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              vector_search_endpoint: "0xdsi-vector-search"
+              embedding_dimension: "128"
+
     notification_dispatcher:
       name: "[0xDSI] Response 03 - Notification Dispatcher"
       schedule:
