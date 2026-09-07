@@ -17,6 +17,7 @@ import json
 import uuid
 import random
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -29,15 +30,83 @@ from fastapi.staticfiles import StaticFiles
 from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
-CATALOG = os.environ.get("UNITY_CATALOG", "soc_platform")
-SCHEMA = os.environ.get("UNITY_SCHEMA", "agentic_soc")
-WAREHOUSE_ID = os.environ.get("DATABRICKS_WAREHOUSE_ID", "")
-LLM_ENDPOINT = os.environ.get("LLM_ENDPOINT", "databricks-meta-llama-3-1-70b-instruct")
-LLM_FALLBACK_ENDPOINT = os.environ.get("LLM_FALLBACK_ENDPOINT", "databricks-meta-llama-3-1-8b-instruct")
-EMBEDDING_ENDPOINT = os.environ.get("EMBEDDING_ENDPOINT", "databricks-bge-large-en")
-APP_DOMAIN = os.environ.get("DATABRICKS_APP_DOMAIN", "")
-
 logger = logging.getLogger("0xdsi.api")
+
+
+@dataclass(frozen=True)
+class AppConfig:
+    """Typed, validated backend configuration resolved once from the environment.
+
+    Single source of truth for every runtime setting so startup can report
+    misconfiguration explicitly instead of failing deep inside a query."""
+    catalog: str
+    schema: str
+    warehouse_id: str
+    llm_endpoint: str
+    llm_fallback_endpoint: str
+    embedding_endpoint: str
+    app_domain: str
+    port: int
+
+    @staticmethod
+    def _clean(value: Optional[str]) -> str:
+        return (value or "").strip()
+
+    @classmethod
+    def load(cls) -> "AppConfig":
+        raw_port = cls._clean(os.environ.get("DATABRICKS_APP_PORT", "8000"))
+        try:
+            port = int(raw_port)
+        except ValueError:
+            logger.warning("DATABRICKS_APP_PORT=%r is not an integer; falling back to 8000", raw_port)
+            port = 8000
+        return cls(
+            catalog=cls._clean(os.environ.get("UNITY_CATALOG", "soc_platform")),
+            schema=cls._clean(os.environ.get("UNITY_SCHEMA", "agentic_soc")),
+            warehouse_id=cls._clean(os.environ.get("DATABRICKS_WAREHOUSE_ID", "")),
+            llm_endpoint=cls._clean(os.environ.get("LLM_ENDPOINT", "databricks-meta-llama-3-1-70b-instruct")),
+            llm_fallback_endpoint=cls._clean(os.environ.get("LLM_FALLBACK_ENDPOINT", "databricks-meta-llama-3-1-8b-instruct")),
+            embedding_endpoint=cls._clean(os.environ.get("EMBEDDING_ENDPOINT", "databricks-bge-large-en")),
+            app_domain=cls._clean(os.environ.get("DATABRICKS_APP_DOMAIN", "")),
+            port=port,
+        )
+
+    def missing_required(self) -> list[str]:
+        """Names of required settings that are not configured (empty)."""
+        missing = []
+        if not self.warehouse_id:
+            missing.append("DATABRICKS_WAREHOUSE_ID")
+        if not self.catalog:
+            missing.append("UNITY_CATALOG")
+        if not self.schema:
+            missing.append("UNITY_SCHEMA")
+        return missing
+
+
+CONFIG = AppConfig.load()
+
+# Backwards-compatible module-level aliases. CONFIG is the single source of
+# truth; these names keep existing call sites working without change.
+CATALOG = CONFIG.catalog
+SCHEMA = CONFIG.schema
+WAREHOUSE_ID = CONFIG.warehouse_id
+LLM_ENDPOINT = CONFIG.llm_endpoint
+LLM_FALLBACK_ENDPOINT = CONFIG.llm_fallback_endpoint
+EMBEDDING_ENDPOINT = CONFIG.embedding_endpoint
+APP_DOMAIN = CONFIG.app_domain
+
+_missing_config = CONFIG.missing_required()
+if _missing_config:
+    logger.warning(
+        "Backend started with incomplete configuration; missing: %s. "
+        "Readiness will report not_ready until these are set.",
+        ", ".join(_missing_config),
+    )
+else:
+    logger.info(
+        "Config loaded: catalog=%s schema=%s warehouse=%s llm=%s",
+        CONFIG.catalog, CONFIG.schema, CONFIG.warehouse_id, CONFIG.llm_endpoint,
+    )
 
 _connection = None
 
@@ -234,10 +303,11 @@ async def health():
 @app.get("/ready")
 async def ready():
     """Readiness probe - checks SQL Warehouse connectivity."""
-    if not WAREHOUSE_ID:
+    missing = CONFIG.missing_required()
+    if missing:
         return JSONResponse(
             status_code=503,
-            content={"status": "not_ready", "reason": "DATABRICKS_WAREHOUSE_ID not configured"},
+            content={"status": "not_ready", "reason": f"Missing configuration: {', '.join(missing)}"},
         )
     try:
         get_connection()
@@ -3358,5 +3428,4 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("DATABRICKS_APP_PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=CONFIG.port)
