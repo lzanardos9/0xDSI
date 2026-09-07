@@ -186,7 +186,53 @@ def _require_authenticated(user: dict):
         raise HTTPException(status_code=401, detail="Authentication required")
 
 
+def _require_analyst(user: dict):
+    if not user.get("is_analyst"):
+        raise HTTPException(status_code=403, detail="Analyst or admin role required")
+
+
+def _sql_bool(value) -> str:
+    """Coerce a caller-supplied value to a literal SQL boolean.
+
+    `enabled` flags are interpolated into UPDATE statements (Databricks SQL will
+    not bind a boolean literal as a parameter in these positions), so the value
+    must be strictly validated rather than trusted. Anything that is not a real
+    boolean or the strings 'true'/'false' is rejected.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower()
+    raise HTTPException(status_code=400, detail="Field 'enabled' must be a boolean")
+
+
+_CONTROL_ADMIN_PREFIXES = (
+    "/api/control/settings",
+    "/api/control/correlation-rules",
+    "/api/control/detection-rules",
+    "/api/control/guardrails",
+    "/api/control/edge-collectors",
+    "/api/control/etl-configs",
+    "/api/control/negative-rules",
+    "/api/control/escalation-rules",
+    "/api/control/cep-patterns",
+)
+
+
+def _control_requires_admin(path: str) -> bool:
+    """Configuration surfaces (rules, policies, settings, fleet config) require
+    admin; operational actions (triage, cases, approvals, running jobs) only
+    require analyst."""
+    if any(path.startswith(p) for p in _CONTROL_ADMIN_PREFIXES):
+        return True
+    if path.startswith("/api/control/agents/") and (path.endswith("/toggle") or path.endswith("/config")):
+        return True
+    return False
+
+
 def _check_write_permission(user: dict, table_name: str):
+    if not user.get("is_analyst"):
+        raise HTTPException(status_code=403, detail="Analyst or admin role required to modify data")
     if table_name in ADMIN_TABLES and not user["is_admin"]:
         raise HTTPException(status_code=403, detail=f"Admin access required for table '{table_name}'")
     if table_name in READONLY_TABLES:
@@ -288,6 +334,29 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Client-Info"],
 )
+
+
+@app.middleware("http")
+async def enforce_control_rbac(request: Request, call_next):
+    """Centralised, fail-closed RBAC for every state-changing control route.
+
+    Individual /api/control/* handlers previously mutated state with no role
+    check (or only a best-effort one). Gating here guarantees that every
+    POST/PUT/DELETE under /api/control/ requires a verified SSO identity and at
+    least analyst membership, with admin required for configuration surfaces.
+    """
+    path = request.url.path
+    if request.method in ("POST", "PUT", "DELETE") and path.startswith("/api/control/"):
+        user = _get_user_from_request(request)
+        try:
+            _require_authenticated(user)
+            if _control_requires_admin(path):
+                _require_admin(user)
+            else:
+                _require_analyst(user)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
 
 
 # ──────────────────────────────────────────────
@@ -641,13 +710,19 @@ async def mutate_table(table_name: str, request: Request):
         elif operation == "upsert":
             for k in data.keys():
                 _validate_identifier(k)
+            conflict_key = _validate_identifier(body.get("on_conflict", "id"))
+            if conflict_key not in data:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"upsert conflict column '{conflict_key}' must be present in data",
+                )
             cols = ", ".join(data.keys())
             vals = ", ".join(f":{k}" for k in data.keys())
-            updates = ", ".join(f"{k} = :{k}" for k in data.keys() if k != "id")
+            updates = ", ".join(f"{k} = :{k}" for k in data.keys() if k != conflict_key)
             sql = f"""
                 MERGE INTO {fqn(table_name)} t
-                USING (SELECT :{list(data.keys())[0]} as {list(data.keys())[0]}) s
-                ON t.id = s.{list(data.keys())[0]}
+                USING (SELECT :{conflict_key} as {conflict_key}) s
+                ON t.{conflict_key} = s.{conflict_key}
                 WHEN MATCHED THEN UPDATE SET {updates}
                 WHEN NOT MATCHED THEN INSERT ({cols}) VALUES ({vals})
             """
@@ -1458,17 +1533,18 @@ async def health():
 # ──────────────────────────────────────────────
 
 def get_current_user(request: Request) -> dict:
-    """Extract user identity from Databricks-injected HTTP headers."""
-    username = request.headers.get("x-forwarded-preferred-username", "analyst")
-    return {
-        "id": request.headers.get("x-forwarded-user", "databricks-sso-user"),
-        "username": username,
-        "full_name": username if username != "analyst" else "SOC Analyst",
-        "display_name": username if username != "analyst" else "SOC Analyst",
-        "email": request.headers.get("x-forwarded-email", "analyst@workspace.databricks.com"),
-        "ip": request.headers.get("x-real-ip", ""),
-        "request_id": request.headers.get("x-request-id", ""),
-    }
+    """Resolve the caller's identity and roles from Databricks App SSO headers.
+
+    Delegates to _get_user_from_request so role flags (is_admin/is_analyst) and
+    the fail-closed 'unknown' identity are consistent everywhere, then adds the
+    request-scoped attribution fields used by control handlers.
+    """
+    user = _get_user_from_request(request)
+    user["id"] = user["email"] or user["username"]
+    user["full_name"] = user["display_name"]
+    user["ip"] = request.headers.get("x-real-ip", "")
+    user["request_id"] = request.headers.get("x-request-id", "")
+    return user
 
 
 @app.get("/api/auth/session")
@@ -2444,7 +2520,7 @@ async def toggle_agent(agent_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('agent_configs')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :agent_id
         """, {"agent_id": agent_id})
         return {"agent_id": agent_id, "enabled": enabled, "updated_by": user.get("username")}
@@ -2464,8 +2540,13 @@ async def update_agent_config(agent_id: str, request: Request):
         updates.append("schedule = :schedule")
         params["schedule"] = body["schedule"]
     if "config" in body:
-        entries = ','.join(f"struct('{k}', '{v}')" for k, v in body['config'].items())
-        updates.append(f"config = map_from_entries(array({entries}))")
+        struct_exprs = []
+        for j, (k, v) in enumerate(body["config"].items()):
+            params[f"cfgk{j}"] = str(k)
+            params[f"cfgv{j}"] = str(v)
+            struct_exprs.append(f"struct(:cfgk{j}, :cfgv{j})")
+        if struct_exprs:
+            updates.append(f"config = map_from_entries(array({', '.join(struct_exprs)}))")
 
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -2549,7 +2630,7 @@ async def toggle_correlation_rule(rule_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('correlation_rules')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :rule_id
         """, {"rule_id": rule_id})
         return {"rule_id": rule_id, "enabled": enabled}
@@ -2777,7 +2858,7 @@ async def toggle_threat_feed(feed_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('threat_feeds')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :feed_id
         """, {"feed_id": feed_id})
         return {"feed_id": feed_id, "enabled": enabled}
@@ -2845,7 +2926,7 @@ async def toggle_guardrail(policy_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('llm_guardrail_policies')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :policy_id
         """, {"policy_id": policy_id})
         return {"policy_id": policy_id, "enabled": enabled}
@@ -3048,7 +3129,7 @@ async def toggle_workflow(workflow_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('workflows')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :workflow_id
         """, {"workflow_id": workflow_id})
         return {"workflow_id": workflow_id, "enabled": enabled}
@@ -3126,7 +3207,7 @@ async def toggle_etl_config(config_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('etl_ingestion_configs')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :config_id
         """, {"config_id": config_id})
         return {"config_id": config_id, "enabled": enabled}
@@ -3164,7 +3245,7 @@ async def toggle_cep_pattern(pattern_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('cep_patterns')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :pattern_id
         """, {"pattern_id": pattern_id})
         return {"pattern_id": pattern_id, "enabled": enabled}
@@ -3184,7 +3265,7 @@ async def toggle_negative_rule(rule_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('negative_correlation_rules')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :rule_id
         """, {"rule_id": rule_id})
         return {"rule_id": rule_id, "enabled": enabled}
@@ -3204,7 +3285,7 @@ async def toggle_escalation_rule(rule_id: str, request: Request):
     try:
         execute_write(f"""
             UPDATE {fqn('threat_escalation_rules')}
-            SET enabled = {str(enabled).lower()}, updated_at = current_timestamp()
+            SET enabled = {_sql_bool(enabled)}, updated_at = current_timestamp()
             WHERE id = :rule_id
         """, {"rule_id": rule_id})
         return {"rule_id": rule_id, "enabled": enabled}
@@ -3240,15 +3321,19 @@ GENIE_QUERY_CATALOG = {
 @app.post("/api/genie/query")
 async def genie_query(request: Request):
     """
-    Databricks Genie-powered natural language query interface.
-    Uses Foundation Models for query planning and Genie Spaces for NL2SQL
-    over the full security data lake in Unity Catalog.
+    Natural-language security query assistant.
 
-    Architecture:
+    This is NOT a Databricks Genie Spaces conversation. It uses a Foundation
+    Model serving endpoint to pick keys from a curated, read-only query catalog
+    (GENIE_QUERY_CATALOG); the model never writes SQL. The selected pre-built
+    queries run against Unity Catalog via the SQL Warehouse, and the model then
+    summarizes the results.
+
+    Flow:
     1. User asks a question in natural language
-    2. Foundation Model selects relevant pre-built queries OR generates SQL
-    3. SQL executes against Unity Catalog via SQL Warehouse
-    4. Foundation Model synthesizes human-readable response
+    2. Foundation Model selects relevant pre-built query keys (no free-form SQL)
+    3. The curated queries execute against Unity Catalog via SQL Warehouse
+    4. Foundation Model synthesizes a human-readable response
     """
     body = await request.json()
     question = body.get("question", "")
@@ -3257,7 +3342,7 @@ async def genie_query(request: Request):
     w = WorkspaceClient()
 
     try:
-        # Stage 1: Query Planning (Genie NL2SQL equivalent)
+        # Stage 1: Query planning - model selects catalog keys, not free-form NL2SQL
         planning_prompt = f"""Given this security question, select 2-5 relevant queries to answer it.
 Available queries: {json.dumps(list(GENIE_QUERY_CATALOG.keys()))}
 
@@ -3344,7 +3429,7 @@ Provide a clear, actionable answer. Include specific numbers, IPs, or entities w
             "response": synthesis_response.choices[0].message.content,
             "queries_used": selected_queries,
             "data_sources": list(query_results.keys()),
-            "powered_by": "databricks_genie_foundation_models",
+            "powered_by": "databricks_foundation_model_serving",
         }
 
     except Exception as e:
@@ -3401,7 +3486,7 @@ async def genie_executive_briefing(request: Request):
             "briefing": response.choices[0].message.content,
             "metrics": metrics,
             "generated_at": "now",
-            "powered_by": "databricks_genie_foundation_models",
+            "powered_by": "databricks_foundation_model_serving",
         }
 
     except Exception as e:

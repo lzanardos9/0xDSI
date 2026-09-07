@@ -376,6 +376,8 @@ try:
                 .withColumn("node_count", F.col("src_nodes") + F.col("dst_nodes"))
                 .withColumn("graphlet_id",
                     F.concat(F.lit("gl_"), F.date_format(F.col("window_start"), "yyyyMMddHHmmss")))
+                # Heuristic ESTIMATE of graphlet footprint (nodes/edges * fixed
+                # per-element cost), not a measured memory reading.
                 .withColumn("memory_kb", (F.col("node_count") * 0.5 + F.col("edge_count") * 0.3).cast("int"))
             )
 

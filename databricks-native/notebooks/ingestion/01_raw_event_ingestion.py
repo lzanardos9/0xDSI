@@ -32,6 +32,24 @@ max_offsets = int(dbutils.widgets.get("max_offsets_per_trigger"))
 starting_offsets = dbutils.widgets.get("starting_offsets")
 trigger_interval = dbutils.widgets.get("trigger_interval")
 
+
+def _resolve_trigger(value: str) -> dict:
+    """Map a trigger widget value to a Structured Streaming trigger.
+
+    Serverless compute (environment_version 2) only honors availableNow / once;
+    processingTime is silently ignored there. Accept an explicit "availableNow"
+    or "once" and fall back to processingTime for classic compute.
+    """
+    v = (value or "").strip()
+    if v.lower() in ("availablenow", "available_now"):
+        return {"availableNow": True}
+    if v.lower() == "once":
+        return {"once": True}
+    return {"processingTime": v or "10 seconds"}
+
+
+trigger_opts = _resolve_trigger(trigger_interval)
+
 # COMMAND ----------
 
 from pyspark.sql.functions import *
@@ -500,7 +518,7 @@ query = (
     .writeStream
     .foreachBatch(process_ingestion_batch)
     .option("checkpointLocation", checkpoint_location)
-    .trigger(processingTime=trigger_interval)
+    .trigger(**trigger_opts)
     .queryName(f"0xdsi_ingestion_{source_type}")
     .start()
 )

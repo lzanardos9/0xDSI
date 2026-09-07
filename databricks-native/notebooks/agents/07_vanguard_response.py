@@ -62,7 +62,7 @@ class VANGUARDAgent(InteractiveAgent):
         # Execute response actions
         self.register_tool(UCTool(
             name="execute_response_action",
-            description="Record and queue a containment or remediation action (block IP, disable user account, isolate host, quarantine file, or revoke token) for downstream enforcement connectors to carry out. This tool does NOT perform the action itself on firewalls or identity providers; it creates the audited request. Requires justification and can mark the request auto-approved for high-confidence threats.",
+            description="Record and queue a containment or remediation action (block IP, disable user account, isolate host, quarantine file, or revoke token) for downstream enforcement connectors to carry out. This tool does NOT perform the action itself on firewalls or identity providers; it creates the audited request. Every request is returned as pending_approval and is only carried out after operator approval. Requires justification and may reference the owning case.",
             catalog=cat,
             schema=sch,
             function_name="execute_response_action",
@@ -82,9 +82,9 @@ class VANGUARDAgent(InteractiveAgent):
                         "type": "string",
                         "description": "Justification for the action with reference to threat intel and analysis"
                     },
-                    "auto_approve": {
-                        "type": "boolean",
-                        "description": "If true, execute immediately without human approval (confidence >= 0.90)"
+                    "case_id": {
+                        "type": "string",
+                        "description": "Optional owning case ID this action belongs to"
                     },
                 },
                 "required": ["action_type", "target", "reason"],
@@ -148,14 +148,17 @@ class VANGUARDAgent(InteractiveAgent):
                         "enum": ["critical", "high", "medium", "low"],
                         "description": "Incident severity level"
                     },
-                    "alert_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of related alert IDs"
-                    },
                     "description": {
                         "type": "string",
                         "description": "Detailed incident description with context"
+                    },
+                    "alert_ids": {
+                        "type": "string",
+                        "description": "Comma-separated related alert IDs (e.g. 'a1,a2,a3')"
+                    },
+                    "assignee": {
+                        "type": "string",
+                        "description": "Optional analyst to assign the case to"
                     },
                 },
                 "required": ["title", "severity"],

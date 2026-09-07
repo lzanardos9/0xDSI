@@ -33,7 +33,7 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
               source_type: "kafka"
-              trigger_interval: "10 seconds"
+              trigger_interval: "availableNow"
 
     enrichment_pipeline:
       name: "[0xDSI] Agent 02 - Enrichment Pipeline (Streaming)"

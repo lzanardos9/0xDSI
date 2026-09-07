@@ -563,13 +563,28 @@ def write_sequence_detections(batch_df, batch_id):
 
 # COMMAND ----------
 
+def _resolve_trigger(value: str) -> dict:
+    """Serverless compute only honors availableNow / once; processingTime is
+    ignored there. Default to availableNow so the continuous job drains each
+    micro-batch and restarts."""
+    v = (value or "").strip()
+    if v.lower() in ("availablenow", "available_now"):
+        return {"availableNow": True}
+    if v.lower() == "once":
+        return {"once": True}
+    return {"processingTime": v or "30 seconds"}
+
+
+dbutils.widgets.text("trigger_interval", "availableNow", "Streaming trigger")
+_trigger_opts = _resolve_trigger(dbutils.widgets.get("trigger_interval"))
+
 try:
     threshold_query = (
         threshold_correlations.writeStream
         .foreachBatch(write_correlation_matches)
         .option("checkpointLocation", f"{checkpoint_base}/threshold")
         .queryName("correlation_threshold_ks")
-        .trigger(processingTime="30 seconds")
+        .trigger(**_trigger_opts)
         .start()
     )
 
@@ -578,7 +593,7 @@ try:
         .foreachBatch(write_sequence_detections)
         .option("checkpointLocation", f"{checkpoint_base}/sequence")
         .queryName("correlation_sequence_attack")
-        .trigger(processingTime="60 seconds")
+        .trigger(**_trigger_opts)
         .start()
     )
 

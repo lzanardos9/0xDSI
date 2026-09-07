@@ -155,9 +155,11 @@ class MCStreamingProcessor:
             .groupBy("user_id")
             .agg(
                 F.count("*").alias("event_count"),
-                F.collect_list(
-                    F.struct("event_type", "action", "outcome", "severity",
-                             "source_ip", "destination_ip", "event_timestamp")
+                F.sort_array(
+                    F.collect_list(
+                        F.struct("event_timestamp", "event_type", "action", "outcome",
+                                 "severity", "source_ip", "destination_ip")
+                    )
                 ).alias("events"),
                 F.max("event_timestamp").alias("latest_event"),
             )

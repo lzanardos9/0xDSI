@@ -846,7 +846,7 @@ Pre-built threat models for regulated industries:
 | 23 | Connector Adapter | Batch | Data source normalization (OCSF) |
 | 24 | Threat Radar | Batch | Emerging threat monitoring |
 | 25 | ALHF Learning | Batch | Analyst feedback loop (reinforcement) |
-| 26 | Realtime Graph CEP | Streaming | Sub-second graph-based detection |
+| 26 | Realtime Graph CEP | Streaming | Near-real-time (micro-batch) graph-based detection |
 | 27 | Vector Scoring | Batch | Entity risk scoring via embeddings |
 | 28 | AI Correlation | Batch | LLM-assisted rule generation |
 | 29 | Connector Version | Batch | DNA health & version tracking |
@@ -894,7 +894,7 @@ Pre-built threat models for regulated industries:
 
 ## Memory Cache: RNN Architecture (11 modules)
 
-Neural memory caching system for sub-second threat detection using recurrent neural networks:
+Neural memory caching system for near-real-time (micro-batch) threat detection using recurrent neural networks:
 
 ```
   ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -940,6 +940,12 @@ Neural memory caching system for sub-second threat detection using recurrent neu
 ---
 
 ## Performance Characteristics
+
+> Note: The latency and throughput figures below are demo/target values from a
+> synthetic load generator and representative runs, not measured production SLAs.
+> Streaming stages run as serverless micro-batches (`availableNow` triggers), so
+> end-to-end detection latency is bounded by the batch/restart cadence (tens of
+> seconds), and windowed correlation only emits once its window closes.
 
 ```
   ╔════════════════════════════════════════════════════════════════════════════════════╗
@@ -1269,7 +1275,7 @@ databricks bundle deploy --target production
 |----------|--------|-----------|
 | Compute | Databricks-native only | Zero egress, data sovereignty, single-vendor SLA |
 | LLM | Foundation Model APIs | No external API calls, governed by workspace policies |
-| Streaming | Structured Streaming + Kafka | Sub-second detection with Delta persistence |
+| Streaming | Structured Streaming + Kafka | Near-real-time (micro-batch) detection with Delta persistence |
 | Storage | Delta Lake (medallion) | ACID transactions, time travel, Z-Order optimization |
 | Detection | Multi-model ensemble | No single-point-of-failure in detection logic |
 | Response | Human-in-the-loop | Safety for critical actions; autonomous for low-risk |
