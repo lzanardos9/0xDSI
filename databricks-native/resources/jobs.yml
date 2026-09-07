@@ -1412,6 +1412,36 @@ resources:
               vector_search_endpoint: "0xdsi-vector-search"
               embedding_dimension: "128"
 
+    cet_native_bridge:
+      name: "[0xDSI] Analytics - Native CET Bridge (optional, disabled by default)"
+      schedule:
+        quartz_cron_expression: "0 */30 * ? * *"
+        timezone_id: "UTC"
+        pause_status: PAUSED
+      max_concurrent_runs: 1
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - scipy==1.14.1
+              - scikit-learn==1.5.2
+              - networkx==3.4.2
+      tasks:
+        - task_key: run_cet_bridge
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/analytics/07_cet_native_bridge.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              engine_mode: "auto"
+              cet_install_spec: "git+https://github.com/lzanardo/0xDSI-CET.git"
+              window_seconds: "300"
+              max_hops: "6"
+              min_score: "0.3"
+              source_table: "silver_events"
+
     notification_dispatcher:
       name: "[0xDSI] Response 03 - Notification Dispatcher"
       schedule:
