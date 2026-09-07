@@ -469,6 +469,10 @@ def _parse_filters(filters: list[dict]) -> tuple[str, dict]:
         elif op == "contains":
             clauses.append(f"array_contains({col}, :{pkey})")
             params[pkey] = val
+        else:
+            # Fail visibly rather than silently dropping the filter, which would
+            # widen the result set and could leak rows the caller meant to exclude.
+            raise HTTPException(status_code=400, detail=f"Unsupported filter operator: '{op}'")
 
     where = " AND ".join(clauses) if clauses else ""
     return where, params

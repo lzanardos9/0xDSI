@@ -38,14 +38,24 @@ class SOCConfig:
         """Return fully qualified three-part table name."""
         return f"`{self.catalog}`.`{self.schema}`.`{table_name}`"
 
+    def get_checkpoint_path(self, stream_name: str) -> str:
+        """Return checkpoint location for a named streaming query."""
+        return f"{self.checkpoint_base}/{stream_name}"
+
 
 def _detect_environment(catalog: str) -> str:
-    """Infer environment from catalog naming convention."""
-    if "prod" in catalog.lower():
-        return "production"
-    if "staging" in catalog.lower() or "stg" in catalog.lower():
+    """Infer environment from catalog naming convention.
+
+    Deployment catalogs are `soc_platform` (production), `soc_platform_staging`
+    (staging) and `soc_platform_dev` (dev). The base production catalog carries
+    no suffix, so anything without an explicit dev/staging marker is production.
+    """
+    c = catalog.lower()
+    if "staging" in c or "stg" in c:
         return "staging"
-    return "dev"
+    if "dev" in c or "test" in c or "sandbox" in c:
+        return "dev"
+    return "production"
 
 
 def _resolve_checkpoint_base(environment: str, catalog: str, schema: str) -> str:

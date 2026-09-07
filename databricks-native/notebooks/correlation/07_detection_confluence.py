@@ -307,7 +307,7 @@ def build_lens_queries(cutoff_str):
                    COALESCE(mitre_tactic, 'unknown') as kill_chain_stage
             FROM {cfg.get_table_path("slm_classifications")}
             WHERE classified_at >= '{cutoff_str}'
-              AND classification != 'benign'
+              AND UPPER(classification) != 'BENIGN'
         """,
         "vector_hunting": f"""
             SELECT id as signal_id, 'vector_hunting' as lens,
