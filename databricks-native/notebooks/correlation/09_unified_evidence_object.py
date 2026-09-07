@@ -407,7 +407,15 @@ with mon.time("build_ueos"):
     # Approximation using avg + diversity bonus
     ueos = (
         ueo_groups
-        .withColumn("ueo_id", expr("uuid()"))
+        # Canonical, deterministic identity: the same (entity, time-window) always
+        # resolves to the same ueo_id, so replays are traceable and idempotent
+        # instead of minting a fresh random UUID on every run.
+        .withColumn("ueo_id", sha2(concat_ws(
+            "||",
+            col("entity_id"),
+            col("window_start").cast("string"),
+            col("window_end").cast("string"),
+        ), 256))
         .withColumn("fused_risk_score",
             # Base: average of decayed scores
             col("avg_signal_score") +
@@ -462,7 +470,17 @@ with mon.time("build_ueos"):
                 "inner"
             )
             .select(
-                expr("uuid()").alias("signal_id"),
+                # Deterministic provenance id tied to the parent UEO and the
+                # originating signal, so the same contribution is never recorded
+                # under two different ids across replays.
+                sha2(concat_ws(
+                    "||",
+                    col("ueo_id"),
+                    coalesce(col("source_alert_id").cast("string"), lit("")),
+                    col("signal_class"),
+                    col("signal_source"),
+                    col("signal_timestamp").cast("string"),
+                ), 256).alias("signal_id"),
                 col("ueo_id"),
                 col("signal_class"),
                 col("signal_source"),

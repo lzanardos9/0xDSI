@@ -685,8 +685,18 @@ def run_fuse_aware_pipeline():
             "fusion_window_seconds": fusion_window,
         })
 
-    # Mark fuse records as consumed
+    # Do NOT mark fuse records consumed here. Acknowledging input before the
+    # verdicts are durably written would lose evidence if persistence fails.
+    # Return the ids so the caller can mark them consumed only after commit.
     fuse_ids = [r.fuse_id for r in fuse_rows]
+    return verdicts, fuse_ids
+
+
+def mark_fuse_consumed(fuse_ids):
+    """Mark fuse records consumed. Call ONLY after verdicts are durably persisted."""
+    if not fuse_ids:
+        return
+    fuse_path = cfg.get_table_path("fuse_results")
     id_list = "','".join(fuse_ids)
     spark.sql(f"""
         UPDATE {fuse_path}
@@ -694,17 +704,20 @@ def run_fuse_aware_pipeline():
         WHERE fuse_id IN ('{id_list}')
     """)
 
-    return verdicts
-
 
 # Try Fuse-aware mode first; fall back to legacy fusion
-fuse_verdicts = run_fuse_aware_pipeline()
+fuse_outcome = run_fuse_aware_pipeline()
 
-if fuse_verdicts is not None and len(fuse_verdicts) > 0:
+if fuse_outcome is not None and len(fuse_outcome[0]) > 0:
     # Fuse-aware path
+    fuse_verdicts, fuse_ids = fuse_outcome
+    # Persist verdicts durably BEFORE acknowledging the fuse input. Only once the
+    # verdicts (and any escalations/audit record) are committed do we mark the
+    # source fuse records consumed, so a failure leaves them for the next run.
     persist_verdicts(fuse_verdicts, [])
     escalated_count = escalate_verdicts(fuse_verdicts)
     record_arbiter_run({}, len(fuse_verdicts), fuse_verdicts)
+    mark_fuse_consumed(fuse_ids)
 
     result = {
         "notebook": "07_detection_confluence",
