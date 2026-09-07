@@ -131,15 +131,23 @@ def is_ks_significant(source_ip: str, event_type: str, observed_count: int, wind
     if baseline is None or len(baseline) < 3:
         return observed_count >= 10, 0.5
 
-    hourly_rate = baseline / 24.0
-    window_rate = hourly_rate * (window_min / 60.0)
+    # Historical per-window expected counts from the baseline samples.
+    window_rates = np.asarray(baseline, dtype=float) / 24.0 * (window_min / 60.0)
+    mu = float(np.mean(window_rates))
 
-    percentile = scipy_stats.percentileofscore(window_rate, observed_count)
-    if percentile >= 99:
-        p_value = 2 * (1 - percentile / 100)
-        return p_value < ks_alpha, float(1 - max(p_value, 1e-10))
+    if mu <= 0.0:
+        # No historical activity for this key: cannot compute a calibrated
+        # significance, so fall back to a simple volume gate with neutral
+        # confidence rather than manufacturing a p-value.
+        return observed_count >= 10, 0.5
 
-    return False, 0.0
+    # Upper-tail Poisson probability of observing at least `observed_count`
+    # events under the baseline rate. Unlike a percentile rank, this is a valid
+    # significance for a count process: a small exceedance of the sample maximum
+    # no longer collapses to near-certainty (e.g. 101 vs 10,000 against a ~100
+    # baseline yield very different p-values).
+    p_value = float(scipy_stats.poisson.sf(observed_count - 1, mu))
+    return p_value < ks_alpha, float(1.0 - p_value)
 
 
 def adaptive_severity(source_ip: str, event_type: str, observed_count: int, window_min: int = 5):
@@ -279,6 +287,44 @@ if not ATTACK_SEQUENCE_TYPES:
 # Minimum stages from sequence rules
 min_stages = min((r["threshold"] for r in rule_sequences.values()), default=3)
 
+# Ordered stage-sequences defined by the rules. A sequence rule is only meaningful
+# when its stages occur in the declared ORDER, so we match ordered subsequences
+# rather than counting distinct event types.
+RULE_STAGE_SEQUENCES = [
+    list(r["conditions"])
+    for r in rule_sequences.values()
+    if r["conditions"] and len(r["conditions"]) >= 2
+]
+if not RULE_STAGE_SEQUENCES:
+    RULE_STAGE_SEQUENCES = [[
+        "authentication_failure", "privilege_escalation",
+        "lateral_movement", "data_exfiltration",
+    ]]
+
+_rule_seqs_bc = spark.sparkContext.broadcast(RULE_STAGE_SEQUENCES)
+
+
+def _longest_ordered_match(ordered_types):
+    """Return the longest rule stage-sequence that appears, in time order, as a
+    subsequence of this entity/window's event types. Enforces order: A->B->C
+    matches, C->B->A does not."""
+    if not ordered_types:
+        return []
+    best = []
+    for seq in _rule_seqs_bc.value:
+        i = 0
+        matched = []
+        for et in ordered_types:
+            if i < len(seq) and et == seq[i]:
+                matched.append(et)
+                i += 1
+        if i == len(seq) and len(matched) > len(best):
+            best = matched
+    return best
+
+
+longest_ordered_match_udf = udf(_longest_ordered_match, ArrayType(StringType()))
+
 sequence_events = (
     events_stream
     .filter(col("event_type").isin(ATTACK_SEQUENCE_TYPES))
@@ -287,11 +333,16 @@ sequence_events = (
         col("source_ip")
     )
     .agg(
-        collect_set("event_type").alias("attack_stages"),
+        # Preserve event time so we can reconstruct the true order; collect_list
+        # alone is unordered, so we sort by the event timestamp.
+        sort_array(collect_list(struct(col("timestamp"), col("event_type")))).alias("_ordered"),
         count("*").alias("event_count"),
         slice(collect_list("id"), 1, 100).alias("event_ids")
     )
+    .withColumn("_ordered_types", expr("transform(_ordered, x -> x.event_type)"))
+    .withColumn("attack_stages", longest_ordered_match_udf(col("_ordered_types")))
     .filter(size(col("attack_stages")) >= min_stages)
+    .drop("_ordered", "_ordered_types")
 )
 
 # COMMAND ----------

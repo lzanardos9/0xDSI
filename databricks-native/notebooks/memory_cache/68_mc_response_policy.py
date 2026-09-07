@@ -190,8 +190,10 @@ class PPOTrainer:
     """
     Proximal Policy Optimization trainer for MC-Response Policy.
 
-    Trains from analyst feedback and observed incident outcomes.
-    Incorporates high-avoidance safety constraint.
+    Trains against a simulated reward function (_simulate_reward), NOT real
+    analyst feedback or observed incident outcomes. Wire a reward derived from
+    logged analyst decisions and incident results before relying on it in
+    production. Incorporates high-avoidance safety constraint.
     """
 
     def __init__(
@@ -263,7 +265,7 @@ class PPOTrainer:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Training from Historical Feedback
+# MAGIC ## Training against a Simulated Reward (NOT real historical feedback)
 
 # COMMAND ----------
 
@@ -274,7 +276,10 @@ def train_response_policy(
     episode_length: int = 20,
 ):
     """
-    Train MC-Response policy from historical incident data and analyst feedback.
+    Train MC-Response policy against a simulated reward function. This does NOT
+    learn from historical incident data or analyst feedback yet — _simulate_reward
+    supplies the signal. Replace it with a reward computed from logged outcomes
+    before production use.
 
     Three training phases:
         1. Exploration (episodes 1-100): high temperature, discover action space
