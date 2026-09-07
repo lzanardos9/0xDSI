@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { User, Activity, MapPin, Monitor, AlertTriangle, CheckCircle, Clock, Shield, Eye, XCircle, Network, Brain, LineChart, UserPlus } from 'lucide-react';
+import { User, Activity, MapPin, Monitor, AlertTriangle, CheckCircle, Clock, Shield, Eye, XCircle, Network, Brain, LineChart, UserPlus, FlaskConical } from 'lucide-react';
 import UserEventNetwork from './UserEventNetwork';
 import MLModelExplainer from './MLModelExplainer';
 import { ML_MODELS } from '../lib/mlModelData';
@@ -9,6 +9,7 @@ import { LLMRiskUserDetail } from './user-behavior/LLMRiskUserDetail';
 import { PsychologicalUserDetail } from './user-behavior/PsychologicalUserDetail';
 import { CrossDomainStrip } from './user-behavior/CrossDomainStrip';
 import EntityOnboarding from './user-behavior/EntityOnboarding';
+import { CommunicationAssessment } from './user-behavior/CommunicationAssessment';
 
 interface UnifiedRow {
   behavior_profile_id: string;
@@ -65,7 +66,7 @@ interface Correlation {
   detected_at: string;
 }
 
-type TabId = 'timeline' | 'network' | 'llm' | 'psychology' | 'risk' | 'onboarding';
+type TabId = 'timeline' | 'network' | 'llm' | 'psychology' | 'assessment' | 'risk' | 'onboarding';
 
 const UserBehavior = () => {
   const [users, setUsers] = useState<UnifiedRow[]>([]);
@@ -205,6 +206,7 @@ const UserBehavior = () => {
     { id: 'network', label: 'Event Network', icon: Network },
     { id: 'llm', label: 'LLM Risk', icon: Brain, disabled: !selectedUser?.has_llm_data },
     { id: 'psychology', label: 'Psychological', icon: Eye, disabled: !selectedUser?.has_psych_data },
+    { id: 'assessment', label: 'Assessment Lab', icon: FlaskConical },
     { id: 'risk', label: 'Risk Analysis', icon: LineChart },
     { id: 'onboarding', label: 'Entity Onboarding', icon: UserPlus },
   ];
@@ -440,6 +442,10 @@ const UserBehavior = () => {
                       </div>
                     </div>
                   </div>
+                )}
+
+                {activeTab === 'assessment' && (
+                  <CommunicationAssessment defaultSubject={selectedUser.full_name} />
                 )}
 
                 {activeTab === 'onboarding' && (
