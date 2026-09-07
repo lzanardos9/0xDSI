@@ -15,6 +15,7 @@ class LakehouseQueryBuilder {
   private _single = false;
   private _count = false;
   private _headOnly = false;
+  private _orExpr: string | null = null;
 
   constructor(table: string) {
     this._table = table;
@@ -43,7 +44,7 @@ class LakehouseQueryBuilder {
     return this;
   }
   contains(column: string, value: unknown) { this._filters.push({ column, op: 'contains', value }); return this; }
-  or(_expr: string) { return this; }
+  or(expr: string) { this._orExpr = expr; return this; }
 
   order(column: string, opts?: { ascending?: boolean }) {
     this._orderCol = column;
@@ -79,6 +80,9 @@ class LakehouseQueryBuilder {
       if (this._orderCol) {
         body.order = this._orderCol;
         body.ascending = this._ascending;
+      }
+      if (this._orExpr) {
+        body.or = this._orExpr;
       }
 
       const resp = await fetch(`/api/query/${this._table}`, {

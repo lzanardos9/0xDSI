@@ -474,6 +474,40 @@ def _parse_filters(filters: list[dict]) -> tuple[str, dict]:
     return where, params
 
 
+_OR_COMPARATORS = {
+    "eq": "=", "neq": "!=", "gt": ">", "gte": ">=", "lt": "<", "lte": "<=",
+}
+
+
+def _parse_or(expr: str) -> tuple[str, dict]:
+    """Parse a PostgREST-style or() expression ("col.op.value,col2.op.value")
+    into a parenthesized OR clause with bound parameters. Values are always
+    bound, and column names are validated, so this is injection-safe."""
+    clauses = []
+    params = {}
+    for i, term in enumerate(t for t in expr.split(",") if t.strip()):
+        parts = term.split(".", 2)
+        if len(parts) != 3:
+            raise HTTPException(status_code=400, detail=f"Invalid or() term: '{term}'")
+        col_raw, op, val = parts
+        col = _validate_identifier(col_raw.strip())
+        pkey = f"or{i}"
+        if op == "ilike":
+            clauses.append(f"LOWER({col}) LIKE LOWER(:{pkey})")
+            params[pkey] = val
+        elif op == "like":
+            clauses.append(f"{col} LIKE :{pkey}")
+            params[pkey] = val
+        elif op in _OR_COMPARATORS:
+            clauses.append(f"{col} {_OR_COMPARATORS[op]} :{pkey}")
+            params[pkey] = val
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported or() operator: '{op}'")
+    if not clauses:
+        return "", {}
+    return "(" + " OR ".join(clauses) + ")", params
+
+
 @app.post("/api/query/{table_name}")
 async def query_table(table_name: str, request: Request):
     """
@@ -498,6 +532,13 @@ async def query_table(table_name: str, request: Request):
         order = _validate_identifier(order)
 
     where_clause, params = _parse_filters(filters)
+
+    or_expr = body.get("or")
+    if or_expr:
+        or_clause, or_params = _parse_or(or_expr)
+        if or_clause:
+            params.update(or_params)
+            where_clause = f"({where_clause}) AND {or_clause}" if where_clause else or_clause
 
     if count_only:
         sql = f"SELECT COUNT(*) as count FROM {fqn(table_name)}"

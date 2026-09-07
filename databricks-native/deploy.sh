@@ -1050,7 +1050,7 @@ run_sql_expect_ok "Function: create_case" "CREATE OR REPLACE FUNCTION ${CATALOG}
   assignee STRING DEFAULT '' COMMENT 'Assignee'
 )
 RETURNS STRING
-COMMENT 'Create a new security incident case'
+COMMENT 'Allocate a case reference ID only. This function does NOT persist a case (a SQL UDF cannot write). The case must be recorded through the governed case-creation control plane; the returned ID is a proposed reference until then.'
 RETURN SELECT CONCAT('CASE-', DATE_FORMAT(current_timestamp(), 'yyyyMMdd-HHmmss'))"
 
 run_sql_expect_ok "Function: execute_response_action" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.execute_response_action(
@@ -1067,14 +1067,14 @@ RETURNS TABLE(
   executed_at TIMESTAMP,
   requires_approval BOOLEAN
 )
-COMMENT 'Execute an automated response action'
+COMMENT 'Register a response-action REQUEST. This function does NOT perform the action (a SQL UDF cannot effect changes on hosts or accounts). Every request is returned as pending_approval with no execution timestamp; the action is only carried out after operator approval through the governed control plane.'
 RETURN SELECT
   CONCAT('ACT-', DATE_FORMAT(current_timestamp(), 'yyyyMMddHHmmss')) AS action_id,
   execute_response_action.action_type AS action_type,
   execute_response_action.target AS target,
-  CASE WHEN execute_response_action.action_type IN ('isolate_host', 'disable_account') THEN 'pending_approval' ELSE 'executed' END AS status,
-  current_timestamp() AS executed_at,
-  execute_response_action.action_type IN ('isolate_host', 'disable_account') AS requires_approval"
+  'pending_approval' AS status,
+  CAST(NULL AS TIMESTAMP) AS executed_at,
+  TRUE AS requires_approval"
 printf "\n"
 
 # ══════════════════════════════════════════════════════

@@ -1000,7 +1000,7 @@ class ResponseAgent(BaseAgent):
             F.col("action").alias("action_type"),
             F.col("target"),
             F.col("target_type"),
-            F.when(F.col("needs_approval"), F.lit("pending_approval")).otherwise(F.lit("executed")).alias("status"),
+            F.when(F.col("needs_approval"), F.lit("pending_approval")).otherwise(F.lit("queued")).alias("status"),
             F.to_json(F.struct(
                 F.lit(True).alias("automated"),
                 F.col("enriched_risk_score").alias("risk_score"),
@@ -1009,7 +1009,7 @@ class ResponseAgent(BaseAgent):
             )).alias("details"),
             F.lit("response_agent").alias("executed_by"),
             F.col("needs_approval").alias("requires_approval"),
-            F.when(~F.col("needs_approval"), F.current_timestamp()).alias("executed_at"),
+            F.lit(None).cast("timestamp").alias("executed_at"),
             F.current_timestamp().alias("created_at"),
         )
         logs.write.format("delta").mode("append").saveAsTable(f"{SCHEMA}.response_actions")
@@ -1018,9 +1018,9 @@ class ResponseAgent(BaseAgent):
         update_df = actions.select(
             "id",
             F.to_json(F.struct("action", "target", "target_type", "needs_approval")).alias("response_actions"),
-            F.lit(True).alias("response_completed"),
+            F.lit(False).alias("response_completed"),
             F.current_timestamp().alias("responded_at"),
-            F.when(F.col("needs_approval"), F.lit("pending_approval")).otherwise(F.lit("executed")).alias("response_status"),
+            F.when(F.col("needs_approval"), F.lit("pending_approval")).otherwise(F.lit("queued")).alias("response_status"),
             F.lit(True).alias("rollback_available"),
             F.current_timestamp().alias("updated_at"),
         )
