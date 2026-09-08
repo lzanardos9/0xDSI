@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 493,
-  "total_bytes": 10432559,
+  "total_files": 495,
+  "total_bytes": 10451544,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -15,9 +15,9 @@
       "frontend_entry": 1,
       "frontend_module": 298,
       "other": 1,
-      "shared_library": 13,
+      "shared_library": 14,
       "stylesheet": 1,
-      "test": 9,
+      "test": 10,
       "test_script": 1,
       "tooling": 4
     },
@@ -29,8 +29,8 @@
       "experimental": 1,
       "production": 3,
       "setup": 5,
-      "shared_library": 12,
-      "test": 10,
+      "shared_library": 13,
+      "test": 11,
       "unreviewed": 423
     },
     "by_runtime": {
@@ -39,8 +39,8 @@
       "databricks-bundle": 5,
       "databricks-spark": 131,
       "n/a": 17,
-      "python": 9,
-      "python (databricks runtime)": 13,
+      "python": 10,
+      "python (databricks runtime)": 14,
       "python-fastapi": 1,
       "shell": 1
     },
@@ -3001,8 +3001,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "12f36ed59b1bc31ff3df2e761df35fedd1a266ced1cafdcad98fce8f0029c64c",
-      "bytes": 9214
+      "sha256": "b2fbc616ecc9c1e2afbb960ad085173e0e751594036fa22712a866499f995a78",
+      "bytes": 10101
     },
     {
       "path": "docs/engineering/capability-registry.json",
@@ -3010,8 +3010,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "fcaeb96d0da80a5c936914ddc231cc7632a19ae2502bcbf3f6d99f58c0474029",
-      "bytes": 8390
+      "sha256": "668663af8b180220500fafe8241c2d44812ec4fb3c29fe561a5d6c86e4afc88b",
+      "bytes": 9476
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -3077,6 +3077,15 @@
       "review": "auto",
       "sha256": "0d000ca8c866f6e57884998be201d8c84ecf3ac210e3057cb14a37318d4a8b0a",
       "bytes": 10197
+    },
+    {
+      "path": "notebooks/_shared/finding_revision.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "fea52016d5e571c89422780715156c39d9b564fe702d3842f746d1ad46202a63",
+      "bytes": 6777
     },
     {
       "path": "notebooks/_shared/ingest_accounting.py",
@@ -4184,8 +4193,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "a4b7e2fde183347195f2347e4dfbce0a3073e26a17e2419c66ddd0ab5e1cde09",
-      "bytes": 7524
+      "sha256": "72df7b0bfb1c93e7fd83970537393a8205634e7b3cf461e52aa5faf76ec8ea4e",
+      "bytes": 10739
     },
     {
       "path": "notebooks/ops/05_delta_replay_engine.py",
@@ -4283,8 +4292,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "setup",
       "review": "auto",
-      "sha256": "5c67950a9fbcf7039b7b42d4943c23ca266b2fd1f20af26466dba5bb35eb8453",
-      "bytes": 87211
+      "sha256": "48f83b38830a071d2bc58cc7ff2f9de53f1ad896c33d242faf8df4c9751b6704",
+      "bytes": 88004
     },
     {
       "path": "notebooks/setup/02_seed_demo_data.py",
@@ -4373,8 +4382,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "ccab5c7f3594b0151d6e19246c1c1cf448074a67e22044db1955e75e632d2fc6",
-      "bytes": 1846
+      "sha256": "4fef8dd254bedb05dc3d044bc8c8421393a9ad124b1f58a834c6d5b6ae4f907d",
+      "bytes": 2012
     },
     {
       "path": "tests/contract/test_phase0_inventory.py",
@@ -4402,6 +4411,15 @@
       "review": "auto",
       "sha256": "b6d5a58fc02b18173272badf82490dba512c3b8fb042d4de4110b20129252ee8",
       "bytes": 5840
+    },
+    {
+      "path": "tests/property/test_finding_revision.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "b49f5d6850a02cc32497e627c9ce95eae25bdde635d988086e11eed720247797",
+      "bytes": 5617
     },
     {
       "path": "tests/property/test_ingest_accounting.py",
@@ -4492,8 +4510,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "f5079d60f09cb0e6b6680a747a954ae867281fb61b224b5adc8d260c698e4e9e",
-      "bytes": 7544
+      "sha256": "5816addb8a0d6c385676a0a43a065a303d69072c9163a0ba6e1595eb18e57557",
+      "bytes": 7988
     }
   ]
 }

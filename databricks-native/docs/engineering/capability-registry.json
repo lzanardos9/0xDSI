@@ -184,6 +184,25 @@
       "tests": [],
       "blockers": [],
       "notes": "Backed by a real language-model query path (relabeled honestly from an earlier overstated 'native' claim)."
+    },
+    {
+      "id": "finding-lifecycle",
+      "title": "Finding-revision lifecycle",
+      "claim": "A finding's state changes are recorded as an immutable, validated revision chain.",
+      "state": "validated",
+      "evidence": [
+        "notebooks/_shared/finding_revision.py",
+        "notebooks/setup/01_create_catalog_schema.py",
+        "notebooks/ops/04_alert_deduplication.py"
+      ],
+      "tests": [
+        "tests/property/test_finding_revision.py"
+      ],
+      "blockers": [
+        "Only the alert-dedup job emits revisions so far; primary detection writers do not yet open findings as PROVISIONAL revisions",
+        "Append-only durability across restarts needs a live Delta workspace to verify"
+      ],
+      "notes": "Immutable PROVISIONAL->CONFIRMED/WITHDRAWN/EXPIRED/SUPERSEDED state machine with a fixed transition table (terminal states are dead ends, re-confirm rejected); every revision is append-only and stamped with the five execution-identity fields (REV2-05). Logic proven offline (13 property cases). Persisted to the finding_revisions ledger."
     }
   ]
 }
