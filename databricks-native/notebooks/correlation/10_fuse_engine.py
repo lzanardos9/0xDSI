@@ -54,6 +54,14 @@ import json
 import math
 import uuid
 
+# Calibration separates anomaly strength (significance) from P(malicious) and
+# provides the simple baseline the fusion is checked against. _shared is already
+# on sys.path via the bootstrap cell above.
+from calibration import (
+    calibrate_probability, apply_freshness, baseline_probability,
+    class_base_rate, class_sharpness, DEFAULT_BASE_RATE,
+)
+
 # Stable namespace so fuse_id / disagreement_id are deterministic across runs
 # and across processes (Python's built-in hash() is salted per-process and must
 # never be used for identifiers that other tables reference).
@@ -92,6 +100,8 @@ CREATE TABLE IF NOT EXISTS {fuse_table} (
     -- Combined scores
     ds_combined_score DOUBLE NOT NULL,
     independence_weighted_score DOUBLE NOT NULL,
+    -- Independent naive-Bayes baseline for sanity-checking the D-S fusion
+    baseline_score DOUBLE,
     -- Signal analysis
     total_signals INT NOT NULL,
     independent_signals INT NOT NULL,
@@ -357,12 +367,27 @@ with mon.time("dempster_shafer_fusion"):
         # Compute independence weights
         weighted_signals = compute_independence_weights(ueo_signals)
 
-        # Apply time decay
-        now_ts = datetime.utcnow()
+        # Calibrate each raw detector score to a probability of maliciousness,
+        # then age that probability toward the class prior as evidence goes
+        # stale. REV2-02/06: raw_score is anomaly strength / significance, NOT a
+        # posterior — feeding it straight in treats "unusual" as "malicious".
+        # REV2-16 freshness: stale evidence reverts to the base rate (we learn
+        # nothing new), never to 0 (which would assert "benign").
         for sig in weighted_signals:
+            signal_class = sig.get("signal_class", "unknown")
+            base_rate = class_base_rate(signal_class)
+            sharpness = class_sharpness(signal_class)
+            raw = max(0.0, min(1.0, sig.get("raw_score", 0) or 0.0))
+
+            calibrated = calibrate_probability(raw, base_rate, sharpness)
+
             age = sig.get("decay_age_minutes", 0) or 0
             decay = math.pow(0.5, age / decay_half_life) if decay_half_life > 0 else 1.0
-            sig["decayed_score"] = sig.get("raw_score", 0) * decay
+
+            sig["calibrated_score"] = calibrated
+            sig["signal_base_rate"] = base_rate
+            # decayed_score is the belief mass consumed by Dempster-Shafer below.
+            sig["decayed_score"] = apply_freshness(calibrated, base_rate, decay)
 
         # Filter by minimum independence
         effective_signals = [s for s in weighted_signals if s["independence_weight"] >= min_independence]
@@ -381,6 +406,18 @@ with mon.time("dempster_shafer_fusion"):
             s["decayed_score"] * s["independence_weight"]
             for s in effective_signals
         ) / max(sum(s["independence_weight"] for s in effective_signals), 0.01)
+
+        # REV2-28: a simple, defensible baseline. Pool only ONE calibrated
+        # probability per independence group (the strongest) so correlated
+        # signals are not double-counted, then combine via naive-Bayes log-odds.
+        strongest_per_group = {}
+        for s in effective_signals:
+            g = s.get("independence_group", "unknown")
+            if g not in strongest_per_group or s["decayed_score"] > strongest_per_group[g]:
+                strongest_per_group[g] = s["decayed_score"]
+        baseline_score = baseline_probability(
+            list(strongest_per_group.values()), DEFAULT_BASE_RATE
+        )
 
         # Causal chain: temporal ordering of signals
         sorted_sigs = sorted(effective_signals, key=lambda s: str(s.get("signal_timestamp", "")))
@@ -476,6 +513,7 @@ with mon.time("dempster_shafer_fusion"):
             "conflict_mass": conflict,
             "ds_combined_score": belief_threat,
             "independence_weighted_score": ind_weighted,
+            "baseline_score": baseline_score,
             "total_signals": len(effective_signals),
             "independent_signals": independent_count,
             "independence_groups": independent_count,
@@ -517,6 +555,7 @@ FUSE_SCHEMA = StructType([
     StructField("conflict_mass", DoubleType(), False),
     StructField("ds_combined_score", DoubleType(), False),
     StructField("independence_weighted_score", DoubleType(), False),
+    StructField("baseline_score", DoubleType(), True),
     StructField("total_signals", IntegerType(), False),
     StructField("independent_signals", IntegerType(), False),
     StructField("independence_groups", IntegerType(), False),

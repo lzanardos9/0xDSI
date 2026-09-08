@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 489,
-  "total_bytes": 10404628,
+  "total_files": 491,
+  "total_bytes": 10421171,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -15,9 +15,9 @@
       "frontend_entry": 1,
       "frontend_module": 298,
       "other": 1,
-      "shared_library": 11,
+      "shared_library": 12,
       "stylesheet": 1,
-      "test": 7,
+      "test": 8,
       "test_script": 1,
       "tooling": 4
     },
@@ -29,8 +29,8 @@
       "experimental": 1,
       "production": 3,
       "setup": 5,
-      "shared_library": 10,
-      "test": 8,
+      "shared_library": 11,
+      "test": 9,
       "unreviewed": 423
     },
     "by_runtime": {
@@ -39,8 +39,8 @@
       "databricks-bundle": 5,
       "databricks-spark": 131,
       "n/a": 17,
-      "python": 7,
-      "python (databricks runtime)": 11,
+      "python": 8,
+      "python (databricks runtime)": 12,
       "python-fastapi": 1,
       "shell": 1
     },
@@ -3001,8 +3001,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "23b73f84073f0212713ecc2084ee2732b72f37f1bfdfa287dadfa28b3d34122e",
-      "bytes": 7215
+      "sha256": "c6e9659412541f963e5f7a93f2837db380948790d713462bcdb4fdccc7f82cc9",
+      "bytes": 8627
     },
     {
       "path": "docs/engineering/capability-registry.json",
@@ -3010,8 +3010,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "59bdd716cf0636cddd22e4d4e6fe6e72c50498216f05ae9e6e4a850aa0fa5b0d",
-      "bytes": 6985
+      "sha256": "d794500ce0b93b88d4563893d98539c617854e48f52b0f606eb83f759e02f9c8",
+      "bytes": 7948
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -3039,6 +3039,15 @@
       "review": "auto",
       "sha256": "81394ba0b57a0e4683fcf945fccf38cccfe23905dfa4c6b1d1743fdb76e60914",
       "bytes": 4463
+    },
+    {
+      "path": "notebooks/_shared/calibration.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "36d5cb3a1417105f79e1f9d1124b67f04a5df3261dd2758d52aa326059612c16",
+      "bytes": 5662
     },
     {
       "path": "notebooks/_shared/config.py",
@@ -3786,8 +3795,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "experimental",
       "review": "curated",
-      "sha256": "db1928a891b7e8f6a32193cbdfe4b4de416d5b2286e89e860a877ffd4508e1b8",
-      "bytes": 24925,
+      "sha256": "a098f7a70eba4a57d0e6b949be468562f07cbbf9237cd2f25ccd2c6542dc2a39",
+      "bytes": 27022,
       "capability": "evidence-fusion",
       "notes": "Dempster-Shafer combiner. Pure functions unit-tested (tests/test_fuse_math.py, 12 cases). Evidence-independence and calibrated-probability semantics disputed by REV2-02/03/06 (Phase 3 open)."
     },
@@ -4355,8 +4364,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "449f1e4a8f904659273336dbce7e609d37e2be795273dd83f3cfd028fc51363b",
-      "bytes": 1543
+      "sha256": "c754fdb89193ccc367b72a604299e938679fa8fb1c46d24d80f4f4280aaca23a",
+      "bytes": 1693
     },
     {
       "path": "tests/contract/test_phase0_inventory.py",
@@ -4375,6 +4384,15 @@
       "review": "auto",
       "sha256": "40365c2cbdaed1d725f1dc6d5cb15fe7900c55b72126cd3bc3d20b7e0eced98d",
       "bytes": 4568
+    },
+    {
+      "path": "tests/property/test_calibration.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "b6d5a58fc02b18173272badf82490dba512c3b8fb042d4de4110b20129252ee8",
+      "bytes": 5840
     },
     {
       "path": "tests/security/test_phase1_authz.py",
@@ -4456,8 +4474,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "b18ca633655315e078905a0ac9b4985b19ecada901aa5e8c3aeedfd57849e488",
-      "bytes": 6676
+      "sha256": "dab797f43992e85ee4d0ec5f1ad6c08c499a1f46130d7e0d073fb90734312cab",
+      "bytes": 7095
     }
   ]
 }

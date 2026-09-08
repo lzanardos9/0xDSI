@@ -23,11 +23,11 @@ blocked verification" mapping required by the Phase 0 exit gate.
 | ID | Theme (inferred) | Phase | Status | Evidence / notes |
 |----|------------------|-------|--------|------------------|
 | REV2-01 | Contract / schema drift between producers and consumers | 2 | partial | Landed: both smoke tests now use the canonical `load_config`/`SOCConfig` API and the 2-arg `Monitor(spark, cfg)`; the non-existent `PlatformConfig` is gone. `notebooks/_shared/contracts.py` pins the public config API and a contract test (`tests/contract/test_phase2_contracts.py`) fails if it drifts. |
-| REV2-02 | Fusion math treats anomaly score as posterior | 3 | open | `notebooks/correlation/10_fuse_engine.py`; pure math unit-tested but calibration disputed. |
-| REV2-03 | Correlated detectors counted as independent evidence | 3 | open | Same file; independence weighting present but unproven. |
+| REV2-02 | Fusion math treats anomaly score as posterior | 3 | partial | Landed: `notebooks/_shared/calibration.py` maps each raw detector score to a calibrated posterior via prior-anchored log-odds before it becomes Dempster-Shafer belief mass; `10_fuse_engine.py` no longer feeds `raw_score` straight in. Proven in `tests/property/test_calibration.py` (neutral score returns the base rate; a rare-base-rate high score yields a probability well below the score). Remaining: fit per-class base rates from labelled outcomes (needs runtime). |
+| REV2-03 | Correlated detectors counted as independent evidence | 3 | partial | Landed: the baseline scorer pools only the strongest calibrated probability per independence group before naive-Bayes combination, so correlated detectors in the same group are not double-counted; the existing D-S independence weighting is covered by `tests/test_fuse_math.py` (a correlation-discounted signal moves belief less than an independent one). Remaining: validate group assignments against real detector correlation (needs runtime). |
 | REV2-04 | Non-idempotent / non-crash-safe evidence writes | 6 | blocked-external | Outbox + idempotency logic buildable in-repo; multi-table Delta ACID needs runtime. |
 | REV2-05 | Execution scope / identity binding collapses executions | 2, 5, 6 | partial | Landed (Phase 2 kernel): canonical execution-identity vocabulary (`execution_id`, `run_id`, `producer`, `schema_version`, `produced_at`) + `SCHEMA_VERSION` declared in `notebooks/_shared/contracts.py` and covered by the contract test. Enforcement/persistence of these fields on produced rows remains Phase 5/6. |
-| REV2-06 | Statistical significance conflated with maliciousness | 3 | open | Separate significance from calibrated probability. |
+| REV2-06 | Statistical significance conflated with maliciousness | 3 | partial | Landed: `calibration.significance_to_probability` names the intent explicitly and routes a significance (evidence strength) through the base rate rather than using it as the probability of maliciousness; `tests/property/test_calibration.py` asserts significance is not maliciousness. Remaining: same per-class calibration fitting as REV2-02. |
 | REV2-07 | Temporal engine correctness (arbitrary-length claims) | 5 | open | Ship a bounded matcher; do not emulate with fixed motifs. |
 | REV2-08 | Finding-revision state machine missing | 5 | open | Immutable PROVISIONAL/CONFIRMED/WITHDRAWN/EXPIRED/SUPERSEDED. |
 | REV2-09 | Standing-query / absence predicates | 5 | open | Absence + late-arrival policy needed. |
@@ -49,13 +49,13 @@ blocked verification" mapping required by the Phase 0 exit gate.
 | REV2-25 | Readiness counts STARTING as ready | 9 | open | Real bounded dependency checks + canary. |
 | REV2-26 | Observability metrics missing | 9 | open | Lag, quarantined/lost records, outbox backlog, verification metrics. |
 | REV2-27 | Response not verified against a target | 8 | blocked-external | Dry-run adapters buildable; live verified target blocked. |
-| REV2-28 | No baseline comparison / overfitting risk | 3, 7 | open | Compare elaborate fusion/models against a simple calibrated baseline. |
+| REV2-28 | No baseline comparison / overfitting risk | 3, 7 | partial | Landed (Phase 3 fusion side): `calibration.baseline_probability` gives a simple independent naive-Bayes baseline, now persisted as `baseline_score` alongside every fused row so the elaborate D-S fusion can be compared to it; `tests/property/test_calibration.py` checks D-S and the baseline agree on ordering. Remaining: the model-side baseline (Phase 7) needs a trained artifact. |
 | REV2-29 | Audit writes swallowed on privileged mutation | 9 | open | Mandatory audit persistence must not be silently dropped. |
 
 ## Rollup
 
-- **partial (some work landed):** REV2-01, REV2-05, REV2-11, REV2-16, REV2-17,
-  REV2-18, REV2-20, REV2-22
+- **partial (some work landed):** REV2-01, REV2-02, REV2-03, REV2-05, REV2-06,
+  REV2-11, REV2-16, REV2-17, REV2-18, REV2-20, REV2-22, REV2-28
 - **blocked-external (needs infra/hardware to verify):** REV2-04, REV2-12,
   REV2-13, REV2-14, REV2-15, REV2-21, REV2-23, REV2-27
 - **open (in-repo, achievable next):** all remaining findings

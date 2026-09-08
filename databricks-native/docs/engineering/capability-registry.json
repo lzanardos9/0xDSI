@@ -15,7 +15,9 @@
       "title": "SOC operator console",
       "claim": "Analysts view alerts, entities, agents and investigations in one console.",
       "state": "implemented",
-      "evidence": ["app/frontend/src/App.tsx"],
+      "evidence": [
+        "app/frontend/src/App.tsx"
+      ],
       "tests": [],
       "blockers": [],
       "notes": "Single shipped frontend build. Renders and builds (npm run build passes). Many panels read demo/derived data; per-panel data provenance is a Phase 9 item."
@@ -25,7 +27,9 @@
       "title": "Backend data API",
       "claim": "Frontend reads and writes platform data through a governed API.",
       "state": "implemented",
-      "evidence": ["app/backend/server.py"],
+      "evidence": [
+        "app/backend/server.py"
+      ],
       "tests": [],
       "blockers": [],
       "notes": "Exposes generic /api/query, /api/mutate, /api/rpc plus typed read endpoints. Generic mutation of protected system-of-record tables is now blocked (Phase 1); reads are not yet authorized. Fail-closed auth and SQL parameterization landed."
@@ -35,9 +39,16 @@
       "title": "Authorization",
       "claim": "Every mutation is authorized by role.",
       "state": "implemented",
-      "evidence": ["app/backend/server.py"],
-      "tests": ["tests/security/test_phase1_authz.py"],
-      "blockers": ["Read-side authorization and agent/notebook tool paths still open", "Live SSO role source not verifiable without a real deployment"],
+      "evidence": [
+        "app/backend/server.py"
+      ],
+      "tests": [
+        "tests/security/test_phase1_authz.py"
+      ],
+      "blockers": [
+        "Read-side authorization and agent/notebook tool paths still open",
+        "Live SSO role source not verifiable without a real deployment"
+      ],
       "notes": "Central authorize() gates generic writes and RPC; roles resolved from a server-side allowlist so the forwarded groups header can no longer escalate; protected system-of-record tables refuse generic writes; response approval enforces separation of duties."
     },
     {
@@ -45,29 +56,46 @@
       "title": "Threat-intel IOC matching",
       "claim": "Events are matched against IOCs to raise alerts.",
       "state": "implemented",
-      "evidence": ["notebooks/detection/", "tests/smoke_test_e2e_pipeline.py"],
+      "evidence": [
+        "notebooks/detection/",
+        "tests/smoke_test_e2e_pipeline.py"
+      ],
       "tests": [],
-      "blockers": ["End-to-end smoke test requires a live Spark workspace (blocked here)"],
+      "blockers": [
+        "End-to-end smoke test requires a live Spark workspace (blocked here)"
+      ],
       "notes": "Batch matching path exists; live verification blocked in this environment."
     },
     {
       "id": "evidence-fusion",
       "title": "Dempster-Shafer evidence fusion",
-      "claim": "Multiple detector signals are fused into a calibrated threat belief.",
+      "claim": "Detector signals are calibrated to threat probability, then fused, with a simple baseline for comparison.",
       "state": "experimental",
-      "evidence": ["notebooks/correlation/10_fuse_engine.py"],
-      "tests": ["tests/test_fuse_math.py"],
-      "blockers": [],
-      "notes": "Pure combination math is unit-tested (12 cases pass). Independence handling and mapping scores to calibrated probability are disputed by REV2-02/03/06 (Phase 3)."
+      "evidence": [
+        "notebooks/correlation/10_fuse_engine.py",
+        "notebooks/_shared/calibration.py"
+      ],
+      "tests": [
+        "tests/test_fuse_math.py",
+        "tests/property/test_calibration.py"
+      ],
+      "blockers": [
+        "Per-class base rates are conservative defaults, not fitted from labelled outcomes (needs a live workspace + labels)"
+      ],
+      "notes": "Raw detector scores are mapped to prior-anchored calibrated probabilities before becoming Dempster-Shafer belief mass (REV2-02/06); the baseline scorer pools one calibrated probability per independence group to avoid double-counting correlated detectors (REV2-03) and is persisted as baseline_score for comparison (REV2-28). Combination math (12 cases) and calibration/baseline invariants (15 cases) pass offline. Stays experimental until base rates are fitted from real outcomes."
     },
     {
       "id": "temporal-cep",
       "title": "Temporal correlation / complex-event processing",
       "claim": "Multi-step attack patterns are detected across time with execution scope.",
       "state": "experimental",
-      "evidence": ["notebooks/correlation/"],
+      "evidence": [
+        "notebooks/correlation/"
+      ],
       "tests": [],
-      "blockers": ["Native CET engine not pinned/compiled here"],
+      "blockers": [
+        "Native CET engine not pinned/compiled here"
+      ],
       "notes": "Bounded matcher approach; the arbitrary-length/standing-query claims and execution-scope binding are Phase 5. Native engine currently unavailable."
     },
     {
@@ -75,9 +103,13 @@
       "title": "Multi-agent SOC automation",
       "claim": "Autonomous agents triage, enrich, hunt and respond.",
       "state": "experimental",
-      "evidence": ["notebooks/agents/"],
+      "evidence": [
+        "notebooks/agents/"
+      ],
       "tests": [],
-      "blockers": ["~30 agent notebooks are unreviewed (see artifact-manifest.json)"],
+      "blockers": [
+        "~30 agent notebooks are unreviewed (see artifact-manifest.json)"
+      ],
       "notes": "Orchestration path exists but many tool responses are simulated. Truthful run lifecycle and 'not_implemented/unavailable' returns are Phase 1."
     },
     {
@@ -85,9 +117,13 @@
       "title": "Distributed model training (Ray)",
       "claim": "Models are trained at scale on the platform.",
       "state": "unavailable",
-      "evidence": ["notebooks/ml_training/"],
+      "evidence": [
+        "notebooks/ml_training/"
+      ],
       "tests": [],
-      "blockers": ["No Ray cluster / GPU / versioned corpus in this environment"],
+      "blockers": [
+        "No Ray cluster / GPU / versioned corpus in this environment"
+      ],
       "notes": "Real training, checkpointing and artifact promotion are Phase 7. Must report unavailable, never random scoring."
     },
     {
@@ -95,9 +131,14 @@
       "title": "Sequence anomaly scoring (MC-RNN)",
       "claim": "Per-entity behavioral sequences are scored for anomaly.",
       "state": "experimental",
-      "evidence": ["notebooks/ml_training/", "notebooks/detection/"],
+      "evidence": [
+        "notebooks/ml_training/",
+        "notebooks/detection/"
+      ],
       "tests": [],
-      "blockers": ["Shared featurizer and persisted recurrent state not established"],
+      "blockers": [
+        "Shared featurizer and persisted recurrent state not established"
+      ],
       "notes": "Phase 7. Do not label unverified traffic benign by default."
     },
     {
@@ -105,9 +146,13 @@
       "title": "Source collectors / ingestion",
       "claim": "Real security telemetry is collected from many sources.",
       "state": "simulated",
-      "evidence": ["notebooks/ingestion/"],
+      "evidence": [
+        "notebooks/ingestion/"
+      ],
       "tests": [],
-      "blockers": ["No Zerobus ingest, no source credentials"],
+      "blockers": [
+        "No Zerobus ingest, no source credentials"
+      ],
       "notes": "Zerobus topology and durable raw Delta landing are Phase 4. Stubs must advertise unavailable, not green coverage."
     },
     {
@@ -115,9 +160,14 @@
       "title": "Automated response / containment",
       "claim": "Approved actions are executed and verified against targets.",
       "state": "unavailable",
-      "evidence": ["notebooks/response/", "app/backend/server.py"],
+      "evidence": [
+        "notebooks/response/",
+        "app/backend/server.py"
+      ],
       "tests": [],
-      "blockers": ["No executor, no controlled test target, no live credentials"],
+      "blockers": [
+        "No executor, no controlled test target, no live credentials"
+      ],
       "notes": "Planning/approval exists conceptually; dispatch+verification are Phase 6/8. A dispatch is not a completed action."
     },
     {
@@ -125,7 +175,9 @@
       "title": "Natural-language data questions",
       "claim": "Operators ask questions in plain language over platform data.",
       "state": "implemented",
-      "evidence": ["app/backend/server.py"],
+      "evidence": [
+        "app/backend/server.py"
+      ],
       "tests": [],
       "blockers": [],
       "notes": "Backed by a real language-model query path (relabeled honestly from an earlier overstated 'native' claim)."
