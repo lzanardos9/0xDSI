@@ -74,15 +74,15 @@ def _load_system_settings(spark, catalog: str, schema: str) -> dict:
     settings = {}
     try:
         table = f"`{catalog}`.`{schema}`.`system_settings`"
-        rows = spark.sql(f"SELECT setting_key, setting_value FROM {table}").collect()
+        rows = spark.sql(f"SELECT key, value FROM {table}").collect()
         for row in rows:
-            val = row.setting_value
+            val = row.value
             # Auto-coerce JSON values
             try:
                 val = json.loads(val)
             except (json.JSONDecodeError, TypeError):
                 pass
-            settings[row.setting_key] = val
+            settings[row.key] = val
     except Exception:
         pass  # Table may not exist yet during initial setup
     return settings

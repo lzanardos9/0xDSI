@@ -22,17 +22,17 @@ blocked verification" mapping required by the Phase 0 exit gate.
 
 | ID | Theme (inferred) | Phase | Status | Evidence / notes |
 |----|------------------|-------|--------|------------------|
-| REV2-01 | Contract / schema drift between producers and consumers | 2 | open | Confirmed: `tests/smoke_test_e2e_pipeline.py` imports `PlatformConfig().get_table_path(name)` but `notebooks/_shared/config.py` exports `SOCConfig`/`load_config`. |
+| REV2-01 | Contract / schema drift between producers and consumers | 2 | partial | Landed: both smoke tests now use the canonical `load_config`/`SOCConfig` API and the 2-arg `Monitor(spark, cfg)`; the non-existent `PlatformConfig` is gone. `notebooks/_shared/contracts.py` pins the public config API and a contract test (`tests/contract/test_phase2_contracts.py`) fails if it drifts. |
 | REV2-02 | Fusion math treats anomaly score as posterior | 3 | open | `notebooks/correlation/10_fuse_engine.py`; pure math unit-tested but calibration disputed. |
 | REV2-03 | Correlated detectors counted as independent evidence | 3 | open | Same file; independence weighting present but unproven. |
 | REV2-04 | Non-idempotent / non-crash-safe evidence writes | 6 | blocked-external | Outbox + idempotency logic buildable in-repo; multi-table Delta ACID needs runtime. |
-| REV2-05 | Execution scope / identity binding collapses executions | 2, 5, 6 | open | Core identity fields + execution binding are Phase 2 kernel work. |
+| REV2-05 | Execution scope / identity binding collapses executions | 2, 5, 6 | partial | Landed (Phase 2 kernel): canonical execution-identity vocabulary (`execution_id`, `run_id`, `producer`, `schema_version`, `produced_at`) + `SCHEMA_VERSION` declared in `notebooks/_shared/contracts.py` and covered by the contract test. Enforcement/persistence of these fields on produced rows remains Phase 5/6. |
 | REV2-06 | Statistical significance conflated with maliciousness | 3 | open | Separate significance from calibrated probability. |
 | REV2-07 | Temporal engine correctness (arbitrary-length claims) | 5 | open | Ship a bounded matcher; do not emulate with fixed motifs. |
 | REV2-08 | Finding-revision state machine missing | 5 | open | Immutable PROVISIONAL/CONFIRMED/WITHDRAWN/EXPIRED/SUPERSEDED. |
 | REV2-09 | Standing-query / absence predicates | 5 | open | Absence + late-arrival policy needed. |
 | REV2-10 | Partial-match state and supporting-event IDs | 5 | open | Preserve full supporting event IDs, durable partial matches. |
-| REV2-11 | Producer/consumer schema drift | 2 | open | Same root as REV2-01; typed contracts + migration test. |
+| REV2-11 | Producer/consumer schema drift | 2 | partial | Landed: the `system_settings` split (DDL/backend used `key`/`value`; seed, config loader and formula notebook used `setting_key`/`setting_value`, and the seed's overwrite clobbered the DDL schema) is reconciled onto canonical `key`/`value` everywhere. Contract test rejects the old aliases repo-wide. Remaining: extend typed column contracts to the rest of the cross-boundary tables. |
 | REV2-12 | Ray training is not real training | 7 | blocked-external | Needs Ray cluster + GPU + versioned corpus. |
 | REV2-13 | MC-RNN fresh-weight startup / no persisted state | 7 | blocked-external | Shared featurizer buildable; real training blocked. |
 | REV2-14 | Model evaluation absent / leaky | 7 | blocked-external | Eval harness buildable; real artifacts blocked. |
@@ -54,7 +54,8 @@ blocked verification" mapping required by the Phase 0 exit gate.
 
 ## Rollup
 
-- **partial (some work landed):** REV2-16, REV2-17, REV2-18, REV2-20, REV2-22
+- **partial (some work landed):** REV2-01, REV2-05, REV2-11, REV2-16, REV2-17,
+  REV2-18, REV2-20, REV2-22
 - **blocked-external (needs infra/hardware to verify):** REV2-04, REV2-12,
   REV2-13, REV2-14, REV2-15, REV2-21, REV2-23, REV2-27
 - **open (in-repo, achievable next):** all remaining findings
