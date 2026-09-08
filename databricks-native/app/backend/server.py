@@ -30,6 +30,8 @@ from fastapi.staticfiles import StaticFiles
 from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
+from audit import AuditPersistenceError, build_audit_record, persist_audit
+
 logger = logging.getLogger("0xdsi.api")
 
 
@@ -341,26 +343,52 @@ def authorize(user: dict, action: str, resource: str) -> None:
 # Audit Logging
 # ──────────────────────────────────────────────
 
+AUDIT_JOURNAL_PATH = os.environ.get(
+    "AUDIT_JOURNAL_PATH", str(Path(__file__).parent / "data" / "audit_journal.jsonl")
+)
+
+
 def _audit_log(user: dict, operation: str, table: str, detail: str = ""):
+    """Persist an audit record for a privileged mutation, fail-closed (REV2-29).
+
+    Callers invoke this write-ahead, before the mutation. If neither the primary
+    audit table nor the durable local journal accepts the record, this raises a
+    500 so the privileged action is refused rather than run unrecorded. A primary
+    failure that the journal absorbs is surfaced in the log, never swallowed.
+    """
     logger.info(
         "AUDIT | user=%s | op=%s | table=%s | detail=%s",
         user.get("email", "unknown"), operation, table, detail[:500]
     )
-    try:
+
+    def _primary_writer(record: dict):
         execute_write(
             f"INSERT INTO {fqn('system_audit_log')} (user_email, username, operation, table_name, detail, timestamp) "
             f"VALUES (:email, :username, :op, :table_name, :detail, :ts)",
             {
-                "email": user.get("email", "unknown"),
-                "username": user.get("username", "unknown"),
-                "op": operation,
-                "table_name": table,
-                "detail": detail[:1000],
-                "ts": datetime.now(timezone.utc).isoformat(),
-            }
+                "email": record["user_email"],
+                "username": record["username"],
+                "op": record["operation"],
+                "table_name": record["table_name"],
+                "detail": record["detail"],
+                "ts": record["timestamp"],
+            },
         )
-    except Exception:
-        pass
+
+    try:
+        record = build_audit_record(user, operation, table, detail)
+        outcome = persist_audit(record, _primary_writer, AUDIT_JOURNAL_PATH)
+    except AuditPersistenceError as e:
+        logger.error("AUDIT PERSISTENCE FAILED | op=%s | table=%s | %s", operation, table, e)
+        raise HTTPException(
+            status_code=503,
+            detail="Audit trail could not be persisted; privileged action refused",
+        )
+    if outcome["sink"] == "journal":
+        logger.warning(
+            "AUDIT fell back to local journal | op=%s | table=%s | primary_error=%s",
+            operation, table, outcome["primary_error"],
+        )
 
 
 def get_connection():
@@ -2974,6 +3002,9 @@ async def approve_response_action(action_id: str, request: Request):
             )
         bound_revision = live.get("revision")
 
+    # Audit write-ahead: if the approval cannot be recorded, refuse it (REV2-29).
+    _audit_log(user, "approve", "response_actions", f"action_id={action_id}")
+
     try:
         execute_write(f"""
             UPDATE {fqn('response_actions')}
@@ -2988,7 +3019,6 @@ async def approve_response_action(action_id: str, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    _audit_log(user, "approve", "response_actions", f"action_id={action_id}")
     # Dispatch is best-effort and separate from the approval record; approval
     # does not claim the action was executed.
     trigger_job("[0xDSI] Agent 15 - Automated Response")

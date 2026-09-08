@@ -242,6 +242,23 @@
         "Real labelled corpus, trained artifacts and a live Ray/Spark workspace needed to run the gate on actual models"
       ],
       "notes": "Leakage-safe splitting (temporal split with the boundary timestamp kept whole; grouped split so an entity never spans train and test; leakage_keys proves a split is clean), rank-based ROC-AUC and precision/recall/F1, and a promotion_gate that refuses a model below an AUC floor, without a margin over the 0.5 baseline, overfit (train-minus-test gap too large), or measured on a single-class slice (REV2-14, REV2-28 model side). The threat-scoring notebook now uses a temporal split instead of a leaky randomSplit and gates registration and production scoring on the decision. Logic proven offline (17 property cases). Stays experimental until run against real trained artifacts."
+    },
+    {
+      "id": "audit-persistence",
+      "title": "Fail-closed audit trail for privileged mutations",
+      "claim": "A privileged change is recorded before it happens, or it is refused.",
+      "state": "experimental",
+      "evidence": [
+        "app/backend/audit.py",
+        "app/backend/server.py"
+      ],
+      "tests": [
+        "tests/property/test_audit_persistence.py"
+      ],
+      "blockers": [
+        "Exercising the journal fallback and the 503 refusal against a live warehouse needs a real Databricks SQL endpoint"
+      ],
+      "notes": "REV2-29: the prior audit path swallowed every exception, so a privileged mutation could run unrecorded. audit.py now builds a complete attributable record (rejecting one missing operation/table), persists it to the primary system_audit_log or, on failure, to a durable append-only local journal (flushed + fsync'd), and raises only when both sinks fail. The server audits write-ahead on every privileged mutation (generic write, RPC, response approval) and returns 503 to refuse the action when audit cannot be persisted; a primary failure absorbed by the journal is logged, never silent. Logic proven offline (10 property cases). Stays experimental until the fallback and refusal paths are exercised on a live warehouse."
     }
   ]
 }

@@ -6,16 +6,16 @@
   },
   "summary": {
     "blocked": 4,
-    "passed": 12
+    "passed": 13
   },
   "checks": [
     {
       "id": "py_compile_all",
       "category": "syntax",
-      "command": "python -m py_compile <164 files>",
+      "command": "python -m py_compile <166 files>",
       "status": "passed",
       "exit_code": 0,
-      "detail": "compiled 164 python files"
+      "detail": "compiled 166 python files"
     },
     {
       "id": "unit_fuse_math",
@@ -90,12 +90,20 @@
       "detail": "PASS test_execute_only_from_approved\nPASS test_execute_refused_when_finding_withdrawn\nPASS test_execute_refused_when_revision_superseded\nPASS test_execute_requires_bound_revision\nPASS test_legal_transitions_only\nPASS test_only_proposed_can_be_approved\nPASS test_separation_of_duties_at_approval\nPASS test_states_and_terminals\nPASS test_terminal_states_are_dead_ends\nPASS test_unknown_state_rejected\nPASS test_verify_dispatch_matches_intent\nPASS test_verify_dispatch_mismatch_is_failed\nPASS test_verify_dispatch_unobserved_is_failed\n\nOK (0 failed)"
     },
     {
+      "id": "audit_persistence_phase9",
+      "category": "property",
+      "command": "python tests/property/test_audit_persistence.py",
+      "status": "passed",
+      "exit_code": 0,
+      "detail": "PASS test_build_record_defaults_unknown_user\nPASS test_build_record_has_required_fields\nPASS test_build_record_rejects_missing_operation\nPASS test_build_record_rejects_missing_table\nPASS test_detail_is_truncated\nPASS test_journal_is_append_only\nPASS test_persist_falls_back_to_journal_on_primary_failure\nPASS test_persist_raises_when_both_sinks_fail\nPASS test_persist_uses_primary_when_it_works\nPASS test_primary_failure_does_not_swallow_silently\n\nOK (0 failed)"
+    },
+    {
       "id": "manifest_fresh",
       "category": "inventory",
       "command": "generate_manifest.py --check",
       "status": "passed",
       "exit_code": 0,
-      "detail": "artifact-manifest.json up to date (501 files)."
+      "detail": "artifact-manifest.json up to date (503 files)."
     },
     {
       "id": "frontend_build",
@@ -103,7 +111,7 @@
       "command": "npm run build (app/)",
       "status": "passed",
       "exit_code": 0,
-      "detail": "✓ 1756 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../dist/index.html                     0.48 kB │ gzip:     0.32 kB\n../dist/assets/index-C9ZTdIKD.css    227.14 kB │ gzip:    30.00 kB\n../dist/assets/index-KXQvvKg6.js   5,963.09 kB │ gzip: 1,442.66 kB\n✓ built in 28.68s\nBrowserslist: caniuse-lite is outdated. Please run:\n  npx update-browserslist-db@latest\n  Why you should do it regularly: https://github.com/browserslist/update-db#readme\n\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit."
+      "detail": "✓ 1756 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../dist/index.html                     0.48 kB │ gzip:     0.32 kB\n../dist/assets/index-C9ZTdIKD.css    227.14 kB │ gzip:    30.00 kB\n../dist/assets/index-KXQvvKg6.js   5,963.09 kB │ gzip: 1,442.66 kB\n✓ built in 25.23s\nBrowserslist: caniuse-lite is outdated. Please run:\n  npx update-browserslist-db@latest\n  Why you should do it regularly: https://github.com/browserslist/update-db#readme\n\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit."
     },
     {
       "id": "spark_e2e_smoke",
