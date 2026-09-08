@@ -101,6 +101,28 @@ USING DELTA
 PARTITIONED BY (severity, DATE(created_at))
 """)
 
+# Append-only lifecycle ledger for findings (REV2-08). Each row is one immutable
+# revision; state changes append a new revision rather than mutating in place, so
+# the full lifecycle history is preserved and every revision carries the
+# execution-identity fields (REV2-05). Written via notebooks/_shared/finding_revision.py.
+spark.sql("""
+CREATE TABLE IF NOT EXISTS finding_revisions (
+    finding_id STRING NOT NULL,
+    revision INT NOT NULL,
+    prev_revision INT,
+    state STRING NOT NULL,
+    action STRING,
+    supersedes_finding_id STRING,
+    execution_id STRING NOT NULL,
+    run_id STRING,
+    producer STRING NOT NULL,
+    schema_version STRING,
+    produced_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
 spark.sql("""
 CREATE TABLE IF NOT EXISTS cases (
     id STRING DEFAULT uuid(),

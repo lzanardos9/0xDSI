@@ -159,6 +159,20 @@ def check_ingest_accounting() -> dict:
     }
 
 
+def check_finding_revision() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/property/test_finding_revision.py"], ROOT
+    )
+    return {
+        "id": "finding_revision_phase5",
+        "category": "property",
+        "command": "python tests/property/test_finding_revision.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_frontend_build() -> dict:
     code, tail = _run(["npm", "run", "build"], ROOT / "app")
     return {
@@ -197,6 +211,7 @@ def main() -> int:
         check_contracts(),
         check_calibration(),
         check_ingest_accounting(),
+        check_finding_revision(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]

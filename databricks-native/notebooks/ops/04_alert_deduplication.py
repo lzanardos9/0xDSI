@@ -40,6 +40,53 @@ from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from datetime import datetime, timedelta
 import json
+import uuid
+
+# Immutable finding-lifecycle revisions (REV2-08). Marking a duplicate or a
+# stale alert is a real lifecycle transition, so we also append a durable,
+# append-only revision instead of only mutating status in place.
+from finding_revision import (
+    initial_revision, next_revision, SUPERSEDE, EXPIRE, REVISION_COLUMNS,
+)
+
+# Identity stamped onto every revision this run emits (REV2-05). A fresh
+# execution_id per invocation keeps two dedup runs from collapsing.
+_run_identity = {
+    "execution_id": str(uuid.uuid4()),
+    "run_id": cfg.tags.get("job_run_id", "interactive"),
+    "producer": "ops_04_alert_deduplication",
+}
+
+# Explicit schema — prev_revision/action/supersedes are None on the first row, so
+# inference would flip them to void and the append would fail.
+_REVISION_SCHEMA = StructType([
+    StructField("finding_id", StringType(), False),
+    StructField("revision", IntegerType(), False),
+    StructField("prev_revision", IntegerType(), True),
+    StructField("state", StringType(), False),
+    StructField("action", StringType(), True),
+    StructField("supersedes_finding_id", StringType(), True),
+    StructField("execution_id", StringType(), False),
+    StructField("run_id", StringType(), True),
+    StructField("producer", StringType(), False),
+    StructField("schema_version", StringType(), True),
+    StructField("produced_at", StringType(), True),
+])
+
+
+def _write_finding_revisions(revision_rows):
+    """Append immutable finding revisions to the durable ledger. Ordered to the
+    canonical column list so the row shape never drifts from the DDL."""
+    if not revision_rows:
+        return
+    ordered = [{c: r.get(c) for c in REVISION_COLUMNS} for r in revision_rows]
+    (
+        spark.createDataFrame(ordered, schema=_REVISION_SCHEMA)
+        .withColumn("produced_at", to_timestamp(col("produced_at")))
+        .write.mode("append").option("mergeSchema", "true")
+        .saveAsTable(get_table_path(cfg, "finding_revisions"))
+    )
+
 
 # COMMAND ----------
 
@@ -143,6 +190,7 @@ with mon.time("consolidate_duplicates"):
     if dup_groups > 0:
         dup_data = duplicates.collect()
         total_consolidated = 0
+        revision_rows = []
 
         for row in dup_data:
             alert_ids = row.alert_ids
@@ -165,6 +213,16 @@ with mon.time("consolidate_duplicates"):
                     """)
                     total_consolidated += 1
 
+                    # Record the lifecycle transition immutably: this finding was
+                    # asserted (PROVISIONAL) and is now SUPERSEDED by the primary.
+                    produced_at = datetime.utcnow().isoformat()
+                    rev1 = initial_revision(aid, _run_identity, produced_at)
+                    rev2 = next_revision(
+                        rev1, SUPERSEDE, _run_identity, produced_at,
+                        supersedes_finding_id=primary_id,
+                    )
+                    revision_rows.extend([rev1, rev2])
+
             # Update primary with duplicate count
             spark.sql(f"""
                 UPDATE {alerts_table}
@@ -172,6 +230,7 @@ with mon.time("consolidate_duplicates"):
                 WHERE id = '{primary_id}'
             """)
 
+        _write_finding_revisions(revision_rows)
         print(f"Consolidated {total_consolidated} duplicate alerts across {dup_groups} groups")
     else:
         total_consolidated = 0
@@ -187,21 +246,35 @@ with mon.time("consolidate_duplicates"):
 stale_closed = 0
 if consolidate_stale:
     with mon.time("close_stale"):
+        # Capture the ids first so each expiry can be recorded as an immutable
+        # revision, then close them in place for existing consumers.
+        stale_ids = [
+            r.id for r in spark.sql(f"""
+                SELECT id FROM {alerts_table}
+                WHERE status = 'new'
+                  AND created_at < current_timestamp() - INTERVAL 24 HOURS
+                  AND (updated_at IS NULL OR updated_at < current_timestamp() - INTERVAL 24 HOURS)
+            """).collect()
+        ]
+
         # Close alerts that have been 'new' for more than 24h with no activity
-        stale_closed_result = spark.sql(f"""
+        spark.sql(f"""
             UPDATE {alerts_table}
             SET status = 'stale'
             WHERE status = 'new'
               AND created_at < current_timestamp() - INTERVAL 24 HOURS
               AND (updated_at IS NULL OR updated_at < current_timestamp() - INTERVAL 24 HOURS)
         """)
-        # Count affected (Delta returns num affected rows in metrics)
-        stale_closed = spark.sql(f"""
-            SELECT COUNT(*) as cnt FROM {alerts_table}
-            WHERE status = 'stale'
-              AND created_at > current_timestamp() - INTERVAL 25 HOURS
-        """).first().cnt
+
+        stale_closed = len(stale_ids)
         if stale_closed > 0:
+            expiry_rows = []
+            for sid in stale_ids:
+                produced_at = datetime.utcnow().isoformat()
+                rev1 = initial_revision(sid, _run_identity, produced_at)
+                rev2 = next_revision(rev1, EXPIRE, _run_identity, produced_at)
+                expiry_rows.extend([rev1, rev2])
+            _write_finding_revisions(expiry_rows)
             print(f"Marked {stale_closed} stale alerts (untouched >24h)")
 
 # COMMAND ----------
