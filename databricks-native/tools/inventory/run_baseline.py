@@ -187,6 +187,20 @@ def check_idempotency() -> dict:
     }
 
 
+def check_model_eval() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/property/test_model_eval.py"], ROOT
+    )
+    return {
+        "id": "model_eval_phase7",
+        "category": "property",
+        "command": "python tests/property/test_model_eval.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_frontend_build() -> dict:
     code, tail = _run(["npm", "run", "build"], ROOT / "app")
     return {
@@ -227,6 +241,7 @@ def main() -> int:
         check_ingest_accounting(),
         check_finding_revision(),
         check_idempotency(),
+        check_model_eval(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]

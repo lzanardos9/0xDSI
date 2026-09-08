@@ -21,6 +21,9 @@ from pyspark.ml import Pipeline
 from pyspark.ml.classification import GBTClassifier
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
 from pyspark.ml.feature import OneHotEncoder, StringIndexer, VectorAssembler
+from pyspark.sql import functions as F
+
+from model_eval import promotion_gate
 
 # COMMAND ----------
 
@@ -37,6 +40,7 @@ try:
     with mon.time("load_training_data"):
         training_query = f"""
         SELECT
+            event_date,
             event_type,
             source_ip_category,
             destination_port_category,
@@ -98,12 +102,25 @@ try:
 
         pipeline = Pipeline(stages=indexers + encoders + [assembler, gbt])
 
-    # --- Train/Test Split ---
+    # --- Train/Test Split (leakage-safe, temporal) ---
+    # A random row split leaks the same entity/time into both partitions and
+    # inflates the score (REV2-14). Split on time instead: train on the past,
+    # test strictly on the most recent slice, so the score measures forecasting
+    # of unseen future events.
     with mon.time("train_test_split"):
-        train_df, test_df = raw_df.randomSplit([0.8, 0.2], seed=42)
+        raw_df = raw_df.withColumn(
+            "_event_ts", F.unix_timestamp(F.col("event_date").cast("timestamp"))
+        )
+        cutoff_ts = raw_df.approxQuantile("_event_ts", [0.8], 0.001)[0]
+        train_df = raw_df.filter(F.col("_event_ts") < cutoff_ts).drop("_event_ts")
+        test_df = raw_df.filter(F.col("_event_ts") >= cutoff_ts).drop("_event_ts")
         train_count = train_df.count()
         test_count = test_df.count()
-        mon.log_event("data_split", {"train": train_count, "test": test_count})
+        mon.log_event(
+            "data_split",
+            {"train": train_count, "test": test_count, "split": "temporal",
+             "cutoff_ts": cutoff_ts},
+        )
 
     # --- Model Training with MLflow ---
     with mon.time("model_training"):
@@ -123,6 +140,7 @@ try:
     # --- Evaluation ---
     with mon.time("model_evaluation"):
         predictions = model.transform(test_df)
+        train_predictions = model.transform(train_df)
 
         evaluator_auc = BinaryClassificationEvaluator(
             labelCol="is_threat_label",
@@ -137,48 +155,90 @@ try:
 
         auc = evaluator_auc.evaluate(predictions)
         auc_pr = evaluator_pr.evaluate(predictions)
+        train_auc = evaluator_auc.evaluate(train_predictions)
+
+        test_pos = test_df.filter(F.col("is_threat_label") == 1).count()
+        test_base_rate = (test_pos / test_count) if test_count else 0.0
 
         mlflow.log_metric("auc_roc", auc)
         mlflow.log_metric("auc_pr", auc_pr)
+        mlflow.log_metric("train_auc_roc", train_auc)
 
-        mon.log_event("model_evaluated", {"auc_roc": auc, "auc_pr": auc_pr})
+        mon.log_event(
+            "model_evaluated",
+            {"auc_roc": auc, "auc_pr": auc_pr, "train_auc_roc": train_auc,
+             "test_base_rate": test_base_rate},
+        )
 
-    # --- Register Model ---
+    # --- Promotion Gate (REV2-14 / REV2-28) ---
+    # Refuse to register or serve a model that cannot beat a coin flip, is
+    # overfit, or was measured on a single-class test slice.
+    with mon.time("promotion_gate"):
+        gate = promotion_gate(
+            test_auc=auc, train_auc=train_auc, labels_base_rate=test_base_rate
+        )
+        mlflow.log_metric("promoted", 1 if gate["promote"] else 0)
+        mon.log_event("promotion_decision", gate["checks"])
+        if not gate["promote"]:
+            mon.log_event(
+                "model_promotion_rejected",
+                {"reasons": gate["reasons"]},
+                severity="warning",
+            )
+
+    # --- Register Model (only if the gate passed) ---
+    run_id = run.info.run_id
     with mon.time("model_registration"):
-        mlflow.spark.log_model(
-            model,
-            "threat_scoring_model",
-            registered_model_name="security_threat_scoring_gbt",
-        )
+        if gate["promote"]:
+            mlflow.spark.log_model(
+                model,
+                "threat_scoring_model",
+                registered_model_name="security_threat_scoring_gbt",
+            )
+            mon.log_event("model_registered", {"run_id": run_id, "auc_roc": auc})
+        else:
+            # Keep the artifact for audit but never promote it to the serving name.
+            mlflow.spark.log_model(model, "threat_scoring_model")
+            mon.log_event(
+                "model_not_registered",
+                {"run_id": run_id, "auc_roc": auc, "reasons": gate["reasons"]},
+            )
 
-        run_id = run.info.run_id
-        mon.log_event("model_registered", {"run_id": run_id, "auc_roc": auc})
+    # --- Score Recent Events (only with a promoted model) ---
+    scored_count = 0
+    if gate["promote"]:
+        with mon.time("score_recent_events"):
+            scoring_query = f"""
+            SELECT *
+            FROM {cfg.get_table_path("enriched_security_events")}
+            WHERE event_date >= date_sub(current_date(), 1)
+              AND is_threat_label IS NULL
+            """
+            recent_df = spark.sql(scoring_query)
+            scored_df = model.transform(recent_df)
 
-    # --- Score Recent Events ---
-    with mon.time("score_recent_events"):
-        scoring_query = f"""
-        SELECT *
-        FROM {cfg.get_table_path("enriched_security_events")}
-        WHERE event_date >= date_sub(current_date(), 1)
-          AND is_threat_label IS NULL
-        """
-        recent_df = spark.sql(scoring_query)
-        scored_df = model.transform(recent_df)
-
-        scored_output = scored_df.select(
-            "event_id", "event_type", "source_ip_category",
-            "prediction", "probability"
+            scored_output = scored_df.select(
+                "event_id", "event_type", "source_ip_category",
+                "prediction", "probability"
+            )
+            scored_output.write.mode("overwrite").saveAsTable(
+                cfg.get_table_path("threat_scores_latest")
+            )
+            scored_count = scored_output.count()
+            mon.log_event("scoring_complete", {"scored_records": scored_count})
+    else:
+        mon.log_event(
+            "scoring_skipped_not_promoted",
+            {"reason": "model failed promotion gate"},
         )
-        scored_output.write.mode("overwrite").saveAsTable(
-            cfg.get_table_path("threat_scores_latest")
-        )
-        scored_count = scored_output.count()
-        mon.log_event("scoring_complete", {"scored_records": scored_count})
 
     # --- Finalize ---
     result.update({
         "auc_roc": auc,
         "auc_pr": auc_pr,
+        "train_auc_roc": train_auc,
+        "promoted": gate["promote"],
+        "promotion_reasons": gate["reasons"],
         "training_records": train_count,
         "test_records": test_count,
         "scored_records": scored_count,
