@@ -6,16 +6,16 @@
   },
   "summary": {
     "blocked": 4,
-    "passed": 14
+    "passed": 15
   },
   "checks": [
     {
       "id": "py_compile_all",
       "category": "syntax",
-      "command": "python -m py_compile <168 files>",
+      "command": "python -m py_compile <169 files>",
       "status": "passed",
       "exit_code": 0,
-      "detail": "compiled 168 python files"
+      "detail": "compiled 169 python files"
     },
     {
       "id": "unit_fuse_math",
@@ -106,12 +106,20 @@
       "detail": "PASS test_canary_other_error_is_failed\nPASS test_canary_overrun_is_timeout\nPASS test_canary_ready_on_correct_answer_in_budget\nPASS test_canary_starting_error_is_starting\nPASS test_canary_timeout_error_is_timeout\nPASS test_canary_wrong_answer_is_failed\nPASS test_every_non_ready_state_blocks\nPASS test_no_required_probes_is_not_ready\nPASS test_non_ready_states_frozen_set_excludes_ready\nPASS test_one_failed_required_blocks\nPASS test_optional_probe_does_not_block\nPASS test_probe_rejects_unknown_state\nPASS test_starting_never_counts_as_ready\n\nOK (0 failed)"
     },
     {
+      "id": "backend_imports",
+      "category": "contract",
+      "command": "python tests/contract/test_backend_imports.py",
+      "status": "passed",
+      "exit_code": 0,
+      "detail": "PASS test_dependency_free_backend_modules_load_under_launch_path\nPASS test_no_bare_sibling_imports_anywhere_in_backend\nPASS test_server_imports_audit_and_readiness_via_backend_prefix\n\nOK (0 failed)"
+    },
+    {
       "id": "manifest_fresh",
       "category": "inventory",
       "command": "generate_manifest.py --check",
       "status": "passed",
       "exit_code": 0,
-      "detail": "artifact-manifest.json up to date (505 files)."
+      "detail": "artifact-manifest.json up to date (506 files)."
     },
     {
       "id": "frontend_build",
@@ -119,7 +127,7 @@
       "command": "npm run build (app/)",
       "status": "passed",
       "exit_code": 0,
-      "detail": "✓ 1756 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../dist/index.html                     0.48 kB │ gzip:     0.32 kB\n../dist/assets/index-C9ZTdIKD.css    227.14 kB │ gzip:    30.00 kB\n../dist/assets/index-KXQvvKg6.js   5,963.09 kB │ gzip: 1,442.66 kB\n✓ built in 29.92s\nBrowserslist: caniuse-lite is outdated. Please run:\n  npx update-browserslist-db@latest\n  Why you should do it regularly: https://github.com/browserslist/update-db#readme\n\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit."
+      "detail": "✓ 1756 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../dist/index.html                     0.48 kB │ gzip:     0.32 kB\n../dist/assets/index-C9ZTdIKD.css    227.14 kB │ gzip:    30.00 kB\n../dist/assets/index-KXQvvKg6.js   5,963.09 kB │ gzip: 1,442.66 kB\n✓ built in 28.08s\nBrowserslist: caniuse-lite is outdated. Please run:\n  npx update-browserslist-db@latest\n  Why you should do it regularly: https://github.com/browserslist/update-db#readme\n\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit."
     },
     {
       "id": "spark_e2e_smoke",

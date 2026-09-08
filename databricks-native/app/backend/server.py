@@ -31,8 +31,8 @@ from fastapi.staticfiles import StaticFiles
 from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
-from audit import AuditPersistenceError, build_audit_record, persist_audit
-from readiness import (
+from backend.audit import AuditPersistenceError, build_audit_record, persist_audit
+from backend.readiness import (
     READY as READINESS_READY,
     FAILED as READINESS_FAILED,
     aggregate_readiness,

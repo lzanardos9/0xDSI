@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 505,
-  "total_bytes": 10526257,
+  "total_files": 506,
+  "total_bytes": 10530209,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -17,7 +17,7 @@
       "other": 1,
       "shared_library": 17,
       "stylesheet": 1,
-      "test": 15,
+      "test": 16,
       "test_script": 1,
       "tooling": 4
     },
@@ -30,7 +30,7 @@
       "production": 3,
       "setup": 5,
       "shared_library": 16,
-      "test": 16,
+      "test": 17,
       "unreviewed": 425
     },
     "by_runtime": {
@@ -39,7 +39,7 @@
       "databricks-bundle": 5,
       "databricks-spark": 131,
       "n/a": 17,
-      "python": 15,
+      "python": 16,
       "python (databricks runtime)": 17,
       "python-fastapi": 3,
       "shell": 1
@@ -108,8 +108,8 @@
       "runtime": "python-fastapi",
       "shipping_status": "production",
       "review": "curated",
-      "sha256": "bc33d4ee6a074cb963c5829e66ab9a678284db896835955432582edce02c3882",
-      "bytes": 167557,
+      "sha256": "57aeaccc4137f90b1c1ec0eec55a7d87f891fc6ddca866307354779c1e2ca31e",
+      "bytes": 167573,
       "capability": "data-api-gateway",
       "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
     },
@@ -4431,6 +4431,15 @@
       "bytes": 3344
     },
     {
+      "path": "tests/contract/test_backend_imports.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "99dd2a7743d553a84878012ea52625019e4f6bda850b75882393ca8adfd776b7",
+      "bytes": 3504
+    },
+    {
       "path": "tests/contract/test_phase0_inventory.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -4600,8 +4609,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "e524dbbf3fe6ac64edf100812b4f4eeaf3056df017f33aa44406927acec633fb",
-      "bytes": 10124
+      "sha256": "ebc05eac7e30340a1a460e1c47e031c8bf0bc62ed4cad77d4274da5ef0bb2b49",
+      "bytes": 10556
     }
   ]
 }
