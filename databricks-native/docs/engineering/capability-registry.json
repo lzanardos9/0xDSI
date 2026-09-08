@@ -147,13 +147,16 @@
       "claim": "Real security telemetry is collected from many sources.",
       "state": "simulated",
       "evidence": [
-        "notebooks/ingestion/"
+        "notebooks/ingestion/",
+        "notebooks/_shared/ingest_accounting.py"
       ],
-      "tests": [],
+      "tests": [
+        "tests/property/test_ingest_accounting.py"
+      ],
       "blockers": [
         "No Zerobus ingest, no source credentials"
       ],
-      "notes": "Zerobus topology and durable raw Delta landing are Phase 4. Stubs must advertise unavailable, not green coverage."
+      "notes": "Per-batch accounting landed (REV2-21): every received record is reconciled to written+quarantined, records that fall through classification are quarantined as unclassified_no_bucket instead of dropped, and a durable ingestion_accounting ledger row is persisted per batch (offline-tested, 11 cases). Real multi-source collection and Zerobus/Delta durability across restarts still need source credentials + a live workspace, so this stays simulated."
     },
     {
       "id": "response-execution",

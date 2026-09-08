@@ -6,16 +6,16 @@
   },
   "summary": {
     "blocked": 4,
-    "passed": 7
+    "passed": 8
   },
   "checks": [
     {
       "id": "py_compile_all",
       "category": "syntax",
-      "command": "python -m py_compile <154 files>",
+      "command": "python -m py_compile <156 files>",
       "status": "passed",
       "exit_code": 0,
-      "detail": "compiled 154 python files"
+      "detail": "compiled 156 python files"
     },
     {
       "id": "unit_fuse_math",
@@ -50,12 +50,20 @@
       "detail": "PASS test_baseline_below_prior_signal_pulls_down\nPASS test_baseline_monotonic_in_evidence\nPASS test_calibration_monotonic_in_raw_score\nPASS test_calibration_stays_strictly_inside_unit_interval\nPASS test_ds_and_baseline_agree_threat_beats_benign\nPASS test_ds_and_baseline_both_stay_below_one\nPASS test_freshness_fresh_is_identity\nPASS test_freshness_monotonic_between_prior_and_probability\nPASS test_freshness_reverts_to_prior_not_to_zero\nPASS test_higher_base_rate_yields_higher_probability\nPASS test_neutral_score_returns_base_rate\nPASS test_sharpness_shrinks_extreme_scores_toward_prior\nPASS test_significance_is_not_maliciousness\n\n15 passed, 0 failed"
     },
     {
+      "id": "ingest_accounting_phase4",
+      "category": "property",
+      "command": "python tests/property/test_ingest_accounting.py",
+      "status": "passed",
+      "exit_code": 0,
+      "detail": "PASS test_accounting_row_carries_lineage_and_verdict\nPASS test_accounting_row_records_a_drop\nPASS test_all_quarantined_balances\nPASS test_all_valid_balances\nPASS test_balanced_when_valid_plus_quarantined_equals_received\nPASS test_batch_id_coerced_to_string\nPASS test_double_count_is_flagged_negative\nPASS test_dropped_records_are_flagged_not_hidden\nPASS test_empty_batch_balances\nPASS test_negative_inputs_never_balance\nPASS test_reconcile_is_pure_conservation_identity\n\n11 passed, 0 failed"
+    },
+    {
       "id": "manifest_fresh",
       "category": "inventory",
       "command": "generate_manifest.py --check",
       "status": "passed",
       "exit_code": 0,
-      "detail": "artifact-manifest.json up to date (491 files)."
+      "detail": "artifact-manifest.json up to date (493 files)."
     },
     {
       "id": "frontend_build",
@@ -63,7 +71,7 @@
       "command": "npm run build (app/)",
       "status": "passed",
       "exit_code": 0,
-      "detail": "✓ 1756 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../dist/index.html                     0.48 kB │ gzip:     0.32 kB\n../dist/assets/index-C9ZTdIKD.css    227.14 kB │ gzip:    30.00 kB\n../dist/assets/index-KXQvvKg6.js   5,963.09 kB │ gzip: 1,442.66 kB\n✓ built in 30.05s\nBrowserslist: caniuse-lite is outdated. Please run:\n  npx update-browserslist-db@latest\n  Why you should do it regularly: https://github.com/browserslist/update-db#readme\n\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit."
+      "detail": "✓ 1756 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../dist/index.html                     0.48 kB │ gzip:     0.32 kB\n../dist/assets/index-C9ZTdIKD.css    227.14 kB │ gzip:    30.00 kB\n../dist/assets/index-KXQvvKg6.js   5,963.09 kB │ gzip: 1,442.66 kB\n✓ built in 31.79s\nBrowserslist: caniuse-lite is outdated. Please run:\n  npx update-browserslist-db@latest\n  Why you should do it regularly: https://github.com/browserslist/update-db#readme\n\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit."
     },
     {
       "id": "spark_e2e_smoke",

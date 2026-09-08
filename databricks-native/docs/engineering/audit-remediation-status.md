@@ -42,7 +42,7 @@ blocked verification" mapping required by the Phase 0 exit gate.
 | REV2-18 | UI false-green / no staleness | 9 | partial | Genie relabel + honest latency copy landed; broader UI truth is Phase 9. |
 | REV2-19 | Connector health reported without real collection | 8 | open | Stubs must advertise unavailable, not green coverage. |
 | REV2-20 | Response fabrication / approval not bound to revision | 1, 6, 8 | partial | Landed: generic mutation of protected system-of-record tables (evidence, identity, approvals, response state, runtime health) blocked; response-action approval enforces separation of duties (no self-approval) and only reports success after confirming the action was pending. Remaining: binding approval to an exact evidence/finding revision (Phase 6). |
-| REV2-21 | Ingestion not durable / drops tail events | 4 | blocked-external | Envelope + accounting buildable; Zerobus durability needs workspace. |
+| REV2-21 | Ingestion not durable / drops tail events | 4 | partial | Landed: `notebooks/_shared/ingest_accounting.py` reconciles every micro-batch (`received == valid + quarantined`) and the raw ingestion job now routes any record that is neither valid nor corrupt to quarantine (`unclassified_no_bucket`) instead of dropping it, then persists a durable `ingestion_accounting` ledger row (received/valid/quarantined/unaccounted/balanced) that survives restart — replacing the in-memory-only counters. Proven offline in `tests/property/test_ingest_accounting.py` (conservation identity; a drop shows up as unbalanced). Remaining (needs workspace): true Zerobus/Delta durability across broker restarts and exactly-once offset commit. |
 | REV2-22 | Latency claims untruthful | 4 | partial | Streaming trigger corrected; README/architecture latency claims made honest. |
 | REV2-23 | Topology mislabeled (Zerobus/Lakebase) | 4 | blocked-external | Real PostgreSQL Lakebase + Zerobus need infra; naming corrected in docs. |
 | REV2-24 | Deployment build integrity / manifest | 9 | open | Clean-output build + SHA/config fingerprint manifest. |
@@ -55,9 +55,9 @@ blocked verification" mapping required by the Phase 0 exit gate.
 ## Rollup
 
 - **partial (some work landed):** REV2-01, REV2-02, REV2-03, REV2-05, REV2-06,
-  REV2-11, REV2-16, REV2-17, REV2-18, REV2-20, REV2-22, REV2-28
+  REV2-11, REV2-16, REV2-17, REV2-18, REV2-20, REV2-21, REV2-22, REV2-28
 - **blocked-external (needs infra/hardware to verify):** REV2-04, REV2-12,
-  REV2-13, REV2-14, REV2-15, REV2-21, REV2-23, REV2-27
+  REV2-13, REV2-14, REV2-15, REV2-23, REV2-27
 - **open (in-repo, achievable next):** all remaining findings
 
 ## How this file is kept honest

@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 491,
-  "total_bytes": 10421171,
+  "total_files": 493,
+  "total_bytes": 10432559,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -15,9 +15,9 @@
       "frontend_entry": 1,
       "frontend_module": 298,
       "other": 1,
-      "shared_library": 12,
+      "shared_library": 13,
       "stylesheet": 1,
-      "test": 8,
+      "test": 9,
       "test_script": 1,
       "tooling": 4
     },
@@ -29,8 +29,8 @@
       "experimental": 1,
       "production": 3,
       "setup": 5,
-      "shared_library": 11,
-      "test": 9,
+      "shared_library": 12,
+      "test": 10,
       "unreviewed": 423
     },
     "by_runtime": {
@@ -39,8 +39,8 @@
       "databricks-bundle": 5,
       "databricks-spark": 131,
       "n/a": 17,
-      "python": 8,
-      "python (databricks runtime)": 12,
+      "python": 9,
+      "python (databricks runtime)": 13,
       "python-fastapi": 1,
       "shell": 1
     },
@@ -3001,8 +3001,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "c6e9659412541f963e5f7a93f2837db380948790d713462bcdb4fdccc7f82cc9",
-      "bytes": 8627
+      "sha256": "12f36ed59b1bc31ff3df2e761df35fedd1a266ced1cafdcad98fce8f0029c64c",
+      "bytes": 9214
     },
     {
       "path": "docs/engineering/capability-registry.json",
@@ -3010,8 +3010,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "d794500ce0b93b88d4563893d98539c617854e48f52b0f606eb83f759e02f9c8",
-      "bytes": 7948
+      "sha256": "fcaeb96d0da80a5c936914ddc231cc7632a19ae2502bcbf3f6d99f58c0474029",
+      "bytes": 8390
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -3077,6 +3077,15 @@
       "review": "auto",
       "sha256": "0d000ca8c866f6e57884998be201d8c84ecf3ac210e3057cb14a37318d4a8b0a",
       "bytes": 10197
+    },
+    {
+      "path": "notebooks/_shared/ingest_accounting.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "f012c48f12e3fef0a911baa1aed821582a29e243f35bcb8595e7a78225618a72",
+      "bytes": 3609
     },
     {
       "path": "notebooks/_shared/llm_client.py",
@@ -3878,8 +3887,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "05f55327c7f543117554a20a4099f412843ea28f54c9664cb24a771cdb4b8b66",
-      "bytes": 20190
+      "sha256": "ccc6643ca657c58b641c92b1a770b9a584213cf5b49808efb8b29b39dc4ea412",
+      "bytes": 22421
     },
     {
       "path": "notebooks/ingestion/02_enrichment_pipeline.py",
@@ -4274,8 +4283,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "setup",
       "review": "auto",
-      "sha256": "d2c731b8cc76e53aa46c71b9b53eb0cf9a3374126d7d820248172055380c6998",
-      "bytes": 86769
+      "sha256": "5c67950a9fbcf7039b7b42d4943c23ca266b2fd1f20af26466dba5bb35eb8453",
+      "bytes": 87211
     },
     {
       "path": "notebooks/setup/02_seed_demo_data.py",
@@ -4364,8 +4373,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "c754fdb89193ccc367b72a604299e938679fa8fb1c46d24d80f4f4280aaca23a",
-      "bytes": 1693
+      "sha256": "ccab5c7f3594b0151d6e19246c1c1cf448074a67e22044db1955e75e632d2fc6",
+      "bytes": 1846
     },
     {
       "path": "tests/contract/test_phase0_inventory.py",
@@ -4393,6 +4402,15 @@
       "review": "auto",
       "sha256": "b6d5a58fc02b18173272badf82490dba512c3b8fb042d4de4110b20129252ee8",
       "bytes": 5840
+    },
+    {
+      "path": "tests/property/test_ingest_accounting.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "d7388d98dad6c4576bee8f1130968a1b9f1cdad297cd914f36621cba5ebc3089",
+      "bytes": 3475
     },
     {
       "path": "tests/security/test_phase1_authz.py",
@@ -4474,8 +4492,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "dab797f43992e85ee4d0ec5f1ad6c08c499a1f46130d7e0d073fb90734312cab",
-      "bytes": 7095
+      "sha256": "f5079d60f09cb0e6b6680a747a954ae867281fb61b224b5adc8d260c698e4e9e",
+      "bytes": 7544
     }
   ]
 }
