@@ -201,6 +201,20 @@ def check_model_eval() -> dict:
     }
 
 
+def check_response_actions() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/property/test_response_actions.py"], ROOT
+    )
+    return {
+        "id": "response_actions_phase8",
+        "category": "property",
+        "command": "python tests/property/test_response_actions.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_frontend_build() -> dict:
     code, tail = _run(["npm", "run", "build"], ROOT / "app")
     return {
@@ -242,6 +256,7 @@ def main() -> int:
         check_finding_revision(),
         check_idempotency(),
         check_model_eval(),
+        check_response_actions(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]

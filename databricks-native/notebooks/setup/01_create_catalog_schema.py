@@ -492,12 +492,23 @@ CREATE TABLE IF NOT EXISTS response_actions (
     triggered_by STRING,
     alert_id STRING,
     case_id STRING,
+    finding_id STRING,
+    approved_finding_revision INT,
     parameters MAP<STRING, STRING>,
     result MAP<STRING, STRING>,
     executed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+""")
+
+# Bind approvals to an exact finding revision (REV2-20). Existing deployments
+# get the columns added in place; adding columns is non-destructive.
+spark.sql("""
+ALTER TABLE response_actions ADD COLUMNS IF NOT EXISTS (
+    finding_id STRING,
+    approved_finding_revision INT
+)
 """)
 
 spark.sql("""
