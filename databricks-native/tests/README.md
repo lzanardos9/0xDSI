@@ -12,7 +12,7 @@ is available.
 | `contract/` | Contracts between artifacts and the engineering inventory (manifest drift, registry validity, baseline shape, audit coverage) plus producer/consumer contracts (config public API, canonical table columns, execution-identity kernel). | active |
 | `unit/` | Pure-function tests (e.g. evidence fusion math). Currently `test_fuse_math.py` at the top level; new unit tests land here. | growing |
 | `integration/` | Cross-component flows that need Spark/Delta. | added per phase |
-| `property/` | Property-based invariants (mass conservation, ordering independence) for Phase 3. | planned |
+| `property/` | Property-based invariants for Phase 3: score calibration (neutral score returns the prior, significance is not maliciousness, freshness reverts to the prior not to zero) and D-S-vs-baseline ordering agreement. `test_calibration.py`. | active |
 | `security/` | Path-traversal, authorization-matrix and self-approval tests for Phase 1. | active |
 | `replay/` | Deterministic replay / crash-injection (Operation Borrowed Trust) for Phases 5-6. | planned |
 

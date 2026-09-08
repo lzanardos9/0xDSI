@@ -131,6 +131,20 @@ def check_contracts() -> dict:
     }
 
 
+def check_calibration() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/property/test_calibration.py"], ROOT
+    )
+    return {
+        "id": "calibration_phase3",
+        "category": "property",
+        "command": "python tests/property/test_calibration.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_frontend_build() -> dict:
     code, tail = _run(["npm", "run", "build"], ROOT / "app")
     return {
@@ -167,6 +181,7 @@ def main() -> int:
         check_fuse_math(),
         check_security(),
         check_contracts(),
+        check_calibration(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]
