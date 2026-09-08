@@ -162,16 +162,19 @@
       "id": "response-execution",
       "title": "Automated response / containment",
       "claim": "Approved actions are executed and verified against targets.",
-      "state": "unavailable",
+      "state": "experimental",
       "evidence": [
+        "notebooks/_shared/response_actions.py",
         "notebooks/response/",
         "app/backend/server.py"
       ],
-      "tests": [],
-      "blockers": [
-        "No executor, no controlled test target, no live credentials"
+      "tests": [
+        "tests/property/test_response_actions.py"
       ],
-      "notes": "Planning/approval exists conceptually; dispatch+verification are Phase 6/8. A dispatch is not a completed action."
+      "blockers": [
+        "No executor and no controlled test target: execute-time drift enforcement and live target verification need a real workspace and credentials"
+      ],
+      "notes": "Lifecycle state machine PROPOSED->APPROVED->DISPATCHED->VERIFIED/FAILED (plus REJECTED) with terminal dead-ends keeps a dispatch distinct from a completed action. Approvals are bound to an exact finding revision (REV2-20): approval is refused unless the linked finding is CONFIRMED, the approved revision is recorded, and execution is refused once the finding moves to a new revision or leaves CONFIRMED; separation of duties holds at approve and execute. verify_dispatch marks VERIFIED only when the observed target state matches intent, else FAILED (REV2-27). The server approve endpoint enforces the finding binding and records approved_finding_revision. Logic proven offline (20 property cases). Stays experimental until a live executor and target are available."
     },
     {
       "id": "genie-nl-query",

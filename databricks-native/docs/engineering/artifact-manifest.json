@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 499,
-  "total_bytes": 10484110,
+  "total_files": 501,
+  "total_bytes": 10501461,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -15,9 +15,9 @@
       "frontend_entry": 1,
       "frontend_module": 298,
       "other": 1,
-      "shared_library": 16,
+      "shared_library": 17,
       "stylesheet": 1,
-      "test": 12,
+      "test": 13,
       "test_script": 1,
       "tooling": 4
     },
@@ -29,8 +29,8 @@
       "experimental": 1,
       "production": 3,
       "setup": 5,
-      "shared_library": 15,
-      "test": 13,
+      "shared_library": 16,
+      "test": 14,
       "unreviewed": 423
     },
     "by_runtime": {
@@ -39,8 +39,8 @@
       "databricks-bundle": 5,
       "databricks-spark": 131,
       "n/a": 17,
-      "python": 12,
-      "python (databricks runtime)": 16,
+      "python": 13,
+      "python (databricks runtime)": 17,
       "python-fastapi": 1,
       "shell": 1
     },
@@ -90,8 +90,8 @@
       "runtime": "python-fastapi",
       "shipping_status": "production",
       "review": "curated",
-      "sha256": "a33e7d4eb8d270ce67b4b666f9b0004e58a659cc8a5c875ea27693fec5e31a6d",
-      "bytes": 162751,
+      "sha256": "ace0b200efa35a4865a8d850cacc0f4b26c74d9a0f61a79f9b8e84945b2269e0",
+      "bytes": 164490,
       "capability": "data-api-gateway",
       "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
     },
@@ -3001,8 +3001,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "23e6cb74de45472a1428670e4d3c89f53c7fe491343266faf3bab4419d32b7a2",
-      "bytes": 11934
+      "sha256": "a12a176467928064edc26c53e38a415e398be65c1c886ffdc4c0b655b2320326",
+      "bytes": 12812
     },
     {
       "path": "docs/engineering/capability-registry.json",
@@ -3010,8 +3010,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "d7a55b41543af61c5c4043b87bd635fb15c247ab78268b64b2480c64de00bfc9",
-      "bytes": 12104
+      "sha256": "9cf50b3b1c295bbb8478e85a54d96ae5a2ae5dcf26c099eefd3c87f9097de290",
+      "bytes": 12945
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -3131,6 +3131,15 @@
       "review": "auto",
       "sha256": "56b43dd847dad0fa68eace6bc3c152cc3f4f3d13a352a1275962c922c5a83f3f",
       "bytes": 13981
+    },
+    {
+      "path": "notebooks/_shared/response_actions.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "eee303645f34010aa8f6ed8c5bd5f2d0e8b9af0730751606aeb59814fa04ffcb",
+      "bytes": 6951
     },
     {
       "path": "notebooks/_shared/sdp_stream.py",
@@ -4310,8 +4319,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "setup",
       "review": "auto",
-      "sha256": "48f83b38830a071d2bc58cc7ff2f9de53f1ad896c33d242faf8df4c9751b6704",
-      "bytes": 88004
+      "sha256": "6c3215ae1ae48bc05513502212e75efc61af3599ba0cd6d20c2e2652decbbb86",
+      "bytes": 88345
     },
     {
       "path": "notebooks/setup/02_seed_demo_data.py",
@@ -4400,8 +4409,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "402d33fc151bd1370ee0a0130b7d099e8aab46b55ce3b50f2cfd169436f56116",
-      "bytes": 2449
+      "sha256": "c040a44222e42537cf23f7774b574229b9d3e107aa96ccf5661038145f1fd21d",
+      "bytes": 2758
     },
     {
       "path": "tests/contract/test_phase0_inventory.py",
@@ -4465,6 +4474,15 @@
       "review": "auto",
       "sha256": "dd1032f0481e6b352b206549e7cd49c2ecd96c251ff4706cf67c1e3906622d63",
       "bytes": 4853
+    },
+    {
+      "path": "tests/property/test_response_actions.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "e9778a5327f1d307f019cab7e44b24621eebc224023c664d3567a905d3923884",
+      "bytes": 5848
     },
     {
       "path": "tests/security/test_phase1_authz.py",
@@ -4546,8 +4564,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "c97d3cfb513efc3aa4f069108007fce531a9c27efe6f1304b7a83437185629a2",
-      "bytes": 8821
+      "sha256": "0b42e200810f6d1c9eca680f87f9a8b553fa1f75233b1efd4d6a08f2f04b535a",
+      "bytes": 9265
     }
   ]
 }

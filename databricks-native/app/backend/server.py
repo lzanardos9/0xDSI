@@ -2903,6 +2903,25 @@ def _action_originator(action: dict) -> str:
     return ""
 
 
+def _current_finding_revision(finding_id: str) -> Optional[dict]:
+    """Return the live finding as {revision, state}, or None if it has no history.
+
+    The live state of a finding is its highest revision (the revision chain is
+    append-only, see finding_revisions / notebooks/_shared/finding_revision.py).
+    """
+    rows = query(
+        f"""
+        SELECT revision, state
+        FROM {fqn('finding_revisions')}
+        WHERE finding_id = :fid
+        ORDER BY revision DESC
+        LIMIT 1
+        """,
+        {"fid": finding_id},
+    )
+    return rows[0] if rows else None
+
+
 @app.put("/api/control/response-actions/{action_id}/approve")
 async def approve_response_action(action_id: str, request: Request):
     """Approve a pending response action for execution.
@@ -2932,12 +2951,40 @@ async def approve_response_action(action_id: str, request: Request):
             detail="Separation of duties: you cannot approve a response action you requested",
         )
 
+    # Bind the approval to the exact finding revision it authorizes (REV2-20).
+    # When the action is linked to a finding, only a CONFIRMED finding may be
+    # approved, and we record which revision was approved so execution can later
+    # detect that the finding has moved on (been re-confirmed/superseded).
+    finding_id = (action.get("finding_id") or "").strip()
+    bound_revision = None
+    if finding_id:
+        live = _current_finding_revision(finding_id)
+        if not live:
+            raise HTTPException(
+                status_code=409,
+                detail="Linked finding has no revision history; cannot authorize a response",
+            )
+        if str(live.get("state") or "").upper() != "CONFIRMED":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Linked finding is '{live.get('state')}', only a CONFIRMED "
+                    "finding authorizes a response"
+                ),
+            )
+        bound_revision = live.get("revision")
+
     try:
         execute_write(f"""
             UPDATE {fqn('response_actions')}
-            SET status = 'approved', approved_by = :user, approved_at = current_timestamp(), updated_at = current_timestamp()
+            SET status = 'approved', approved_by = :user, approved_at = current_timestamp(),
+                approved_finding_revision = :rev, updated_at = current_timestamp()
             WHERE id = :action_id AND status = 'pending'
-        """, {"action_id": action_id, "user": user.get("username", "system")})
+        """, {
+            "action_id": action_id,
+            "user": user.get("username", "system"),
+            "rev": bound_revision,
+        })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
