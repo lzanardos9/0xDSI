@@ -2,12 +2,12 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 503,
-  "total_bytes": 10514244,
+  "total_files": 505,
+  "total_bytes": 10526257,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
-      "backend_service": 2,
+      "backend_service": 3,
       "build_config": 12,
       "databricks_notebook": 131,
       "deployment_config": 5,
@@ -17,7 +17,7 @@
       "other": 1,
       "shared_library": 17,
       "stylesheet": 1,
-      "test": 14,
+      "test": 15,
       "test_script": 1,
       "tooling": 4
     },
@@ -30,8 +30,8 @@
       "production": 3,
       "setup": 5,
       "shared_library": 16,
-      "test": 15,
-      "unreviewed": 424
+      "test": 16,
+      "unreviewed": 425
     },
     "by_runtime": {
       "browser": 300,
@@ -39,13 +39,13 @@
       "databricks-bundle": 5,
       "databricks-spark": 131,
       "n/a": 17,
-      "python": 14,
+      "python": 15,
       "python (databricks runtime)": 17,
-      "python-fastapi": 2,
+      "python-fastapi": 3,
       "shell": 1
     },
     "reviewed": 5,
-    "unreviewed": 424
+    "unreviewed": 425
   },
   "artifacts": [
     {
@@ -94,13 +94,22 @@
       "bytes": 4050
     },
     {
+      "path": "app/backend/readiness.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9866e117508371fe30df3e1b3e4ed1c8a98c8f5b54511726ba7e9af062c3560c",
+      "bytes": 3470
+    },
+    {
       "path": "app/backend/server.py",
       "artifact_type": "backend_service",
       "runtime": "python-fastapi",
       "shipping_status": "production",
       "review": "curated",
-      "sha256": "706d9e682d1f64b346b791f2f8f247e8310d88f22179c25f84b3687ccf979ef7",
-      "bytes": 165825,
+      "sha256": "bc33d4ee6a074cb963c5829e66ab9a678284db896835955432582edce02c3882",
+      "bytes": 167557,
       "capability": "data-api-gateway",
       "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
     },
@@ -3010,8 +3019,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "fee9b20e9d13cafa81e98d5bd686b8c9829fb78fb193ae49f1ad754220d9050c",
-      "bytes": 13610
+      "sha256": "7394b41cee5b8af4f12df0e4ee62f5fc023242c1c85881662c29a873a8b5f9d8",
+      "bytes": 14343
     },
     {
       "path": "docs/engineering/capability-registry.json",
@@ -3019,8 +3028,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "07cd30a7502f82548c18d8f632ebdc2735d2fd547285cf33f28540fd1f7497f0",
-      "bytes": 14238
+      "sha256": "09d21fb9e0dd21ec64e4699b6c3c2366c06d62772a969c31fd401f47bd4a9497",
+      "bytes": 15511
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -4418,8 +4427,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "ef4a8c0e8a5f6485dcafb1b56d2f4d1b78933318736ba348403cc5fc08fa7e27",
-      "bytes": 3058
+      "sha256": "8252ac60bcd61ffc6a86addf490b377b51459043ca9ad78ed03adc5cad2cc0c5",
+      "bytes": 3344
     },
     {
       "path": "tests/contract/test_phase0_inventory.py",
@@ -4492,6 +4501,15 @@
       "review": "auto",
       "sha256": "dd1032f0481e6b352b206549e7cd49c2ecd96c251ff4706cf67c1e3906622d63",
       "bytes": 4853
+    },
+    {
+      "path": "tests/property/test_readiness.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "e47b9bd2d9255d4703412a5108544a8b718618038390982284132cefaff88a32",
+      "bytes": 4109
     },
     {
       "path": "tests/property/test_response_actions.py",
@@ -4582,8 +4600,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "e7b2805760def9785219fcf3f237646a8c1e519960f74357d210cc58f230a371",
-      "bytes": 9714
+      "sha256": "e524dbbf3fe6ac64edf100812b4f4eeaf3056df017f33aa44406927acec633fb",
+      "bytes": 10124
     }
   ]
 }

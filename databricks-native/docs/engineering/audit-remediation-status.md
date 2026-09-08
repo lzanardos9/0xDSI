@@ -46,7 +46,7 @@ blocked verification" mapping required by the Phase 0 exit gate.
 | REV2-22 | Latency claims untruthful | 4 | partial | Streaming trigger corrected; README/architecture latency claims made honest. |
 | REV2-23 | Topology mislabeled (Zerobus/Lakebase) | 4 | blocked-external | Real PostgreSQL Lakebase + Zerobus need infra; naming corrected in docs. |
 | REV2-24 | Deployment build integrity / manifest | 9 | open | Clean-output build + SHA/config fingerprint manifest. |
-| REV2-25 | Readiness counts STARTING as ready | 9 | open | Real bounded dependency checks + canary. |
+| REV2-25 | Readiness counts STARTING as ready | 9, 10 | partial | Landed (Phase 10): the `/ready` probe no longer treats "a connection handle exists" as ready. `app/backend/readiness.py` classifies a bounded `SELECT 1` canary -- only the expected answer inside the time budget is READY; a warehouse that reports itself STARTING, overruns the budget (TIMEOUT), errors (FAILED) or returns the wrong value is reported as its real non-ready state -- and `aggregate_readiness` is deny-by-default: readiness is granted only when every required dependency is READY, so STARTING/UNKNOWN/TIMEOUT/FAILED can never produce a green. The probe now returns per-dependency states and 503 until truly ready. Proven offline (15 property cases). Remaining: hard driver-level timeout enforcement and a downstream canary need a live warehouse. |
 | REV2-26 | Observability metrics missing | 9 | open | Lag, quarantined/lost records, outbox backlog, verification metrics. |
 | REV2-27 | Response not verified against a target | 8 | partial | Landed (Phase 8): `response_actions.verify_dispatch` marks an action VERIFIED only when the observed target state matches the intended effect and FAILED otherwise (including when the target cannot be observed), and the lifecycle state machine keeps DISPATCHED distinct from VERIFIED so a dispatch is never reported as a completed action. Proven offline (part of the 20 property cases). Remaining: a live target adapter to produce the observed state is still blocked-external. |
 | REV2-28 | No baseline comparison / overfitting risk | 3, 7 | partial | Landed (Phase 3 fusion side): `calibration.baseline_probability` gives a simple independent naive-Bayes baseline, now persisted as `baseline_score` alongside every fused row so the elaborate D-S fusion can be compared to it; `tests/property/test_calibration.py` checks D-S and the baseline agree on ordering. Phase 7 model side landed: `model_eval.promotion_gate` refuses to register or serve a model that does not beat the coin-flip baseline (AUC 0.5) by a margin, is overfit (train-minus-test AUC gap too large), or was measured on a single-class test slice; the threat-scoring notebook only registers to the serving name and only scores production events when the gate passes, otherwise it keeps the artifact for audit and logs the rejection reasons. Remaining: the gate runs against real trained artifacts only on a live workspace. |
@@ -55,7 +55,7 @@ blocked verification" mapping required by the Phase 0 exit gate.
 ## Rollup
 
 - **partial (some work landed):** REV2-01, REV2-02, REV2-03, REV2-04, REV2-05, REV2-06,
-  REV2-08, REV2-11, REV2-14, REV2-16, REV2-17, REV2-18, REV2-20, REV2-21, REV2-22, REV2-27, REV2-28, REV2-29
+  REV2-08, REV2-11, REV2-14, REV2-16, REV2-17, REV2-18, REV2-20, REV2-21, REV2-22, REV2-25, REV2-27, REV2-28, REV2-29
 - **blocked-external (needs infra/hardware to verify):** REV2-12,
   REV2-13, REV2-15, REV2-23
 - **open (in-repo, achievable next):** all remaining findings

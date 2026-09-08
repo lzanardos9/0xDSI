@@ -14,6 +14,7 @@ Security:
 import os
 import re
 import json
+import time
 import uuid
 import random
 import logging
@@ -31,6 +32,13 @@ from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
 from audit import AuditPersistenceError, build_audit_record, persist_audit
+from readiness import (
+    READY as READINESS_READY,
+    FAILED as READINESS_FAILED,
+    aggregate_readiness,
+    classify_canary as readiness_classify,
+    probe as readiness_probe,
+)
 
 logger = logging.getLogger("0xdsi.api")
 
@@ -495,23 +503,54 @@ async def health():
     return {"status": "ok"}
 
 
+READINESS_CANARY_BUDGET_MS = int(os.environ.get("READINESS_CANARY_BUDGET_MS", "3000"))
+
+
+def _warehouse_canary_probe():
+    """Run a bounded SELECT 1 canary and classify the result (REV2-25).
+
+    Opening a connection is not proof the warehouse can serve queries -- a
+    STARTING warehouse accepts a handle. Only a canary that returns the expected
+    value inside the time budget is READY; a starting/slow/failing warehouse is
+    reported as its real non-ready state, never green.
+    """
+    start = time.monotonic()
+    try:
+        rows = query("SELECT 1 AS canary")
+        elapsed_ms = (time.monotonic() - start) * 1000.0
+        value = rows[0].get("canary") if rows else None
+        state = readiness_classify(value, 1, elapsed_ms, READINESS_CANARY_BUDGET_MS)
+        return readiness_probe("warehouse", state, detail=f"{elapsed_ms:.0f}ms")
+    except Exception as e:  # noqa: BLE001 - classify, never swallow into ready
+        elapsed_ms = (time.monotonic() - start) * 1000.0
+        state = readiness_classify(None, 1, elapsed_ms, READINESS_CANARY_BUDGET_MS, error_text=str(e))
+        return readiness_probe("warehouse", state, detail=str(e)[:200])
+
+
 @app.get("/ready")
 async def ready():
-    """Readiness probe - checks SQL Warehouse connectivity."""
+    """Readiness probe - real bounded dependency checks, never a false green."""
     missing = CONFIG.missing_required()
-    if missing:
-        return JSONResponse(
-            status_code=503,
-            content={"status": "not_ready", "reason": f"Missing configuration: {', '.join(missing)}"},
-        )
-    try:
-        get_connection()
-        return {"status": "ready", "catalog": CATALOG, "schema": SCHEMA}
-    except Exception as e:
-        return JSONResponse(
-            status_code=503,
-            content={"status": "not_ready", "reason": str(e)[:200]},
-        )
+    config_probe = readiness_probe(
+        "config",
+        READINESS_READY if not missing else READINESS_FAILED,
+        detail="" if not missing else f"Missing configuration: {', '.join(missing)}",
+    )
+    # Only run the warehouse canary once configuration is present; otherwise the
+    # connection attempt would fail for a reason we already know.
+    probes = [config_probe]
+    if not missing:
+        probes.append(_warehouse_canary_probe())
+
+    verdict = aggregate_readiness(probes)
+    payload = {
+        "status": "ready" if verdict["ready"] else "not_ready",
+        "dependencies": verdict["states"],
+        "not_ready": verdict["not_ready"],
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+    }
+    return JSONResponse(status_code=200 if verdict["ready"] else 503, content=payload)
 
 
 # ──────────────────────────────────────────────

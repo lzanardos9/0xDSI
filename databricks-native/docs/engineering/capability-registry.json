@@ -259,6 +259,23 @@
         "Exercising the journal fallback and the 503 refusal against a live warehouse needs a real Databricks SQL endpoint"
       ],
       "notes": "REV2-29: the prior audit path swallowed every exception, so a privileged mutation could run unrecorded. audit.py now builds a complete attributable record (rejecting one missing operation/table), persists it to the primary system_audit_log or, on failure, to a durable append-only local journal (flushed + fsync'd), and raises only when both sinks fail. The server audits write-ahead on every privileged mutation (generic write, RPC, response approval) and returns 503 to refuse the action when audit cannot be persisted; a primary failure absorbed by the journal is logged, never silent. Logic proven offline (10 property cases). Stays experimental until the fallback and refusal paths are exercised on a live warehouse."
+    },
+    {
+      "id": "honest-readiness",
+      "title": "Readiness that never reports a false green",
+      "claim": "The service reports ready only when its dependencies actually answer.",
+      "state": "experimental",
+      "evidence": [
+        "app/backend/readiness.py",
+        "app/backend/server.py"
+      ],
+      "tests": [
+        "tests/property/test_readiness.py"
+      ],
+      "blockers": [
+        "Hard driver-level timeout enforcement and a downstream canary need a live Databricks SQL endpoint"
+      ],
+      "notes": "REV2-25: the prior /ready probe reported ready as soon as a connection handle existed, so a STARTING warehouse (which accepts a handle) read as ready. readiness.py classifies a bounded SELECT 1 canary -- only the expected answer inside the time budget is READY; STARTING, TIMEOUT (budget overrun) and FAILED (error or wrong answer) are distinct non-ready states -- and aggregate_readiness is deny-by-default, granting readiness only when every required dependency is READY (an empty or all-optional set is not a vacuous green). The /ready endpoint runs the canary, returns per-dependency states, and answers 503 until truly ready. Logic proven offline (15 property cases). Stays experimental until run against a live warehouse."
     }
   ]
 }
