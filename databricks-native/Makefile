@@ -1,4 +1,4 @@
-.PHONY: help install build clean test deploy-dev deploy-staging deploy-prod lint check
+.PHONY: help install build clean test deploy-dev deploy-staging deploy-prod lint check inventory baseline phase0
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 0xDSI Agentic SOC Platform - Databricks Native
@@ -51,6 +51,15 @@ deploy: ## One-command deploy (uses deploy.sh)
 test: ## Run smoke tests
 	python tests/smoke_test_e2e_pipeline.py
 	python tests/smoke_validate_schema.py
+
+inventory: ## Regenerate the artifact manifest (docs/engineering/)
+	python3 tools/inventory/generate_manifest.py
+
+baseline: ## Record build/compile/test baseline (docs/engineering/)
+	python3 tools/inventory/run_baseline.py
+
+phase0: inventory baseline ## Run the Phase 0 honesty gate (inventory + baseline + contract tests)
+	python3 tests/contract/test_phase0_inventory.py
 
 lint: ## Lint Python notebooks
 	@echo "Checking Python syntax..."
