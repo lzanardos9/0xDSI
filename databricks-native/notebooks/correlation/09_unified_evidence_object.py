@@ -445,8 +445,10 @@ with mon.time("build_ueos"):
 
     ueo_count = ueos.count()
     if ueo_count > 0:
-        # Write UEOs
-        ueos.select(
+        # Write UEOs idempotently: ueo_id is content-derived (sha2 over
+        # entity/window), so a replayed batch inserts nothing instead of
+        # duplicating evidence (REV2-04).
+        _ueo_rows = ueos.select(
             "ueo_id", "entity_id", "entity_type", "entity_name",
             "window_start", "window_end",
             "fused_risk_score", "max_signal_score", "signal_count", "independent_signal_count",
@@ -459,7 +461,11 @@ with mon.time("build_ueos"):
             "entity_centrality", "entity_is_high_value", "entity_is_service_account",
             "contributing_event_ids", "contributing_alert_ids",
             "confluence_processed", "confluence_verdict_id", "created_at"
-        ).write.mode("append").option("mergeSchema", "true").saveAsTable(ueo_table)
+        )
+        safe_append(
+            _ueo_rows, "unified_evidence_objects", cfg.catalog, cfg.schema,
+            idempotency_key="ueo_id",
+        )
 
         # Write individual signals with UEO linkage
         signal_details = (
@@ -496,7 +502,12 @@ with mon.time("build_ueos"):
                 current_timestamp().alias("created_at"),
             )
         )
-        signal_details.write.mode("append").option("mergeSchema", "true").saveAsTable(ueo_signals_table)
+        # signal_id is deterministic (sha2 over ueo_id + source signal), so the
+        # same contribution is never recorded twice across replays (REV2-04).
+        safe_append(
+            signal_details, "ueo_signals", cfg.catalog, cfg.schema,
+            idempotency_key="signal_id",
+        )
         print(f"Built {ueo_count} UEOs from {signal_count} signals")
     else:
         print(f"No UEOs formed (need >= {min_signals} signals per entity-window)")
