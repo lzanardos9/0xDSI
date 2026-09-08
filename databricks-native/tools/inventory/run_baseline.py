@@ -229,6 +229,20 @@ def check_audit_persistence() -> dict:
     }
 
 
+def check_readiness() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/property/test_readiness.py"], ROOT
+    )
+    return {
+        "id": "readiness_phase10",
+        "category": "property",
+        "command": "python tests/property/test_readiness.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_frontend_build() -> dict:
     code, tail = _run(["npm", "run", "build"], ROOT / "app")
     return {
@@ -272,6 +286,7 @@ def main() -> int:
         check_model_eval(),
         check_response_actions(),
         check_audit_persistence(),
+        check_readiness(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]
