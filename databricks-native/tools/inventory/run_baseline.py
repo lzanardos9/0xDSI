@@ -103,6 +103,20 @@ def check_fuse_math() -> dict:
     }
 
 
+def check_security() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/security/test_phase1_authz.py"], ROOT
+    )
+    return {
+        "id": "security_phase1_authz",
+        "category": "security",
+        "command": "python tests/security/test_phase1_authz.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_frontend_build() -> dict:
     code, tail = _run(["npm", "run", "build"], ROOT / "app")
     return {
@@ -137,6 +151,7 @@ def main() -> int:
     checks = [
         check_py_compile(),
         check_fuse_math(),
+        check_security(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]

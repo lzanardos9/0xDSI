@@ -13,7 +13,7 @@ is available.
 | `unit/` | Pure-function tests (e.g. evidence fusion math). Currently `test_fuse_math.py` at the top level; new unit tests land here. | growing |
 | `integration/` | Cross-component flows that need Spark/Delta. | added per phase |
 | `property/` | Property-based invariants (mass conservation, ordering independence) for Phase 3. | planned |
-| `security/` | Path-traversal, authorization-matrix and self-approval tests for Phase 1. | planned |
+| `security/` | Path-traversal, authorization-matrix and self-approval tests for Phase 1. | active |
 | `replay/` | Deterministic replay / crash-injection (Operation Borrowed Trust) for Phases 5-6. | planned |
 
 Directories are created when their first real test exists — empty placeholder
