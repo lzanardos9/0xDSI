@@ -64,22 +64,22 @@ now = datetime.utcnow()
 # COMMAND ----------
 
 settings_data = [
-    Row(setting_key="platform_name", setting_value="0xDSI Agentic SOC", category="general"),
-    Row(setting_key="retention_days", setting_value="90", category="storage"),
-    Row(setting_key="alert_auto_close_days", setting_value="30", category="alerts"),
-    Row(setting_key="max_concurrent_agents", setting_value="16", category="agents"),
-    Row(setting_key="llm_token_budget_daily", setting_value="5000000", category="llm"),
-    Row(setting_key="correlation_window_default", setting_value="300", category="correlation"),
-    Row(setting_key="risk_score_critical_threshold", setting_value="85", category="risk"),
-    Row(setting_key="risk_score_high_threshold", setting_value="70", category="risk"),
-    Row(setting_key="ha_mode", setting_value="active-passive", category="high_availability"),
-    Row(setting_key="ha_failover_timeout_seconds", setting_value="30", category="high_availability"),
-    Row(setting_key="ha_replication_factor", setting_value="3", category="high_availability"),
-    Row(setting_key="backup_schedule", setting_value="0 2 * * *", category="storage"),
-    Row(setting_key="siem_ingest_rate_limit", setting_value="100000", category="ingestion"),
-    Row(setting_key="notification_channels", setting_value='["slack", "email", "pagerduty"]', category="notifications"),
-    Row(setting_key="default_severity_filter", setting_value="medium", category="ui"),
-    Row(setting_key="formula_priority_weights", setting_value=json.dumps({
+    Row(key="platform_name", value="0xDSI Agentic SOC", category="general"),
+    Row(key="retention_days", value="90", category="storage"),
+    Row(key="alert_auto_close_days", value="30", category="alerts"),
+    Row(key="max_concurrent_agents", value="16", category="agents"),
+    Row(key="llm_token_budget_daily", value="5000000", category="llm"),
+    Row(key="correlation_window_default", value="300", category="correlation"),
+    Row(key="risk_score_critical_threshold", value="85", category="risk"),
+    Row(key="risk_score_high_threshold", value="70", category="risk"),
+    Row(key="ha_mode", value="active-passive", category="high_availability"),
+    Row(key="ha_failover_timeout_seconds", value="30", category="high_availability"),
+    Row(key="ha_replication_factor", value="3", category="high_availability"),
+    Row(key="backup_schedule", value="0 2 * * *", category="storage"),
+    Row(key="siem_ingest_rate_limit", value="100000", category="ingestion"),
+    Row(key="notification_channels", value='["slack", "email", "pagerduty"]', category="notifications"),
+    Row(key="default_severity_filter", value="medium", category="ui"),
+    Row(key="formula_priority_weights", value=json.dumps({
         "alert_severity": 0.20, "asset_criticality": 0.15, "user_privilege": 0.10,
         "ioc_matches": 0.15, "correlation_matches": 0.15, "campaign_association": 0.10,
         "temporal_anomaly": 0.05, "blast_radius": 0.10

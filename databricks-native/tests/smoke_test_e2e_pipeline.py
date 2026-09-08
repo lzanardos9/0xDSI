@@ -22,15 +22,15 @@
 import sys
 sys.path.insert(0, "../_shared")
 
-from config import PlatformConfig
+from config import load_config
 from monitoring import Monitor
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 import uuid
 from datetime import datetime, timedelta
 
-cfg = PlatformConfig()
-mon = Monitor(spark, cfg, "smoke_test_e2e")
+cfg = load_config(dbutils, spark)
+mon = Monitor(spark, cfg)
 
 # COMMAND ----------
 

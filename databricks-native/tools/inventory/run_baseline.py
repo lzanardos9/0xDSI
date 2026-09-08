@@ -117,6 +117,20 @@ def check_security() -> dict:
     }
 
 
+def check_contracts() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/contract/test_phase2_contracts.py"], ROOT
+    )
+    return {
+        "id": "contracts_phase2",
+        "category": "contract",
+        "command": "python tests/contract/test_phase2_contracts.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_frontend_build() -> dict:
     code, tail = _run(["npm", "run", "build"], ROOT / "app")
     return {
@@ -152,6 +166,7 @@ def main() -> int:
         check_py_compile(),
         check_fuse_math(),
         check_security(),
+        check_contracts(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]

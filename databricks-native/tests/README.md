@@ -9,7 +9,7 @@ is available.
 
 | Directory | Purpose | Status |
 |-----------|---------|--------|
-| `contract/` | Contracts between artifacts and the engineering inventory (manifest drift, registry validity, baseline shape, audit coverage). | active |
+| `contract/` | Contracts between artifacts and the engineering inventory (manifest drift, registry validity, baseline shape, audit coverage) plus producer/consumer contracts (config public API, canonical table columns, execution-identity kernel). | active |
 | `unit/` | Pure-function tests (e.g. evidence fusion math). Currently `test_fuse_math.py` at the top level; new unit tests land here. | growing |
 | `integration/` | Cross-component flows that need Spark/Delta. | added per phase |
 | `property/` | Property-based invariants (mass conservation, ordering independence) for Phase 3. | planned |

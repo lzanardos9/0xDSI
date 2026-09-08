@@ -93,12 +93,12 @@ DEFAULT_WEIGHTS = {
 try:
     settings_table = cfg.get_table_path("system_settings")
     weight_row = spark.sql(f"""
-        SELECT setting_value FROM {settings_table}
-        WHERE setting_key = 'formula_priority_weights'
+        SELECT value FROM {settings_table}
+        WHERE key = 'formula_priority_weights'
         LIMIT 1
     """).collect()
     if weight_row:
-        weights = json.loads(weight_row[0].setting_value)
+        weights = json.loads(weight_row[0].value)
         # Validate keys match
         if set(weights.keys()) == set(DEFAULT_WEIGHTS.keys()):
             DEFAULT_WEIGHTS = weights

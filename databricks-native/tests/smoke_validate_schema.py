@@ -12,11 +12,11 @@
 import sys
 sys.path.insert(0, "../_shared")
 
-from config import PlatformConfig
+from config import load_config
 from monitoring import Monitor
 
-cfg = PlatformConfig()
-mon = Monitor(spark, cfg, "smoke_validate_schema")
+cfg = load_config(dbutils, spark)
+mon = Monitor(spark, cfg)
 
 # COMMAND ----------
 
