@@ -37,11 +37,11 @@ blocked verification" mapping required by the Phase 0 exit gate.
 | REV2-13 | MC-RNN fresh-weight startup / no persisted state | 7 | blocked-external | Shared featurizer buildable; real training blocked. |
 | REV2-14 | Model evaluation absent / leaky | 7 | blocked-external | Eval harness buildable; real artifacts blocked. |
 | REV2-15 | trained-artifact -> serving chain unverified | 7 | blocked-external | Registry->deploy chain needs a real artifact. |
-| REV2-16 | Static file path traversal | 1 | open | Constrain static root; reject encoded traversal/symlink escape; reserve `/api/`. |
-| REV2-17 | Authorization not centralized across paths | 1 | partial | Fail-closed checks landed on control routes; central `authorize()` still needed. |
+| REV2-16 | Static file path traversal | 1 | partial | Landed: SPA serving resolves inside the dist root and rejects `../`/symlink/absolute escapes; `/api/*` no longer falls back to index.html. Tests: `tests/security/test_phase1_authz.py`. |
+| REV2-17 | Authorization not centralized across paths | 1 | partial | Landed: central `authorize(user, action, resource)`; generic write + RPC routed through it; roles resolved from server-side allowlist (`SOC_ADMIN_EMAILS`/`SOC_ANALYST_EMAILS`) so the client `X-Forwarded-Groups` header can no longer escalate. Remaining: read-side authorization and agent/notebook tool paths. |
 | REV2-18 | UI false-green / no staleness | 9 | partial | Genie relabel + honest latency copy landed; broader UI truth is Phase 9. |
 | REV2-19 | Connector health reported without real collection | 8 | open | Stubs must advertise unavailable, not green coverage. |
-| REV2-20 | Response fabrication / approval not bound to revision | 1, 6, 8 | partial | SQL parameterization + upsert conflict key landed; approval binding + no self-approval remain. |
+| REV2-20 | Response fabrication / approval not bound to revision | 1, 6, 8 | partial | Landed: generic mutation of protected system-of-record tables (evidence, identity, approvals, response state, runtime health) blocked; response-action approval enforces separation of duties (no self-approval) and only reports success after confirming the action was pending. Remaining: binding approval to an exact evidence/finding revision (Phase 6). |
 | REV2-21 | Ingestion not durable / drops tail events | 4 | blocked-external | Envelope + accounting buildable; Zerobus durability needs workspace. |
 | REV2-22 | Latency claims untruthful | 4 | partial | Streaming trigger corrected; README/architecture latency claims made honest. |
 | REV2-23 | Topology mislabeled (Zerobus/Lakebase) | 4 | blocked-external | Real PostgreSQL Lakebase + Zerobus need infra; naming corrected in docs. |
@@ -54,7 +54,7 @@ blocked verification" mapping required by the Phase 0 exit gate.
 
 ## Rollup
 
-- **partial (some work landed):** REV2-17, REV2-18, REV2-20, REV2-22
+- **partial (some work landed):** REV2-16, REV2-17, REV2-18, REV2-20, REV2-22
 - **blocked-external (needs infra/hardware to verify):** REV2-04, REV2-12,
   REV2-13, REV2-14, REV2-15, REV2-21, REV2-23, REV2-27
 - **open (in-repo, achievable next):** all remaining findings

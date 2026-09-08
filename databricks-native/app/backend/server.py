@@ -148,25 +148,95 @@ READONLY_TABLES = {
     "user_activity_lineage", "system_audit_log",
 }
 
+# Tables that are a system of record: immutable evidence, resolved identities,
+# machine-written runtime health, and the approval/response state machine. These
+# must never be mutated through the generic /api/mutate endpoint; the only legal
+# writes are the typed, scoped actions (e.g. the response-action approve route)
+# or the notebooks that own them. Generic mutation here would let any writer
+# rewrite evidence or flip a response to "executed" without a real dispatch.
+PROTECTED_TABLES = {
+    # Immutable evidence / findings
+    "unified_evidence_objects", "ueo_signals", "fuse_results",
+    "detection_confluence_signals", "threat_intel_matches", "correlation_matches",
+    "cep_pattern_matches", "model_disagreements", "ks_recall_signals",
+    "detection_evaluations",
+    # Resolved identity spine
+    "entity_spine", "entity_edges", "entity_mentions",
+    # Knowledge store (embeddings / retrieval memory)
+    "knowledge_store", "knowledge_store_embeddings",
+    # Machine-written runtime health
+    "agent_status", "pipeline_health", "agent_triage_results",
+    "edge_collector_registry", "edge_collector_heartbeats", "notebook_runs",
+    # Approval / response state machine
+    "response_actions", "response_approvals",
+}
+
+
+def _parse_email_set(raw: Optional[str]) -> frozenset[str]:
+    return frozenset(
+        e.strip().lower() for e in (raw or "").split(",") if e.strip()
+    )
+
+
+# Trusted server-side role source. Roles are resolved from these allowlists
+# (keyed on the platform-verified email), NOT from a client-supplied header.
+ADMIN_EMAILS = _parse_email_set(os.environ.get("SOC_ADMIN_EMAILS"))
+ANALYST_EMAILS = _parse_email_set(os.environ.get("SOC_ANALYST_EMAILS"))
+
+# X-Forwarded-Groups is not a documented Databricks Apps identity header, so by
+# default it is NOT trusted for authorization (a caller could set it to escalate
+# if any hop fails to strip it). Only honor it when an operator explicitly opts
+# in for an environment whose proxy is known to inject and strip it.
+TRUST_FORWARDED_GROUPS = os.environ.get("SOC_TRUST_FORWARDED_GROUPS", "").strip().lower() == "true"
+
+
+def _resolve_roles(email: str, forwarded_groups: list[str]) -> tuple[list[str], bool, bool]:
+    """Resolve (groups, is_admin, is_analyst) from the trusted role source.
+
+    The platform-verified ``email`` is the only trusted principal. Roles come
+    from the server-side allowlists; the forwarded groups header is consulted
+    only when ``SOC_TRUST_FORWARDED_GROUPS`` is explicitly enabled."""
+    key = (email or "").strip().lower()
+    is_admin = bool(key) and key in ADMIN_EMAILS
+    is_analyst = is_admin or (bool(key) and key in ANALYST_EMAILS)
+
+    groups: list[str] = []
+    if TRUST_FORWARDED_GROUPS:
+        groups = forwarded_groups
+        if "soc_admins" in groups:
+            is_admin = True
+        if "soc_admins" in groups or "soc_analysts" in groups:
+            is_analyst = True
+
+    resolved_groups = list(groups)
+    if is_admin and "soc_admins" not in resolved_groups:
+        resolved_groups.append("soc_admins")
+    if is_analyst and "soc_analysts" not in resolved_groups:
+        resolved_groups.append("soc_analysts")
+    return resolved_groups, is_admin, is_analyst
+
 
 def _get_user_from_request(request: Request) -> dict:
     """
     Extract user identity from Databricks App runtime headers.
-    Databricks Apps inject these headers for every authenticated request.
+    Databricks Apps inject the identity headers for every authenticated request.
+    Roles are resolved server-side (see _resolve_roles), not read from a header.
     """
     email = request.headers.get("X-Forwarded-Email", "")
     user = request.headers.get("X-Forwarded-User", "")
     preferred_username = request.headers.get("X-Forwarded-Preferred-Username", "")
     groups_header = request.headers.get("X-Forwarded-Groups", "")
-    groups = [g.strip() for g in groups_header.split(",") if g.strip()] if groups_header else []
+    forwarded_groups = [g.strip() for g in groups_header.split(",") if g.strip()] if groups_header else []
+
+    groups, is_admin, is_analyst = _resolve_roles(email, forwarded_groups)
 
     return {
         "email": email,
         "username": user or preferred_username or email.split("@")[0] if email else "unknown",
         "display_name": request.headers.get("X-Forwarded-Display-Name", user or email),
         "groups": groups,
-        "is_admin": "soc_admins" in groups,
-        "is_analyst": "soc_analysts" in groups or "soc_admins" in groups,
+        "is_admin": is_admin,
+        "is_analyst": is_analyst,
     }
 
 
@@ -233,10 +303,38 @@ def _control_requires_admin(path: str) -> bool:
 def _check_write_permission(user: dict, table_name: str):
     if not user.get("is_analyst"):
         raise HTTPException(status_code=403, detail="Analyst or admin role required to modify data")
+    if table_name in PROTECTED_TABLES:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Table '{table_name}' is a protected system of record and cannot be "
+                f"modified through the generic API. Use the dedicated typed action."
+            ),
+        )
     if table_name in ADMIN_TABLES and not user["is_admin"]:
         raise HTTPException(status_code=403, detail=f"Admin access required for table '{table_name}'")
     if table_name in READONLY_TABLES:
         raise HTTPException(status_code=403, detail=f"Table '{table_name}' is read-only")
+
+
+def authorize(user: dict, action: str, resource: str) -> None:
+    """Central authorization decision for every mutation path.
+
+    ``action`` is one of ``read``/``write``/``admin``; ``resource`` is the table
+    or control resource being acted on. Fails closed with an HTTPException.
+    Routing all paths (generic table API, control routes, RPC) through this one
+    function is what removes alternate-path bypasses: the decision cannot differ
+    between a generic and a dedicated route."""
+    _require_authenticated(user)
+    if action == "read":
+        return
+    if action == "admin":
+        _require_admin(user)
+        return
+    if action == "write":
+        _check_write_permission(user, resource)
+        return
+    raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
 
 # ──────────────────────────────────────────────
@@ -654,8 +752,7 @@ async def mutate_table(table_name: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
 
     user = _get_user_from_request(request)
-    _require_authenticated(user)
-    _check_write_permission(user, table_name)
+    authorize(user, "write", table_name)
 
     body = await request.json()
     operation = body.get("operation", "insert")
@@ -754,8 +851,7 @@ async def rpc_call(function_name: str, request: Request):
     """Execute a stored function / SQL function in Unity Catalog."""
     _validate_identifier(function_name)
     user = _get_user_from_request(request)
-    if not user["is_admin"]:
-        raise HTTPException(status_code=403, detail="RPC calls require admin access")
+    authorize(user, "admin", function_name)
 
     body = await request.json()
     params = body.get("params", {})
@@ -2799,20 +2895,57 @@ async def assign_case(case_id: str, request: Request):
 # Response Actions: Approve / Reject / Rollback
 # ──────────────────────────────────────────────
 
+def _action_originator(action: dict) -> str:
+    for field in ("requested_by", "created_by", "triggered_by", "author", "owner"):
+        val = (action.get(field) or "").strip().lower()
+        if val:
+            return val
+    return ""
+
+
 @app.put("/api/control/response-actions/{action_id}/approve")
 async def approve_response_action(action_id: str, request: Request):
-    """Approve a pending response action for execution."""
+    """Approve a pending response action for execution.
+
+    Enforces separation of duties (an action's originator may not approve it) and
+    only reports success after confirming the action existed and was pending, so
+    the response never claims an approval that did not happen."""
     user = get_current_user(request)
+    approver = (user.get("username") or user.get("email") or "").strip().lower()
+
+    rows = query(
+        f"SELECT * FROM {fqn('response_actions')} WHERE id = :id", {"id": action_id}
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Response action not found")
+    action = rows[0]
+
+    status = (action.get("status") or "").strip().lower()
+    if status != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Response action is '{status or 'unknown'}', only a pending action can be approved",
+        )
+    if approver and _action_originator(action) == approver:
+        raise HTTPException(
+            status_code=403,
+            detail="Separation of duties: you cannot approve a response action you requested",
+        )
+
     try:
         execute_write(f"""
             UPDATE {fqn('response_actions')}
             SET status = 'approved', approved_by = :user, approved_at = current_timestamp(), updated_at = current_timestamp()
             WHERE id = :action_id AND status = 'pending'
         """, {"action_id": action_id, "user": user.get("username", "system")})
-        trigger_job("[0xDSI] Agent 15 - Automated Response")
-        return {"action_id": action_id, "status": "approved", "approved_by": user.get("username")}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    _audit_log(user, "approve", "response_actions", f"action_id={action_id}")
+    # Dispatch is best-effort and separate from the approval record; approval
+    # does not claim the action was executed.
+    trigger_job("[0xDSI] Agent 15 - Automated Response")
+    return {"action_id": action_id, "status": "approved", "approved_by": user.get("username")}
 
 
 @app.put("/api/control/response-actions/{action_id}/reject")
@@ -3523,15 +3656,39 @@ _reorder_generic_api_routes()
 
 DIST_DIR = Path(__file__).parent.parent / "dist"
 
+
+def _safe_static_file(root: Path, full_path: str) -> Optional[Path]:
+    """Resolve ``full_path`` under ``root`` and return it only if it stays
+    inside ``root`` and is a real file. Returns None for traversal attempts
+    (encoded or not), absolute paths and symlink escapes.
+
+    Resolving both the root and the candidate and requiring containment defeats
+    ``../`` sequences and symlinks that point outside the static directory."""
+    root_resolved = root.resolve()
+    try:
+        candidate = (root / full_path).resolve()
+    except (OSError, ValueError):
+        return None
+    if candidate != root_resolved and root_resolved not in candidate.parents:
+        return None
+    if candidate.is_file():
+        return candidate
+    return None
+
+
 if DIST_DIR.exists() and (DIST_DIR / "index.html").exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="static-assets")
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        """Serve the SPA frontend. All non-API routes go to index.html."""
-        file_path = DIST_DIR / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(str(file_path))
+        """Serve the SPA frontend. Non-API, in-root files are served directly;
+        every other non-API route falls back to index.html. API paths are never
+        served HTML: an unknown /api/* route returns a real 404."""
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        safe = _safe_static_file(DIST_DIR, full_path)
+        if safe is not None:
+            return FileResponse(str(safe))
         return FileResponse(str(DIST_DIR / "index.html"))
 else:
     logger.error(

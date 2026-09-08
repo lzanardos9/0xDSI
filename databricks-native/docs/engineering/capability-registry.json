@@ -28,17 +28,17 @@
       "evidence": ["app/backend/server.py"],
       "tests": [],
       "blockers": [],
-      "notes": "Exposes generic /api/query, /api/mutate, /api/rpc plus typed read endpoints. Generic mutation of protected tables is an audit finding (Phase 1). Fail-closed auth and SQL parameterization landed."
+      "notes": "Exposes generic /api/query, /api/mutate, /api/rpc plus typed read endpoints. Generic mutation of protected system-of-record tables is now blocked (Phase 1); reads are not yet authorized. Fail-closed auth and SQL parameterization landed."
     },
     {
       "id": "authz",
       "title": "Authorization",
       "claim": "Every mutation is authorized by role.",
-      "state": "experimental",
+      "state": "implemented",
       "evidence": ["app/backend/server.py"],
-      "tests": [],
-      "blockers": ["No centralized authorize(principal, action, resource, tenant, fields) yet", "Trusted identity path not verifiable without a real SSO deployment"],
-      "notes": "Fail-closed behavior landed for control routes; full cross-path centralization and self-approval prevention are Phase 1."
+      "tests": ["tests/security/test_phase1_authz.py"],
+      "blockers": ["Read-side authorization and agent/notebook tool paths still open", "Live SSO role source not verifiable without a real deployment"],
+      "notes": "Central authorize() gates generic writes and RPC; roles resolved from a server-side allowlist so the forwarded groups header can no longer escalate; protected system-of-record tables refuse generic writes; response approval enforces separation of duties."
     },
     {
       "id": "threat-intel-matching",
