@@ -173,6 +173,20 @@ def check_finding_revision() -> dict:
     }
 
 
+def check_idempotency() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/property/test_idempotency.py"], ROOT
+    )
+    return {
+        "id": "idempotency_phase6",
+        "category": "property",
+        "command": "python tests/property/test_idempotency.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_frontend_build() -> dict:
     code, tail = _run(["npm", "run", "build"], ROOT / "app")
     return {
@@ -212,6 +226,7 @@ def main() -> int:
         check_calibration(),
         check_ingest_accounting(),
         check_finding_revision(),
+        check_idempotency(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]
