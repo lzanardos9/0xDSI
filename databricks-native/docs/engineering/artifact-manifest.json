@@ -1,0 +1,4436 @@
+{
+  "manifest_schema_version": "1.0.0",
+  "generator_version": "1.0.0",
+  "root": "databricks-native",
+  "total_files": 486,
+  "total_bytes": 10381409,
+  "summary": {
+    "by_artifact_type": {
+      "asset": 10,
+      "backend_service": 1,
+      "build_config": 12,
+      "databricks_notebook": 131,
+      "deployment_config": 5,
+      "documentation": 6,
+      "frontend_entry": 1,
+      "frontend_module": 298,
+      "other": 1,
+      "shared_library": 10,
+      "stylesheet": 1,
+      "test": 5,
+      "test_script": 1,
+      "tooling": 4
+    },
+    "by_shipping_status": {
+      "asset": 10,
+      "build_config": 18,
+      "deployment": 5,
+      "documentation": 6,
+      "experimental": 1,
+      "production": 3,
+      "setup": 5,
+      "shared_library": 9,
+      "test": 6,
+      "unreviewed": 423
+    },
+    "by_runtime": {
+      "browser": 300,
+      "build-tooling": 16,
+      "databricks-bundle": 5,
+      "databricks-spark": 131,
+      "n/a": 17,
+      "python": 5,
+      "python (databricks runtime)": 10,
+      "python-fastapi": 1,
+      "shell": 1
+    },
+    "reviewed": 5,
+    "unreviewed": 423
+  },
+  "artifacts": [
+    {
+      "path": "ARCHITECTURE_DEEP_DIVE.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "0a214c5cedb1fec2c2bdfc0cc59d0eb2986c49d86497ca623eb777ddd4833833",
+      "bytes": 40362
+    },
+    {
+      "path": "Makefile",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "58c34fe27e22809df56385eeb5ba3ffd47151a0577db868b445fa741b22281b2",
+      "bytes": 4824
+    },
+    {
+      "path": "README.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "b54e383860a3411e4e08b7c24a25a45a906fca73793ae97eb608f065766c0c99",
+      "bytes": 109589
+    },
+    {
+      "path": "app/app.yaml",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "3e3b79c52de522fe6a88ccf7675f97ea4359b2fe0bbdc5aee3f478b38eb9e5d3",
+      "bytes": 539
+    },
+    {
+      "path": "app/backend/server.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "production",
+      "review": "curated",
+      "sha256": "06949bc51f7df9aed0f8afc6eb47cd33c2f231f86f599e28d314566768516585",
+      "bytes": 155942,
+      "capability": "data-api-gateway",
+      "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
+    },
+    {
+      "path": "app/frontend/.env.production",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "2e5a880251c5b24ba61ad94fbc60b853c053a00f2db9ae19b15dc522823e8d4a",
+      "bytes": 26
+    },
+    {
+      "path": "app/frontend/index.html",
+      "artifact_type": "frontend_entry",
+      "runtime": "browser",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "0af06b3f6ffe1cbd1d6c288f6a770bed811ff0c0193e20acc73915f8715fd63a",
+      "bytes": 384
+    },
+    {
+      "path": "app/frontend/postcss.config.js",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "e32657baf631d7c5f4dc67b4b2ee0ec8e7d5b3c41860e09cddce7c0377cd80bc",
+      "bytes": 81
+    },
+    {
+      "path": "app/frontend/public/LUIZZZZZZZ.png",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/public/Screenshot_2026-06-15_at_3.33.51_AM.png",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e131b1a5ba9eb4df6845023e66c9d4dd50628269a7f7d5ce0be579b4505e2185",
+      "bytes": 23174
+    },
+    {
+      "path": "app/frontend/public/badge-photo-authorized.webp",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/public/badge-photo-different.webp",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/public/captured-authorized-face.webp",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/public/captured-intruder-face.webp",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/public/datacenter-cctv.webp",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/public/dbricks.png",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/public/earth-dark.webp",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/public/luizzz.jpg",
+      "artifact_type": "asset",
+      "runtime": "n/a",
+      "shipping_status": "asset",
+      "review": "auto",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "app/frontend/src/App.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "production",
+      "review": "curated",
+      "sha256": "e6156697a846ed8f81fc171f76981387dcdefecd5f9d6a05185f18b1320120ed",
+      "bytes": 972,
+      "capability": "soc-console-ui",
+      "notes": "Root of the single shipped frontend build under app/frontend."
+    },
+    {
+      "path": "app/frontend/src/components/AIIncidentSummarizer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "13abc99cd4bbf2c7761835859da925c6edb977320c21df67b0df6564878319de",
+      "bytes": 87427
+    },
+    {
+      "path": "app/frontend/src/components/AIMalwareSandbox.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "eb1024dc0ef6e9a3383f0aced11603c00e4d4bde8563933be59e4b7cfb42113e",
+      "bytes": 50967
+    },
+    {
+      "path": "app/frontend/src/components/AIPlaybookGenerator.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "66f20abb2fc8bf98bc7dd305878406afff180bf26694f18fc614bc44519e8ab9",
+      "bytes": 42764
+    },
+    {
+      "path": "app/frontend/src/components/ActiveListsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "51ab62bd8072a9b3016315adf80ea2a988c5e5c5f4464a4ee0c74380035a891a",
+      "bytes": 11132
+    },
+    {
+      "path": "app/frontend/src/components/AdvancedHuntingQuery.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "492d326e7f3d4c4b1f4420d2d29faf5ac0a1bd6e361c549bbb92a557ba5fe33b",
+      "bytes": 26452
+    },
+    {
+      "path": "app/frontend/src/components/AgentBricksSOC.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "efa295bfff6d5ca5e381e355df1b918967a3676deb0a0ddba990a2c7853ed00c",
+      "bytes": 32798
+    },
+    {
+      "path": "app/frontend/src/components/AgentCodeConfiguration.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d17e6afb69b598772cfff15e324d51dacbdb92b49e2f9a1f97a519065a1c5521",
+      "bytes": 116348
+    },
+    {
+      "path": "app/frontend/src/components/AgentNetworkGraph3D.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "64eaa5fb1c6cd4733ae59fa5f0e54d1352298261edda57d7466bd59d7083ff16",
+      "bytes": 19161
+    },
+    {
+      "path": "app/frontend/src/components/AgentStatusPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "800e8198d95c848d1650a0ad697a92eb5c0d2f59efaf0444dc6ac2e38798132d",
+      "bytes": 10509
+    },
+    {
+      "path": "app/frontend/src/components/AgentStepLoader.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "dc79eac109f2ec43a837a46aa51d9c694f1f2139d8eacc6a06549258da433975",
+      "bytes": 11325
+    },
+    {
+      "path": "app/frontend/src/components/AlertsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d630deefa1a41581550aa26900b5511e913dfb202cf3c2a67f046ae30862cc33",
+      "bytes": 8708
+    },
+    {
+      "path": "app/frontend/src/components/Architecture2D.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "fa8c6c2d2c833fb7c16aa91d40bbf93f306428fad0616c07fcb09a022a9a5609",
+      "bytes": 17176
+    },
+    {
+      "path": "app/frontend/src/components/Architecture3D.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a2b2470bfccf9c663b18f9663a3fd26940031dbf147bec4a28fa2d83e531d769",
+      "bytes": 40464
+    },
+    {
+      "path": "app/frontend/src/components/ArchitectureDocumentation.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f368158783f8e0bdfd95b1f0a89645a7c9f895f597c6e7007823e0d01e7489e2",
+      "bytes": 55931
+    },
+    {
+      "path": "app/frontend/src/components/ArchitectureVisualization.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4c4f99230da4d67d64ebca15511b86a0a1d13f455db2645d76c29e59a22b9c6e",
+      "bytes": 5318
+    },
+    {
+      "path": "app/frontend/src/components/AttackGraphVisualization.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6463d49b9f4c710f23c7b86750fec750b56fc093d18e48d5e204c16b211d3ebb",
+      "bytes": 16334
+    },
+    {
+      "path": "app/frontend/src/components/AttackUniverse.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b92a696f019295ad2015d23b440732b3849d9c23c32730e0641c3eb63651b2c7",
+      "bytes": 117101
+    },
+    {
+      "path": "app/frontend/src/components/AttackVectorGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b1afd780d31c81bcd9bdeb886423a601f2a8675f22f957b475b30e147823b86f",
+      "bytes": 61586
+    },
+    {
+      "path": "app/frontend/src/components/BusinessOverview.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4d8fb6064d8710d43c12b667fa76024c075d8214972dce9b4bbbbd043d064a08",
+      "bytes": 15330
+    },
+    {
+      "path": "app/frontend/src/components/CEPLiveGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8ecc40968a787fe875029caae35d438b1d3fa74b46f75e63072009a4bb9ed715",
+      "bytes": 37312
+    },
+    {
+      "path": "app/frontend/src/components/CISOAssistant.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b93ef8374b83e2995a9deffae0207a79c3dbacaf81aa6258a0378dbf3fa5952c",
+      "bytes": 28633
+    },
+    {
+      "path": "app/frontend/src/components/CasesPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e5eda8e6f3f0866f003b722872823b9e8972c0e58b5ab5acbf0eb83fc029f8e0",
+      "bytes": 80426
+    },
+    {
+      "path": "app/frontend/src/components/ChronoWeave.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6aeb922d525823a9d7e1059e9fe26f14540ee0104519c598c9a71573e3a588cf",
+      "bytes": 57435
+    },
+    {
+      "path": "app/frontend/src/components/ComplianceDashboard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "722b0a58330504bfd92a85e0fc79fe883d25c563b873d3a879b8595aa56ad5b8",
+      "bytes": 26958
+    },
+    {
+      "path": "app/frontend/src/components/CorrelationRuleGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a3360f041ce7d4a5c4021e77836fc6784db1f839a253b8052dc59e43b40b62c6",
+      "bytes": 9612
+    },
+    {
+      "path": "app/frontend/src/components/CorrelationRulesPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "316c9995ca2dbace4cc9305035ac6193d2a7d78fb6069c9a1c6fdf45f061265e",
+      "bytes": 45054
+    },
+    {
+      "path": "app/frontend/src/components/CrashAnalysisPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6e691d11af3e03d55c2e798676274adc9ceb2445145fb47899f5a0431a47890f",
+      "bytes": 29239
+    },
+    {
+      "path": "app/frontend/src/components/DPIInspection.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4046e45b3cf098d92fe5eb342eb1f86a034ae7b94d895eb645c2b813da154f09",
+      "bytes": 39116
+    },
+    {
+      "path": "app/frontend/src/components/DaCInspectorModal.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5ea72ad6e65353d8f61c725c5c9b635ac233a08780c216d87e86e05eed79a196",
+      "bytes": 59767
+    },
+    {
+      "path": "app/frontend/src/components/Dashboard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a14e348256d539b2c93c387ae7f16f6b6b49506107bdd4f08b5110476f3b89a9",
+      "bytes": 65550
+    },
+    {
+      "path": "app/frontend/src/components/DashboardOld.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "619e32eeb8b2c3a7aaf891c0f61395c62f94e87370648f13f59bda0eab6d25e4",
+      "bytes": 42149
+    },
+    {
+      "path": "app/frontend/src/components/DataConnectors.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1d7cd4c378b7c4b62658559f55be51af650904839598c5ddb4f05d49094bf97d",
+      "bytes": 45745
+    },
+    {
+      "path": "app/frontend/src/components/DatabricksNotebooksPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7093701f4302b59e626e1cd86f34e5af00ee5196b92b1b7bdcba2f37137fba4f",
+      "bytes": 7545
+    },
+    {
+      "path": "app/frontend/src/components/DetectionConfluence.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "07d2d1f29fc3b3d6cdb6e0d0048b988bdc70a8eec92ea60451fa5286638adfe2",
+      "bytes": 78161
+    },
+    {
+      "path": "app/frontend/src/components/DetectionSLM.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8aa3ed9c8b8305d1fe2a3cfb317521cda04e46b4af5120a10649985e5e935b7b",
+      "bytes": 64945
+    },
+    {
+      "path": "app/frontend/src/components/DocumentAnalysis.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "2cb17931388a06ac2bcd61e6661593f12f13f36878f3df6f30a4e87bbb9eac5c",
+      "bytes": 28365
+    },
+    {
+      "path": "app/frontend/src/components/EntityInvestigation.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "138dda30c7371e7c2c34f85875410bb1563dc5ab74c57826be3c02343c1aec22",
+      "bytes": 44390
+    },
+    {
+      "path": "app/frontend/src/components/EventStream.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "43382eb553f0ea3b059cd11c3f5a71e2ff932cff56e30ec0b988082cdddf8d1d",
+      "bytes": 8607
+    },
+    {
+      "path": "app/frontend/src/components/ExecutiveDashboard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9e2190ad6c6a2d7703476db5b85edefc867d92d3dc1bee524c56114e3c22c6cd",
+      "bytes": 27785
+    },
+    {
+      "path": "app/frontend/src/components/ExploitForge.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "755ac1e660acd995a02e93e7388b3f008cd3d799289704faf29677df3f83ad8a",
+      "bytes": 37862
+    },
+    {
+      "path": "app/frontend/src/components/FeatureLab.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e50850129622a19f4c2033ffd72bf9948986bb05b8d0f3e976302dd802995d41",
+      "bytes": 35134
+    },
+    {
+      "path": "app/frontend/src/components/HoneypotControl.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1570690b98174ce9db4eebba50aa4c0df29149c7599a91c9d231a275fb5029f6",
+      "bytes": 6229
+    },
+    {
+      "path": "app/frontend/src/components/IOCPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5b4e4af183ddf7220c25d737c40b3a9945609d35dab48f34cab67ec667c02672",
+      "bytes": 13772
+    },
+    {
+      "path": "app/frontend/src/components/InternalServicesHub.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0b0d2535cf3daf9898389d49977d6414cd753e209659e23ab10131f0701ac7a7",
+      "bytes": 12521
+    },
+    {
+      "path": "app/frontend/src/components/LLMGuardrailsControl.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "149bbc2f961e739280039df5a3bde4015c9a0bb8ceb43132b92c45ce0d181bfb",
+      "bytes": 7990
+    },
+    {
+      "path": "app/frontend/src/components/LLMRiskProfiling.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0ab631f28163857539ed0a808fe358723c23020dc8bdade1e9c82810f2d50cbd",
+      "bytes": 57981
+    },
+    {
+      "path": "app/frontend/src/components/ListsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "de7f01570b578f123e4489a7b38f400487f83af802f7a9c5c63b3a5c4080cfc7",
+      "bytes": 9649
+    },
+    {
+      "path": "app/frontend/src/components/Login.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "dcab28d05c5da1ccaace0778d2cf4bdb7239b350d13c2dc47f578aa50c11f9e5",
+      "bytes": 29312
+    },
+    {
+      "path": "app/frontend/src/components/LuceneFastSearch.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b4bc75ed7a6482f7dafe68252fe4ef2bc9cf45526ced7d263ceef0d420ec2da4",
+      "bytes": 11659
+    },
+    {
+      "path": "app/frontend/src/components/MCPRegistry.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a0fe7e23cd737109cfdc967eaa750f79b70f12b2b1876f05f43e7ce9d415d9ae",
+      "bytes": 45247
+    },
+    {
+      "path": "app/frontend/src/components/MLModelExplainer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "003cbdf0d1fa05574126be0d73aaeaace4b8a2763ad181500dbfb2625418247c",
+      "bytes": 5416
+    },
+    {
+      "path": "app/frontend/src/components/MicroPatternsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "acc459ffcbb69134e1f5620d03890770ce33d2d8c5f91742d5b4d3e81f2a2d46",
+      "bytes": 34618
+    },
+    {
+      "path": "app/frontend/src/components/MitreAttackMatrix.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e8b74b81adba0c73b6fd92997a6f724e308936ef76023acb2655007c594e3731",
+      "bytes": 43269
+    },
+    {
+      "path": "app/frontend/src/components/ModelPoisoningGuard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "05a90a351ac0edf9e59badf39abeb3c559af9461016cf494703b35683ba2dc73",
+      "bytes": 36526
+    },
+    {
+      "path": "app/frontend/src/components/MultiTenantManager.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b357a149202f4b117d4a8605d28e217cbe06b26b3928e7331e55703e23be7ad3",
+      "bytes": 29012
+    },
+    {
+      "path": "app/frontend/src/components/NetworkTopology.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "23ec933a4d12521d0d7562a4c37c395a3cb2163fdd016960f66a45a6374cf846",
+      "bytes": 74302
+    },
+    {
+      "path": "app/frontend/src/components/OCSFSchemaBrowser.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "15871c7e3263d3930c3e101f4594e5551c09c749e1594941dc5430a920314d2c",
+      "bytes": 18035
+    },
+    {
+      "path": "app/frontend/src/components/PSOEnginePanels.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c19dd4702894393b280f3423e1b83ca22db8387209abb0a36ee9ae13f11c7c36",
+      "bytes": 21451
+    },
+    {
+      "path": "app/frontend/src/components/PatternDiscoveryPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "33befeecb23948f1245d8ea4769a76fd683ebcc2c3d5d37b35e5c8bb95f196cc",
+      "bytes": 29643
+    },
+    {
+      "path": "app/frontend/src/components/PatternGraph3D.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4b2693dafc073852dc5153027374922e5a40cda852c4186940033f44f25bd38f",
+      "bytes": 9991
+    },
+    {
+      "path": "app/frontend/src/components/PlatformEconomics.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c84a99c4a633671f9ce26954386ebd5c57e68152e87bea08b714ec7ce9a36715",
+      "bytes": 20610
+    },
+    {
+      "path": "app/frontend/src/components/ProductionSettings.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "18cec484d70e6fd8f8c468821c7d35b4ea0c0aa09173b99b365800f8ad8d2e3a",
+      "bytes": 60341
+    },
+    {
+      "path": "app/frontend/src/components/PublicSectorOverview.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a47cd997fd620cf3baf0cda0ccacd7699b82f5baa183adb93cf2ffcb97612ddc",
+      "bytes": 21327
+    },
+    {
+      "path": "app/frontend/src/components/ROIBusinessValue.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cd271eb6e8dbc39fb8c131bcc6097828535fa3bb048432b4bfa65f52ac41739d",
+      "bytes": 17829
+    },
+    {
+      "path": "app/frontend/src/components/RawDataAnalysis.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a4d0de717505050d5c29fb06ef027d0db0249eccc01ef1d0d3a3df3eaefac63b",
+      "bytes": 22720
+    },
+    {
+      "path": "app/frontend/src/components/RealTimeGraphStreaming.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8dc999c6c6fcd14746b57a49948578422ae33ee4abd91dea200360230c230870",
+      "bytes": 28828
+    },
+    {
+      "path": "app/frontend/src/components/RedTeamAutomation.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "806bec010712db91418bc19fd8fa3d0c1f29237e6c187bfbc2ac392497151ffd",
+      "bytes": 23139
+    },
+    {
+      "path": "app/frontend/src/components/ReportBuilder.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f58837f1d42b8e1fe709b0aa5d28e163900decc72e47750f14175dc65bc9f659",
+      "bytes": 28752
+    },
+    {
+      "path": "app/frontend/src/components/Reports.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "240332009e443967af9adbfaaea38e4d0494a809fe8fb6381fc9c2ffa9f479c0",
+      "bytes": 31449
+    },
+    {
+      "path": "app/frontend/src/components/ResponseApprovalsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "738ccb4dc0fe81305eb5d42b9bc9d35aff768707cd68090ab3032455116fadde",
+      "bytes": 21683
+    },
+    {
+      "path": "app/frontend/src/components/ResponseAutomation.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8adacc1eed4043d312738f352acc8d39c9040edbab2459000b603055b36ab0f2",
+      "bytes": 8578
+    },
+    {
+      "path": "app/frontend/src/components/RiskOverview.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "17152f39ce87098301bce3aac563b6194cc54ba8ffb82486a7d26f2387d543cf",
+      "bytes": 20349
+    },
+    {
+      "path": "app/frontend/src/components/SAPSecurityConnector.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "52d649078a9230258e4bd3214dfc4d985db479ffa2278ae3d6a87ccabb4d97db",
+      "bytes": 20467
+    },
+    {
+      "path": "app/frontend/src/components/SIEMMarketAnalysis.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5bcfb8eed00f00a20728bcd9123837e1f142a84114246f29abe81c8826ebd392",
+      "bytes": 20608
+    },
+    {
+      "path": "app/frontend/src/components/SOCAgents3D.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6d0a5e6fb2897e66291afb6590310133eebe12333d82a1fd5f92b5fe742d94e7",
+      "bytes": 37945
+    },
+    {
+      "path": "app/frontend/src/components/SOCOptimization.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a95ee47cd727d0b93e9368754bfef5f6e85a966668dfb94883a4eb4a30c6f100",
+      "bytes": 21741
+    },
+    {
+      "path": "app/frontend/src/components/SessionListsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "dd39c0a0c96b5a9cdd032517f1568b7afc824ab708db21e4d2ace7eb9fac928f",
+      "bytes": 22233
+    },
+    {
+      "path": "app/frontend/src/components/SessionMonitor.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a5411ce575f06958319166c40002a6f48b2819742af8fc7e1c396e01f158d362",
+      "bytes": 8270
+    },
+    {
+      "path": "app/frontend/src/components/SmartThreatModeling.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9231ec8af29d820e9994e94e17474cc2481bc31c1805b1d38603214e392468db",
+      "bytes": 16432
+    },
+    {
+      "path": "app/frontend/src/components/StatefulBackdoorDefense.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "44b7cb803bed97a94d8246a6b882d3617519292ea9d24510ef8ff079e617a928",
+      "bytes": 25272
+    },
+    {
+      "path": "app/frontend/src/components/StixTaxiiManager.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "74a18eeeae3766fc58b23ba5e5a6c2f0cd8d4cad78cab48b6526e0869a89566f",
+      "bytes": 25802
+    },
+    {
+      "path": "app/frontend/src/components/StreamingGraphVisualization.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ac6f58eb8aa46b9d7f29ddfbf38648699796688a92589fbcacc42783562417b8",
+      "bytes": 51814
+    },
+    {
+      "path": "app/frontend/src/components/SwarmCrucible.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "733b3ef63ef3019ff8adc93275cdbaaba9964669fb92499b61a997d82a08d48a",
+      "bytes": 51426
+    },
+    {
+      "path": "app/frontend/src/components/ThreatEscalationPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "781b759a1d090d07a88c3114ff19e973e019e9412da1d69185c977f1ab8e2414",
+      "bytes": 46257
+    },
+    {
+      "path": "app/frontend/src/components/ThreatFeedsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "915969c2c8d13f0597d6000c648b6820ca3a91f06b645eb22ba4125eaff7175b",
+      "bytes": 13153
+    },
+    {
+      "path": "app/frontend/src/components/ThreatGlobe.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "096f623dfb9b5ac417cf9acf6b11bb37427e85fcf99948266c47077d43f11718",
+      "bytes": 60191
+    },
+    {
+      "path": "app/frontend/src/components/ThreatRadar.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "46deeaaf6b1427a513a9c95e57e28719d0b7053ed9c455ddeefc154f20e19025",
+      "bytes": 6305
+    },
+    {
+      "path": "app/frontend/src/components/ThreatSimulator.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1abfcf4e8b1d24969379ed799a8d8616d302b70df651fb08e3eb4be216992b9d",
+      "bytes": 110261
+    },
+    {
+      "path": "app/frontend/src/components/TrendEngineCET.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8af42ecc843affc2d9a71a31208740353ab4b7a0c6554231284c42f4f3ec8bb0",
+      "bytes": 53853
+    },
+    {
+      "path": "app/frontend/src/components/UserActivityLineage.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "86604d96a1f5a4900c1bb342ab8200b0d1741a75fa6839c03c5d69bdded020f3",
+      "bytes": 25136
+    },
+    {
+      "path": "app/frontend/src/components/UserBehavior.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "28e6c04165c7a4992874821e0a6bc0372f20ef9460914c2227ec64710c03f42f",
+      "bytes": 21250
+    },
+    {
+      "path": "app/frontend/src/components/UserEventNetwork.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "2e73e643caf94c739e9e0eacad7236ccba3eb0ec942d811ba60ceb5180f315ba",
+      "bytes": 11189
+    },
+    {
+      "path": "app/frontend/src/components/UserManagement.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1d1d6ce1df23c25c3f74d8b80a669e512a9980aea86a9b5a13f7f094caf2499e",
+      "bytes": 40679
+    },
+    {
+      "path": "app/frontend/src/components/VRImmersiveHUD.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "dfa3b42e74115fcd79daeff2ca4fc8ac7eeeef317cc58e3e5fc2de8f300f614e",
+      "bytes": 34661
+    },
+    {
+      "path": "app/frontend/src/components/VectorThreatHunting.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "060d15f54cd2b1a25713d15227da4f6e2fd6f1b1f372e5803ed0f925827f3e24",
+      "bytes": 87500
+    },
+    {
+      "path": "app/frontend/src/components/VulnerabilitiesPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6a8c36e24eff244586e1d21d1aaa9007a64fda921115eaf292c551bbadb8dd5a",
+      "bytes": 16582
+    },
+    {
+      "path": "app/frontend/src/components/WorkflowsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a65d68604b0a9555c96b138aac4df092fe189c5f4985de585d478c732bb79caa",
+      "bytes": 23365
+    },
+    {
+      "path": "app/frontend/src/components/command-center/AgentCommsPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4dfaa4bf53bc675256dbcd81433fea3f3c5cfb8fe869bc94cc14142c21f83a28",
+      "bytes": 9468
+    },
+    {
+      "path": "app/frontend/src/components/command-center/CameraFeedModal.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0c6691ee1449488ab01694010f0c425a00366e5c41f6ed247d0fb0b2a1c6e5cc",
+      "bytes": 35151
+    },
+    {
+      "path": "app/frontend/src/components/command-center/CommandCenter.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3248bcbdb60f5b6ff2fe127253df038cc82f144db67d447456fe384899ad1384",
+      "bytes": 19339
+    },
+    {
+      "path": "app/frontend/src/components/command-center/DefconAlert.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0c6debcbe56e343ac08a04acae82faf43492fc9a1e2c47887ea112d8d5e15057",
+      "bytes": 13055
+    },
+    {
+      "path": "app/frontend/src/components/command-center/DefenseShield.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "197dc207f3c168963b4ffbd3e787c7c93574c0becd81d32455d5aa5e2d03ae3d",
+      "bytes": 11011
+    },
+    {
+      "path": "app/frontend/src/components/command-center/DomainBridge.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "17f478b63c125be2535b6c105dfd6250def1b680ef8c2a37505d8609bf140e83",
+      "bytes": 13703
+    },
+    {
+      "path": "app/frontend/src/components/command-center/EmbeddingConstellation.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c160e249d031829b82a0e5e1d6ba2bbab47903c20b5ac02c2a17d3bbad62bfb2",
+      "bytes": 11175
+    },
+    {
+      "path": "app/frontend/src/components/command-center/EventDrilldownModal.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a5e40d6c40b843f325b1d705ec31756bbd6c6ca3bbc0b635104817bc8031793b",
+      "bytes": 31369
+    },
+    {
+      "path": "app/frontend/src/components/command-center/EventProcessingFunnel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b9b8dff2cc7d3cf8ed0f5fab5e1964d6f08b6736082c7092fe81076fd23b6c39",
+      "bytes": 55674
+    },
+    {
+      "path": "app/frontend/src/components/command-center/IntelligenceMonitoring.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7e91cad59087e7347c75f10fcb8ad755a5c7cba9bcae3ed77fafcbecbb451fd3",
+      "bytes": 4027
+    },
+    {
+      "path": "app/frontend/src/components/command-center/KillChainWaterfall.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "33dcf7192fa674d5ba43203833afbc8764b41f47ec77af2e6fad7fbe74c59005",
+      "bytes": 9827
+    },
+    {
+      "path": "app/frontend/src/components/command-center/LowAndSlowTracker.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c40bf71985d6b7ec60a97a75facb0f4139fc0b1ca07979b8ce6ee20b2c569246",
+      "bytes": 18713
+    },
+    {
+      "path": "app/frontend/src/components/command-center/MonteCarloForecasting.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "57248d5ee051e490faf21c28e641d846045034c1325499380e515fa7100b8a0d",
+      "bytes": 28187
+    },
+    {
+      "path": "app/frontend/src/components/command-center/OSILayerView.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "004a3b7c7f4941b1673f30b712a37e38eca42af31a8794f9687a4be7978b65c8",
+      "bytes": 81018
+    },
+    {
+      "path": "app/frontend/src/components/command-center/PhaseExplorerView.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e8f1fc2ad9551623189ace227974db25c663cbd4a32ba6b54c3b314f4ca9febb",
+      "bytes": 31912
+    },
+    {
+      "path": "app/frontend/src/components/command-center/PredictiveThreatAnalytics.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "340695363a3f29132d109f01635cc3b1dc7b4a047f568c16ddd7c71e766e3808",
+      "bytes": 31314
+    },
+    {
+      "path": "app/frontend/src/components/command-center/RealtimeCEPGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "287794deb45c9287725a3d22debed9e2c6fc8edeba362d60f8dbc9baee4e0917",
+      "bytes": 17336
+    },
+    {
+      "path": "app/frontend/src/components/command-center/RiskPostureGauge.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c0c3118c1f849adbe7fc438b732fdb21d8cc456c506a6d18887c4e23542fa643",
+      "bytes": 14219
+    },
+    {
+      "path": "app/frontend/src/components/command-center/ThreatHeartbeat.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8d62d16716cf40fc1a8766bd8d0cfafad990cdd6a1b89758b6114b6fba925787",
+      "bytes": 8352
+    },
+    {
+      "path": "app/frontend/src/components/command-center/ThreatRadar.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "2190306d2adde74e527d5e8e7f295b6d5aa63d57bfabcdb757e0908039d4d51b",
+      "bytes": 12313
+    },
+    {
+      "path": "app/frontend/src/components/command-center/ThreatWeatherMap.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "433c895e9d333199cf7cd1efb78dd6ffc2c6765b68eaf8e4df7a7e3e3b78287b",
+      "bytes": 10033
+    },
+    {
+      "path": "app/frontend/src/components/command-center/eventFunnelData.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a705f8e8290b7276ed37c1caeb3d2d5e4e405e8f20cb63026c37ac270ad63614",
+      "bytes": 49219
+    },
+    {
+      "path": "app/frontend/src/components/command-center/intel/ClassifiedInfoFlow.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "88ff3d0c3e0ec4e957147b345ef94a569c89c9c4156e68394f087b92802e29e9",
+      "bytes": 14368
+    },
+    {
+      "path": "app/frontend/src/components/command-center/intel/ClearanceLevelMatrix.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d4270a9d5234360a78a81383f89a53d06abec9fdc5e977344e0ec5377f35e3dc",
+      "bytes": 10466
+    },
+    {
+      "path": "app/frontend/src/components/command-center/intel/CounterIntelDashboard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4a9b6d19a21ddef33d071c4cb6a329835330f236efd995da001c86b4e7d23835",
+      "bytes": 17933
+    },
+    {
+      "path": "app/frontend/src/components/command-center/intel/NeedToKnowCompartments.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7bf9d5404759146ca5d4aa66a146ebc02737f5ece9dc7868dde991ce07791d26",
+      "bytes": 10044
+    },
+    {
+      "path": "app/frontend/src/components/command-center/intel/SCIFAccessControl.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "20f42eb0c9115a27eefae9ca7e0227c31a8949a4043923beda8e06101fe1b6c7",
+      "bytes": 15419
+    },
+    {
+      "path": "app/frontend/src/components/command-center/intel/SIGINTInterceptor.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e0d7795a57d7a2e1068cc11bc60bc23a62f46817078873ec9b5c70a0f25a1fea",
+      "bytes": 14406
+    },
+    {
+      "path": "app/frontend/src/components/command-center/liveEventStream.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "fa3293e1e97abc186e3a4d7f5862de097ddaef05a5b663be9374c8f2d7263d05",
+      "bytes": 6674
+    },
+    {
+      "path": "app/frontend/src/components/command-center/phaseExplanations.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d5118a981d3c41dead1ef03c45a1e20a5036328ec59a19b43b55efc8dc934f50",
+      "bytes": 23135
+    },
+    {
+      "path": "app/frontend/src/components/command-center/useSharedThreatState.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8f71698e636ca542a219391c191f51bd408e3d59a9d460706c6a37514bde520f",
+      "bytes": 4773
+    },
+    {
+      "path": "app/frontend/src/components/confluence/KSValidationPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9ff7de26f3c5ff142012cf5e46a3597681028554ebf8526a36d3f9078f15fb06",
+      "bytes": 24853
+    },
+    {
+      "path": "app/frontend/src/components/connectors/CloudAPIsTab.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9ef1b752e7aecf5fb8eb277862ff1dfd9980a9eb4b8173090313c8cbe6ddfda9",
+      "bytes": 15156
+    },
+    {
+      "path": "app/frontend/src/components/connectors/ConnectorCatalog.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5ced53b679db04e99f824e739be36c2d81b03a4eae2cdeba00bfb988fce500b3",
+      "bytes": 17056
+    },
+    {
+      "path": "app/frontend/src/components/connectors/ConnectorConfigModal.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "474548b9307ac525d880641e8b99d5029f37731a6b3273538691c73f2cfb1ceb",
+      "bytes": 49931
+    },
+    {
+      "path": "app/frontend/src/components/connectors/ConnectorVersionAgent.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "16fea5adf60d22dbf6e725f979341fdf29eeb2aa94b57e3671a672264fb9f59f",
+      "bytes": 11597
+    },
+    {
+      "path": "app/frontend/src/components/connectors/ConnectorVibeBuilder.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5f4b72459380cc3f99828a4aa1502a5100f0f16ea3620d50b6cb320f9f020bbc",
+      "bytes": 144371
+    },
+    {
+      "path": "app/frontend/src/components/connectors/EdgeDeploymentsTab.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "35905a1cf30ad48ad3eaf26729f4c5a519563c98c20f60f9f3501864f0c11add",
+      "bytes": 37933
+    },
+    {
+      "path": "app/frontend/src/components/connectors/NetworkTapsTab.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "eeb79fd800fa8b595c9ad178335a218dae22543177466ac179a23d038b015b2c",
+      "bytes": 15273
+    },
+    {
+      "path": "app/frontend/src/components/connectors/SIEMIntegrationTab.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "012c26d5142ac87fac5febc78fc4c1eaeeeef546eb0b114ad4c72378770f01c5",
+      "bytes": 15757
+    },
+    {
+      "path": "app/frontend/src/components/correlation/CreateRuleModal.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e3b0e32d3b697f59b9e88981183708ea2caf86a1f1105247399516920761b1c3",
+      "bytes": 60283
+    },
+    {
+      "path": "app/frontend/src/components/correlation/DaCStatusBadge.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "10f5bc34b56c591d08657803f0647e59d13bb1d3fecf0e9938f852730b14ee4b",
+      "bytes": 4413
+    },
+    {
+      "path": "app/frontend/src/components/correlation/ImportRuleModal.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5cc60efb4bacf36faf0b7cd169630670f7040ab7a25ccd0f4e73d2aa31b2ea7d",
+      "bytes": 30342
+    },
+    {
+      "path": "app/frontend/src/components/correlation/RuleVersionDrawer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4749c586463540018dff07029f957103b5a8138d3b85cfbf79c0c576b8241912",
+      "bytes": 23780
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/ChartRenderer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "116e7d8fa1f93081902db7e3b7245ee1526bbfe58d5ca201eac67d6667b1f2e0",
+      "bytes": 15890
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/DashboardBuilder.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a8b8af44edf594dc6ffc6ee63d1c3689488aa96e95fce8ff330c742d5bad13c3",
+      "bytes": 13200
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/DashboardGrid.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e07c86074410fcca120abed15706b4beffcac8a78ab185d2371bb45672ef2d71",
+      "bytes": 3702
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/DashboardMigrationsTab.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "536c286d40809d252548430ed8b05214d2e1f3c598f25d6cc597d716573a17a6",
+      "bytes": 22676
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/DatabricksExportPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "de0c5c79a62217dfc063643da7270f04794247c83fb61a16cd1784c3cbf5cf50",
+      "bytes": 15983
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/MigrationWorkflow.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "23a23d5f8d396ed9cde7784e69cfc4bd684cfb4c707166930fec502193305e1b",
+      "bytes": 34993
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/StatWidget.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1bbb222975d1e852e4b3fe95c79cf4043c5b2ed7df2e2e4479d92dba5174595d",
+      "bytes": 1628
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/TableWidget.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3d0a0386cbd703ef3dd3546c9713a9cda10ee657e1bfd26749e9ddb158973e79",
+      "bytes": 2573
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/TextWidget.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "72bbae73d7f2a46bc8a81b3dc4e12886734ff456448fac99f7d2611d6b2df526",
+      "bytes": 347
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/WidgetCard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "eb58a917eaa00115577006083a4b32a07029bfe5046d316927e8f7026cec7c84",
+      "bytes": 8559
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/WidgetEditor.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c919851a6cdddc2a1c104757ce6035dad3d3513fcf13dea77f11d206772ac74f",
+      "bytes": 11716
+    },
+    {
+      "path": "app/frontend/src/components/dashboard-builder/WidgetPalette.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "413b8364acf3b3f23e3e5ebea9512c1d058410d6fb15d982096fa1266cbeeac9",
+      "bytes": 3265
+    },
+    {
+      "path": "app/frontend/src/components/feature-lab/ArchitectureDiagram.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "abbc47c69d27a8ec307895e5ddca603b624847db3e19016a864d27c3560411d0",
+      "bytes": 31948
+    },
+    {
+      "path": "app/frontend/src/components/feature-lab/BMADAgentPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e2bc74de7547b4965b19b391d0aaee7001685e3b46ec50cfa88279bbe91764f5",
+      "bytes": 17748
+    },
+    {
+      "path": "app/frontend/src/components/feature-lab/BMADLiveTheater.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cd9c97fc233309c3a9e8ed7b93234eccae540251c92eb9674dfa2f68974b8caf",
+      "bytes": 17731
+    },
+    {
+      "path": "app/frontend/src/components/feature-lab/CodeViewer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "af21a0f254d1667771b615c85c13f3bbecd8ecd78647537037f6e54e980b14db",
+      "bytes": 5196
+    },
+    {
+      "path": "app/frontend/src/components/feature-lab/LifecyclePanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ed60a7d80e8c74a54ddf73ff2a053e5972454594aa1a0e5fdb3538f0e2e6cd9b",
+      "bytes": 6240
+    },
+    {
+      "path": "app/frontend/src/components/feature-lab/PlanReview.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3053ddc5bda9022fc02ae50eb7965afefe53ba1527211012086bf8f42a547aa8",
+      "bytes": 14205
+    },
+    {
+      "path": "app/frontend/src/components/feature-lab/PublishToSOCButton.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4d8ea3ddf911b5bbfd94117269a0c4ab069bd49b22d221d6405b8c1d64d6b640",
+      "bytes": 9126
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/BoletoFraudEngine.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9791d379fdb0204656ece61af60868185fb5a7030a0e0634f949e00735fbddb0",
+      "bytes": 23373
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/BrazilBankingTrojans.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "955c0c9d240bf7a2d3f246789bddd1e26f2526284b871afe295d9cd75efbd278",
+      "bytes": 27405
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/CaseEvidenceGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a130eff5faded69e9f20c678b160ec9f007781ac17058f74a2262fcedd54a9c3",
+      "bytes": 35963
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/ConciliationEngine.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b13bbd2e7cdde1bef871c0012b419524ed6c366bd090042831eee30eb310f06b",
+      "bytes": 33331
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/CredentialSellingGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ce209b90f1c2c8aa56e51cfed73a017d1a236b032322680bd6929fdbbf2e9b49",
+      "bytes": 31543
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/FinancialCases.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "06e514e6270aace1332920f34afc5a6fb2c9b1ddcb55604f6f8409911a24333d",
+      "bytes": 51949
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/FinancialThreatIntel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "09372ffadbf23dd9a14516c96dea789dc2ee398d4f9fe6e3d17eb14b978e8254",
+      "bytes": 5970
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/IdentityGraphExplorer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ef610571964660c036482fc080144740abb92610c4ee9f89d6fcfca49fd354c7",
+      "bytes": 41229
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/IdentityTrustScores.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7e3dc91b89e070d5661bbec7fb0a2a8ed0e06211afba1d5aa533c103171d2824",
+      "bytes": 37029
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/InsiderCredentialSelling.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "2ba17942dc7bda15348a575e90ebdf68f20fdc6a80c8e98b02d8a9ba30d5f11b",
+      "bytes": 74175
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/InsiderCredentialTypes.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1fcbedf824c5480ecd2a6a9ce34833dd883c5313a13846798a9b471f14b0c6f0",
+      "bytes": 4678
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/PixFraudIntelligence.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e22ae46f3c649c72d622db055c7cb2126cff2417757228855a181df0b10bcf58",
+      "bytes": 27280
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/ResponseDecisions.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "55e186b434edb913c7ccc98c4abee4ece03e97d3e6ed9e0edc58d2f3ed854f2c",
+      "bytes": 32190
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/ResponseTimelineGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f01e1219b529dedde1db034dcd404463c2fd217e2cc65e05f12064e36c4acd76",
+      "bytes": 25448
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/SimulationAttackTreeGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d0da528191ba4cd6041d9f4a097c016314032d5d222458f8f05f01b0b93ae993",
+      "bytes": 23409
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/ThreatAttackChainGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b9eb9a53b4da39f1d806b4dfd71b8380d137e12e01090e989176243ec255c385",
+      "bytes": 23363
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/ThreatDetections.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0b8615be63da962dace49fb94d0d8f0d936d867b99c1508f4903d54c868d9380",
+      "bytes": 42929
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/ThreatSimulations.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1ee9f4b1d414483c5171d9993261f4a70f6e64faac77ad08668f8b0ae246ff6f",
+      "bytes": 35952
+    },
+    {
+      "path": "app/frontend/src/components/financial-threat/TransactionRiskMonitor.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6adb55c5c9f0023a557ccf2b43e573d4d3f88d9343ff26772c91dfc1cd016961",
+      "bytes": 42818
+    },
+    {
+      "path": "app/frontend/src/components/glasswing/GlasswingExploitGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d68d434e35f47b015b9eba8de36978a6420c00f7c67fad83e86288a54ab0a847",
+      "bytes": 17001
+    },
+    {
+      "path": "app/frontend/src/components/glasswing/GlasswingPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4f696e394857306efffa9a9ef9fb14ed754feb6bb8f8289389fc67143ee624d0",
+      "bytes": 11065
+    },
+    {
+      "path": "app/frontend/src/components/glasswing/GlasswingResults.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "12834832319cb417eee0ef6f75ee6a06f36b18b4cc3a20f3bd1e320fc0bbd280",
+      "bytes": 14988
+    },
+    {
+      "path": "app/frontend/src/components/glasswing/GlasswingScanHistory.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f3165c7d60c157ec50faf9954f67e15d46d9b0c4fba96949686f52c0b5889816",
+      "bytes": 9405
+    },
+    {
+      "path": "app/frontend/src/components/glasswing/GlasswingScanner.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "afe758ba124de3e0a8afbc6f5dbe5b6f156e05dd5a0f823c0b8f3e065c9d2033",
+      "bytes": 13943
+    },
+    {
+      "path": "app/frontend/src/components/glasswing/GlasswingStats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "66f121b75701473049056e6bc71fd9e166a75b1d6276f57cafff33c8d83a7234",
+      "bytes": 4472
+    },
+    {
+      "path": "app/frontend/src/components/glasswing/MythosPipelineView.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "899b925fbc3adec8695542bfcb1a260b1e1fa09e01b5f4eea2cca61a6cb1c1d3",
+      "bytes": 22025
+    },
+    {
+      "path": "app/frontend/src/components/glasswing/RuleFromRemediationModal.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "269afa2e89641ae479b7322bfa67051fd0bdd0ab0cadafc6e1c3d3a931fe40d8",
+      "bytes": 36649
+    },
+    {
+      "path": "app/frontend/src/components/guardrails/GuardrailsDashboard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cd3e28c4f8a99677cc7cb06c71569632780a22cddffc57fbc6ba771adfe77061",
+      "bytes": 18195
+    },
+    {
+      "path": "app/frontend/src/components/guardrails/ModelAccessGovernance.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f71ecf73ce93b7bd91f8fc7e79b4753964daddff6f7114b1c743a9f75b38a3dc",
+      "bytes": 14758
+    },
+    {
+      "path": "app/frontend/src/components/guardrails/PIIRedactionEngine.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6829d1eb3aac380a2e20515d7839b540920ed4dd0d169437aec046e5a5a305c3",
+      "bytes": 18469
+    },
+    {
+      "path": "app/frontend/src/components/guardrails/PolicyManager.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "770fe04dab11ea89d12da4b41cc588dd17324e2be2b9248d71d4308d015edf59",
+      "bytes": 15903
+    },
+    {
+      "path": "app/frontend/src/components/guardrails/PromptScanner.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "96357458799c6b43a5f0f8c34bf05686452315562a227a2d23d9b0e12f688a04",
+      "bytes": 16805
+    },
+    {
+      "path": "app/frontend/src/components/guardrails/TokenBudgetControls.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7e8dcc69e0c4b1e8177bf09c59d13ef0da015902382039e37024f7626eb8a5cf",
+      "bytes": 15879
+    },
+    {
+      "path": "app/frontend/src/components/honeypot/HoneypotMap.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b3a15666fa2c6b2c7201b04fc56edf41da67e75c47145b8c060025e71387681b",
+      "bytes": 7567
+    },
+    {
+      "path": "app/frontend/src/components/honeypot/HoneypotStats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "91dd1fb0764b960c15e8edfc9744677c196c25a7738871d530f2d0955ab1a838",
+      "bytes": 3635
+    },
+    {
+      "path": "app/frontend/src/components/honeypot/HoneypotTable.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "14a2250dc13f7ff33c2d8a3dc214aef1e02bdba938b6a5ad14205db582d82c9d",
+      "bytes": 9056
+    },
+    {
+      "path": "app/frontend/src/components/honeypot/HoneytokenTable.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "55e07c841a771ea9c6bfa7f033c38debf2aa3ab0b40f361d2f5cda65cb0eb68b",
+      "bytes": 8081
+    },
+    {
+      "path": "app/frontend/src/components/honeypot/InteractionFeed.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "874a280b0c19c5220d84023bd0e185309ec407e69523a7dddf5c7f5d37b6725e",
+      "bytes": 6292
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/AviationThreats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "25534c46bd49dca248c0cbe5ff88241e913167abc9f55c32ccc7e83656f265c0",
+      "bytes": 44866
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/CPGThreats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "585cbf2fdea0a284bf178f689c6028613d964216b13f7a9e7663844dbe427b62",
+      "bytes": 27105
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/EducationThreats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9dad5ffac98197e01a1de8549c7288bb17256bfbd381fa4b4a6d52b5a9379095",
+      "bytes": 32860
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/EnergyThreats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "733e75c76bf2a7077d404430026833d084fecf905aa96ef6ac8377d59ea7f755",
+      "bytes": 41880
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/HealthcareThreats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ff0a46e7e7819f93867b4da4fca15c47ba70323110e7298dd04105bc1dbbd5eb",
+      "bytes": 17913
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/IndustryThreatsHub.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1940dcb5b891ee316be2d160dde3d1652717f28cd0d259ce496f3e45b7408ea4",
+      "bytes": 8885
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/ManufacturingThreats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "aec25532a19d202846e63e80b876269907c9d421fbce7be483b29b35493630d5",
+      "bytes": 18479
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/RetailThreats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e151f2248b6353393de52d9729e2226d000895fb7fec299aa98ddb3092afeef3",
+      "bytes": 29070
+    },
+    {
+      "path": "app/frontend/src/components/industry-threats/TelcoThreats.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3d26b5802ae2e043ebd4d46f190d9da521509a3314077a2a3504117fe3d7d370",
+      "bytes": 22622
+    },
+    {
+      "path": "app/frontend/src/components/negative-correlation/NegativeCorrelationDetections.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7d7678032d833bb5805949bc024299b4886e3ec6e98d2df3e0ad72bb1814b5d1",
+      "bytes": 14245
+    },
+    {
+      "path": "app/frontend/src/components/negative-correlation/NegativeCorrelationGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4435a03ecefecc84ca541a7918682aa2a27d314226803631ff20ab61a955c2dd",
+      "bytes": 13715
+    },
+    {
+      "path": "app/frontend/src/components/negative-correlation/NegativeCorrelationPanel.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3e21e18213d2ea5a58c28f2e9d566015424c2030991b2fc0e24554e9d44567e5",
+      "bytes": 31323
+    },
+    {
+      "path": "app/frontend/src/components/negative-correlation/NegativeCorrelationRules.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c9124c00dc9a2a8ca8b28ea5e0d204082fc4fd1dc632cd37d34918b675f0e69f",
+      "bytes": 12646
+    },
+    {
+      "path": "app/frontend/src/components/negative-correlation/NegativeCorrelationTimeline.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "bbb516e4c8ab02948dcf58d0efc14dc0612e8eef4ace3d9d7f19d102eb93c19e",
+      "bytes": 7013
+    },
+    {
+      "path": "app/frontend/src/components/notebooks/NotebookCard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "32ce724c5f2b24f678455994e953a7960b14e3543de65e620a6519ea8cb61fda",
+      "bytes": 4514
+    },
+    {
+      "path": "app/frontend/src/components/notebooks/NotebookExportUtils.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "72c1ca7ddd2199b56a173edcc1bb821c2e796c8aab6773a7fb0ffce956cdbbd7",
+      "bytes": 4217
+    },
+    {
+      "path": "app/frontend/src/components/notebooks/NotebookRunHistory.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ac59d758d267bfd52b3ca5d70cedc36581d333f62e4da37c36131a31592d565a",
+      "bytes": 5053
+    },
+    {
+      "path": "app/frontend/src/components/notebooks/NotebookViewer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ab228ce3a75bd5a67ee8a358094dfac4e33a9ed6adc560af8ca9b0a296139e9a",
+      "bytes": 5935
+    },
+    {
+      "path": "app/frontend/src/components/swarm/CAIPanels.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4b23119872191f0a48d19f4de245f07f581ed51a696daba65d3ae65cdda407ad",
+      "bytes": 40179
+    },
+    {
+      "path": "app/frontend/src/components/swarm/SwarmExtras.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1b042e43baf84e562c396fdbd58a1ea5eb92604c1619ad6fb3d2bc4e9907583e",
+      "bytes": 47547
+    },
+    {
+      "path": "app/frontend/src/components/threat-escalation/DataContractsTab.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8f99c9e3fcef7092a9f034b032dd97bdb3b5caaa7a202cab499ee0e4a22a9cab",
+      "bytes": 43285
+    },
+    {
+      "path": "app/frontend/src/components/threat-escalation/GraphScoringTab.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cce18243ecf2d3a51a624bc5225f7ac876886d14646ca13942650dde2f42dcb8",
+      "bytes": 44410
+    },
+    {
+      "path": "app/frontend/src/components/threat-radar/FeedStream.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ea0939c7f656c6c8a956564f4ab97666e731f479d652de71e6647d94f5058b59",
+      "bytes": 9129
+    },
+    {
+      "path": "app/frontend/src/components/threat-radar/GraphPatternPreview.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0cd0298b7e6f757065c0cd18ff5e670fe754efebabc635e0b66ba65576cd1d93",
+      "bytes": 2780
+    },
+    {
+      "path": "app/frontend/src/components/threat-radar/IntelligenceDossier.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e57b25cf50352ea9bb78ad26b300e3b502a5ae741c319853595a2f6262c9d702",
+      "bytes": 18796
+    },
+    {
+      "path": "app/frontend/src/components/threat-radar/ProposalArchitectureView.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "995164ae4d3104adb409da73d1dc4eb8f69f5c78d488a5872c034a496eb7e17a",
+      "bytes": 26316
+    },
+    {
+      "path": "app/frontend/src/components/threat-radar/RadarHUD.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "675bc4692225258c99675b9abaa98441af6ab751e91c667bb70c68a4ea7055a1",
+      "bytes": 8484
+    },
+    {
+      "path": "app/frontend/src/components/threat-radar/ResearchFrontier.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "20dd222807262abc3844b4dfc7d5e50b88ee8568e4bf00e7af6627c23aad913c",
+      "bytes": 23669
+    },
+    {
+      "path": "app/frontend/src/components/threat-radar/RuleFlowGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "66a09975b92999d65bfe93e6b899a856cd220a44e762ac42ea41dac514f91dd7",
+      "bytes": 6352
+    },
+    {
+      "path": "app/frontend/src/components/user-behavior/CrossDomainStrip.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "23dc131e5367e76dd658232a0ad072482223293d795450d1117c9fc443fe5f92",
+      "bytes": 2234
+    },
+    {
+      "path": "app/frontend/src/components/user-behavior/EntityOnboarding.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "86beb65f9e5480de19b14e89f627e6120f737f80b005e6652b5f4d037e984329",
+      "bytes": 19313
+    },
+    {
+      "path": "app/frontend/src/components/user-behavior/LLMRiskUserDetail.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cf5b7f0b295904e3e5f9c2271b28cb93290d65d2396a9007f2867e48c67ca3be",
+      "bytes": 11880
+    },
+    {
+      "path": "app/frontend/src/components/user-behavior/PsychologicalUserDetail.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d0fc24d685f9110bcf24aa2367b541ca5a5081f3a6613ee4fcc6bf100eba796a",
+      "bytes": 20491
+    },
+    {
+      "path": "app/frontend/src/components/user-behavior/UnifiedRiskHeader.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ee3728ad56011d4ef3f050f0435cda7b29699ff7cacd586ad9313e32b56a3d32",
+      "bytes": 4878
+    },
+    {
+      "path": "app/frontend/src/components/vr/SOCCommandScreen.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6867e49cacfd82e829f0e3a0e3da763c6cccdeb14492f34018052e17e26b4a13",
+      "bytes": 7154
+    },
+    {
+      "path": "app/frontend/src/contexts/AuthContext.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "28302b1dfa284a1ab818c334d99bf3d31291910b45dbeb26a4053a27cfad6884",
+      "bytes": 1931
+    },
+    {
+      "path": "app/frontend/src/index.css",
+      "artifact_type": "stylesheet",
+      "runtime": "browser",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "96fb88ea5eddcb2f09ea278a3a5e5e1c6cb44d3f537f1a932e2da84572c603ee",
+      "bytes": 6098
+    },
+    {
+      "path": "app/frontend/src/lib/activityTracker.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7cffdc71e254221a300a6bcf53088ee278ce0970ab9c6b1ce05a5b4e7717d804",
+      "bytes": 11047
+    },
+    {
+      "path": "app/frontend/src/lib/agentCommunication.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "473038fdb892feadda56cc8de36aeb82a641f0fa07cedb045c730c207ada349f",
+      "bytes": 7720
+    },
+    {
+      "path": "app/frontend/src/lib/agentOrchestrator.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1c4893a86120bff80c9cc418aea1308f2eda52d2504bb0de214b031ebf32d237",
+      "bytes": 5681
+    },
+    {
+      "path": "app/frontend/src/lib/aiCorrelationAgent.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a1d7ae69868ba34c90c0c816ae76b317ecb2ea3d7b2ffbf4f21e2b86450c6f78",
+      "bytes": 8797
+    },
+    {
+      "path": "app/frontend/src/lib/cepAttackEnrichment.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "332265316e880096487e758004fc08043447039a2b3e2bddb32445b401876867",
+      "bytes": 29612
+    },
+    {
+      "path": "app/frontend/src/lib/cepStreamMapping.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "97e122c2a4fee7c1cae7250d081bb56674910e882d9da8c57101c527fb83ff67",
+      "bytes": 3188
+    },
+    {
+      "path": "app/frontend/src/lib/chronoweave.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "297aeadf51031d823979cfac8114d52691c08fe9e2180945e8c12363065368f5",
+      "bytes": 20154
+    },
+    {
+      "path": "app/frontend/src/lib/connectorsCatalog.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "13f96384133d7fd3f9f4d5de2bb3b70d6ad794d750ac77fb5c56d1f625fbdd4d",
+      "bytes": 39061
+    },
+    {
+      "path": "app/frontend/src/lib/dashboardSchema.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5c91a664dea962041ece75e2de5c9fa33895b3a1f53675fff29a7fbf44d0ab18",
+      "bytes": 5039
+    },
+    {
+      "path": "app/frontend/src/lib/databricksClient.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6b44d65ad835f75d36c138b24e267b8900a11a3ad0a08869dd41dd4e73b777a1",
+      "bytes": 18820
+    },
+    {
+      "path": "app/frontend/src/lib/databricksExporter.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a12da7e8819997f64dacd0f43eb470225c4a631328dee6eca00a6298c76a9f4c",
+      "bytes": 14026
+    },
+    {
+      "path": "app/frontend/src/lib/databricksNotebooks.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "31a480411aa56cf515239aebf17a9dc75bb0175737a78924b57303944c32e92d",
+      "bytes": 1685
+    },
+    {
+      "path": "app/frontend/src/lib/etlClient.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5d1eef3fefd6c292b48cf6ede29e4cac46b19ba9a70080661da1dc2ed063d346",
+      "bytes": 5819
+    },
+    {
+      "path": "app/frontend/src/lib/geopoliticalRisk.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1d96670e4c2eb2de7615c4306d6a4f9f48263e41a59feb8777fd84ec989a2215",
+      "bytes": 3692
+    },
+    {
+      "path": "app/frontend/src/lib/globeGeometry.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7a157295ee6195d58b6526bfbad2f45a99e79fccd179ae15f9ff2e28055d9d92",
+      "bytes": 9095
+    },
+    {
+      "path": "app/frontend/src/lib/guardrailsData.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3f8364f93882f5e74225df5b1ce7a052754810e79b3c2fcbcf2c109d73007a0a",
+      "bytes": 6015
+    },
+    {
+      "path": "app/frontend/src/lib/lakehouse.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c3a1ee350941ec7acd6bcf60f80ba64be403e1aacf1f689b5dc54939b4a151f1",
+      "bytes": 18400
+    },
+    {
+      "path": "app/frontend/src/lib/llmGateway.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d03e4d271247b114d246c0b26704d4ace289036abd876bdacd250c355f1f3298",
+      "bytes": 1103
+    },
+    {
+      "path": "app/frontend/src/lib/logParsers.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b099714cb147e74fa2d3a0b4e765a6dd7cc87a3e7794f704931439cc77cbf454",
+      "bytes": 6938
+    },
+    {
+      "path": "app/frontend/src/lib/malwareSandboxMockData.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f9ca1432aaf9732b5e8c0ff95a5debea8c25d4675d2b00a4d4e3a228bfb8775b",
+      "bytes": 21913
+    },
+    {
+      "path": "app/frontend/src/lib/mlModelData.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "44d641b1dfbd6be0fb7de0d33aae225ee30a480ccdb1ceff6779f2e55e361262",
+      "bytes": 40832
+    },
+    {
+      "path": "app/frontend/src/lib/mockData.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ac6c5c5a995820e634e1b64ab396970bfc41ef820f165e9db8dc5fe826bb5aa6",
+      "bytes": 39665
+    },
+    {
+      "path": "app/frontend/src/lib/mockPhysicalSecurity.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d23b7e7a980a4413681829166752da453a003ccb70615315d0ab66118874ce12",
+      "bytes": 6405
+    },
+    {
+      "path": "app/frontend/src/lib/notebookRuns.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "79ebc77b0f8831c9afb7f808a241cc5717e5a769f1db14d9c71fa4e45fb09bd4",
+      "bytes": 2152
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/agentSOCOrchestrator.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "568ab8d6a276f4fc5b487d3847c5c9ce45329109183bbbc67b5a3c7743a1dc36",
+      "bytes": 43661
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/agentSOCPipeline.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b997f2d7bfa8bb3fb0abb6b927097cb2f7615826d1c2d25e7ec1cc0f4ae0d010",
+      "bytes": 60883
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/agentSOCSchemas.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "38c984dc71f201f7a37f0fac94a4fa4b0c2bfbbff21c78769d41c3879eb2b17b",
+      "bytes": 48570
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/behavioralNotebooks.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c2554d0f4dd4dc20ea24116d699ff3bad247fa8ace926bb43aaa6c1ac51e0956",
+      "bytes": 16729
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/chronoweaveNotebooks.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c5594a89b3bda0110cc82625b36cc8c14ace8322df0f176cf58edb619b871d4e",
+      "bytes": 9103
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/correlationNotebooks.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e8d087a83da772bc99b8dd0ee26b1587bffe54ab6ffa9f12d50a40cab653c801",
+      "bytes": 33110
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/detectionConfluenceNotebook.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "bd1e22a8d8ff7272bd1d0c091b0487241ed14bf02418e03b56ff3540cb1e779a",
+      "bytes": 4111
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/featureLabRuntimeNotebook.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "759a81a97c3c8b58be783bb4fad417985352bccbcd0e71590e4dbd3b4fb5401d",
+      "bytes": 4465
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/geopoliticalCorrelationNotebook.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b02c00064ff6b47b7d39493dac6bbb72db4fc4140f129dbdd3f47e33d81a7600",
+      "bytes": 5226
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/graphCorrelationDetections.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "53fd127b658627bcd73d8b796a7527711a7a697332dc16692e36261e9a752f0a",
+      "bytes": 69081
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/graphCorrelationRuntime.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cea78b3408460f3e0ae35faf16c58c7d40eac2c23e67f24dbee5da18ce48b419",
+      "bytes": 41916
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/graphCorrelationSchemas.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0cad7ca09ac637d5f84c77400bb606328ec3592e790eaa342484eb987bf0c012",
+      "bytes": 43853
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/graphCorrelationVectorDetection.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "580c2e204a215df8e396319cbdd36f64989bb65c33c087ff18d9d4e634a2aac9",
+      "bytes": 61356
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/graphCorrelationVectorMemory.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "18e014c7fb02513f6154764842a21c18348b2b8c2c320bad872af9f612c33f7d",
+      "bytes": 79205
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/incidentDrilldownNotebook.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f5420cb836b854016bfcc5adbac4f7caeb27b6d481aaef1f8d2620f4b91c0d4b",
+      "bytes": 4698
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/index.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "07c80a4580ecf3c35d2dd066fef2e0a2ab91fdbeb08c22b239c3361304fe6902",
+      "bytes": 2788
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/mlNotebooks.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4bb8c336816b9211b00cb39f77482ad55b3b8b447ada5f75b41480470c41c3af",
+      "bytes": 22883
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/mockDataNotebooks.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "592399fc2fcd4b76000df9b67bfe2908a80b89a8d0c7a2995a560e43b7a81f8d",
+      "bytes": 24482
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/negativeCorrelationNotebook.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6f742f75c13c2416f035466999c32368a4a2fdd8dc622341b82651aa40c4f31b",
+      "bytes": 4622
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/streamingNotebooks.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e0dcf1af2fb446820f94af7c11c830ff0d2edc9e3abf1a1a6eb1cd24625b3987",
+      "bytes": 19169
+    },
+    {
+      "path": "app/frontend/src/lib/notebooks/threatIntelNotebooks.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "2450487ee14bcc2abd03d2fb48f442b7c8ed14140d67bc77ee29ed1599685951",
+      "bytes": 16720
+    },
+    {
+      "path": "app/frontend/src/lib/parsers/grafanaParser.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "265adf0dc1312a1360338618a9fc9fff486a9acbbca4c99e0d2260953b9a9e87",
+      "bytes": 7619
+    },
+    {
+      "path": "app/frontend/src/lib/parsers/index.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3bbcfdffc144698f270896a55343ae9455fb1e2603a0357b2ececd00fb450365",
+      "bytes": 1847
+    },
+    {
+      "path": "app/frontend/src/lib/parsers/kibanaParser.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "fcc126df70866376899aef330f2cbb8ec7fdfab713de458079c5907f069e230e",
+      "bytes": 8848
+    },
+    {
+      "path": "app/frontend/src/lib/parsers/metabaseParser.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "aec2e8940ba0441a6c3b406b2d69e1a59b8820aeca8cded23b799d3d27b8a78f",
+      "bytes": 6006
+    },
+    {
+      "path": "app/frontend/src/lib/parsers/redashParser.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "afffc2e654c9a996b829b641b8ace95a462c16614b128ef1dfd918cdd6100dff",
+      "bytes": 7162
+    },
+    {
+      "path": "app/frontend/src/lib/parsers/splunkParser.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e99616fa0511fa224a050b55fbd1246fcdd1bb0b3a8c5eb991a20b5248ecabfe",
+      "bytes": 7749
+    },
+    {
+      "path": "app/frontend/src/lib/parsers/supersetParser.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1cd012474f8b0e1edaca526622af173e741fc65b7b2039eb404c12c12043a697",
+      "bytes": 7105
+    },
+    {
+      "path": "app/frontend/src/lib/parsers/types.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "25997bd09abece877d2abfa4be3732c324fa38a9e67a3dbbf4ad76d47e828a5e",
+      "bytes": 412
+    },
+    {
+      "path": "app/frontend/src/lib/playbookLibrary.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d859f4449fbd5855aef593226cfc99fa4a589ee8a919909e8660e0c08bbf5ccc",
+      "bytes": 36695
+    },
+    {
+      "path": "app/frontend/src/lib/psoTemplateData.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3ac90e5776779776693cbef3b56f3f79b96561325821e1d6b154d9b2343c1d2b",
+      "bytes": 41131
+    },
+    {
+      "path": "app/frontend/src/lib/responseApprovals.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c9327b2553e0a1d220f4d24985539d24e3a92a227eec9b5caa4db479b8e3535f",
+      "bytes": 4782
+    },
+    {
+      "path": "app/frontend/src/lib/soc3dEffects.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "fec1dd37283c951511b1af89c31bf217078471732ba515c314613e4351013f1f",
+      "bytes": 12310
+    },
+    {
+      "path": "app/frontend/src/lib/soc3dHelpers.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5616bc10be6ec3653124e01e8d125e66287eea3b265d4ead283fd2f43158e40b",
+      "bytes": 36216
+    },
+    {
+      "path": "app/frontend/src/lib/threatEscalation.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "82c0ccbdb8307348150aee7e9316d58fb792df819291e089afd6ce4597b4d841",
+      "bytes": 7612
+    },
+    {
+      "path": "app/frontend/src/lib/vectorEngine.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5ec4bb1fcd4663e3d6564ade76017e54da8ab6a8879a2c21a1c2119814ab67e4",
+      "bytes": 10860
+    },
+    {
+      "path": "app/frontend/src/lib/voiceConversation.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "87246bd486eac16a5c01729fc5e5a3e603a57cecaa8ada893bd7a02b2324099d",
+      "bytes": 15091
+    },
+    {
+      "path": "app/frontend/src/main.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ae5a3a9563696bb99ba136e9bb64d41666de3f74b3143c7cf38c829e8b212e9d",
+      "bytes": 330
+    },
+    {
+      "path": "app/frontend/src/vite-env.d.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+      "bytes": 38
+    },
+    {
+      "path": "app/frontend/tailwind.config.js",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "0963e502e2458b93f2dd90624d70bfa91278004e211e5b7bb468132f28d4ee75",
+      "bytes": 3296
+    },
+    {
+      "path": "app/frontend/tsconfig.app.json",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "5dea726e0460f4b1c4c8cd0dab11544af8ae8f89445d8618f0d643762e2c5a0a",
+      "bytes": 552
+    },
+    {
+      "path": "app/frontend/tsconfig.json",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "770b4140bbb581e2dfd9ea9946ffc9c75a1d86ba7d2db5f77c83e37cbdf9d808",
+      "bytes": 119
+    },
+    {
+      "path": "app/frontend/tsconfig.node.json",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "1a270cb8020d1fa879262423b9c222fa38d94b830ec61164a46b558ea9d2a526",
+      "bytes": 479
+    },
+    {
+      "path": "app/package-lock.json",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "7fab97ddcdede326a2c807eeef116e4d341b6271547a11a32e63fbf45a5172d2",
+      "bytes": 93455
+    },
+    {
+      "path": "app/package.json",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "cd93210f59a1d8ccccd643b53665ceae1cc863733e257a95914dd5417354aa10",
+      "bytes": 699
+    },
+    {
+      "path": "app/requirements.txt",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "7f562cb5c80e3f103f6e4c8cacdf699c5951a1f6d59f582ce349894b715d405f",
+      "bytes": 109
+    },
+    {
+      "path": "app/vite.config.ts",
+      "artifact_type": "build_config",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "c7cd35ab39e2eeb0970a3ec62027f2d85f2989b9ab1c49a927579d3915475c49",
+      "bytes": 712
+    },
+    {
+      "path": "databricks.yml",
+      "artifact_type": "deployment_config",
+      "runtime": "databricks-bundle",
+      "shipping_status": "deployment",
+      "review": "auto",
+      "sha256": "d78e6794d903e1108747b27faf5ef1d4d139736bb421dcf51d02b618119ab220",
+      "bytes": 1166
+    },
+    {
+      "path": "deploy.sh",
+      "artifact_type": "deployment_config",
+      "runtime": "databricks-bundle",
+      "shipping_status": "deployment",
+      "review": "auto",
+      "sha256": "b5a5eee9ddcfe07d5a95d318a1268dd8497e55098b0a3960e7c78937135455f7",
+      "bytes": 73594
+    },
+    {
+      "path": "docs/engineering/audit-remediation-status.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "2ad95705f05f5182f436ecd5f223447c52a3ec7c8387467fea00bccc29fea352",
+      "bytes": 5866
+    },
+    {
+      "path": "docs/engineering/capability-registry.json",
+      "artifact_type": "other",
+      "runtime": "n/a",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cf76054026f5966906e0afb1404af69141f6bd8931ffa39ee1dfe8f9c5c53f2d",
+      "bytes": 6787
+    },
+    {
+      "path": "notebooks/_shared/__init__.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "b00364e2c628002e46a7759d91b315264c6da5d21935fc09d044229fe21a43eb",
+      "bytes": 784
+    },
+    {
+      "path": "notebooks/_shared/agent_framework.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "565fc657c80315b2b455d6c35ac17c3e11ba7ad30f48523faa8ed82bc24a2383",
+      "bytes": 27701
+    },
+    {
+      "path": "notebooks/_shared/bootstrap.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "81394ba0b57a0e4683fcf945fccf38cccfe23905dfa4c6b1d1743fdb76e60914",
+      "bytes": 4463
+    },
+    {
+      "path": "notebooks/_shared/config.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "production",
+      "review": "curated",
+      "sha256": "0edd6dc921dcc7b14fc0b6bc4db6fe8b3cea3bc27508258b71c87d4e223779b6",
+      "bytes": 6771,
+      "capability": "platform-config",
+      "notes": "Defines SOCConfig/load_config. Contract drift: tests/smoke_test_e2e_pipeline.py imports PlatformConfig with get_table_path(name), which this module does not export that way (REV2-01, Phase 2)."
+    },
+    {
+      "path": "notebooks/_shared/delta_helpers.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "0d000ca8c866f6e57884998be201d8c84ecf3ac210e3057cb14a37318d4a8b0a",
+      "bytes": 10197
+    },
+    {
+      "path": "notebooks/_shared/llm_client.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "0b5e06ab6f133b3150c3d457b3f4810a3b005600059b2655885947eadbc48bf2",
+      "bytes": 23177
+    },
+    {
+      "path": "notebooks/_shared/monitoring.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "56b43dd847dad0fa68eace6bc3c152cc3f4f3d13a352a1275962c922c5a83f3f",
+      "bytes": 13981
+    },
+    {
+      "path": "notebooks/_shared/sdp_stream.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "ea5822ee7420c61e12507f94e84b7fac3f93cbd317fce866cba2999f77602c19",
+      "bytes": 9501
+    },
+    {
+      "path": "notebooks/_shared/secrets.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "b2edb6d6f6993f76b11b650408da1105356b7a92abc0e54c30e8592e4556750b",
+      "bytes": 10472
+    },
+    {
+      "path": "notebooks/_shared/sql_safe.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "ac71c0be19a2b0c16e4e121a644a469bb5a598bc406bd72a38b9bf7501e0ddef",
+      "bytes": 12710
+    },
+    {
+      "path": "notebooks/agents/01_triage_agent.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7fa5fc7ea249b622ca4e23d550a9814dcd64ee0666d15dbbac0f9243fd76268a",
+      "bytes": 19058
+    },
+    {
+      "path": "notebooks/agents/02_enrichment_agent.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1dd53fdf84cd2113837c13274d6ede7551ab56709861e50ada2f00e6034f32e6",
+      "bytes": 23918
+    },
+    {
+      "path": "notebooks/agents/03_threat_hunter_agent.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1996da2c623ada9029a0abc22445c06b6b16baa042cc601ce04813b009d7bf3d",
+      "bytes": 15366
+    },
+    {
+      "path": "notebooks/agents/04_orchestrator.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ffba79d25346eae004df58bf6cb5a07d9e34a9dfb075d7da8418e795ac317881",
+      "bytes": 24034
+    },
+    {
+      "path": "notebooks/agents/05_sage_enrichment.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "75d6ba38bffc0c36e467e6867d3435c5350045b62e2df31fe826cdddefaca9a4",
+      "bytes": 12715
+    },
+    {
+      "path": "notebooks/agents/06_nova_investigation.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3ed0b88c0e9a5bf9089b29a7e1abf40cddf968e52403a4b400b2147bdcf8b78b",
+      "bytes": 13546
+    },
+    {
+      "path": "notebooks/agents/07_vanguard_response.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "975cfd46964ab4a02eb749b48d9090af57860c92f73dd2a9b72d6020b3e60a9d",
+      "bytes": 15431
+    },
+    {
+      "path": "notebooks/agents/08_cti_attribution.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "463f816c5d9a419794a7a5456b9959ee7aae36545861397b0a125aba43cca198",
+      "bytes": 14059
+    },
+    {
+      "path": "notebooks/agents/09_pattern_discovery.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "66b7fce5f360d3fec2c41200bb2babae4a0e78a9ba08512ee3ebca3e620d2ebb",
+      "bytes": 20474
+    },
+    {
+      "path": "notebooks/agents/10_vector_memory.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "46b42b9d1fe7fa5023b9f46fbe7d478b33c2b4b061c20c1139bdb9c06b2e8e02",
+      "bytes": 19014
+    },
+    {
+      "path": "notebooks/agents/11_red_team.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6086ba9879ca8fa05616c5b78f1d842e44f5dc4b15c1735a52f60ba306aabff0",
+      "bytes": 25430
+    },
+    {
+      "path": "notebooks/agents/12_blue_team.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a4b898c6ce31ff6ac56c601ae41aec750bb20511d5314351a804c4998ae80624",
+      "bytes": 12813
+    },
+    {
+      "path": "notebooks/agents/13_forensics.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1ea2b524a0bb35d320fe407e43780e2cf2271f127904e497b9d01b45d5272054",
+      "bytes": 12587
+    },
+    {
+      "path": "notebooks/agents/14_honeypot.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ab0dbb9bfac2f8f32df968620c02979e0561d35c92b65c82011e94c5d212f733",
+      "bytes": 10674
+    },
+    {
+      "path": "notebooks/agents/15_ciso_assistant.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "484e91adc63810264ccaf7b385ee1c491df118864c4854574b4a40adf9c6b8f1",
+      "bytes": 14693
+    },
+    {
+      "path": "notebooks/agents/16_playbook_generator.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "650f3e1c9425b5ee8536798e03ee46179f3224fa78755544d13b70fe036a2767",
+      "bytes": 10053
+    },
+    {
+      "path": "notebooks/agents/17_incident_summarizer.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9f58a01336e9aaa84541f61027cf2cef507f2be6f3346660640a8361bfa5d8f7",
+      "bytes": 12621
+    },
+    {
+      "path": "notebooks/agents/18_document_analyzer.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a9bc49f3337d590c35dc7d38ad2fd7648374e1739df03b31f1aca736fe52dbff",
+      "bytes": 13237
+    },
+    {
+      "path": "notebooks/agents/19_malware_sandbox.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0485c610f9b7067b105e3a344b5ae4cd19c9147424c54022181ae7b9a7d90a36",
+      "bytes": 15123
+    },
+    {
+      "path": "notebooks/agents/20_llm_guardrails.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4eda68fe893d93da312f2e5486fad761093697484bbadb15390da16060711281",
+      "bytes": 7753
+    },
+    {
+      "path": "notebooks/agents/21_model_poisoning_guard.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e9b26e7908209d6ce93f6055df95227ecbb5f18b14e864e85352146d40989862",
+      "bytes": 8900
+    },
+    {
+      "path": "notebooks/agents/22_threat_simulator.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "21f4e1b760d4da2dd1bec7651b81e5e91b205f4afc19c91e41b71b517b1879d8",
+      "bytes": 5680
+    },
+    {
+      "path": "notebooks/agents/23_connector_adapter.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b61ad0e57c8c6edd777a580a153db6d92634816e3945ca4f93aa13c85c3998de",
+      "bytes": 10579
+    },
+    {
+      "path": "notebooks/agents/24_threat_radar.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e4b6463d8c67d19d6d6d7b20cb0052c0ecbb63c72231b71cd72047ff6132009e",
+      "bytes": 6671
+    },
+    {
+      "path": "notebooks/agents/25_alhf_learning.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "39b6c731682a3c879cac70aca307e76fe9c9194b9149e47d86dcaf84dbb34c2d",
+      "bytes": 9635
+    },
+    {
+      "path": "notebooks/agents/26_realtime_graph_cep.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "77aa09cf2233c20df75b52be8616ee255aead16d996e5c92c2a3bfcd5bf8afb7",
+      "bytes": 24972
+    },
+    {
+      "path": "notebooks/agents/27_vector_scoring.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9f7caf017bd4c705ab251656d30fa3d3e7e7502f3972d19160547238641ff7db",
+      "bytes": 13206
+    },
+    {
+      "path": "notebooks/agents/28_ai_correlation.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "aca5c490fe797b1c27ea2edf647995cfc9a7ed90eb521a1fbbc6940c1585da86",
+      "bytes": 13787
+    },
+    {
+      "path": "notebooks/agents/29_connector_version_agent.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e4c4463bad3a1d1edbeec0dca81a741c361bfc57c5e945aa478b9f901f92f52e",
+      "bytes": 14596
+    },
+    {
+      "path": "notebooks/agents/30_stateful_backdoor_defense.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e13d38c6da8a036349068992e5293650f90aef6fe6972a9715a115286894f932",
+      "bytes": 13148
+    },
+    {
+      "path": "notebooks/agents/31_vibe_connector_builder.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8d6e6dc64ab450d9ae898363193431af0e71fbf416e8cf73f686d8e6766cdda5",
+      "bytes": 12650
+    },
+    {
+      "path": "notebooks/agents/32_vector_search_index.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c0aeeabd7c810c8f60ba52c662421341c60b30082aaca8f322ca709b092dad32",
+      "bytes": 13506
+    },
+    {
+      "path": "notebooks/agents/33_glasswing_ingest.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "84977ebe08b9b819776a5689b9a2ee52725d3fc200838b97869ed6a91aef8100",
+      "bytes": 11303
+    },
+    {
+      "path": "notebooks/agents/34_glasswing_dedup.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "dd5af532d5b944a865f0863255cc0b90b02e7ec20d89c631a9f826bcd455b3fd",
+      "bytes": 9999
+    },
+    {
+      "path": "notebooks/agents/35_glasswing_reachability.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d8ba4d8d24389afa3156aaefb28802e728af20e8f6a865b13cfc1af209109882",
+      "bytes": 16078
+    },
+    {
+      "path": "notebooks/agents/36_glasswing_blast_radius.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f1a0032a5364d3922e280295d61b484b905bc0604cd3c959fe1d5bac6e28dc6a",
+      "bytes": 9484
+    },
+    {
+      "path": "notebooks/agents/37_glasswing_auto_patch.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "89d34a3aea260b901191e4ba907c196cf28dab7f38f88756ae4382dbd3bfcb5c",
+      "bytes": 9689
+    },
+    {
+      "path": "notebooks/agents/38_session_list_manager.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7af8f0062229f3f30389276e91506c7de44a4f5989ba81688f1f4aad633a3b2e",
+      "bytes": 18624
+    },
+    {
+      "path": "notebooks/agents/39_active_list_manager.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5d3040292ba79e3791d5dd611fc67e391ca0dbaefa06e1b6e4fe3592fc9cf408",
+      "bytes": 13526
+    },
+    {
+      "path": "notebooks/agents/40_llm_risk_profiler.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "45405f44e32b4bb4d78122309541bdc90475be3e38a1f6139b5c7d57ef55ceca",
+      "bytes": 18656
+    },
+    {
+      "path": "notebooks/agents/41_glasswing_scanner.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "fde0cd73d44d5547be6d6c9e9b1452427dde7efcf7e4d49968a107af3b386247",
+      "bytes": 26353
+    },
+    {
+      "path": "notebooks/agents/42_knowledge_store.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "2ba681ac17b453c5510b41473783bc39a2db5aefbff096f780917831055229e5",
+      "bytes": 36206
+    },
+    {
+      "path": "notebooks/agents/43_guardian_compliance.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "faeca6d46815e6c5a027ca61dc8ee197cc1607d4a9b120dab3885fca729af2c8",
+      "bytes": 31670
+    },
+    {
+      "path": "notebooks/agents/44_ot_protocol_security.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b86f8f3c4e7538b9a740dc62753413f1279600ed46974171d33be799bcd284ba",
+      "bytes": 22686
+    },
+    {
+      "path": "notebooks/agents/45_exploitforge.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7ddeedd2afe97dfbfdc51f6f11cf0a78d657807836fea30b8078b9b5a37a3f29",
+      "bytes": 20705
+    },
+    {
+      "path": "notebooks/agents/46_communication_analyzer.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ea57543eb1321404d6945f3188b30509f53a605225d0d47390f255cfc6ab4ca1",
+      "bytes": 27930
+    },
+    {
+      "path": "notebooks/agents/47_autonomous_response_learner.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "363f871a0c0841bd6edb7ef9e1d4c1c417616e93f8c1b383f1903731f22d0999",
+      "bytes": 48563
+    },
+    {
+      "path": "notebooks/agents/48_ueba_entity_onboarding.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "420f378fdf874ce09a0c1aea357bf2e25af15fa54889b02a4e87f261d5610fea",
+      "bytes": 16142
+    },
+    {
+      "path": "notebooks/agents/49_edge_control_plane.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d35ce96d8b913f935807c668e52a6bd5d540f807b22e8060b357783beb469279",
+      "bytes": 16825
+    },
+    {
+      "path": "notebooks/agents/53_phishing_campaign_engine.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "48de19fe722c371d3e8e009d79dad8d59880687d3108191e5ca5706c839054e3",
+      "bytes": 16528
+    },
+    {
+      "path": "notebooks/agents/55_phishing_response_analyzer.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ca565e65565d4bbe1bc9ce2f2984527a7cdf43fb51d5494d25ea34ed7653936a",
+      "bytes": 8316
+    },
+    {
+      "path": "notebooks/agents/56_ai_gateway_guardian.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9d9d3cc21e9f5aea3bde6c36f4943d7446b5384d142b00d3019eec8c0cf51c7c",
+      "bytes": 13929
+    },
+    {
+      "path": "notebooks/agents/57_shadow_ai_detector.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ef8f26270f607bbee687e6bda1c57645d0acab166a389e9f77a0cd37718b6e17",
+      "bytes": 10810
+    },
+    {
+      "path": "notebooks/agents/58_prompt_forensics_indexer.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "fc78a3ebabbfdfce66e29e042e8bc26f67ade27038cddfc6aad1d16f033d396c",
+      "bytes": 13034
+    },
+    {
+      "path": "notebooks/agents/59_vector_pattern_similarity.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "29789cd590113962aac1eca168835a0f0ce5d97c22b28c7dcb5de76564de7945",
+      "bytes": 14448
+    },
+    {
+      "path": "notebooks/agents/60_attack_path_forecaster.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "edd4e0deb179b06bc3f518bf61bca52b9d16e0f47490de101c843d01623b4ece",
+      "bytes": 18157
+    },
+    {
+      "path": "notebooks/agents/61_graph_vector_index.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "23b8d171646eb752e20a55dfee0cad6eab12b12f55119dddfa2b06f1e69a3c1a",
+      "bytes": 8070
+    },
+    {
+      "path": "notebooks/analytics/01_trend_engine_cet.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d464c127ece62bf3de49b882bb4beff5edd3f31ff2b3621f8d5a306e8e7edee1",
+      "bytes": 24742
+    },
+    {
+      "path": "notebooks/analytics/02_swarm_crucible.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a59b886c83d32f34e06526a611db5da577e7ecd43ad187cbc1f89ab3dc49e283",
+      "bytes": 23124
+    },
+    {
+      "path": "notebooks/analytics/03_chronoweave.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5b80622a2be3f5da93078676fd3db7afb35a6306ab98180bb09b664ff8de06f9",
+      "bytes": 13917
+    },
+    {
+      "path": "notebooks/analytics/04_financial_threat_intel.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "51976621e4e87a74fc6a6c445f66adefbfb5f3d0a51e4b6e085f5f6d60880b02",
+      "bytes": 20267
+    },
+    {
+      "path": "notebooks/analytics/05_geopolitical_risk.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "072104e53ddfd6db9a710154b21fd2134e40dd48b983bc64c571b8fc06a3d99e",
+      "bytes": 8777
+    },
+    {
+      "path": "notebooks/analytics/06_monte_carlo_threat_forecast.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "46916c3dadcf8d3181bbc9d1fb69893aaf6f3512b6ebdffab2ed4fb5e3ca2589",
+      "bytes": 14724
+    },
+    {
+      "path": "notebooks/analytics/07_cet_native_bridge.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b0f1d47669796fce3e22757aa13a6d61d6cf7ccea8cd8f4477cdd6850e896edb",
+      "bytes": 13315
+    },
+    {
+      "path": "notebooks/analytics/08_operation_borrowed_trust_replay.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "77d0a80c57b378dacf1370ca4a824d234537157853b9211426a9b4cce628ab53",
+      "bytes": 7650
+    },
+    {
+      "path": "notebooks/correlation/01_streaming_correlation_engine.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "934125a906d2c7e22f739085e7f8730ebb38b82dc5c6bbb973211d17d8c9514b",
+      "bytes": 22656
+    },
+    {
+      "path": "notebooks/correlation/02_negative_correlation.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0b930719ee4aa5b5e7e78f117e61aafc93f3d38a85ae05698088641b108a492d",
+      "bytes": 6841
+    },
+    {
+      "path": "notebooks/correlation/03_graph_correlation.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0194160709d662b240723537e20483a4b1bf16d8e20612a20d4f757ee41a1691",
+      "bytes": 12511
+    },
+    {
+      "path": "notebooks/correlation/04_temporal_window_correlator.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a7908fb324974ee221ed59b1c540e4c8d493788e00cf29813df00c39313a463c",
+      "bytes": 15760
+    },
+    {
+      "path": "notebooks/correlation/05_supply_chain_risk.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f9c765d424303832f1ced29bd9459cfb37b4195a8a284535e0ef2168e5f2f3e6",
+      "bytes": 13254
+    },
+    {
+      "path": "notebooks/correlation/06_cloud_posture.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ff27089ccab7b67014037857ebbf41e000e010d622baeca9d928377c4e29bee3",
+      "bytes": 17746
+    },
+    {
+      "path": "notebooks/correlation/07_detection_confluence.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7ebf35f20c2bc84b887267afacc2104210f22ed68dc4fcb8576fd2f09ea0780a",
+      "bytes": 32118
+    },
+    {
+      "path": "notebooks/correlation/08_entity_spine.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "68cc9bf6f464bd34847c224c33e1b28af976b4dc6bef2f160868c7adccaa9ac4",
+      "bytes": 21411
+    },
+    {
+      "path": "notebooks/correlation/09_unified_evidence_object.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c03294d0c48ad7db4c5570b1c967a6413504b39305469c67fd9c4e5f7e91417b",
+      "bytes": 24013
+    },
+    {
+      "path": "notebooks/correlation/10_fuse_engine.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "experimental",
+      "review": "curated",
+      "sha256": "db1928a891b7e8f6a32193cbdfe4b4de416d5b2286e89e860a877ffd4508e1b8",
+      "bytes": 24925,
+      "capability": "evidence-fusion",
+      "notes": "Dempster-Shafer combiner. Pure functions unit-tested (tests/test_fuse_math.py, 12 cases). Evidence-independence and calibrated-probability semantics disputed by REV2-02/03/06 (Phase 3 open)."
+    },
+    {
+      "path": "notebooks/detection/01_behavioral_anomaly_detection.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "12aeb13bd0726be61963fc8fcb219167e4b2454489963bed99dca260439a17e9",
+      "bytes": 19504
+    },
+    {
+      "path": "notebooks/detection/02_threat_intel_matching.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e110e8dd76d8f83660c2b0e031b3f4903d1e1f60a585f1435a4440d1425f2ce2",
+      "bytes": 11817
+    },
+    {
+      "path": "notebooks/detection/03_detection_slm.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1e5dc48fbc7ef0f2e692ed09b6424e0fad82f168982f7ae1abdd480fc897a764",
+      "bytes": 14540
+    },
+    {
+      "path": "notebooks/detection/04_formula_prioritization.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "1f7cea05f67cc2d0dd0bfe6596d2f62252c5d2eac26839bd55fdae1eb1302f1b",
+      "bytes": 22482
+    },
+    {
+      "path": "notebooks/detection/05_entity_drift_cet.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "32a61b249e225ebde89249665e6c5c9106cd74a9979e2f9591e07943dae74ef4",
+      "bytes": 17516
+    },
+    {
+      "path": "notebooks/detection/06_bytecode_semantics.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "92c3cd4044ef4f9218233793c81d5558b047ce9d59cf2aead6e8d0501ae7fa6d",
+      "bytes": 25354
+    },
+    {
+      "path": "notebooks/detection/07_ks_recall_lens.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ab445725079400a7c0e64f93c8306e40584e3bd06a2b9fac79ceb4534f2af31b",
+      "bytes": 12369
+    },
+    {
+      "path": "notebooks/detection/08_ot_protocol_anomaly_detection.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4d828b25f1052de9aeb6e75a67ceffe6b53299021acbf04b2e8e2d5b1e1d41f4",
+      "bytes": 17624
+    },
+    {
+      "path": "notebooks/ingestion/01_raw_event_ingestion.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "05f55327c7f543117554a20a4099f412843ea28f54c9664cb24a771cdb4b8b66",
+      "bytes": 20190
+    },
+    {
+      "path": "notebooks/ingestion/02_enrichment_pipeline.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "afd6565fcb52712d4d7be73c69cc68eff474e0242bdf191d2a7fab6110e8d26a",
+      "bytes": 11060
+    },
+    {
+      "path": "notebooks/ingestion/03_schema_enforcement.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c955bc50e2cdbf58f7873419f1b808101f426f0690122665a79fa93cee32adb2",
+      "bytes": 13756
+    },
+    {
+      "path": "notebooks/ingestion/04_quarantine_handler.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f76c342ce459cba48f109eb95b06ed2e2aa4866b12d20f3343289c44d536ba5f",
+      "bytes": 14256
+    },
+    {
+      "path": "notebooks/ingestion/05_kafka_eventhub_connector.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "11474558e4c7b499373131ff316439e317cb421d8b6662b0c1f1463158a133e0",
+      "bytes": 21894
+    },
+    {
+      "path": "notebooks/ingestion/06_threat_feed_connector.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7638ccaea49ae5b669c8cbe4b9cc6e3cba9f1b0d382b65182ff8258599f6f09d",
+      "bytes": 25725
+    },
+    {
+      "path": "notebooks/ingestion/07_lakebase_sync.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b5e05420c6431fb78e238482515fc6a0daf09349a157bcd561ac5a3f9064a5d0",
+      "bytes": 17010
+    },
+    {
+      "path": "notebooks/ingestion/08_typed_bronze_partitioner.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a76d65488848daa678ed7f76c98cde63499e985dfb16ed019d6b3577ea9f4dc4",
+      "bytes": 20012
+    },
+    {
+      "path": "notebooks/ingestion/09_edge_collector_framework.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7b6e0f7adcbcec5ffc44e58b4d032efce2515bf3a1236887b5a9d470fb71e347",
+      "bytes": 17658
+    },
+    {
+      "path": "notebooks/ingestion/09_llm_usage_interceptor.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e0bf322ce2bf94f333d8338343610e6c7fe98d85ff496900361dbbf9b290fe99",
+      "bytes": 11652
+    },
+    {
+      "path": "notebooks/ingestion/10_plc_ot_protocol_connector.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ff2d9b8183a9bb9469af5c61bbfba0bbaa80d8eba794cac0258ef974ee9d00e4",
+      "bytes": 31889
+    },
+    {
+      "path": "notebooks/memory_cache/61_mc_rnn_architecture.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "69d787b0d0ff08eb0e56ebaa24ce1f97301561a80c9ea9f1503cc04b8f9d890a",
+      "bytes": 20353
+    },
+    {
+      "path": "notebooks/memory_cache/62_mc_feature_tokenizer.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "eeb0aac236e00b66095bc8dbc05aefe569206ac6393033745f48e1710e981d58",
+      "bytes": 13550
+    },
+    {
+      "path": "notebooks/memory_cache/63_mc_training_pipeline.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "2cba682150e862e50ee3b0d8e4ee7112a3fddb48819d2663d39696d1b108ebea",
+      "bytes": 17031
+    },
+    {
+      "path": "notebooks/memory_cache/64_mc_ueba_baseline.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "73218cd28aeb6bbdbf42747f36533e0bca8d4d4edc6f72e4baf20603a9d415a3",
+      "bytes": 16863
+    },
+    {
+      "path": "notebooks/memory_cache/65_mc_cache_manager.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b57973e280069b3c6abee6237901f33db2b56a7599c27270bf75e161f0cb93e5",
+      "bytes": 12139
+    },
+    {
+      "path": "notebooks/memory_cache/66_mc_streaming_detector.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c0b175aa741c1c7f41ccbb9cbcfe077e4e6e85d69fb8d6708d2535a8bb50528a",
+      "bytes": 14088
+    },
+    {
+      "path": "notebooks/memory_cache/67_mc_attack_chain_recall.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "32ba4b1533932dd71386d0da892ba86c4bbd80d723965edaaef79933e2718845",
+      "bytes": 21507
+    },
+    {
+      "path": "notebooks/memory_cache/68_mc_response_policy.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "ae36dac3076cb1490440f7778ab5fc55ec4d4173ca6abdd5ba7dcdde3410810d",
+      "bytes": 14406
+    },
+    {
+      "path": "notebooks/memory_cache/69_mc_model_monitoring.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cbb56baf45a4918f065cd2db0173f9a7162b5ac48751e91188c2e49873936ba2",
+      "bytes": 14558
+    },
+    {
+      "path": "notebooks/memory_cache/70_mc_serving_endpoint.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5e81a89d7372369cca899c8e03af86ec1a32191795168784933fc12d0384dad2",
+      "bytes": 10991
+    },
+    {
+      "path": "notebooks/memory_cache/71_mc_explainability.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "511ac9e6b0f398cd5c296e5625d92104aa71259bb8233de3629036f3c4efba76",
+      "bytes": 18670
+    },
+    {
+      "path": "notebooks/memory_cache/MEMORY_CACHING_GUIDE.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "32a2d3c101ef133f1197f326271dfbe1da237a14703bee16983faedc861725f4",
+      "bytes": 21642
+    },
+    {
+      "path": "notebooks/ml_training/01_threat_scoring_model.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f915dbc004f956e781f7392d35e08c7021021cd86cfb76c25ff9f9dcad485491",
+      "bytes": 6811
+    },
+    {
+      "path": "notebooks/ml_training/02_feature_engineering.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cbfb36965a1563ba03d484ed7a042b26342aaba3be957d944a873b7318139da9",
+      "bytes": 9704
+    },
+    {
+      "path": "notebooks/ml_training/03_ueba_behavioral_baseline.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a83a4d1150ae329bb538e2ad891026bdcedb4b0138ace4d7535ab8f28b6cdb28",
+      "bytes": 17890
+    },
+    {
+      "path": "notebooks/ml_training/04_graphrag_zero_day.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5f6c72aa8c2a84bce8f519f9f4ba8469e073b266e7f8f2e233a142b2138114ea",
+      "bytes": 10069
+    },
+    {
+      "path": "notebooks/ml_training/05_model_monitoring.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5f7ad1ac30d709d2558d6ecb7419a7afd2bf31efe58d7a224013b8d2236da146",
+      "bytes": 19028
+    },
+    {
+      "path": "notebooks/ml_training/06_graph_neighborhood_embeddings.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "e3642630fdf8c371b7fd6a19329defc159638f1285f393dbb0d9844e914bf94e",
+      "bytes": 17700
+    },
+    {
+      "path": "notebooks/ml_training/07_ray_slm_distributed_training.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "35c51579047b8efbe38a96358e0460aa77da031b97d5eb9c4481a62ff1e1959b",
+      "bytes": 17033
+    },
+    {
+      "path": "notebooks/ops/01_checkpoint_gc.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cd8d5afa34a2e7f0c4353cfb8a8d2c11577650a9d058f9ad05b8ae51f0a55209",
+      "bytes": 7242
+    },
+    {
+      "path": "notebooks/ops/02_health_check.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7f25fa17c015e6b922575a526fbba180ae95cffb69f4d418f8e4f90a4fad124a",
+      "bytes": 8882
+    },
+    {
+      "path": "notebooks/ops/03_sla_alerting.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "682e9e8b7feb411e00227d7189e8637d66793bc7476962a19e866a9ba807000b",
+      "bytes": 11009
+    },
+    {
+      "path": "notebooks/ops/04_alert_deduplication.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "a4b7e2fde183347195f2347e4dfbce0a3073e26a17e2419c66ddd0ab5e1cde09",
+      "bytes": 7524
+    },
+    {
+      "path": "notebooks/ops/05_delta_replay_engine.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "02147850282f167a722629310646d438a7c017f12e5d589bd2017e75ed18737e",
+      "bytes": 20786
+    },
+    {
+      "path": "notebooks/pipelines/attack_universe_realtime.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f70aa639a79fe79f7108672a634343f5bc684c607e11280c583da06957448f6a",
+      "bytes": 12741
+    },
+    {
+      "path": "notebooks/pipelines/bronze_ingestion.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "cc58601c9053172fc76f4c146533f57ea59e62555bd59448b4b0182f654b9512",
+      "bytes": 7855
+    },
+    {
+      "path": "notebooks/pipelines/gold_analytics.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "14f152c6264cf5ba16c3c4e45de8adc308b57a3edef5a04b12a0512a6d0edda4",
+      "bytes": 10640
+    },
+    {
+      "path": "notebooks/pipelines/silver_normalization.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7d75ac314ba76283c8b04cd4102dea5a4acbf51c378d995ac92a889dcb87c60a",
+      "bytes": 12302
+    },
+    {
+      "path": "notebooks/response/01_automated_response.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "85f20638e22d58123d0f9a534eeb7f6667693009cb07337b24e4e8759bd0f3d5",
+      "bytes": 7900
+    },
+    {
+      "path": "notebooks/response/02_case_management.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5a23ce953583d733d68a0ee307df552c7f758298465ac331c83b5c2d687c4bf7",
+      "bytes": 6276
+    },
+    {
+      "path": "notebooks/response/03_notification_integrations.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "61e0774bda3f4b959819aef370120945026034a1d3e6a44fc296559ebc518380",
+      "bytes": 13984
+    },
+    {
+      "path": "notebooks/response/04_ticketing_integration.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "579cd9233ef6d6fc6108e127d5f4d797c8b8940405fb0b8827682eee2b3e9ad7",
+      "bytes": 13555
+    },
+    {
+      "path": "notebooks/response/05_report_generator.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "768643030fdc5a3ea72db16c09a07e8e50f934bd2f1cec4cc1aef80cfd7eebb1",
+      "bytes": 7756
+    },
+    {
+      "path": "notebooks/setup/01_create_catalog_schema.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "setup",
+      "review": "auto",
+      "sha256": "d2c731b8cc76e53aa46c71b9b53eb0cf9a3374126d7d820248172055380c6998",
+      "bytes": 86769
+    },
+    {
+      "path": "notebooks/setup/02_seed_demo_data.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "setup",
+      "review": "auto",
+      "sha256": "f5fc1b5312be723601995cdbe055a19ba2185544028a63d84409bed4fb0f5ae6",
+      "bytes": 33264
+    },
+    {
+      "path": "notebooks/setup/03_seed_all_platform_data.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "setup",
+      "review": "auto",
+      "sha256": "2255ce5de8ef6d10c44276cc6617f8e6ece82ba578a5424ba48aaf34ec7ac40b",
+      "bytes": 44995
+    },
+    {
+      "path": "notebooks/setup/04_register_model_serving.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "setup",
+      "review": "auto",
+      "sha256": "c6ff2d286026477914cf62e0ba2885c7bd09983b6dc94cacccb91073dca19d90",
+      "bytes": 6607
+    },
+    {
+      "path": "notebooks/setup/05_seed_correlation_rules_library.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "setup",
+      "review": "auto",
+      "sha256": "72022dc8740a60720c10fef4a2cfa79080650b538cad1fbf95bffd9ac7b45a12",
+      "bytes": 15952
+    },
+    {
+      "path": "notebooks/setup/0xDSI_Operation_Borrowed_Trust_DEMO_SCRIPT.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "0f85ef2649df689dce441537b744cf9ebc25f7f310e76658ae8dd299d311c6a6",
+      "bytes": 6025
+    },
+    {
+      "path": "notebooks/setup/0xDSI_Operation_Borrowed_Trust_Narrative.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "4b6557ccf9b5a07e15f856190bf6f8fdbeeea04359d36e971e352e71cc6473b8",
+      "bytes": 26379
+    },
+    {
+      "path": "resources/app.yml",
+      "artifact_type": "deployment_config",
+      "runtime": "databricks-bundle",
+      "shipping_status": "deployment",
+      "review": "auto",
+      "sha256": "3a7ba61fa84e2615108fcfb6734959477642456240ffb7edb53c9bc634c82f26",
+      "bytes": 2970
+    },
+    {
+      "path": "resources/jobs.yml",
+      "artifact_type": "deployment_config",
+      "runtime": "databricks-bundle",
+      "shipping_status": "deployment",
+      "review": "auto",
+      "sha256": "3d973d2eadb28920a48a65424812c25ca4bff26cc589d8ae523121fcdc3cb9b8",
+      "bytes": 95591
+    },
+    {
+      "path": "resources/pipelines.yml",
+      "artifact_type": "deployment_config",
+      "runtime": "databricks-bundle",
+      "shipping_status": "deployment",
+      "review": "auto",
+      "sha256": "1434eb95388accfc3d459ed129de2b3adec9f44455ef56928b1e7d41d662da41",
+      "bytes": 1387
+    },
+    {
+      "path": "tests/README.md",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "341150955a2727b3c20a28fd7b06e5cb853716f76c37982ee40c250c17a8a825",
+      "bytes": 1439
+    },
+    {
+      "path": "tests/contract/test_phase0_inventory.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "3e8fc70ae74dc4b6cd3f888078ead4864c1909969f912e037013cc53b877b9ac",
+      "bytes": 4138
+    },
+    {
+      "path": "tests/smoke_test_app.sh",
+      "artifact_type": "test_script",
+      "runtime": "shell",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "12c0caf9c64653a6cd7eec9b2bdc036eeb6b4ec4da9026688768a013dc2c4605",
+      "bytes": 3771
+    },
+    {
+      "path": "tests/smoke_test_e2e_pipeline.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "curated",
+      "sha256": "fdcf1d9ba3f94bbc8364112288d5c78a13bdb3faaa266f18c521cff3ed7b1947",
+      "bytes": 7790,
+      "capability": "e2e-smoke",
+      "notes": "Requires a live Spark/Databricks session; cannot run in this environment (recorded BLOCKED in the baseline)."
+    },
+    {
+      "path": "tests/smoke_validate_schema.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "50021dc302c9c6e54e7607432b36eba81592a529bd30b301fe53333bedc53608",
+      "bytes": 4640
+    },
+    {
+      "path": "tests/test_fuse_math.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "7ac50245d7fe7666929ac164f6d74e789c8abc59c1986a8fc723b0a07e0c2221",
+      "bytes": 4298
+    },
+    {
+      "path": "tools/inventory/classify.py",
+      "artifact_type": "tooling",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "b1f45246474829a0ec21b8cd10fc0b6ce46fc5f7041deb53946761b2ccf7d498",
+      "bytes": 5298
+    },
+    {
+      "path": "tools/inventory/generate_manifest.py",
+      "artifact_type": "tooling",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "de8a07855860d9cac1a8a030d5a1b77e39b7f66ed53696102b4e1a756ac688c9",
+      "bytes": 6492
+    },
+    {
+      "path": "tools/inventory/overrides.json",
+      "artifact_type": "tooling",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "154f3b10e77a67d8211c7be07bcc4a672bf6f156c3a137a598f564b13ba57b28",
+      "bytes": 1944
+    },
+    {
+      "path": "tools/inventory/run_baseline.py",
+      "artifact_type": "tooling",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "2027ee28db858cecf69fb727284ad1c58c01dee1f7c3ff8b6223209b270ffd5b",
+      "bytes": 5835
+    }
+  ]
+}

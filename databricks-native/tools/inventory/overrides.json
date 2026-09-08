@@ -1,0 +1,30 @@
+{
+  "_comment": "Curated shipping-status overrides for files a human has actually read. Anything NOT listed here keeps its auto-assigned status (structural facts stay definite; capability code stays 'unreviewed' until reviewed). Keep this honest: only promote a file after reading it. Valid shipping_status values: production, experimental, simulated, unavailable, demo (plus the structural ones the generator assigns automatically).",
+  "artifacts": {
+    "app/backend/server.py": {
+      "shipping_status": "production",
+      "capability": "data-api-gateway",
+      "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
+    },
+    "app/frontend/src/App.tsx": {
+      "shipping_status": "production",
+      "capability": "soc-console-ui",
+      "notes": "Root of the single shipped frontend build under app/frontend."
+    },
+    "notebooks/_shared/config.py": {
+      "shipping_status": "production",
+      "capability": "platform-config",
+      "notes": "Defines SOCConfig/load_config. Contract drift: tests/smoke_test_e2e_pipeline.py imports PlatformConfig with get_table_path(name), which this module does not export that way (REV2-01, Phase 2)."
+    },
+    "notebooks/correlation/10_fuse_engine.py": {
+      "shipping_status": "experimental",
+      "capability": "evidence-fusion",
+      "notes": "Dempster-Shafer combiner. Pure functions unit-tested (tests/test_fuse_math.py, 12 cases). Evidence-independence and calibrated-probability semantics disputed by REV2-02/03/06 (Phase 3 open)."
+    },
+    "tests/smoke_test_e2e_pipeline.py": {
+      "shipping_status": "test",
+      "capability": "e2e-smoke",
+      "notes": "Requires a live Spark/Databricks session; cannot run in this environment (recorded BLOCKED in the baseline)."
+    }
+  }
+}
