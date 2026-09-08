@@ -21,19 +21,30 @@ def safe_append(
     schema: str = "",
     partition_by: Optional[list] = None,
     deduplicate_on: Optional[list] = None,
+    idempotency_key: Optional[str] = None,
 ):
     """
     Safely append a DataFrame to a Delta table.
 
     Features:
     - Schema evolution (mergeSchema)
-    - Optional deduplication before write
+    - Optional within-batch deduplication before write
+    - Optional cross-run idempotency via `idempotency_key`
     - Partition pruning awareness
     - Empty DataFrame guard
 
+    When `idempotency_key` names a column, the write becomes insert-if-absent
+    (REV2-04): rows whose key already exists in the target are skipped, so a
+    replayed or retried batch never duplicates evidence. The key column must
+    hold a deterministic, content-derived value (see _shared/idempotency.py) for
+    this to be meaningful across runs. On the very first write the target table
+    does not yet exist, so we fall back to a plain append that creates it.
+
     Usage:
-        from _shared.delta_helpers import safe_append
+        from delta_helpers import safe_append
         safe_append(alerts_df, "alerts", cfg.catalog, cfg.schema, deduplicate_on=["id"])
+        safe_append(ueo_df, "unified_evidence_objects", cfg.catalog, cfg.schema,
+                    idempotency_key="ueo_id")
     """
     if df.isEmpty():
         logger.info(f"Skipping append to {table}: DataFrame is empty")
@@ -43,6 +54,10 @@ def safe_append(
         df = df.dropDuplicates(deduplicate_on)
 
     full_table = _full_table_name(table, catalog, schema)
+
+    if idempotency_key:
+        _idempotent_insert(df, full_table, idempotency_key, partition_by)
+        return
 
     writer = (
         df.write
@@ -57,6 +72,62 @@ def safe_append(
     writer.saveAsTable(full_table)
 
     logger.info(f"Appended {df.count()} rows to {full_table}")
+
+
+def _idempotent_insert(
+    df: DataFrame,
+    full_table: str,
+    key_col: str,
+    partition_by: Optional[list] = None,
+):
+    """Insert only rows whose key column is not already present in full_table.
+
+    Implemented as a MERGE with a WHEN NOT MATCHED INSERT clause, so replays are
+    no-ops. Duplicate keys within the batch are collapsed first, because MERGE
+    errors when multiple source rows match one target row. If the target table
+    does not exist yet (first run), a plain append creates it.
+    """
+    df = df.dropDuplicates([key_col])
+    spark = df.sparkSession
+
+    temp_view = f"_idem_src_{id(df)}"
+    df.createOrReplaceTempView(temp_view)
+
+    columns = df.columns
+    insert_cols = ", ".join(f"`{c}`" for c in columns)
+    insert_vals = ", ".join(f"source.`{c}`" for c in columns)
+
+    merge_sql = f"""
+        MERGE INTO {full_table} AS target
+        USING {temp_view} AS source
+        ON target.`{key_col}` = source.`{key_col}`
+        WHEN NOT MATCHED THEN
+            INSERT ({insert_cols})
+            VALUES ({insert_vals})
+    """
+
+    try:
+        spark.sql(merge_sql)
+        logger.info(f"Idempotently inserted into {full_table} on key {key_col}")
+    except Exception as e:  # noqa: BLE001
+        if "TABLE_OR_VIEW_NOT_FOUND" in str(e) or "not found" in str(e).lower():
+            writer = (
+                df.write
+                .format("delta")
+                .mode("append")
+                .option("mergeSchema", "true")
+            )
+            if partition_by:
+                writer = writer.partitionBy(*partition_by)
+            writer.saveAsTable(full_table)
+            logger.info(f"Created {full_table} on first idempotent write")
+        else:
+            raise
+    finally:
+        try:
+            spark.catalog.dropTempView(temp_view)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def safe_merge(
@@ -358,9 +429,16 @@ def add_metadata_columns(df: DataFrame) -> DataFrame:
 
 
 def _full_table_name(table: str, catalog: str, schema: str) -> str:
-    """Construct fully qualified table name."""
+    """Construct a fully qualified, safely quoted table name.
+
+    When `table` is already a dotted, qualified name (as returned by
+    get_table_path) and no catalog/schema is supplied, each segment is quoted
+    individually so the whole string is not treated as one identifier.
+    """
     if catalog and schema:
         return f"`{catalog}`.`{schema}`.`{table}`"
     if schema:
         return f"`{schema}`.`{table}`"
+    if "." in table:
+        return ".".join(f"`{part}`" for part in table.split("."))
     return f"`{table}`"

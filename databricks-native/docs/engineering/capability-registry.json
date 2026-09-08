@@ -203,6 +203,25 @@
         "Append-only durability across restarts needs a live Delta workspace to verify"
       ],
       "notes": "Immutable PROVISIONAL->CONFIRMED/WITHDRAWN/EXPIRED/SUPERSEDED state machine with a fixed transition table (terminal states are dead ends, re-confirm rejected); every revision is append-only and stamped with the five execution-identity fields (REV2-05). Logic proven offline (13 property cases). Persisted to the finding_revisions ledger."
+    },
+    {
+      "id": "evidence-idempotency",
+      "title": "Replay-safe evidence writes",
+      "claim": "Re-running an evidence producer never duplicates the evidence it already wrote.",
+      "state": "experimental",
+      "evidence": [
+        "notebooks/_shared/idempotency.py",
+        "notebooks/_shared/delta_helpers.py",
+        "notebooks/correlation/09_unified_evidence_object.py",
+        "notebooks/agents/13_forensics.py"
+      ],
+      "tests": [
+        "tests/property/test_idempotency.py"
+      ],
+      "blockers": [
+        "Insert-if-absent MERGE and cross-table atomic commit need a live Delta workspace to verify at runtime"
+      ],
+      "notes": "Deterministic, content-addressed keys (injective over part boundaries, None distinct from empty) plus an insert-if-absent MERGE in safe_append(idempotency_key=...) make evidence writes replay-safe (REV2-04). Wired into UEO objects (ueo_id), UEO signals (signal_id) and forensic collections (collection_id); the same change fixed a latent crash where four agents passed an idempotency_key argument the function did not accept. stamp_execution_identity provides the REV2-05 identity kernel for evidence rows. Key/stamp logic proven offline (12 property cases). Stays experimental until the MERGE path is exercised on a live workspace."
     }
   ]
 }

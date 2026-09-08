@@ -6,16 +6,16 @@
   },
   "summary": {
     "blocked": 4,
-    "passed": 9
+    "passed": 10
   },
   "checks": [
     {
       "id": "py_compile_all",
       "category": "syntax",
-      "command": "python -m py_compile <158 files>",
+      "command": "python -m py_compile <160 files>",
       "status": "passed",
       "exit_code": 0,
-      "detail": "compiled 158 python files"
+      "detail": "compiled 160 python files"
     },
     {
       "id": "unit_fuse_math",
@@ -66,12 +66,20 @@
       "detail": "PASS test_cannot_reconfirm_confirmed\nPASS test_cannot_revise_terminal_revision\nPASS test_full_chain_is_monotonic\nPASS test_identity_validation\nPASS test_initial_revision_shape_and_identity\nPASS test_legal_transitions\nPASS test_next_revision_does_not_mutate_previous\nPASS test_next_revision_increments_and_links\nPASS test_revision_columns_cover_identity_fields\nPASS test_states_and_terminals\nPASS test_supersede_requires_target\nPASS test_terminal_states_reject_all_transitions\nPASS test_unknown_state_raises\n\n13 passed, 0 failed"
     },
     {
+      "id": "idempotency_phase6",
+      "category": "property",
+      "command": "python tests/property/test_idempotency.py",
+      "status": "passed",
+      "exit_code": 0,
+      "detail": "PASS test_empty_parts_rejected\nPASS test_is_replay\nPASS test_key_changes_with_content\nPASS test_key_is_deterministic\nPASS test_key_is_injective_over_boundaries\nPASS test_non_string_parts_coerced_stably\nPASS test_none_distinct_from_empty_string\nPASS test_order_matters\nPASS test_stamp_defaults_produced_at_when_absent\nPASS test_stamp_does_not_mutate_input\nPASS test_stamp_fills_full_kernel\nPASS test_stamp_requires_identity_fields\n\nOK (0 failed)"
+    },
+    {
       "id": "manifest_fresh",
       "category": "inventory",
       "command": "generate_manifest.py --check",
       "status": "passed",
       "exit_code": 0,
-      "detail": "artifact-manifest.json up to date (495 files)."
+      "detail": "artifact-manifest.json up to date (497 files)."
     },
     {
       "id": "frontend_build",
@@ -79,7 +87,7 @@
       "command": "npm run build (app/)",
       "status": "passed",
       "exit_code": 0,
-      "detail": "✓ 1756 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../dist/index.html                     0.48 kB │ gzip:     0.32 kB\n../dist/assets/index-C9ZTdIKD.css    227.14 kB │ gzip:    30.00 kB\n../dist/assets/index-KXQvvKg6.js   5,963.09 kB │ gzip: 1,442.66 kB\n✓ built in 25.30s\nBrowserslist: caniuse-lite is outdated. Please run:\n  npx update-browserslist-db@latest\n  Why you should do it regularly: https://github.com/browserslist/update-db#readme\n\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit."
+      "detail": "✓ 1756 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../dist/index.html                     0.48 kB │ gzip:     0.32 kB\n../dist/assets/index-C9ZTdIKD.css    227.14 kB │ gzip:    30.00 kB\n../dist/assets/index-KXQvvKg6.js   5,963.09 kB │ gzip: 1,442.66 kB\n✓ built in 31.32s\nBrowserslist: caniuse-lite is outdated. Please run:\n  npx update-browserslist-db@latest\n  Why you should do it regularly: https://github.com/browserslist/update-db#readme\n\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit."
     },
     {
       "id": "spark_e2e_smoke",

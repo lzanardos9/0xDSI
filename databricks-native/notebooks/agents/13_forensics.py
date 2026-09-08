@@ -22,6 +22,7 @@ import hashlib
 from datetime import datetime
 from pyspark.sql import functions as F
 import mlflow
+from idempotency import idempotency_key
 from agent_framework import BatchAgent, AgentResult, AgentStatus, UCTool, create_soc_tools
 
 # COMMAND ----------
@@ -127,7 +128,11 @@ class ForensicsAgent(BatchAgent):
             with mon.time("persist_results"):
                 if all_evidence_records:
                     evidence_df = spark.createDataFrame(all_evidence_records)
-                    safe_append(evidence_df, evidence_table, catalog=cfg.catalog, schema=cfg.schema)
+                    safe_append(
+                        evidence_df, "forensic_collections",
+                        catalog=cfg.catalog, schema=cfg.schema,
+                        idempotency_key="collection_id",
+                    )
 
                 if all_report_records:
                     reports_df = spark.createDataFrame(all_report_records)
@@ -205,8 +210,12 @@ class ForensicsAgent(BatchAgent):
         combined = "".join(h["sha256"] for h in all_hashes)
         master_hash = hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
-        # Store evidence metadata
+        # Store evidence metadata. collection_id is content-derived from the
+        # case and the master evidence hash, so re-running collection for the
+        # same evidence writes the same id and the idempotent append is a no-op
+        # instead of duplicating the record (REV2-04).
         evidence_record = {
+            "collection_id": idempotency_key(case.case_id, master_hash),
             "case_id": case.case_id,
             "evidence_type": "forensic_collection",
             "collection_timestamp": datetime.utcnow(),

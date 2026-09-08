@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 495,
-  "total_bytes": 10451544,
+  "total_files": 497,
+  "total_bytes": 10466105,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -15,9 +15,9 @@
       "frontend_entry": 1,
       "frontend_module": 298,
       "other": 1,
-      "shared_library": 14,
+      "shared_library": 15,
       "stylesheet": 1,
-      "test": 10,
+      "test": 11,
       "test_script": 1,
       "tooling": 4
     },
@@ -29,8 +29,8 @@
       "experimental": 1,
       "production": 3,
       "setup": 5,
-      "shared_library": 13,
-      "test": 11,
+      "shared_library": 14,
+      "test": 12,
       "unreviewed": 423
     },
     "by_runtime": {
@@ -39,8 +39,8 @@
       "databricks-bundle": 5,
       "databricks-spark": 131,
       "n/a": 17,
-      "python": 10,
-      "python (databricks runtime)": 14,
+      "python": 11,
+      "python (databricks runtime)": 15,
       "python-fastapi": 1,
       "shell": 1
     },
@@ -3001,8 +3001,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "b2fbc616ecc9c1e2afbb960ad085173e0e751594036fa22712a866499f995a78",
-      "bytes": 10101
+      "sha256": "f77d6463d32ce16e07f5e2a63255e7af8729663d035a786ad86f82664dc003e0",
+      "bytes": 10943
     },
     {
       "path": "docs/engineering/capability-registry.json",
@@ -3010,8 +3010,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "668663af8b180220500fafe8241c2d44812ec4fb3c29fe561a5d6c86e4afc88b",
-      "bytes": 9476
+      "sha256": "c8d6096b5cf3826c7c9a601f2d254e084a4d96931e37f1ad8ed8138b1e8f7850",
+      "bytes": 10787
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -3075,8 +3075,8 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "0d000ca8c866f6e57884998be201d8c84ecf3ac210e3057cb14a37318d4a8b0a",
-      "bytes": 10197
+      "sha256": "a105587e87718dd7dd115fa2bfeb3e3b5a6ccf1b217905be1f18e9f7e798b3cf",
+      "bytes": 13200
     },
     {
       "path": "notebooks/_shared/finding_revision.py",
@@ -3086,6 +3086,15 @@
       "review": "auto",
       "sha256": "fea52016d5e571c89422780715156c39d9b564fe702d3842f746d1ad46202a63",
       "bytes": 6777
+    },
+    {
+      "path": "notebooks/_shared/idempotency.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "40d83e11dc7eeb5393abdccf762a666471d73cdb072f005f5d47a8f370ec6ea7",
+      "bytes": 3453
     },
     {
       "path": "notebooks/_shared/ingest_accounting.py",
@@ -3255,8 +3264,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "1ea2b524a0bb35d320fe407e43780e2cf2271f127904e497b9d01b45d5272054",
-      "bytes": 12587
+      "sha256": "c7e0afce8a5082bced0a333b3fe3be1f1953fb6850c18bafa6e1161aa5fa747f",
+      "bytes": 13092
     },
     {
       "path": "notebooks/agents/14_honeypot.py",
@@ -3804,8 +3813,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "c03294d0c48ad7db4c5570b1c967a6413504b39305469c67fd9c4e5f7e91417b",
-      "bytes": 24013
+      "sha256": "94f4af40374ac7d4f26d63ffe693ab58e938ca3c616768c82b0b6d4d6c5bb2c9",
+      "bytes": 24455
     },
     {
       "path": "notebooks/correlation/10_fuse_engine.py",
@@ -4382,8 +4391,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "4fef8dd254bedb05dc3d044bc8c8421393a9ad124b1f58a834c6d5b6ae4f907d",
-      "bytes": 2012
+      "sha256": "7222e35d3c700592924aaef7ec2e4e96843017be3658f740f06694ecb9175c5d",
+      "bytes": 2203
     },
     {
       "path": "tests/contract/test_phase0_inventory.py",
@@ -4420,6 +4429,15 @@
       "review": "auto",
       "sha256": "b49f5d6850a02cc32497e627c9ce95eae25bdde635d988086e11eed720247797",
       "bytes": 5617
+    },
+    {
+      "path": "tests/property/test_idempotency.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "0288dcf5c722850c6833af1a801c4a5e6dd0931a4f48cc32481b3a21ce0964f3",
+      "bytes": 4395
     },
     {
       "path": "tests/property/test_ingest_accounting.py",
@@ -4510,8 +4528,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "5816addb8a0d6c385676a0a43a065a303d69072c9163a0ba6e1595eb18e57557",
-      "bytes": 7988
+      "sha256": "c6e710b67d61466d7d6e97b195f9824ab291d580627109c4e6025f668028462e",
+      "bytes": 8407
     }
   ]
 }
