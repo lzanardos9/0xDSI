@@ -222,6 +222,23 @@
         "Insert-if-absent MERGE and cross-table atomic commit need a live Delta workspace to verify at runtime"
       ],
       "notes": "Deterministic, content-addressed keys (injective over part boundaries, None distinct from empty) plus an insert-if-absent MERGE in safe_append(idempotency_key=...) make evidence writes replay-safe (REV2-04). Wired into UEO objects (ueo_id), UEO signals (signal_id) and forensic collections (collection_id); the same change fixed a latent crash where four agents passed an idempotency_key argument the function did not accept. stamp_execution_identity provides the REV2-05 identity kernel for evidence rows. Key/stamp logic proven offline (12 property cases). Stays experimental until the MERGE path is exercised on a live workspace."
+    },
+    {
+      "id": "model-evaluation-gate",
+      "title": "Leakage-safe evaluation and promotion gate",
+      "claim": "A model is measured without leakage and only promoted to serving when it beats a baseline and is not overfit.",
+      "state": "experimental",
+      "evidence": [
+        "notebooks/_shared/model_eval.py",
+        "notebooks/ml_training/01_threat_scoring_model.py"
+      ],
+      "tests": [
+        "tests/property/test_model_eval.py"
+      ],
+      "blockers": [
+        "Real labelled corpus, trained artifacts and a live Ray/Spark workspace needed to run the gate on actual models"
+      ],
+      "notes": "Leakage-safe splitting (temporal split with the boundary timestamp kept whole; grouped split so an entity never spans train and test; leakage_keys proves a split is clean), rank-based ROC-AUC and precision/recall/F1, and a promotion_gate that refuses a model below an AUC floor, without a margin over the 0.5 baseline, overfit (train-minus-test gap too large), or measured on a single-class slice (REV2-14, REV2-28 model side). The threat-scoring notebook now uses a temporal split instead of a leaky randomSplit and gates registration and production scoring on the decision. Logic proven offline (17 property cases). Stays experimental until run against real trained artifacts."
     }
   ]
 }

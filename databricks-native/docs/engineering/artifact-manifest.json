@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 497,
-  "total_bytes": 10466105,
+  "total_files": 499,
+  "total_bytes": 10484110,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -15,9 +15,9 @@
       "frontend_entry": 1,
       "frontend_module": 298,
       "other": 1,
-      "shared_library": 15,
+      "shared_library": 16,
       "stylesheet": 1,
-      "test": 11,
+      "test": 12,
       "test_script": 1,
       "tooling": 4
     },
@@ -29,8 +29,8 @@
       "experimental": 1,
       "production": 3,
       "setup": 5,
-      "shared_library": 14,
-      "test": 12,
+      "shared_library": 15,
+      "test": 13,
       "unreviewed": 423
     },
     "by_runtime": {
@@ -39,8 +39,8 @@
       "databricks-bundle": 5,
       "databricks-spark": 131,
       "n/a": 17,
-      "python": 11,
-      "python (databricks runtime)": 15,
+      "python": 12,
+      "python (databricks runtime)": 16,
       "python-fastapi": 1,
       "shell": 1
     },
@@ -3001,8 +3001,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "f77d6463d32ce16e07f5e2a63255e7af8729663d035a786ad86f82664dc003e0",
-      "bytes": 10943
+      "sha256": "23e6cb74de45472a1428670e4d3c89f53c7fe491343266faf3bab4419d32b7a2",
+      "bytes": 11934
     },
     {
       "path": "docs/engineering/capability-registry.json",
@@ -3010,8 +3010,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "c8d6096b5cf3826c7c9a601f2d254e084a4d96931e37f1ad8ed8138b1e8f7850",
-      "bytes": 10787
+      "sha256": "d7a55b41543af61c5c4043b87bd635fb15c247ab78268b64b2480c64de00bfc9",
+      "bytes": 12104
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -3113,6 +3113,15 @@
       "review": "auto",
       "sha256": "0b5e06ab6f133b3150c3d457b3f4810a3b005600059b2655885947eadbc48bf2",
       "bytes": 23177
+    },
+    {
+      "path": "notebooks/_shared/model_eval.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "24695632afb327a8a00a09dd40d97906c73b8971fdd18ccfd047052966a78a35",
+      "bytes": 7501
     },
     {
       "path": "notebooks/_shared/monitoring.py",
@@ -4112,8 +4121,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "f915dbc004f956e781f7392d35e08c7021021cd86cfb76c25ff9f9dcad485491",
-      "bytes": 6811
+      "sha256": "d57f3b3ce8de1106ef9ef970699826c31eee37bab79ee4beeccd01bc5cb6d9d5",
+      "bytes": 9494
     },
     {
       "path": "notebooks/ml_training/02_feature_engineering.py",
@@ -4391,8 +4400,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "7222e35d3c700592924aaef7ec2e4e96843017be3658f740f06694ecb9175c5d",
-      "bytes": 2203
+      "sha256": "402d33fc151bd1370ee0a0130b7d099e8aab46b55ce3b50f2cfd169436f56116",
+      "bytes": 2449
     },
     {
       "path": "tests/contract/test_phase0_inventory.py",
@@ -4447,6 +4456,15 @@
       "review": "auto",
       "sha256": "d7388d98dad6c4576bee8f1130968a1b9f1cdad297cd914f36621cba5ebc3089",
       "bytes": 3475
+    },
+    {
+      "path": "tests/property/test_model_eval.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "dd1032f0481e6b352b206549e7cd49c2ecd96c251ff4706cf67c1e3906622d63",
+      "bytes": 4853
     },
     {
       "path": "tests/security/test_phase1_authz.py",
@@ -4528,8 +4546,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "c6e710b67d61466d7d6e97b195f9824ab291d580627109c4e6025f668028462e",
-      "bytes": 8407
+      "sha256": "c97d3cfb513efc3aa4f069108007fce531a9c27efe6f1304b7a83437185629a2",
+      "bytes": 8821
     }
   ]
 }

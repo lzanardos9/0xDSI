@@ -35,7 +35,7 @@ blocked verification" mapping required by the Phase 0 exit gate.
 | REV2-11 | Producer/consumer schema drift | 2 | partial | Landed: the `system_settings` split (DDL/backend used `key`/`value`; seed, config loader and formula notebook used `setting_key`/`setting_value`, and the seed's overwrite clobbered the DDL schema) is reconciled onto canonical `key`/`value` everywhere. Contract test rejects the old aliases repo-wide. Remaining: extend typed column contracts to the rest of the cross-boundary tables. |
 | REV2-12 | Ray training is not real training | 7 | blocked-external | Needs Ray cluster + GPU + versioned corpus. |
 | REV2-13 | MC-RNN fresh-weight startup / no persisted state | 7 | blocked-external | Shared featurizer buildable; real training blocked. |
-| REV2-14 | Model evaluation absent / leaky | 7 | blocked-external | Eval harness buildable; real artifacts blocked. |
+| REV2-14 | Model evaluation absent / leaky | 7 | partial | Landed (Phase 7): `notebooks/_shared/model_eval.py` gives a leakage-safe harness -- `temporal_split` (test strictly after train, boundary timestamp kept whole), `grouped_split` (an entity never spans train and test) and `leakage_keys` to prove a split is clean, plus rank-based ROC-AUC and precision/recall/F1. The threat-scoring notebook now replaces its leaky `randomSplit` with a temporal split and evaluates train and test AUC. `tests/property/test_model_eval.py` pins the invariants (17 cases). Remaining: real labelled artifacts and live workspace to run the harness on trained models. |
 | REV2-15 | trained-artifact -> serving chain unverified | 7 | blocked-external | Registry->deploy chain needs a real artifact. |
 | REV2-16 | Static file path traversal | 1 | partial | Landed: SPA serving resolves inside the dist root and rejects `../`/symlink/absolute escapes; `/api/*` no longer falls back to index.html. Tests: `tests/security/test_phase1_authz.py`. |
 | REV2-17 | Authorization not centralized across paths | 1 | partial | Landed: central `authorize(user, action, resource)`; generic write + RPC routed through it; roles resolved from server-side allowlist (`SOC_ADMIN_EMAILS`/`SOC_ANALYST_EMAILS`) so the client `X-Forwarded-Groups` header can no longer escalate. Remaining: read-side authorization and agent/notebook tool paths. |
@@ -49,15 +49,15 @@ blocked verification" mapping required by the Phase 0 exit gate.
 | REV2-25 | Readiness counts STARTING as ready | 9 | open | Real bounded dependency checks + canary. |
 | REV2-26 | Observability metrics missing | 9 | open | Lag, quarantined/lost records, outbox backlog, verification metrics. |
 | REV2-27 | Response not verified against a target | 8 | blocked-external | Dry-run adapters buildable; live verified target blocked. |
-| REV2-28 | No baseline comparison / overfitting risk | 3, 7 | partial | Landed (Phase 3 fusion side): `calibration.baseline_probability` gives a simple independent naive-Bayes baseline, now persisted as `baseline_score` alongside every fused row so the elaborate D-S fusion can be compared to it; `tests/property/test_calibration.py` checks D-S and the baseline agree on ordering. Remaining: the model-side baseline (Phase 7) needs a trained artifact. |
+| REV2-28 | No baseline comparison / overfitting risk | 3, 7 | partial | Landed (Phase 3 fusion side): `calibration.baseline_probability` gives a simple independent naive-Bayes baseline, now persisted as `baseline_score` alongside every fused row so the elaborate D-S fusion can be compared to it; `tests/property/test_calibration.py` checks D-S and the baseline agree on ordering. Phase 7 model side landed: `model_eval.promotion_gate` refuses to register or serve a model that does not beat the coin-flip baseline (AUC 0.5) by a margin, is overfit (train-minus-test AUC gap too large), or was measured on a single-class test slice; the threat-scoring notebook only registers to the serving name and only scores production events when the gate passes, otherwise it keeps the artifact for audit and logs the rejection reasons. Remaining: the gate runs against real trained artifacts only on a live workspace. |
 | REV2-29 | Audit writes swallowed on privileged mutation | 9 | open | Mandatory audit persistence must not be silently dropped. |
 
 ## Rollup
 
 - **partial (some work landed):** REV2-01, REV2-02, REV2-03, REV2-04, REV2-05, REV2-06,
-  REV2-08, REV2-11, REV2-16, REV2-17, REV2-18, REV2-20, REV2-21, REV2-22, REV2-28
+  REV2-08, REV2-11, REV2-14, REV2-16, REV2-17, REV2-18, REV2-20, REV2-21, REV2-22, REV2-28
 - **blocked-external (needs infra/hardware to verify):** REV2-12,
-  REV2-13, REV2-14, REV2-15, REV2-23, REV2-27
+  REV2-13, REV2-15, REV2-23, REV2-27
 - **open (in-repo, achievable next):** all remaining findings
 
 ## How this file is kept honest
