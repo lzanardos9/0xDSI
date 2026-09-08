@@ -2073,6 +2073,22 @@ USING DELTA
 """)
 
 spark.sql("""
+CREATE TABLE IF NOT EXISTS ingestion_accounting (
+    batch_id STRING NOT NULL,
+    source_type STRING NOT NULL,
+    received BIGINT NOT NULL,
+    valid BIGINT NOT NULL,
+    quarantined BIGINT NOT NULL,
+    unaccounted BIGINT NOT NULL,
+    balanced BOOLEAN NOT NULL,
+    schema_version STRING,
+    recorded_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+""")
+
+spark.sql("""
 CREATE TABLE IF NOT EXISTS ml_model_monitoring (
     experiment STRING NOT NULL,
     status STRING NOT NULL,

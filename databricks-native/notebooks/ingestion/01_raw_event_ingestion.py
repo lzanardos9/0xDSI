@@ -55,6 +55,10 @@ trigger_opts = _resolve_trigger(trigger_interval)
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 
+# Per-batch accounting so a received record can never vanish without a trace.
+# _shared is already on sys.path via the bootstrap cell above.
+from ingest_accounting import build_accounting_row, UNCLASSIFIED_REASON
+
 # Expected event schema (PERMISSIVE mode will capture malformed records)
 EVENT_SCHEMA = StructType([
     StructField("event_type", StringType(), True),
@@ -286,6 +290,12 @@ classified_stream = (
         ~col("_is_corrupt") &
         col("_parsed.event_type").isNotNull()
     )
+    # Defense in depth: any record that is neither valid nor corrupt would
+    # otherwise be silently dropped. Flag it so the batch routes it to
+    # quarantine and still balances (REV2-21).
+    .withColumn("_is_unclassified",
+        ~col("_is_valid") & ~col("_is_corrupt")
+    )
 )
 
 # COMMAND ----------
@@ -409,6 +419,10 @@ def process_ingestion_batch(batch_df, batch_id):
     batch_df.cache()
     _batch_metrics["batches"] += 1
 
+    # Count what we pulled from the source BEFORE routing, so reconciliation
+    # compares against the true input, not a derived number.
+    received_count = batch_df.count()
+
     try:
         # --- Valid Events ---
         valid_events = (
@@ -459,13 +473,17 @@ def process_ingestion_batch(batch_df, batch_id):
             _auto_discover_entities(valid_events)
 
         # --- Dead Letter Queue (quarantine) ---
+        # Includes both corrupt records AND any record that fell through
+        # classification, so nothing is silently discarded (REV2-21).
         quarantined = (
             batch_df
-            .filter(col("_is_corrupt") == True)
+            .filter(col("_is_corrupt") | col("_is_unclassified"))
             .select(
                 expr("uuid()").alias("id"),
                 col("_raw_value").alias("original_data"),
-                coalesce(col("_parsed._corrupt_record"), lit("unparseable")).alias("quarantine_reason"),
+                when(col("_is_unclassified"), lit(UNCLASSIFIED_REASON))
+                .otherwise(coalesce(col("_parsed._corrupt_record"), lit("unparseable")))
+                .alias("quarantine_reason"),
                 col("_source_topic").alias("source"),
                 lit(source_type).alias("source_connector"),
                 current_timestamp().alias("quarantined_at"),
@@ -481,6 +499,33 @@ def process_ingestion_batch(batch_df, batch_id):
             _batch_metrics["quarantined"] += quarantine_count
 
         _batch_metrics["total"] += valid_count + quarantine_count
+
+        # --- Durable accounting ledger ---
+        # Prove every received record was written or quarantined, and persist
+        # that proof so it survives a restart (in-memory counters do not).
+        acct = build_accounting_row(
+            batch_id, source_type, received_count, valid_count, quarantine_count
+        )
+        try:
+            acct_df = (
+                spark.createDataFrame([acct])
+                .withColumn("recorded_at", current_timestamp())
+            )
+            acct_df.write.mode("append").option("mergeSchema", "true").saveAsTable(
+                get_table_path(cfg, "ingestion_accounting")
+            )
+        except Exception as ledger_err:
+            # The ledger write must not itself become a silent failure.
+            mon.log_warning(f"Ingestion accounting ledger write failed: {ledger_err}")
+
+        if not acct["balanced"]:
+            # A drop or double-count. Surface it loudly rather than swallow it;
+            # the ledger row above already recorded the discrepancy durably.
+            mon.log_warning(
+                f"Ingestion batch {batch_id} did not balance: "
+                f"received={received_count}, valid={valid_count}, "
+                f"quarantined={quarantine_count}, unaccounted={acct['unaccounted']}"
+            )
 
         # --- Update Agent Status ---
         total_processed = valid_count + quarantine_count
