@@ -215,6 +215,20 @@ def check_response_actions() -> dict:
     }
 
 
+def check_backend_imports() -> dict:
+    code, tail = _run(
+        [sys.executable, "tests/contract/test_backend_imports.py"], ROOT
+    )
+    return {
+        "id": "backend_imports",
+        "category": "contract",
+        "command": "python tests/contract/test_backend_imports.py",
+        "status": "passed" if code == 0 else "failed",
+        "exit_code": code,
+        "detail": tail,
+    }
+
+
 def check_audit_persistence() -> dict:
     code, tail = _run(
         [sys.executable, "tests/property/test_audit_persistence.py"], ROOT
@@ -287,6 +301,7 @@ def main() -> int:
         check_response_actions(),
         check_audit_persistence(),
         check_readiness(),
+        check_backend_imports(),
         check_manifest_fresh(),
         check_frontend_build(),
     ]
