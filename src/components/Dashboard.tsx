@@ -71,6 +71,7 @@ import DetectionConfluence from './DetectionConfluence';
 import SwarmCrucible from './SwarmCrucible';
 import TrendEngineCET from './TrendEngineCET';
 import OperationBorrowedAuthority from './OperationBorrowedAuthority';
+import HuggingFaceIncidentBlog from './HuggingFaceIncidentBlog';
 import MCPRegistry from './MCPRegistry';
 import PhishingSimulator from './PhishingSimulator';
 import AttackUniverse from './AttackUniverse';
@@ -88,7 +89,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'phishing' | 'agentcontrolplane'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'phishing' | 'agentcontrolplane' | 'hfincidentblog'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -307,6 +308,7 @@ const Dashboard = () => {
         { id: 'borrowedauthority', label: 'Borrowed Authority', icon: ShieldAlert },
         { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
         { id: 'chronoweave', label: 'ChronoWeave', icon: Atom },
+        { id: 'hfincidentblog', label: 'HF Incident Blog', icon: BookOpen },
         { id: 'detectionslm', label: 'Detection SLM (Beta)', icon: Brain },
         { id: 'confluence', label: 'Detection Confluence', icon: Layers },
       ]
@@ -1029,6 +1031,7 @@ const Dashboard = () => {
           {selectedView === 'swarmcrucible' && <SwarmCrucible />}
           {selectedView === 'trendengine' && <TrendEngineCET />}
           {selectedView === 'borrowedauthority' && <OperationBorrowedAuthority />}
+          {selectedView === 'hfincidentblog' && <HuggingFaceIncidentBlog />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
