@@ -1,2 +1,5 @@
 [functions.analyze-communication-psychology]
 verify_jwt = false
+
+[functions.oba-engine]
+verify_jwt = false

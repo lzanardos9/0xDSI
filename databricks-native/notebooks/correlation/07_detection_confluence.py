@@ -1,15 +1,15 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Detection Confluence - Multi-Lens Fusion Engine (KS-Enhanced)
+# MAGIC # Detection Confluence - Multi-Lens Fusion Engine
 # MAGIC
 # MAGIC Fuses signals from 7 detection lenses into unified verdicts using
-# MAGIC Bayesian weighted scoring with KS-based signal validation.
+# MAGIC Bayesian weighted scoring with registry-backed signal validation.
 # MAGIC
 # MAGIC **Architecture:**
 # MAGIC - Collects signals from all lens tables within the fusion window
 # MAGIC - Groups signals by entity (user, IP, alert_id)
 # MAGIC - Computes weighted Bayesian fusion score with diversity bonus
-# MAGIC - KS-validated signals carry higher reliability weight
+# MAGIC - Validated signals (per the validation registry) carry higher reliability weight
 # MAGIC - Batch-checks historical scores to gate escalation (prevents chronic re-alerting)
 # MAGIC - Persists verdicts + full signal lineage for audit trail
 # MAGIC
@@ -20,7 +20,7 @@
 # MAGIC 4. Detection SLM (small language model rapid classification)
 # MAGIC 5. Vector Hunting (embedding similarity to known threats)
 # MAGIC 6. Formula Prioritization (risk-score weighted ranking)
-# MAGIC 7. UEBA Behavioral Baseline (user/entity deviation, KS-validated)
+# MAGIC 7. UEBA Behavioral Baseline (user/entity deviation)
 # MAGIC
 # MAGIC **Modes:** `batch` (default, single pass) | `streaming` (continuous foreachBatch)
 
@@ -41,6 +41,7 @@ dbutils.widgets.text("conflict_threshold", "0.3", "Conflict mass threshold for d
 dbutils.widgets.text("max_signals_per_run", "5000", "Max signals to process per run")
 dbutils.widgets.text("mode", "batch", "Execution mode: streaming | batch")
 dbutils.widgets.text("novelty_percentile", "95", "Percentile threshold for novel escalation")
+dbutils.widgets.text("validation_max_age_days", "90", "Max age of a validation record before a lens is treated as unvalidated")
 
 fusion_window = int(dbutils.widgets.get("fusion_window_seconds"))
 escalation_threshold = float(dbutils.widgets.get("escalation_threshold"))
@@ -48,6 +49,7 @@ conflict_threshold = float(dbutils.widgets.get("conflict_threshold"))
 max_signals = int(dbutils.widgets.get("max_signals_per_run"))
 mode = dbutils.widgets.get("mode")
 novelty_percentile = float(dbutils.widgets.get("novelty_percentile"))
+VALIDATION_MAX_AGE_DAYS = int(dbutils.widgets.get("validation_max_age_days"))
 require_tables("alerts", "confluence_verdicts", "confluence_lens_weights")
 
 mon.log_event("config_loaded", {
@@ -113,24 +115,61 @@ if weight_total > 0 and abs(weight_total - 1.0) > 0.001:
 
 # COMMAND ----------
 
-KS_RELIABILITY_BOOST = 1.15
-NON_KS_PENALTY = 0.85
-KS_VALIDATED_SOURCES = {
-    "behavioral_anomaly_detection_ks",
-    "behavioral_anomaly_detection_ensemble",
-    "ks_behavioral_deviation",
-    "ensemble_kmeans+iforest",
-    "isolation_forest",
-    "kmeans_ks",
-}
+VALIDATED_RELIABILITY_BOOST = 1.15
+UNVALIDATED_PENALTY = 0.85
+
+
+def load_validation_registry():
+    """Load machine-readable validation metadata for each detection lens.
+
+    A lens counts as statistically validated ONLY when the registry carries a
+    complete, recent record for it: a model_version, the calibration_dataset it was
+    fit on, non-empty evaluation_results, and a validated_at within the freshness
+    window. Absence of that evidence means 'not validated'. We never infer
+    validation from a signal's name -- a name containing 'ks' is not proof that a
+    Kolmogorov-Smirnov calibration was actually run and evaluated.
+    """
+    registry = {}
+    try:
+        reg_df = spark.table(cfg.get_table_path("detection_validation_registry")).filter(
+            col("is_active") == True
+        )
+        for r in reg_df.collect():
+            lens = r["lens"]
+            try:
+                evals = json.loads(r["evaluation_results"]) if r["evaluation_results"] else {}
+            except Exception:
+                evals = {}
+            validated_at = r["validated_at"]
+            fresh = validated_at is not None and (
+                datetime.utcnow() - validated_at.replace(tzinfo=None)
+            ).days <= VALIDATION_MAX_AGE_DAYS
+            complete = bool(r["model_version"]) and bool(r["calibration_dataset"]) and len(evals) > 0
+            registry[lens] = {
+                "model_version": r["model_version"],
+                "calibration_dataset": r["calibration_dataset"],
+                "evaluation_results": evals,
+                "validated_at": str(validated_at) if validated_at is not None else None,
+                "is_valid": bool(fresh and complete),
+            }
+    except Exception as e:
+        # No registry -> nothing is treated as validated (fail closed).
+        mon.log_event("validation_registry_unavailable", {"error": str(e)[:200]})
+    return registry
+
+
+VALIDATION_REGISTRY = load_validation_registry()
+VALIDATED_LENSES = {lens for lens, meta in VALIDATION_REGISTRY.items() if meta["is_valid"]}
+mon.log_info(f"evidence-backed validated lenses: {sorted(VALIDATED_LENSES)}")
 
 
 def compute_fused_score(signals, weights):
     """
-    Bayesian fusion with KS-confidence weighting.
-    - KS-validated signals get a reliability boost
-    - Non-validated signals get a penalty
+    Bayesian fusion weighted by evidence-backed validation status.
+    - Signals from lenses with a complete, fresh validation record get a reliability boost
+    - Signals from unvalidated lenses get a penalty
     - Diversity bonus: more independent lenses = higher confidence (non-linear)
+    Validation status comes from the validation registry, never from signal names.
     """
     if not signals:
         return 0.0
@@ -138,27 +177,21 @@ def compute_fused_score(signals, weights):
     weighted_sum = 0.0
     total_weight = 0.0
     contributing_lenses = set()
-    ks_validated_count = 0
+    validated_count = 0
 
     for sig in signals:
         lens = sig["lens"]
         weight = weights.get(lens, 0.05)
         score = min(1.0, max(0.0, sig["raw_score"]))
 
-        # Check if signal comes from a KS-validated detection pipeline
-        detail_lower = str(sig.get("signal_detail", "")).lower()
-        source_lower = str(sig.get("signal_source", "")).lower()
-        is_ks = (
-            any(src in detail_lower for src in KS_VALIDATED_SOURCES) or
-            any(src in source_lower for src in KS_VALIDATED_SOURCES) or
-            "ks_" in detail_lower or "ks-" in detail_lower
-        )
+        # Validation is a property of the lens's registered model, not the signal text.
+        is_validated = lens in VALIDATED_LENSES
 
-        if is_ks:
-            score = min(1.0, score * KS_RELIABILITY_BOOST)
-            ks_validated_count += 1
+        if is_validated:
+            score = min(1.0, score * VALIDATED_RELIABILITY_BOOST)
+            validated_count += 1
         else:
-            score *= NON_KS_PENALTY
+            score *= UNVALIDATED_PENALTY
 
         weighted_sum += weight * score
         total_weight += weight
@@ -171,8 +204,8 @@ def compute_fused_score(signals, weights):
 
     # Diversity factor: each additional lens contributes diminishing returns
     lens_count = len(contributing_lenses)
-    ks_bonus = 0.067 + (0.02 * ks_validated_count / max(lens_count, 1))
-    diversity_factor = 1.0 + (lens_count - 1) * ks_bonus
+    validation_bonus = 0.067 + (0.02 * validated_count / max(lens_count, 1))
+    diversity_factor = 1.0 + (lens_count - 1) * validation_bonus
 
     return round(min(1.0, base_score * diversity_factor), 4)
 
@@ -448,7 +481,7 @@ def run_fusion_pipeline(cutoff_str):
             "lens_count": v["lens_count"],
             "kill_chain_stage": v["kill_chain"],
             "signal_count": len(v["signals"]),
-            "arbiter_mode": "bayesian_ks_weighted",
+            "arbiter_mode": "bayesian_validation_weighted",
             "escalated": should_escalate,
             "verdict_time": now,
             "fusion_window_seconds": fusion_window,

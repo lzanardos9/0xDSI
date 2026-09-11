@@ -1,3 +1,7 @@
+// Detection types shared across the engine and handler. This mirrors the
+// frontend's src/lib/borrowedAuthority/types.ts (type-only, duplicated across
+// the client/edge boundary because Deno cannot import from src/).
+
 export type ObaEvent = {
   event_id: string;
   branch: string;
@@ -11,14 +15,14 @@ export type ObaEvent = {
   trace_id: string;
   tenant_id: string;
   dedupe_key: string;
-  trust: 'high' | 'medium' | 'low' | string;
+  trust: string;
   payload: Record<string, unknown>;
 };
 
 export type ObaAuthorization = {
   authorization_id: string;
   issuer: string;
-  issuer_type: 'human_admin' | 'change_management' | 'autonomous_agent' | string;
+  issuer_type: string;
   subject_agent: string;
   execution_id: string;
   operation: string;
@@ -144,13 +148,4 @@ export type AnalysisResult = {
   coverage: CoverageReport;
   primaryAgent: string;
   primaryExecutions: string[];
-};
-
-export type RunMeta = {
-  run_id: string;
-  created_at: string;
-  label_mode: 'demo' | 'blind' | string;
-  identity_seed: string | null;
-  engine_version: string;
-  primary_status: string | null;
 };

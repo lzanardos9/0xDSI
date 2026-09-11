@@ -35,6 +35,7 @@ from pyspark.sql import functions as F
 dbutils.widgets.text("engine_mode", "auto", "auto | native | graphframes")
 dbutils.widgets.text("cet_install_spec", "git+https://github.com/lzanardo/0xDSI-CET.git", "pip source for the native CET engine")
 dbutils.widgets.text("cet_import_candidates", "dsi_cet,cet,bindings.python,0xdsi_cet", "Comma-separated import names to probe")
+dbutils.widgets.text("cet_entry_point", "run_standing", "Documented CET runtime entry point (dotted path)")
 dbutils.widgets.text("window_seconds", "300", "Sliding window size (seconds)")
 dbutils.widgets.text("max_hops", "6", "Maximum Kleene-closure hops")
 dbutils.widgets.text("min_score", "0.3", "Minimum trend score threshold")
@@ -43,6 +44,7 @@ dbutils.widgets.text("source_table", "silver_events", "Source events table")
 engine_mode = dbutils.widgets.get("engine_mode").strip().lower()
 cet_install_spec = dbutils.widgets.get("cet_install_spec").strip()
 cet_import_candidates = [c.strip() for c in dbutils.widgets.get("cet_import_candidates").split(",") if c.strip()]
+cet_entry_point = dbutils.widgets.get("cet_entry_point").strip()
 window_seconds = int(dbutils.widgets.get("window_seconds"))
 max_hops = int(dbutils.widgets.get("max_hops"))
 min_score = float(dbutils.widgets.get("min_score"))
@@ -151,19 +153,37 @@ def _get_attr_path(mod, dotted):
     return obj
 
 
-def _find_entry_point(mod, names):
-    for n in names:
-        fn = _get_attr_path(mod, n)
-        if callable(fn):
-            return fn, n
-    return None, None
+def _resolve_entry_point(mod, dotted):
+    """Resolve exactly the configured CET entry point; never guess an alternative.
+
+    Silently substituting 'whatever happens to be callable' is what let this bridge
+    run against an unspecified API. We resolve one documented symbol and fail loudly
+    if it is missing or not callable, so a contract drift is actionable instead of
+    producing quietly-wrong results.
+    """
+    fn = _get_attr_path(mod, dotted)
+    if fn is None:
+        raise RuntimeError(
+            f"0xDSI-CET imported as '{native_import_name}' but the configured entry "
+            f"point '{dotted}' does not exist. Set cet_entry_point to the documented "
+            "runtime entry (e.g. run_standing) or pin a compatible engine version."
+        )
+    if not callable(fn):
+        raise RuntimeError(
+            f"0xDSI-CET entry point '{dotted}' resolved to a non-callable "
+            f"{type(fn).__name__}; expected a callable standing-query runtime."
+        )
+    return fn, dotted
 
 
 def run_native_cet():
     """Drive the native engine and return (complete_rows, partial_rows, meta)."""
     src_df, src_name = _resolve_source_df()
 
-    # Normalize into a generic contract the engine adapters understand.
+    # Normalize into the CET event contract: event-time in epoch millis
+    # (event_time_ms), a non-null partition_key the standing-query runtime streams
+    # on, and event-time ordering. These field names are the engine's contract, not
+    # ours -- emitting 'ts' instead silently produced no matches.
     events = (
         src_df
         .filter(F.col("source_ip").isNotNull() | F.col("user_id").isNotNull())
@@ -173,10 +193,13 @@ def run_native_cet():
             F.col("source_ip").alias("source"),
             F.coalesce(F.col("dest_ip"), F.col("user_id")).alias("target"),
             F.col("user_id").alias("actor"),
+            F.coalesce(F.col("user_id"), F.col("source_ip"), F.lit("unknown")).alias("partition_key"),
             F.col("severity_id").alias("severity"),
             F.col("timestamp").cast("timestamp").alias("ts"),
+            (F.col("timestamp").cast("timestamp").cast("double") * F.lit(1000.0)).cast("long").alias("event_time_ms"),
         )
-        .orderBy("ts")
+        .filter(F.col("event_time_ms").isNotNull())
+        .orderBy("event_time_ms")
         .limit(cfg.max_query_rows)
     )
     contract_rows = [
@@ -186,27 +209,17 @@ def run_native_cet():
             "source": r["source"],
             "target": r["target"],
             "actor": r["actor"],
+            "partition_key": r["partition_key"],
             "severity": int(r["severity"]) if r["severity"] is not None else 1,
-            "ts": r["ts"].isoformat() if r["ts"] is not None else None,
+            "event_time_ms": int(r["event_time_ms"]),
+            "event_time": r["ts"].isoformat() if r["ts"] is not None else None,
         }
         for r in events.collect()
     ]
 
-    # Probe the documented engine surface for a batch/standing entry point.
-    entry, entry_name = _find_entry_point(
-        native_engine,
-        [
-            "run_standing", "run_batch", "detect_trends", "run",
-            "bridge.run_standing", "bridge.run_batch",
-            "multi_query_runtime.run", "multi_query_runtime.detect",
-        ],
-    )
-    if entry is None:
-        raise RuntimeError(
-            f"0xDSI-CET imported as '{native_import_name}' but no known entry point was found. "
-            "Expected one of run_standing/run_batch/detect_trends/run. "
-            "Update cet_import_candidates or pin the engine version."
-        )
+    # Resolve exactly the configured, documented entry point -- no scanning a list
+    # of names and running whichever is callable.
+    entry, entry_name = _resolve_entry_point(native_engine, cet_entry_point)
 
     engine_out = entry(contract_rows)  # engine returns its own trend objects
 
@@ -216,7 +229,9 @@ def run_native_cet():
     for t in (trends or []):
         g = t.get if isinstance(t, dict) else (lambda k, d=None: getattr(t, k, d))
         hops = int(g("hops", g("length", 0)) or 0)
-        score = float(g("score", g("risk", 0.0)) or 0.0)
+        # Read the engine's documented output field. Do not fall back to 'score'/'risk':
+        # guessing among field names is how mismatched output was scored as valid.
+        score = float(g("risk_score", 0.0) or 0.0)
         if score < min_score:
             continue
         is_complete = bool(g("complete", g("is_complete", hops >= 3)))

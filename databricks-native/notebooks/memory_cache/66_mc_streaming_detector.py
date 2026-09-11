@@ -68,6 +68,8 @@ class StreamingStateStore:
                 cache_states_json STRING,
                 cache_count INT DEFAULT 0,
                 segment_buffer_count INT DEFAULT 0,
+                buffered_events_json STRING,
+                buffered_event_count INT DEFAULT 0,
                 last_event_timestamp TIMESTAMP,
                 events_since_checkpoint INT DEFAULT 0,
                 updated_at TIMESTAMP NOT NULL
@@ -128,6 +130,8 @@ class MCStreamingProcessor:
         segment_size: int = 64,
         anomaly_threshold: float = 2.0,
         alert_min_confidence: float = 60.0,
+        min_events_for_inference: int = 8,
+        max_buffer_events: int = 256,
         catalog: str = "security_catalog",
     ):
         self.model = model
@@ -135,15 +139,57 @@ class MCStreamingProcessor:
         self.segment_size = segment_size
         self.anomaly_threshold = anomaly_threshold
         self.alert_min_confidence = alert_min_confidence
+        self.min_events_for_inference = min_events_for_inference
+        self.max_buffer_events = max_buffer_events
         self.state_store = StreamingStateStore(catalog)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
 
+    @staticmethod
+    def _event_to_dict(ev):
+        """Serialize a collected event Row to a JSON-safe dict for cross-batch buffering."""
+        d = ev.asDict() if hasattr(ev, "asDict") else dict(ev)
+        ts = d.get("event_timestamp")
+        if hasattr(ts, "isoformat"):
+            d["event_timestamp"] = ts.isoformat()
+        return d
+
+    def _load_buffers(self, entity_ids):
+        """Load each entity's persisted event buffer from the state store.
+
+        This is the real cross-batch state: low-rate entities that never reach the
+        inference threshold within a single 10s micro-batch keep accumulating here
+        instead of being silently discarded every batch.
+        """
+        if not entity_ids:
+            return {}
+        id_list = ",".join("'" + e.replace("'", "''") + "'" for e in entity_ids)
+        try:
+            rows = spark.sql(
+                f"SELECT entity_id, buffered_events_json FROM {self.state_store.states_table} "
+                f"WHERE entity_id IN ({id_list})"
+            ).collect()
+        except Exception:
+            return {}
+        buffers = {}
+        for r in rows:
+            try:
+                buffers[r["entity_id"]] = json.loads(r["buffered_events_json"]) if r["buffered_events_json"] else []
+            except Exception:
+                buffers[r["entity_id"]] = []
+        return buffers
+
     def process_micro_batch(self, batch_df: DataFrame, batch_id: int):
         """
         foreachBatch handler for Structured Streaming.
         Called once per micro-batch with new events.
+
+        Events are accumulated per entity across micro-batches. An entity is scored
+        once its accumulated buffer (persisted prior events + new events) reaches
+        min_events_for_inference; entities below that keep their events buffered
+        rather than losing them, so a slow attacker spread over many batches is not
+        invisible to the detector.
         """
         if batch_df.isEmpty():
             return
@@ -154,7 +200,6 @@ class MCStreamingProcessor:
             batch_df
             .groupBy("user_id")
             .agg(
-                F.count("*").alias("event_count"),
                 F.sort_array(
                     F.collect_list(
                         F.struct("event_timestamp", "event_type", "action", "outcome",
@@ -165,41 +210,60 @@ class MCStreamingProcessor:
             )
         )
 
-        entities_ready = entity_events.where(F.col("event_count") >= 8).collect()
-
-        if not entities_ready:
+        new_rows = [r for r in entity_events.collect() if r.user_id is not None]
+        if not new_rows:
             return
+
+        buffers = self._load_buffers([r.user_id for r in new_rows])
 
         alerts = []
         state_updates = []
+        scored_entities = 0
 
-        for entity_row in entities_ready:
+        for entity_row in new_rows:
             entity_id = entity_row.user_id
-            events = entity_row.events
             latest_ts = entity_row.latest_event
 
-            entity_anomalies, new_state = self._infer_entity(entity_id, events)
+            new_events = [self._event_to_dict(e) for e in entity_row.events]
+            combined = buffers.get(entity_id, []) + new_events
+            combined.sort(key=lambda d: str(d.get("event_timestamp")))
+            if len(combined) > self.max_buffer_events:
+                combined = combined[-self.max_buffer_events:]
 
-            for anomaly in entity_anomalies:
-                if anomaly["confidence"] >= self.alert_min_confidence:
-                    alerts.append({
-                        "alert_id": f"mc_{entity_id}_{batch_id}_{anomaly['anomaly_type']}",
-                        "entity_id": entity_id,
-                        "anomaly_type": anomaly["anomaly_type"],
-                        "confidence": anomaly["confidence"],
-                        "score": anomaly["score"],
-                        "evidence": anomaly["evidence"],
-                        "cache_attention_pattern": json.dumps(anomaly.get("attention_pattern", [])),
-                        "detected_at": datetime.now(),
-                        "source_events_count": len(events),
-                        "segment_index": new_state.get("segment_index", 0),
-                        "acknowledged": False,
-                    })
+            if len(combined) >= self.min_events_for_inference:
+                # Enough accumulated context to score; consume the buffer afterwards
+                # so the same events are not re-alerted on the next batch.
+                window = combined[-self.segment_size:]
+                entity_anomalies, new_state = self._infer_entity(entity_id, window)
+                remaining_buffer = []
+                scored_entities += 1
+
+                for anomaly in entity_anomalies:
+                    if anomaly["confidence"] >= self.alert_min_confidence:
+                        alerts.append({
+                            "alert_id": f"mc_{entity_id}_{batch_id}_{anomaly['anomaly_type']}",
+                            "entity_id": entity_id,
+                            "anomaly_type": anomaly["anomaly_type"],
+                            "confidence": anomaly["confidence"],
+                            "score": anomaly["score"],
+                            "evidence": anomaly["evidence"],
+                            "cache_attention_pattern": json.dumps(anomaly.get("attention_pattern", [])),
+                            "detected_at": datetime.now(),
+                            "source_events_count": len(window),
+                            "segment_index": new_state.get("segment_index", 0),
+                            "acknowledged": False,
+                        })
+            else:
+                # Not enough yet: hold the events for a future batch.
+                new_state = {"events_count": len(combined), "cache_count": 0, "segment_index": 0}
+                remaining_buffer = combined
 
             state_updates.append({
                 "entity_id": entity_id,
                 "events_since_checkpoint": new_state.get("events_count", 0),
                 "cache_count": new_state.get("cache_count", 0),
+                "buffered_events_json": json.dumps(remaining_buffer),
+                "buffered_event_count": len(remaining_buffer),
                 "last_event_timestamp": latest_ts,
                 "updated_at": datetime.now(),
             })
@@ -220,15 +284,25 @@ class MCStreamingProcessor:
                 WHEN MATCHED THEN UPDATE SET
                     target.events_since_checkpoint = source.events_since_checkpoint,
                     target.cache_count = source.cache_count,
+                    target.buffered_events_json = source.buffered_events_json,
+                    target.buffered_event_count = source.buffered_event_count,
                     target.last_event_timestamp = source.last_event_timestamp,
                     target.updated_at = source.updated_at
-                WHEN NOT MATCHED THEN INSERT *
+                WHEN NOT MATCHED THEN INSERT (
+                    entity_id, events_since_checkpoint, cache_count,
+                    buffered_events_json, buffered_event_count,
+                    last_event_timestamp, updated_at
+                ) VALUES (
+                    source.entity_id, source.events_since_checkpoint, source.cache_count,
+                    source.buffered_events_json, source.buffered_event_count,
+                    source.last_event_timestamp, source.updated_at
+                )
             """)
 
         if batch_id % 10 == 0:
             print(
                 f"Batch {batch_id}: {event_count} events, "
-                f"{len(entities_ready)} entities processed, "
+                f"{scored_entities} entities scored, "
                 f"{len(alerts)} alerts generated"
             )
 
@@ -264,8 +338,10 @@ class MCStreamingProcessor:
         # Real, deterministic featurization of the actual events (no random noise).
         event_tokens = self._featurize(events, token_dim)
 
-        # Cold cache: real prior checkpoints are loaded from the state store when
-        # present; absent that, we start from zeros rather than fabricating memory.
+        # The entity's temporal context is carried in the accumulated event window
+        # (persisted across micro-batches in the state store), not in a hidden tensor.
+        # The cache therefore starts from zeros for this window rather than
+        # fabricating memory the detector never actually stored.
         cache_size = min(8, self.config.max_cache_size)
         cache_states = torch.zeros(1, cache_size, self.config.hidden_dim, device=self.device)
         cache_mask = torch.ones(1, cache_size, dtype=torch.bool, device=self.device)
@@ -330,6 +406,8 @@ def start_mc_streaming_detection(
     catalog: str = "security_catalog",
     source_table: str = "security_catalog.bronze.events",
     trigger_interval: str = "10 seconds",
+    trigger_mode: str = "processingTime",
+    min_events_for_inference: int = 8,
     checkpoint_path: str = "/mnt/security_catalog/checkpoints/mc_streaming",
     preset: str = "medium",
 ):
@@ -349,6 +427,7 @@ def start_mc_streaming_detection(
         segment_size=64,
         anomaly_threshold=2.0,
         alert_min_confidence=60.0,
+        min_events_for_inference=min_events_for_inference,
         catalog=catalog,
     )
 
@@ -362,19 +441,26 @@ def start_mc_streaming_detection(
         .table(source_table)
     )
 
-    query = (
+    # Pick a supported Structured Streaming trigger. processingTime runs a
+    # micro-batch on a fixed clock; availableNow drains all currently-available
+    # data in one bounded pass (useful for backfills / scheduled catch-up).
+    writer = (
         events_stream
         .writeStream
         .foreachBatch(processor.process_micro_batch)
-        .trigger(processingTime=trigger_interval)
         .option("checkpointLocation", checkpoint_path)
         .queryName("mc_rnn_streaming_detector")
-        .start()
     )
+    if trigger_mode == "availableNow":
+        writer = writer.trigger(availableNow=True)
+    else:
+        writer = writer.trigger(processingTime=trigger_interval)
+    query = writer.start()
 
     print(f"MC-RNN Streaming Detection started:")
     print(f"  Source: {source_table}")
-    print(f"  Trigger: {trigger_interval}")
+    print(f"  Trigger: {trigger_mode} ({trigger_interval})")
+    print(f"  Min events for inference: {min_events_for_inference}")
     print(f"  Model preset: {preset}")
     print(f"  Device: {device}")
     print(f"  Segment size: {config.segment_size}")
