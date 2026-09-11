@@ -70,6 +70,7 @@ import DetectionSLM from './DetectionSLM';
 import DetectionConfluence from './DetectionConfluence';
 import SwarmCrucible from './SwarmCrucible';
 import TrendEngineCET from './TrendEngineCET';
+import OperationBorrowedAuthority from './OperationBorrowedAuthority';
 import MCPRegistry from './MCPRegistry';
 import PhishingSimulator from './PhishingSimulator';
 import AttackUniverse from './AttackUniverse';
@@ -303,6 +304,7 @@ const Dashboard = () => {
       items: [
         { id: 'swarmcrucible', label: 'Swarm Crucible', icon: Swords },
         { id: 'trendengine', label: 'CET Trend Engine', icon: GitBranch },
+        { id: 'borrowedauthority', label: 'Borrowed Authority', icon: ShieldAlert },
         { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
         { id: 'chronoweave', label: 'ChronoWeave', icon: Atom },
         { id: 'detectionslm', label: 'Detection SLM (Beta)', icon: Brain },
@@ -1026,6 +1028,7 @@ const Dashboard = () => {
           {selectedView === 'confluence' && <DetectionConfluence />}
           {selectedView === 'swarmcrucible' && <SwarmCrucible />}
           {selectedView === 'trendengine' && <TrendEngineCET />}
+          {selectedView === 'borrowedauthority' && <OperationBorrowedAuthority />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
