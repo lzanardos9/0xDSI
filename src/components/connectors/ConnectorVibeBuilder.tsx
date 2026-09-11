@@ -707,7 +707,7 @@ export default function ConnectorVibeBuilder() {
               </div>
             </div>
             <div className="text-sm text-white font-medium">Generating production connector...</div>
-            <div className="text-xs text-slate-400">GPT-4o is writing your {connectorName || 'custom'} connector with {NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.name || 'OCSF'} normalization</div>
+            <div className="text-xs text-slate-400">Connector Agent Reasoning is writing your {connectorName || 'custom'} connector with {NORMALIZATION_SCHEMAS.find(s => s.id === normSchema)?.name || 'OCSF'} normalization</div>
           </div>
         )}
         {step === 'result' && (
