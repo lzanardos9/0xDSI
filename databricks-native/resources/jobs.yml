@@ -184,7 +184,8 @@ resources:
               lookback_minutes: "15"
 
     formula_prioritization:
-      name: "[0xDSI] Formula Priority Scoring Engine"      schedule:
+      name: "[0xDSI] Formula Priority Scoring Engine"
+      schedule:
         quartz_cron_expression: "0 */3 * * * ?"
         timezone_id: "UTC"
       environments:

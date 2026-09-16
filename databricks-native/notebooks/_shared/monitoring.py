@@ -128,7 +128,7 @@ class Monitor:
     def report_health(self, status: str = "healthy", events_processed: int = 0, error_message: str = ""):
         """Update pipeline_health table with current status."""
         try:
-            health_table = f"`{self._cfg.catalog}`.`{self._cfg.schema}`.pipeline_health"
+            health_table = f"`{self._config.catalog}`.`{self._config.schema}`.pipeline_health"
             from pyspark.sql.functions import current_timestamp, lit, expr
             self._spark.sql(f"""
                 MERGE INTO {health_table} AS target
@@ -146,7 +146,14 @@ class Monitor:
                 VALUES (uuid(), '{self._notebook_path}', '{status}', {"current_timestamp()," if status == "healthy" else ""} {"current_timestamp()," if status == "error" else ""} {events_processed}, {events_processed}, {"'" + error_message.replace("'", "''")[:500] + "'" if error_message else "NULL"}, current_timestamp())
             """)
         except Exception:
-            pass
+            # A health-emission failure must be visible, not swallowed: if this
+            # were a silent `pass`, a broken health writer would look identical
+            # to a healthy pipeline. Log loudly (with traceback) but do not crash
+            # the caller's run over a monitoring-table write.
+            logger.exception(
+                "report_health failed to update pipeline_health for %s",
+                self._notebook_path,
+            )
 
     def log_error(self, error: Exception, context: str = ""):
         """Log an error with full traceback."""

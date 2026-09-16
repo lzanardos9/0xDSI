@@ -297,12 +297,13 @@ try:
         projection = rng.standard_normal(
             (NUM_STRUCTURAL_FEATURES, embedding_dim)
         ).astype(np.float32) / np.sqrt(embedding_dim)
-        b_projection = spark.sparkContext.broadcast(projection)
+        # Serverless compute does not expose spark.sparkContext.broadcast;
+        # capture the projection matrix by closure in the pandas UDF instead.
 
         @F.pandas_udf(ArrayType(FloatType()))
         def project(features_series):
             import pandas as pd
-            P = b_projection.value
+            P = projection
             out = []
             for vec in features_series:
                 x = np.asarray(vec, dtype=np.float32)

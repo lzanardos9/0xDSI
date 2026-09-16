@@ -101,13 +101,14 @@ spark.sql(f"""
     WHERE event_date < current_date() - INTERVAL {baseline_days + 1} DAYS
 """)
 
-# Broadcast for streaming UDFs
+# Baseline lookup for streaming UDFs. Serverless compute does not expose
+# spark.sparkContext.broadcast, so this small dict is captured by closure in
+# the UDFs below; Spark serializes captured Python objects to executors.
 baseline_pdf = spark.table(baselines_table).toPandas()
 baseline_lookup = {}
 for (src_ip, evt_type), group in baseline_pdf.groupby(["source_ip", "event_type"]):
     baseline_lookup[(src_ip, evt_type)] = group["daily_count"].values.astype(float)
 
-baseline_broadcast = spark.sparkContext.broadcast(baseline_lookup)
 mon.log_event("baselines_built", {"pair_count": len(baseline_lookup)})
 print(f"Built baselines for {len(baseline_lookup)} source-ip/event-type pairs")
 
@@ -124,7 +125,7 @@ def is_ks_significant(source_ip: str, event_type: str, observed_count: int, wind
     relative to the source's historical baseline.
     Returns (is_significant, confidence_score).
     """
-    lookup = baseline_broadcast.value
+    lookup = baseline_lookup
     key = (source_ip, event_type)
     baseline = lookup.get(key)
 
@@ -154,7 +155,7 @@ def adaptive_severity(source_ip: str, event_type: str, observed_count: int, wind
     """
     Determine severity based on z-score deviation from baseline.
     """
-    lookup = baseline_broadcast.value
+    lookup = baseline_lookup
     key = (source_ip, event_type)
     baseline = lookup.get(key)
 
@@ -301,8 +302,6 @@ if not RULE_STAGE_SEQUENCES:
         "lateral_movement", "data_exfiltration",
     ]]
 
-_rule_seqs_bc = spark.sparkContext.broadcast(RULE_STAGE_SEQUENCES)
-
 
 def _longest_ordered_match(ordered_types):
     """Return the longest rule stage-sequence that appears, in time order, as a
@@ -311,7 +310,7 @@ def _longest_ordered_match(ordered_types):
     if not ordered_types:
         return []
     best = []
-    for seq in _rule_seqs_bc.value:
+    for seq in RULE_STAGE_SEQUENCES:
         i = 0
         matched = []
         for et in ordered_types:

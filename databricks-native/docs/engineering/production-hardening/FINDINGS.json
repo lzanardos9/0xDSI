@@ -1,0 +1,130 @@
+{
+  "schema": "0xdsi-production-hardening-findings/v1",
+  "generated": "2026-09-16",
+  "note": "Reported defects from the engagement brief are tracked as hypotheses. Status reflects what has been reproduced/fixed against the current working tree, not the audited baseline. Live gates are BLOCKED, never PASSED, without an authorized workspace.",
+  "findings": [
+    {
+      "id": "H-001",
+      "title": "Malformed name/schedule YAML breaks the whole bundle",
+      "severity": "critical",
+      "phase": 1,
+      "affected_path": "resources/jobs.yml",
+      "evidence": "Line 187 collapsed `schedule:` onto the `name:` value line for the formula_prioritization job. `yaml.safe_load_all` fails at line 187: 'expected <block end>, but found <scalar>'. A single unparseable resource file means `databricks bundle validate/deploy` cannot load any job.",
+      "regression": "tests/contract/test_bundle_config.py (test_h001_no_value_then_key_on_same_line + test_all_bundle_yaml_parses)",
+      "status": "VERIFIED_OFFLINE",
+      "fix": "Split the `name` and `schedule` keys onto separate lines with correct indentation."
+    },
+    {
+      "id": "H-002",
+      "title": "Duplicate YAML keys silently override jobs/pipelines",
+      "severity": "high",
+      "phase": 1,
+      "affected_path": "resources/*.yml",
+      "evidence": "A duplicate mapping key is silently accepted by a plain safe_load, so a second job under an existing key would erase the first. Checked with a duplicate-rejecting loader across all bundle files.",
+      "regression": "tests/contract/test_bundle_config.py (test_no_duplicate_job_or_pipeline_keys)",
+      "status": "NOT_REPRODUCIBLE",
+      "fix": "No duplicate keys present in current tree; guard added to prevent regression."
+    },
+    {
+      "id": "H-003",
+      "title": "Referenced notebook paths must all resolve",
+      "severity": "high",
+      "phase": 1,
+      "affected_path": "resources/*.yml",
+      "evidence": "133 notebook_path references checked against the filesystem; 0 missing.",
+      "regression": "tests/contract/test_bundle_config.py (test_referenced_notebook_paths_exist)",
+      "status": "NOT_REPRODUCIBLE"
+    },
+    {
+      "id": "H-005",
+      "title": "Setup notebooks must be re-runnable as idempotent upgrades without data loss",
+      "severity": "medium",
+      "phase": 1,
+      "affected_path": "notebooks/setup/*.py",
+      "evidence": "The platform has no separate migration tool; the setup notebooks are both the clean install and the upgrade path. Audited their DDL: all CREATE TABLE use IF NOT EXISTS (175 idempotent statements), existing-deployment column upgrades use ALTER TABLE ... ADD COLUMNS IF NOT EXISTS (e.g. response_actions finding_id/approved_finding_revision), and there is no CREATE OR REPLACE TABLE or DROP TABLE. The idempotent-upgrade property already holds; no new parallel migration hierarchy was added (would duplicate the existing pattern). A guard now locks the property.",
+      "regression": "tests/contract/test_migration_idempotency.py",
+      "status": "NOT_REPRODUCIBLE"
+    },
+    {
+      "id": "H-004",
+      "title": "Deployed serverless notebooks use serverless-incompatible Spark APIs",
+      "severity": "high",
+      "phase": 1,
+      "affected_path": "notebooks/correlation/01_streaming_correlation_engine.py, notebooks/correlation/04_temporal_window_correlator.py, notebooks/ml_training/06_graph_neighborhood_embeddings.py, notebooks/analytics/01_trend_engine_cet.py",
+      "evidence": "Deployment-aware audit mapped jobs whose environment spec sets environment_version (serverless) to the notebooks they deploy, then scanned those files. Four deployed serverless notebooks used APIs serverless does not expose (https://docs.databricks.com/aws/en/compute/serverless/limitations): streaming_correlation, temporal_window_correlator and graph_neighborhood used spark.sparkContext.broadcast; trend_engine_cet used spark.sparkContext.setCheckpointDir and imports GraphFrames (a JVM library, absent from its serverless dependency list).",
+      "regression": "tests/contract/test_serverless_notebook_apis.py",
+      "status": "FIXED_STATIC",
+      "fix": "Replaced the three broadcast lookups with plain closure capture (Spark serializes captured Python objects to executors), which is semantically identical for the small baseline/projection maps and offline-verified clean. trend_engine_cet cannot be fixed by a Python edit: GraphFrames + RDD checkpointing require classic compute, so its serverless-to-classic migration is tracked as BLOCKED pending staging validation and allowlisted in the regression."
+    },
+    {
+      "id": "H-010",
+      "title": "Scheduled ingestion writer used uuid() instead of stable SDP IDs",
+      "severity": "high",
+      "phase": 2,
+      "affected_path": "notebooks/_shared/sdp_stream.py, notebooks/pipelines/bronze_ingestion.py",
+      "evidence": "Prior session unified deterministic content-addressed IDs over Kafka coordinates across the streaming and durable paths.",
+      "regression": "tests/property/test_idempotency.py",
+      "status": "VERIFIED_OFFLINE"
+    },
+    {
+      "id": "H-020",
+      "title": "Producer/consumer signal-shape mismatch at canonical boundary",
+      "severity": "high",
+      "phase": 3,
+      "affected_path": "notebooks/_shared/contracts.py, notebooks/correlation/09_unified_evidence_object.py",
+      "evidence": "Prior session added DETECTION_SIGNAL_COLUMNS/CLASSES and projected the evidence builder to the canonical shape.",
+      "regression": "tests/contract/test_phase2_contracts.py",
+      "status": "VERIFIED_OFFLINE"
+    },
+    {
+      "id": "H-030",
+      "title": "Threat-intel match persisted before nonrecoverable alert emission",
+      "severity": "high",
+      "phase": 4,
+      "affected_path": "notebooks/detection/02_threat_intel_matching.py",
+      "evidence": "Reported match-written/alert-missing recovery gap. The offline fault-injection regression cannot import the real logic: notebooks/detection/02_threat_intel_matching.py runs dbutils.widgets and spark.sql at module top level, so it is not importable without a live runtime. Reproducing this offline needs the match-persist/alert-emit step extracted into an importable _shared helper (a streaming-detector refactor) or a Databricks workspace; not attempted blind to preserve detector semantics.",
+      "regression": "BLOCKED (needs extract-to-helper refactor or workspace)",
+      "status": "BLOCKED"
+    },
+    {
+      "id": "H-050",
+      "title": "UEO revisions not bound through FUSE/Confluence/findings/approvals",
+      "severity": "high",
+      "phase": 5,
+      "affected_path": "notebooks/correlation/09_unified_evidence_object.py, notebooks/_shared/finding_revision.py",
+      "evidence": "Prior session switched UEO writes to a revision-bumping MERGE upsert and added invalidate_revision + _invalidate_findings to WITHDRAW the bound finding when evidence changes. Full FUSE->verdict->approval fencing chain still to be proven end to end.",
+      "regression": "tests/property/test_finding_revision.py",
+      "status": "IN_PROGRESS"
+    },
+    {
+      "id": "H-060",
+      "title": "Health could report healthy over a degraded/empty run; _config vs _cfg",
+      "severity": "high",
+      "phase": 6,
+      "affected_path": "notebooks/_shared/monitoring.py, notebooks/correlation/09_unified_evidence_object.py",
+      "evidence": "Confirmed a live defect: Monitor.report_health referenced self._cfg while __init__ stored self._config, so every call raised AttributeError, which a bare `except: pass` swallowed -- pipeline_health was never written yet log_complete believed it reported 'healthy'. Fixed self._cfg -> self._config and replaced the silent swallow with logger.exception so a health-write failure is visible. Regression imports the real monitoring module (via an import-boundary pyspark shim) and asserts (1) report_health issues exactly one MERGE into pipeline_health, (2) a failing write is logged at ERROR not swallowed, (3) log_complete drives a health write. This complements the prior-session UEO harvest health work (HEALTHY/DEGRADED/UNAVAILABLE).",
+      "regression": "tests/property/test_monitor_health.py",
+      "status": "VERIFIED_OFFLINE"
+    },
+    {
+      "id": "H-070",
+      "title": "Tool args ordered by dict insertion; no schema validation before SQL",
+      "severity": "high",
+      "phase": 7,
+      "affected_path": "notebooks/_shared/agent_framework.py",
+      "evidence": "Prior session added _validate_and_order_args: orders by parameters.properties and rejects unknown/missing-required/type/enum before spark.sql.",
+      "regression": "tests/security/test_tool_arg_validation.py (imports the real BaseAgent validators; pins schema-order emission, unknown/missing/type/enum rejection, NULL padding for omitted optionals, and SQL-literal escaping of crafted strings)",
+      "status": "VERIFIED_OFFLINE"
+    },
+    {
+      "id": "H-090",
+      "title": "E2E fixtures/assertions did not isolate executions or hit entry only",
+      "severity": "high",
+      "phase": 9,
+      "affected_path": "tests/e2e/scenarios.py, tests/e2e/harness.py, tests/e2e/test_e2e_entry_only.py",
+      "evidence": "Prior session built an entry-only suite: writes only to Kafka/landing, asserts only on published outputs, 10 required scenarios, per-scenario probe isolation. Offline contract passes; live run BLOCKED pending workspace.",
+      "regression": "tests/e2e/test_e2e_entry_only.py",
+      "status": "VERIFIED_OFFLINE"
+    }
+  ]
+}

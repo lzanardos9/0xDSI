@@ -121,7 +121,9 @@ with mon.time("baseline_refresh"):
         WHERE event_date < current_date() - INTERVAL {baseline_days + 1} DAYS
     """)
 
-# Load into broadcast maps
+# Baseline maps for the correlation UDFs. Serverless compute does not expose
+# spark.sparkContext.broadcast, so these small maps are captured by closure
+# below; Spark serializes captured Python objects to executors.
 baseline_pdf = spark.table(baselines_table).toPandas()
 
 auth_baseline_map = {}
@@ -133,9 +135,6 @@ for (src_ip, pattern), group in baseline_pdf.groupby(["source_ip", "pattern_type
         auth_baseline_map[src_ip] = values
     elif pattern == "scan_rate":
         scan_baseline_map[src_ip] = values
-
-auth_broadcast = spark.sparkContext.broadcast(auth_baseline_map)
-scan_broadcast = spark.sparkContext.broadcast(scan_baseline_map)
 
 mon.log_event("baselines_built", {
     "auth_sources": len(auth_baseline_map),
@@ -355,7 +354,7 @@ def write_ks_validated_detections(batch_df, batch_id):
             source_ip = row.source_ip
 
             if detection_type in ("brute_force", "credential_stuffing"):
-                baseline = auth_broadcast.value.get(source_ip)
+                baseline = auth_baseline_map.get(source_ip)
                 observed = float(row.metric_value)
                 is_anomalous, confidence, severity = ks_adaptive_threshold(
                     baseline, observed, ks_alpha
@@ -369,7 +368,7 @@ def write_ks_validated_detections(batch_df, batch_id):
                 severity = "high" if confidence > 0.8 else "medium"
 
             elif detection_type == "port_scan":
-                baseline = scan_broadcast.value.get(source_ip)
+                baseline = scan_baseline_map.get(source_ip)
                 observed = float(row.metric_value)
                 is_anomalous, confidence, severity = ks_adaptive_threshold(
                     baseline, observed, ks_alpha
