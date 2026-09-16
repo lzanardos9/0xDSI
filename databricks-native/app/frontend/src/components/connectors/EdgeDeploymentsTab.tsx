@@ -24,6 +24,7 @@ interface Deployment {
   latency_ms: number | null;
   connection_status: string | null;
   last_heartbeat: string | null;
+  effective_status?: string;
 }
 
 interface DNASpec {
@@ -43,10 +44,14 @@ interface DNASpec {
 
 interface FleetStats {
   total: number;
+  collecting: number;
+  not_collecting: number;
   running: number;
   degraded: number;
-  dead: number;
-  stopped: number;
+  silent: number;
+  stale: number;
+  offline: number;
+  unknown: number;
 }
 
 interface InstallCommands {
@@ -59,10 +64,15 @@ interface InstallCommands {
 const BACKEND_URL = (window as any).__DATABRICKS_BACKEND_URL || '/api';
 
 const STATE_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  healthy: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', dot: 'bg-emerald-400' },
   running: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', dot: 'bg-emerald-400' },
   degraded: { bg: 'bg-amber-500/10', text: 'text-amber-400', dot: 'bg-amber-400' },
+  silent: { bg: 'bg-orange-500/10', text: 'text-orange-400', dot: 'bg-orange-400' },
+  stale: { bg: 'bg-red-500/10', text: 'text-red-400', dot: 'bg-red-400' },
   dead: { bg: 'bg-red-500/10', text: 'text-red-400', dot: 'bg-red-400' },
+  offline: { bg: 'bg-slate-600/20', text: 'text-slate-400', dot: 'bg-slate-500' },
   stopped: { bg: 'bg-slate-600/20', text: 'text-slate-400', dot: 'bg-slate-500' },
+  unknown: { bg: 'bg-slate-800/50', text: 'text-slate-500', dot: 'bg-slate-600' },
   pending: { bg: 'bg-blue-500/10', text: 'text-blue-400', dot: 'bg-blue-400' },
   decommissioned: { bg: 'bg-slate-800/50', text: 'text-slate-600', dot: 'bg-slate-700' },
 };
@@ -139,7 +149,7 @@ const MOCK_FLEET: Deployment[] = [
   { deployment_id: 'dep-016', collector_id: 'ec-sentinel-legacy', dna_name: 'sentinelone_edr', dna_version: '2.1.0', hostname: 'edge-edr-legacy', ip_address: '10.6.0.5', os_type: 'linux', actual_state: 'stopped', desired_state: 'stopped', binary_version: '1.3.8', site_name: 'branch-rio', registered_at: '2026-02-10T10:00:00Z', events_per_second: null, bytes_per_second: null, error_count: null, buffer_usage_pct: null, uptime_seconds: null, cpu_percent: null, memory_mb: null, latency_ms: null, connection_status: 'disconnected', last_heartbeat: '2026-05-28T22:15:00Z' },
 ];
 
-const MOCK_STATS: FleetStats = { total: 36, running: 34, degraded: 1, dead: 0, stopped: 1 };
+const MOCK_STATS: FleetStats = { total: 36, collecting: 34, not_collecting: 2, running: 34, degraded: 1, silent: 0, stale: 0, offline: 1, unknown: 0 };
 const MOCK_TOTAL_EPS = 712850;
 
 function formatUptime(seconds: number | null): string {
@@ -153,7 +163,7 @@ function formatUptime(seconds: number | null): string {
 
 export default function EdgeDeploymentsTab() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
-  const [stats, setStats] = useState<FleetStats>({ total: 0, running: 0, degraded: 0, dead: 0, stopped: 0 });
+  const [stats, setStats] = useState<FleetStats>({ total: 0, collecting: 0, not_collecting: 0, running: 0, degraded: 0, silent: 0, stale: 0, offline: 0, unknown: 0 });
   const [totalEps, setTotalEps] = useState(0);
   const [dnaCatalog, setDnaCatalog] = useState<DNASpec[]>([]);
   const [loading, setLoading] = useState(true);
@@ -243,20 +253,20 @@ export default function EdgeDeploymentsTab() {
           <div className="text-2xl font-bold text-white">{stats.total}</div>
         </div>
         <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
-          <div className="text-emerald-500 text-[10px] font-mono mb-1">RUNNING</div>
-          <div className="text-2xl font-bold text-emerald-400">{stats.running}</div>
+          <div className="text-emerald-500 text-[10px] font-mono mb-1">COLLECTING</div>
+          <div className="text-2xl font-bold text-emerald-400">{stats.collecting}</div>
         </div>
         <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
           <div className="text-amber-500 text-[10px] font-mono mb-1">DEGRADED</div>
           <div className="text-2xl font-bold text-amber-400">{stats.degraded}</div>
         </div>
         <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3">
-          <div className="text-red-500 text-[10px] font-mono mb-1">DEAD</div>
-          <div className="text-2xl font-bold text-red-400">{stats.dead}</div>
+          <div className="text-red-500 text-[10px] font-mono mb-1">NO DATA</div>
+          <div className="text-2xl font-bold text-red-400">{stats.silent + stats.stale}</div>
         </div>
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
-          <div className="text-slate-500 text-[10px] font-mono mb-1">STOPPED</div>
-          <div className="text-2xl font-bold text-slate-400">{stats.stopped}</div>
+          <div className="text-slate-500 text-[10px] font-mono mb-1">OFFLINE</div>
+          <div className="text-2xl font-bold text-slate-400">{stats.offline + stats.unknown}</div>
         </div>
         <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3">
           <div className="text-cyan-500 text-[10px] font-mono mb-1">FLEET EPS</div>
@@ -397,7 +407,8 @@ export default function EdgeDeploymentsTab() {
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {deployments.map(d => {
-                const stateStyle = STATE_COLORS[d.actual_state] || STATE_COLORS.pending;
+                const health = d.effective_status || d.actual_state;
+                const stateStyle = STATE_COLORS[health] || STATE_COLORS.pending;
                 return (
                   <tr key={d.deployment_id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="px-3 py-2">
@@ -410,8 +421,8 @@ export default function EdgeDeploymentsTab() {
                     </td>
                     <td className="px-3 py-2 text-center">
                       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${stateStyle.bg}`}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${stateStyle.dot} ${d.actual_state === 'running' ? 'animate-pulse' : ''}`} />
-                        <span className={`${stateStyle.text} text-[10px] font-mono`}>{d.actual_state}</span>
+                        <div className={`w-1.5 h-1.5 rounded-full ${stateStyle.dot} ${health === 'healthy' || health === 'running' ? 'animate-pulse' : ''}`} />
+                        <span className={`${stateStyle.text} text-[10px] font-mono`}>{health}</span>
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-cyan-400">

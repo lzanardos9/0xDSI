@@ -32,6 +32,11 @@ from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
 from backend.audit import AuditPersistenceError, build_audit_record, persist_audit
+from backend.connector_health import (
+    derive_health as derive_connector_health,
+    heartbeat_age_seconds,
+    summarize_fleet,
+)
 from backend.readiness import (
     READY as READINESS_READY,
     FAILED as READINESS_FAILED,
@@ -1685,11 +1690,24 @@ async def edge_collector_fleet():
             WHERE status != 'decommissioned'
             ORDER BY status, last_heartbeat DESC
         """)
+        now = datetime.now(timezone.utc)
+        for c in collectors:
+            c["effective_status"] = derive_connector_health(
+                c.get("status"),
+                heartbeat_age_seconds(c.get("last_heartbeat"), now),
+                c.get("events_forwarded_24h"),
+            )
+        fleet = summarize_fleet(c["effective_status"] for c in collectors)
         stats = {
-            "total": len(collectors),
-            "healthy": sum(1 for c in collectors if c.get("status") == "healthy"),
-            "offline": sum(1 for c in collectors if c.get("status") == "offline"),
-            "degraded": sum(1 for c in collectors if c.get("status") == "degraded"),
+            "total": fleet["total"],
+            "collecting": fleet["collecting"],
+            "not_collecting": fleet["not_collecting"],
+            "healthy": fleet["by_state"]["healthy"],
+            "degraded": fleet["by_state"]["degraded"],
+            "silent": fleet["by_state"]["silent"],
+            "stale": fleet["by_state"]["stale"],
+            "offline": fleet["by_state"]["offline"],
+            "unknown": fleet["by_state"]["unknown"],
         }
         incidents = query(f"""
             SELECT incident_id, collector_id, incident_type, severity,
@@ -2256,15 +2274,25 @@ async def edge_fleet_overview():
             LIMIT 200
         """)
 
-        stats = query(f"""
-            SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN actual_state = 'running' THEN 1 ELSE 0 END) as running,
-                SUM(CASE WHEN actual_state = 'degraded' THEN 1 ELSE 0 END) as degraded,
-                SUM(CASE WHEN actual_state = 'dead' THEN 1 ELSE 0 END) as dead,
-                SUM(CASE WHEN actual_state = 'stopped' THEN 1 ELSE 0 END) as stopped
-            FROM {fqn('connector_deployments')}
-        """)
+        now = datetime.now(timezone.utc)
+        for d in deployments:
+            d["effective_status"] = derive_connector_health(
+                d.get("actual_state"),
+                heartbeat_age_seconds(d.get("last_heartbeat"), now),
+                d.get("events_per_second"),
+            )
+        fleet = summarize_fleet(d["effective_status"] for d in deployments)
+        stats = {
+            "total": fleet["total"],
+            "collecting": fleet["collecting"],
+            "not_collecting": fleet["not_collecting"],
+            "running": fleet["by_state"]["healthy"],
+            "degraded": fleet["by_state"]["degraded"],
+            "silent": fleet["by_state"]["silent"],
+            "stale": fleet["by_state"]["stale"],
+            "offline": fleet["by_state"]["offline"],
+            "unknown": fleet["by_state"]["unknown"],
+        }
 
         eps_total = query(f"""
             SELECT COALESCE(SUM(events_per_second), 0) as total_eps
@@ -2278,7 +2306,7 @@ async def edge_fleet_overview():
 
         return {
             "deployments": deployments,
-            "stats": stats[0] if stats else {},
+            "stats": stats,
             "total_eps": eps_total[0]["total_eps"] if eps_total else 0,
         }
     except Exception as e:
