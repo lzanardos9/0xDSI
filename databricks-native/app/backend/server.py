@@ -327,6 +327,21 @@ def _check_write_permission(user: dict, table_name: str):
         raise HTTPException(status_code=403, detail=f"Table '{table_name}' is read-only")
 
 
+# Tables whose rows carry sensitive PII or investigative content. Reading them
+# through the generic data API requires at least analyst role, not merely a
+# verified identity.
+SENSITIVE_READ_TABLES = {
+    "psychological_profiles",
+    "behavioral_indicators",
+    "llm_risk_profiles",
+    "insider_credential_cases",
+    "financial_threat_intel",
+    "financial_transactions",
+    "entity_spine",
+    "honeytoken_deployments",
+}
+
+
 def authorize(user: dict, action: str, resource: str) -> None:
     """Central authorization decision for every mutation path.
 
@@ -337,6 +352,8 @@ def authorize(user: dict, action: str, resource: str) -> None:
     between a generic and a dedicated route."""
     _require_authenticated(user)
     if action == "read":
+        if resource in SENSITIVE_READ_TABLES:
+            _require_analyst(user)
         return
     if action == "admin":
         _require_admin(user)
@@ -488,6 +505,35 @@ async def enforce_control_rbac(request: Request, call_next):
                 _require_admin(user)
             else:
                 _require_analyst(user)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
+
+
+# Data routes that may be reached without a verified identity. Everything else
+# under /api requires authentication (see require_identity_for_api). /health and
+# /ready are liveness/readiness probes and are not under /api.
+_PUBLIC_API_PATHS = {"/api/health", "/api/auth/session"}
+
+
+@app.middleware("http")
+async def require_identity_for_api(request: Request, call_next):
+    """Fail-closed baseline authentication for every /api data route (REV2-17).
+
+    Read endpoints -- the generic table API and the many bespoke data endpoints
+    -- previously returned Unity Catalog data with no identity check at all, so
+    authorization could be skipped simply by reaching a route that forgot to
+    call authorize(). Gating here guarantees a verified SSO identity for all of
+    them; write/RPC/control routes keep their stricter role checks on top.
+    """
+    path = request.url.path
+    if (
+        request.method != "OPTIONS"
+        and path.startswith("/api/")
+        and path not in _PUBLIC_API_PATHS
+    ):
+        try:
+            _require_authenticated(_get_user_from_request(request))
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     return await call_next(request)
@@ -756,6 +802,8 @@ async def query_table(table_name: str, request: Request):
     if table_name not in ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
 
+    authorize(_get_user_from_request(request), "read", table_name)
+
     body = await request.json()
     columns = _validate_columns(body.get("select", "*"))
     filters = body.get("filters", [])
@@ -935,6 +983,7 @@ async def rpc_call(function_name: str, request: Request):
 @app.get("/api/{table_name}")
 async def get_table(
     table_name: str,
+    request: Request,
     select: str = "*",
     limit: int = Query(default=100, le=1000),
     offset: int = 0,
@@ -943,6 +992,8 @@ async def get_table(
 ):
     if table_name not in ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+
+    authorize(_get_user_from_request(request), "read", table_name)
 
     columns = _validate_columns(select)
     if order_dir.lower() not in ("asc", "desc"):
@@ -961,9 +1012,11 @@ async def get_table(
 
 
 @app.get("/api/{table_name}/{record_id}")
-async def get_record(table_name: str, record_id: str):
+async def get_record(table_name: str, record_id: str, request: Request):
     if table_name not in ALLOWED_TABLES:
         raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+
+    authorize(_get_user_from_request(request), "read", table_name)
 
     sql = f"SELECT * FROM {fqn(table_name)} WHERE id = :id"
     try:
