@@ -60,6 +60,8 @@ from datetime import datetime, timedelta
 import json
 import math
 
+from contracts import DETECTION_SIGNAL_COLUMNS, DETECTION_SIGNAL_CLASSES
+
 # COMMAND ----------
 
 # MAGIC %md
@@ -167,6 +169,14 @@ SIGNAL_CLASSES = {
     "threat_intel": {"independence_group": "cti", "base_weight": 0.85},
 }
 
+# The lens weight table above and the harvest below both speak the shared
+# vocabulary declared in contracts. If they ever drift apart this fails loudly
+# at startup instead of quietly mislabeling signals downstream.
+assert set(SIGNAL_CLASSES).issubset(set(DETECTION_SIGNAL_CLASSES)), (
+    "SIGNAL_CLASSES contains classes not declared in contracts.DETECTION_SIGNAL_CLASSES: "
+    f"{sorted(set(SIGNAL_CLASSES) - set(DETECTION_SIGNAL_CLASSES))}"
+)
+
 
 def compute_decay(age_minutes: float, half_life: float) -> float:
     """Exponential decay: signal strength decreases with age."""
@@ -182,121 +192,134 @@ def compute_decay(age_minutes: float, half_life: float) -> float:
 cutoff = datetime.utcnow() - timedelta(minutes=lookback_minutes)
 now = datetime.utcnow()
 
+# Each detection lens declares ONLY (1) the table it lives in and (2) a SELECT
+# that maps its own private columns onto the canonical detection-signal shape
+# (contracts.DETECTION_SIGNAL_COLUMNS). This list is the single place the
+# builder is coupled to any lens's private schema; everything downstream speaks
+# the canonical columns. `{table}`/`{cutoff}` are filled in per lens below.
+LENS_SPECS = [
+    ("cep_pattern_matches", """
+        SELECT
+            id AS source_alert_id,
+            COALESCE(entity_id, pattern_name) AS entity_ref,
+            'cep' AS signal_class,
+            'cep_engine' AS signal_source,
+            CAST(confidence AS DOUBLE) AS raw_score,
+            matched_at AS signal_timestamp,
+            matched_events AS source_event_ids,
+            CONCAT('CEP: ', pattern_name, ' (', severity, ')') AS explanation
+        FROM {table}
+        WHERE matched_at > '{cutoff}'
+    """),
+    ("user_behavior_anomalies", """
+        SELECT
+            id AS source_alert_id,
+            COALESCE(user_id, entity_id) AS entity_ref,
+            'behavioral_anomaly' AS signal_class,
+            'ueba_engine' AS signal_source,
+            CAST(anomaly_score AS DOUBLE) AS raw_score,
+            detected_at AS signal_timestamp,
+            CAST(NULL AS ARRAY<STRING>) AS source_event_ids,
+            CONCAT('UEBA: ', anomaly_type, ' risk=', risk_level) AS explanation
+        FROM {table}
+        WHERE detected_at > '{cutoff}'
+    """),
+    ("correlation_matches", """
+        SELECT
+            id AS source_alert_id,
+            COALESCE(target_entity, source_entity) AS entity_ref,
+            'graph' AS signal_class,
+            'correlation_engine' AS signal_source,
+            CAST(COALESCE(confidence_score, 0.7) AS DOUBLE) AS raw_score,
+            matched_at AS signal_timestamp,
+            matched_event_ids AS source_event_ids,
+            CONCAT('Correlation: ', rule_name) AS explanation
+        FROM {table}
+        WHERE matched_at > '{cutoff}'
+    """),
+    ("alerts", """
+        SELECT
+            id AS source_alert_id,
+            COALESCE(entity_id, source_ip, username) AS entity_ref,
+            CASE
+                WHEN source LIKE '%slm%' THEN 'slm_classification'
+                WHEN source LIKE '%formula%' THEN 'formula_score'
+                ELSE 'slm_classification'
+            END AS signal_class,
+            COALESCE(source, 'detection') AS signal_source,
+            CAST(COALESCE(confidence_score, 0.5) AS DOUBLE) AS raw_score,
+            created_at AS signal_timestamp,
+            CAST(NULL AS ARRAY<STRING>) AS source_event_ids,
+            CONCAT(title, ' [', severity, ']') AS explanation
+        FROM {table}
+        WHERE created_at > '{cutoff}'
+          AND status NOT IN ('duplicate', 'closed', 'resolved')
+    """),
+    ("negative_correlation_detections", """
+        SELECT
+            id AS source_alert_id,
+            COALESCE(entity_id, monitored_entity) AS entity_ref,
+            'negative_correlation' AS signal_class,
+            'negative_engine' AS signal_source,
+            CAST(COALESCE(severity_score, 0.7) AS DOUBLE) AS raw_score,
+            detected_at AS signal_timestamp,
+            CAST(NULL AS ARRAY<STRING>) AS source_event_ids,
+            CONCAT('Absence: ', rule_name, ' - ', description) AS explanation
+        FROM {table}
+        WHERE detected_at > '{cutoff}'
+    """),
+]
+
+# Markers that mean "this lens simply isn't deployed here" — safe to skip. Any
+# OTHER error (a renamed column, a type change) is real schema drift.
+_MISSING_TABLE_MARKERS = (
+    "TABLE_OR_VIEW_NOT_FOUND", "PATH_NOT_FOUND", "DELTA_TABLE_NOT_FOUND",
+    "does not exist", "cannot be found",
+)
+
+
+def project_to_canonical(df):
+    """Force a lens onto the canonical detection-signal shape, selected BY NAME.
+
+    Selecting by name means a lens missing a canonical column raises here — which
+    is exactly the drift we want surfaced, not swallowed — and it makes the later
+    union order-independent.
+    """
+    return df.select(*[col(c) for c in DETECTION_SIGNAL_COLUMNS])
+
+
 with mon.time("harvest_signals"):
     all_signals = []
+    for table_key, sql_template in LENS_SPECS:
+        table_path = get_table_path(cfg, table_key)
+        try:
+            raw = spark.sql(sql_template.format(table=table_path, cutoff=cutoff.isoformat()))
+        except Exception as e:
+            msg = str(e)
+            # A missing/empty lens table is expected in a partial deployment, so
+            # skip it quietly. Anything else — most importantly a renamed column
+            # — is schema drift that MUST stay visible instead of dropping the
+            # whole lens's contribution silently.
+            if any(m in msg for m in _MISSING_TABLE_MARKERS):
+                continue
+            mon.log_warning(f"UEO harvest: lens '{table_key}' query failed: {msg[:200]}")
+            continue
+        try:
+            all_signals.append(project_to_canonical(raw))
+        except Exception as e:
+            mon.log_warning(
+                f"UEO harvest: lens '{table_key}' no longer matches the canonical "
+                f"detection-signal shape ({', '.join(DETECTION_SIGNAL_COLUMNS)}); "
+                f"skipping it — {str(e)[:200]}"
+            )
 
-    # ─── CEP pattern matches ───
-    cep_table = get_table_path(cfg, "cep_pattern_matches")
-    try:
-        cep_signals = spark.sql(f"""
-            SELECT
-                id as source_alert_id,
-                COALESCE(entity_id, pattern_name) as entity_ref,
-                'cep' as signal_class,
-                'cep_engine' as signal_source,
-                CAST(confidence AS DOUBLE) as raw_score,
-                matched_at as signal_timestamp,
-                matched_events as source_event_ids,
-                CONCAT('CEP: ', pattern_name, ' (', severity, ')') as explanation
-            FROM {cep_table}
-            WHERE matched_at > '{cutoff.isoformat()}'
-        """)
-        all_signals.append(cep_signals)
-    except Exception:
-        pass
-
-    # ─── Behavioral anomalies (CET/UEBA) ───
-    ueba_table = get_table_path(cfg, "user_behavior_anomalies")
-    try:
-        ueba_signals = spark.sql(f"""
-            SELECT
-                id as source_alert_id,
-                COALESCE(user_id, entity_id) as entity_ref,
-                'behavioral_anomaly' as signal_class,
-                'ueba_engine' as signal_source,
-                CAST(anomaly_score AS DOUBLE) as raw_score,
-                detected_at as signal_timestamp,
-                CAST(NULL AS ARRAY<STRING>) as source_event_ids,
-                CONCAT('UEBA: ', anomaly_type, ' risk=', risk_level) as explanation
-            FROM {ueba_table}
-            WHERE detected_at > '{cutoff.isoformat()}'
-        """)
-        all_signals.append(ueba_signals)
-    except Exception:
-        pass
-
-    # ─── Correlation matches (graph/temporal) ───
-    corr_table = get_table_path(cfg, "correlation_matches")
-    try:
-        corr_signals = spark.sql(f"""
-            SELECT
-                id as source_alert_id,
-                COALESCE(target_entity, source_entity) as entity_ref,
-                'graph' as signal_class,
-                'correlation_engine' as signal_source,
-                CAST(COALESCE(confidence_score, 0.7) AS DOUBLE) as raw_score,
-                matched_at as signal_timestamp,
-                matched_event_ids as source_event_ids,
-                CONCAT('Correlation: ', rule_name) as explanation
-            FROM {corr_table}
-            WHERE matched_at > '{cutoff.isoformat()}'
-        """)
-        all_signals.append(corr_signals)
-    except Exception:
-        pass
-
-    # ─── Alerts with scores (SLM + Formula) ───
-    alerts_table = get_table_path(cfg, "alerts")
-    try:
-        alert_signals = spark.sql(f"""
-            SELECT
-                id as source_alert_id,
-                COALESCE(entity_id, source_ip, username) as entity_ref,
-                CASE
-                    WHEN source LIKE '%slm%' THEN 'slm_classification'
-                    WHEN source LIKE '%formula%' THEN 'formula_score'
-                    ELSE 'slm_classification'
-                END as signal_class,
-                COALESCE(source, 'detection') as signal_source,
-                CAST(COALESCE(confidence_score, 0.5) AS DOUBLE) as raw_score,
-                created_at as signal_timestamp,
-                CAST(NULL AS ARRAY<STRING>) as source_event_ids,
-                CONCAT(title, ' [', severity, ']') as explanation
-            FROM {alerts_table}
-            WHERE created_at > '{cutoff.isoformat()}'
-              AND status NOT IN ('duplicate', 'closed', 'resolved')
-        """)
-        all_signals.append(alert_signals)
-    except Exception:
-        pass
-
-    # ─── Negative correlation detections ───
-    neg_table = get_table_path(cfg, "negative_correlation_detections")
-    try:
-        neg_signals = spark.sql(f"""
-            SELECT
-                id as source_alert_id,
-                COALESCE(entity_id, monitored_entity) as entity_ref,
-                'negative_correlation' as signal_class,
-                'negative_engine' as signal_source,
-                CAST(COALESCE(severity_score, 0.7) AS DOUBLE) as raw_score,
-                detected_at as signal_timestamp,
-                CAST(NULL AS ARRAY<STRING>) as source_event_ids,
-                CONCAT('Absence: ', rule_name, ' - ', description) as explanation
-            FROM {neg_table}
-            WHERE detected_at > '{cutoff.isoformat()}'
-        """)
-        all_signals.append(neg_signals)
-    except Exception:
-        pass
-
-    # Union all signals
+    # Combine BY NAME so column-order drift can never silently mis-map a lens.
     if all_signals:
         combined_signals = all_signals[0]
         for s in all_signals[1:]:
-            combined_signals = combined_signals.union(s)
+            combined_signals = combined_signals.unionByName(s)
         signal_count = combined_signals.count()
-        print(f"Harvested {signal_count} signals from detection lenses")
+        print(f"Harvested {signal_count} signals from {len(all_signals)} detection lenses")
     else:
         print("No signals found from any detection lens")
         dbutils.notebook.exit(json.dumps({"status": "no_signals", "ueos_created": 0}))

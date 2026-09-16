@@ -54,3 +54,35 @@ EXECUTION_IDENTITY_FIELDS = (
 # Current contract version. Bump when a breaking change to any contract above is
 # made; producers stamp this into `schema_version`.
 SCHEMA_VERSION = "2.0.0"
+
+# Canonical detection-signal shape. Every detection lens the Unified Evidence
+# Object builder (correlation/09) harvests is projected onto EXACTLY this
+# ordered set of columns before the lenses are combined. The builder never
+# reaches into a lens's private column names anywhere else, and it unions the
+# lenses by name — so a lens that renames one of its own columns fails this
+# projection loudly (logged, one lens skipped) instead of silently dropping its
+# whole contribution to every downstream decision.
+DETECTION_SIGNAL_COLUMNS = (
+    "source_alert_id",   # id of the originating row in the lens's own table
+    "entity_ref",        # who/what the signal is about (resolved to entity spine)
+    "signal_class",      # one of DETECTION_SIGNAL_CLASSES
+    "signal_source",     # logical name of the producing engine
+    "raw_score",         # DOUBLE in 0..1 (confidence / severity)
+    "signal_timestamp",  # event-time the signal was produced
+    "source_event_ids",  # ARRAY<STRING> raw event lineage (nullable)
+    "explanation",       # human-readable one-line summary
+)
+
+# The signal classes the evidence builder understands. A lens emitting anything
+# outside this set will not contribute to a presence flag downstream.
+DETECTION_SIGNAL_CLASSES = (
+    "cep",
+    "cet",
+    "graph",
+    "negative_correlation",
+    "ks_recall",
+    "slm_classification",
+    "formula_score",
+    "behavioral_anomaly",
+    "threat_intel",
+)

@@ -103,6 +103,39 @@ def test_schema_version_declared():
     assert re.match(r"^\d+\.\d+\.\d+$", contracts.SCHEMA_VERSION)
 
 
+# ── Canonical detection-signal shape drives the evidence builder ────────────
+
+def test_detection_signal_columns_are_valid_identifiers():
+    assert contracts.DETECTION_SIGNAL_COLUMNS, "canonical detection-signal shape must be declared"
+    ident = re.compile(r"^[a-z_][a-z0-9_]*$")
+    for c in contracts.DETECTION_SIGNAL_COLUMNS:
+        assert ident.match(c), f"signal column '{c}' is not a valid identifier"
+    for c in ("entity_ref", "signal_class", "raw_score", "signal_timestamp"):
+        assert c in contracts.DETECTION_SIGNAL_COLUMNS, f"canonical shape missing '{c}'"
+
+
+def test_evidence_builder_uses_canonical_signal_shape():
+    ueo = (ROOT / "notebooks" / "correlation" / "09_unified_evidence_object.py").read_text(encoding="utf-8")
+    assert "from contracts import" in ueo and "DETECTION_SIGNAL_COLUMNS" in ueo, (
+        "evidence builder must import the canonical detection-signal shape from contracts"
+    )
+    assert "project_to_canonical" in ueo, "evidence builder must project each lens to the canonical shape"
+    # Positional union silently mis-maps columns when a lens drifts; the builder
+    # must combine lenses by name.
+    assert "unionByName" in ueo, "evidence builder must union lenses by name"
+    assert not re.search(r"combined_signals\s*=\s*combined_signals\.union\(", ueo), (
+        "evidence builder must not combine lenses with positional .union()"
+    )
+
+
+def test_builder_signal_classes_within_contract():
+    ueo = (ROOT / "notebooks" / "correlation" / "09_unified_evidence_object.py").read_text(encoding="utf-8")
+    block = ueo.split("SIGNAL_CLASSES = {", 1)[1].split("}", 1)[0]
+    used = set(re.findall(r'"([a-z_]+)":\s*\{', block))
+    unknown = used - set(contracts.DETECTION_SIGNAL_CLASSES)
+    assert not unknown, f"builder uses signal classes not in the contract: {sorted(unknown)}"
+
+
 if __name__ == "__main__":
     passed = failed = 0
     for name, fn in sorted(globals().items()):
