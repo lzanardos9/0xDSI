@@ -189,6 +189,82 @@ class BaseAgent(ABC):
         escaped = text.replace("\x00", "").replace("'", "''")
         return f"'{escaped}'"
 
+    # JSON-schema type name -> predicate. `bool` is excluded from the numeric
+    # checks because in Python `True`/`False` are ints, and a boolean is not a
+    # valid number/integer argument.
+    _JSON_TYPE_CHECKS = {
+        "string": lambda v: isinstance(v, str),
+        "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+        "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+        "boolean": lambda v: isinstance(v, bool),
+        "array": lambda v: isinstance(v, list),
+        "object": lambda v: isinstance(v, dict),
+    }
+
+    @staticmethod
+    def _check_arg_type(tool_name: str, name: str, value: Any, spec: dict) -> None:
+        """Enforce a single argument's declared JSON-schema `type` and `enum`."""
+        if value is None:
+            return
+        expected = spec.get("type")
+        check = BaseAgent._JSON_TYPE_CHECKS.get(expected) if expected else None
+        if check is not None and not check(value):
+            raise ValueError(
+                f"Tool '{tool_name}' argument '{name}' must be of type "
+                f"'{expected}', got {type(value).__name__}"
+            )
+        enum = spec.get("enum")
+        if enum is not None and value not in enum:
+            raise ValueError(
+                f"Tool '{tool_name}' argument '{name}' must be one of "
+                f"{list(enum)}, got {value!r}"
+            )
+
+    @staticmethod
+    def _validate_and_order_args(tool: "UCTool", arguments: Optional[dict]) -> list:
+        """Validate LLM-supplied tool arguments against the tool's declared
+        parameter schema and return their SQL literals in schema order.
+
+        UC functions are invoked positionally, so the arguments must follow the
+        tool's declared ``properties`` order rather than whatever order the model
+        happened to emit. Unknown keys, missing required keys, wrong types, and
+        out-of-enum values are all rejected here — before any SQL is built — so a
+        malformed tool call fails with a clear contract error instead of reaching
+        the SQL engine. Declared-but-omitted optional parameters are passed as
+        NULL to keep positions aligned.
+        """
+        arguments = arguments or {}
+        schema = tool.parameters or {}
+        properties = schema.get("properties") or {}
+        required = schema.get("required") or []
+
+        if not properties:
+            # No declared schema to order or check against: fall back to the
+            # order the caller supplied, still safely escaped.
+            return [BaseAgent._uc_literal(v) for v in arguments.values()]
+
+        unknown = [k for k in arguments if k not in properties]
+        if unknown:
+            raise ValueError(
+                f"Tool '{tool.name}' received unknown argument(s): {sorted(unknown)}; "
+                f"allowed: {sorted(properties)}"
+            )
+
+        missing = [k for k in required if k not in arguments]
+        if missing:
+            raise ValueError(
+                f"Tool '{tool.name}' missing required argument(s): {sorted(missing)}"
+            )
+
+        ordered = []
+        for name, spec in properties.items():
+            if name not in arguments:
+                ordered.append(BaseAgent._uc_literal(None))
+                continue
+            BaseAgent._check_arg_type(tool.name, name, arguments[name], spec or {})
+            ordered.append(BaseAgent._uc_literal(arguments[name]))
+        return ordered
+
     def _run_uc_tool(self, tool_name: str, arguments: Optional[dict]) -> Any:
         """Resolve a registered tool, run its UC function safely, return its value.
 
@@ -211,7 +287,7 @@ class BaseAgent(ABC):
                 "Model Serving). None is available in this execution context."
             )
 
-        args = ", ".join(self._uc_literal(v) for v in (arguments or {}).values())
+        args = ", ".join(self._validate_and_order_args(tool, arguments))
         span = self._start_trace(f"tool.{tool_name}")
         try:
             rows = self.spark.sql(f"SELECT {tool.full_name}({args})").collect()

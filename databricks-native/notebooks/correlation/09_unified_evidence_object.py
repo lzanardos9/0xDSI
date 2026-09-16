@@ -59,8 +59,23 @@ from pyspark.sql.types import *
 from datetime import datetime, timedelta
 import json
 import math
+import uuid
 
 from contracts import DETECTION_SIGNAL_COLUMNS, DETECTION_SIGNAL_CLASSES
+# Invalidating a finding whose evidence changed is a real lifecycle transition,
+# so it goes through the shared state machine, never an ad-hoc status edit.
+from finding_revision import (
+    initial_revision, next_revision, invalidate_revision,
+    is_terminal, REVISION_COLUMNS,
+)
+
+# Identity stamped onto every finding revision this run emits (REV2-05): a fresh
+# execution_id per invocation keeps two evidence runs from collapsing.
+_run_identity = {
+    "execution_id": str(uuid.uuid4()),
+    "run_id": cfg.tags.get("job_run_id", "interactive") if hasattr(cfg, "tags") else "interactive",
+    "producer": "correlation_09_unified_evidence_object",
+}
 
 # COMMAND ----------
 
@@ -115,6 +130,12 @@ CREATE TABLE IF NOT EXISTS {ueo_table} (
     -- Status
     confluence_processed BOOLEAN DEFAULT false,
     confluence_verdict_id STRING,
+    -- Revision bookkeeping: ueo_id is content-derived from (entity, window), so
+    -- when new signals arrive for an existing entity/window the object is
+    -- upserted and `revision` is bumped instead of the late evidence being
+    -- dropped. `updated_at` tracks the last upsert.
+    revision INT DEFAULT 1,
+    updated_at TIMESTAMP DEFAULT current_timestamp(),
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
@@ -146,12 +167,87 @@ USING DELTA
 TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
-# COMMAND ----------
+# Existing deployments predate the revision columns; add them idempotently so
+# the upsert MERGE below can bump `revision` on late-arriving evidence.
+for _col, _decl in (("revision", "INT"), ("updated_at", "TIMESTAMP")):
+    try:
+        _existing = [c.name for c in spark.table(ueo_table).schema.fields]
+        if _col not in _existing:
+            spark.sql(f"ALTER TABLE {ueo_table} ADD COLUMN {_col} {_decl}")
+            if _col == "revision":
+                spark.sql(f"UPDATE {ueo_table} SET revision = 1 WHERE revision IS NULL")
+    except Exception as e:
+        mon.log_warning(f"UEO revision-column ensure failed for '{_col}': {str(e)[:200]}")
 
-# MAGIC %md
-# MAGIC ## Signal Class Definitions
-# MAGIC
-# MAGIC Each lens produces signals with known independence relationships.
+# Explicit schema for finding-revision rows: prev_revision/action/supersedes are
+# None on an initial row, so inference would flip them to void and the append
+# would fail.
+_REVISION_SCHEMA = StructType([
+    StructField("finding_id", StringType(), False),
+    StructField("revision", IntegerType(), False),
+    StructField("prev_revision", IntegerType(), True),
+    StructField("state", StringType(), False),
+    StructField("action", StringType(), True),
+    StructField("supersedes_finding_id", StringType(), True),
+    StructField("execution_id", StringType(), False),
+    StructField("run_id", StringType(), True),
+    StructField("producer", StringType(), False),
+    StructField("schema_version", StringType(), True),
+    StructField("produced_at", StringType(), True),
+])
+
+
+def _write_finding_revisions(revision_rows):
+    """Append immutable finding revisions to the durable ledger, ordered to the
+    canonical column list so the row shape never drifts from the DDL."""
+    if not revision_rows:
+        return
+    ordered = [{c: r.get(c) for c in REVISION_COLUMNS} for r in revision_rows]
+    (
+        spark.createDataFrame(ordered, schema=_REVISION_SCHEMA)
+        .withColumn("produced_at", to_timestamp(col("produced_at")))
+        .write.mode("append").option("mergeSchema", "true")
+        .saveAsTable(get_table_path(cfg, "finding_revisions"))
+    )
+
+
+def _invalidate_findings(ueo_ids):
+    """WITHDRAW the still-live finding each revised-and-bound UEO produced.
+
+    A finding rides on exactly one evidence object (finding_id == ueo_id), so
+    when that object gains new signals the prior assertion — and any approval
+    bound to its revision — must fall. Reads the latest revision per finding and
+    appends a WITHDRAW for any that is not already terminal; findings with no
+    revision yet, or already terminal, are left alone. Returns the count."""
+    if not ueo_ids:
+        return 0
+    id_list = ", ".join("'" + str(u).replace("'", "''") + "'" for u in ueo_ids)
+    try:
+        latest = spark.sql(f"""
+            WITH ranked AS (
+                SELECT *, ROW_NUMBER() OVER (
+                    PARTITION BY finding_id ORDER BY revision DESC
+                ) AS _rn
+                FROM {get_table_path(cfg, "finding_revisions")}
+                WHERE finding_id IN ({id_list})
+            )
+            SELECT * FROM ranked WHERE _rn = 1
+        """).collect()
+    except Exception as e:
+        if any(m in str(e) for m in _MISSING_TABLE_MARKERS):
+            return 0
+        raise
+
+    produced_at = datetime.utcnow().isoformat()
+    new_rows = []
+    for row in latest:
+        d = row.asDict()
+        prev = {c: d.get(c) for c in REVISION_COLUMNS}
+        if is_terminal(prev.get("state")):
+            continue
+        new_rows.append(invalidate_revision(prev, _run_identity, produced_at))
+    _write_finding_revisions(new_rows)
+    return len(new_rows)
 
 # COMMAND ----------
 
@@ -290,39 +386,106 @@ def project_to_canonical(df):
 
 with mon.time("harvest_signals"):
     all_signals = []
+    healthy_lenses = []       # queried AND projected onto the canonical shape
+    failed_lenses = []        # a real fault: query error or schema drift
+    not_deployed_lenses = []  # table absent — legitimate in a partial deployment
+
     for table_key, sql_template in LENS_SPECS:
         table_path = get_table_path(cfg, table_key)
         try:
             raw = spark.sql(sql_template.format(table=table_path, cutoff=cutoff.isoformat()))
         except Exception as e:
             msg = str(e)
-            # A missing/empty lens table is expected in a partial deployment, so
-            # skip it quietly. Anything else — most importantly a renamed column
-            # — is schema drift that MUST stay visible instead of dropping the
-            # whole lens's contribution silently.
+            # A missing lens table is expected in a partial deployment and is
+            # recorded, not treated as a fault. Anything else is a real problem
+            # and is LOGGED (never swallowed) so a broken lens is visible.
             if any(m in msg for m in _MISSING_TABLE_MARKERS):
+                not_deployed_lenses.append(table_key)
                 continue
-            mon.log_warning(f"UEO harvest: lens '{table_key}' query failed: {msg[:200]}")
+            failed_lenses.append(table_key)
+            mon.log_error(e, context=f"UEO harvest: lens '{table_key}' query failed")
             continue
         try:
             all_signals.append(project_to_canonical(raw))
+            healthy_lenses.append(table_key)
         except Exception as e:
-            mon.log_warning(
-                f"UEO harvest: lens '{table_key}' no longer matches the canonical "
-                f"detection-signal shape ({', '.join(DETECTION_SIGNAL_COLUMNS)}); "
-                f"skipping it — {str(e)[:200]}"
+            # A renamed/removed canonical column is schema drift — a real fault
+            # that would otherwise silently drop this lens's whole contribution.
+            failed_lenses.append(table_key)
+            mon.log_error(
+                e,
+                context=(
+                    f"UEO harvest: lens '{table_key}' no longer matches the canonical "
+                    f"detection-signal shape ({', '.join(DETECTION_SIGNAL_COLUMNS)})"
+                ),
             )
 
-    # Combine BY NAME so column-order drift can never silently mis-map a lens.
-    if all_signals:
-        combined_signals = all_signals[0]
-        for s in all_signals[1:]:
-            combined_signals = combined_signals.unionByName(s)
-        signal_count = combined_signals.count()
-        print(f"Harvested {signal_count} signals from {len(all_signals)} detection lenses")
+    # Health verdict. A lens fault or a total wipe-out is NEVER reported as a
+    # normal empty run:
+    #   HEALTHY     — every present lens harvested.
+    #   DEGRADED    — at least one present lens harvested, but another faulted.
+    #   UNAVAILABLE — no lens produced a usable dataset at all (every present
+    #                 lens faulted, or none is deployed): the evidence layer is
+    #                 blind and that must be surfaced, not hidden behind "0 signals".
+    if not all_signals:
+        harvest_status = "UNAVAILABLE"
+    elif failed_lenses:
+        harvest_status = "DEGRADED"
     else:
-        print("No signals found from any detection lens")
-        dbutils.notebook.exit(json.dumps({"status": "no_signals", "ueos_created": 0}))
+        harvest_status = "HEALTHY"
+
+    harvest_health = {
+        "status": harvest_status,
+        "lenses_total": len(LENS_SPECS),
+        "lenses_healthy": healthy_lenses,
+        "lenses_failed": failed_lenses,
+        "lenses_not_deployed": not_deployed_lenses,
+    }
+
+    if harvest_status == "UNAVAILABLE":
+        # Every-lens-faulted is an incident; nothing-deployed is a
+        # misconfiguration. Neither is a healthy empty run.
+        if failed_lenses:
+            mon.log_error(
+                RuntimeError(f"UEO harvest UNAVAILABLE: every present lens faulted: {failed_lenses}"),
+                context="UEO harvest health",
+            )
+        else:
+            mon.log_warning(
+                "UEO harvest UNAVAILABLE: no detection lens is deployed or queryable",
+                details=json.dumps(harvest_health),
+            )
+        dbutils.notebook.exit(json.dumps({
+            "status": "harvest_unavailable",
+            "ueos_created": 0,
+            "harvest_health": harvest_health,
+        }))
+
+    # Combine BY NAME so column-order drift can never silently mis-map a lens.
+    combined_signals = all_signals[0]
+    for s in all_signals[1:]:
+        combined_signals = combined_signals.unionByName(s)
+    signal_count = combined_signals.count()
+
+    if harvest_status == "DEGRADED":
+        mon.log_warning(
+            f"UEO harvest DEGRADED: {len(failed_lenses)} of {len(LENS_SPECS)} lenses faulted: {failed_lenses}",
+            details=json.dumps(harvest_health),
+        )
+    print(
+        f"UEO harvest {harvest_status}: {signal_count} signals from "
+        f"{len(healthy_lenses)}/{len(LENS_SPECS)} lenses "
+        f"(failed={failed_lenses}, not_deployed={not_deployed_lenses})"
+    )
+
+    if signal_count == 0:
+        # Lenses are healthy but produced nothing in-window: a valid state, but
+        # reported WITH its health rather than as an implicit "normal" no-op.
+        dbutils.notebook.exit(json.dumps({
+            "status": "no_signals",
+            "ueos_created": 0,
+            "harvest_health": harvest_health,
+        }))
 
 # COMMAND ----------
 
@@ -467,10 +630,9 @@ with mon.time("build_ueos"):
     )
 
     ueo_count = ueos.count()
+    ueo_revised = 0
+    findings_invalidated = 0
     if ueo_count > 0:
-        # Write UEOs idempotently: ueo_id is content-derived (sha2 over
-        # entity/window), so a replayed batch inserts nothing instead of
-        # duplicating evidence (REV2-04).
         _ueo_rows = ueos.select(
             "ueo_id", "entity_id", "entity_type", "entity_name",
             "window_start", "window_end",
@@ -485,10 +647,99 @@ with mon.time("build_ueos"):
             "contributing_event_ids", "contributing_alert_ids",
             "confluence_processed", "confluence_verdict_id", "created_at"
         )
-        safe_append(
-            _ueo_rows, "unified_evidence_objects", cfg.catalog, cfg.schema,
-            idempotency_key="ueo_id",
+        _ueo_rows.createOrReplaceTempView("_ueo_incoming")
+
+        # A UEO is "revised" when NEW evidence arrives for an entity/window that
+        # already has one: more signals, or a contributing alert not seen before.
+        _changed_predicate = (
+            "s.signal_count > t.signal_count "
+            "OR size(array_except("
+            "  COALESCE(s.contributing_alert_ids, array()), "
+            "  COALESCE(t.contributing_alert_ids, array()))) > 0"
         )
+
+        # Findings/approvals bound to a UEO become stale the moment its evidence
+        # changes. Capture — BEFORE the merge clears them — the UEOs that are
+        # being revised AND already had a bound Confluence verdict, so we can
+        # invalidate the finding they produced.
+        _to_invalidate = [
+            r["ueo_id"] for r in spark.sql(f"""
+                SELECT s.ueo_id
+                FROM _ueo_incoming s
+                JOIN {ueo_table} t ON t.ueo_id = s.ueo_id
+                WHERE t.confluence_verdict_id IS NOT NULL
+                  AND ({_changed_predicate})
+            """).collect()
+        ]
+
+        # Upsert: bump `revision` and refresh the aggregates + lineage on new
+        # evidence (and reset the Confluence binding so it is re-decided);
+        # insert fresh objects at revision 1. Replays with identical evidence
+        # match the predicate's negation and change nothing.
+        ueo_revised = spark.sql(f"""
+            SELECT COUNT(*) AS n
+            FROM _ueo_incoming s JOIN {ueo_table} t ON t.ueo_id = s.ueo_id
+            WHERE {_changed_predicate}
+        """).first()["n"]
+
+        spark.sql(f"""
+            MERGE INTO {ueo_table} t
+            USING _ueo_incoming s
+            ON t.ueo_id = s.ueo_id
+            WHEN MATCHED AND ({_changed_predicate}) THEN UPDATE SET
+                t.fused_risk_score = s.fused_risk_score,
+                t.max_signal_score = s.max_signal_score,
+                t.min_signal_score = s.min_signal_score,
+                t.signal_count = s.signal_count,
+                t.independent_signal_count = s.independent_signal_count,
+                t.has_cep = s.has_cep,
+                t.has_cet = s.has_cet,
+                t.has_graph = s.has_graph,
+                t.has_negative_correlation = s.has_negative_correlation,
+                t.has_ks_recall = s.has_ks_recall,
+                t.has_model_score = s.has_model_score,
+                t.has_behavioral = s.has_behavioral,
+                t.disagreement_score = s.disagreement_score,
+                t.score_variance = s.score_variance,
+                t.contributing_event_ids = s.contributing_event_ids,
+                t.contributing_alert_ids = s.contributing_alert_ids,
+                t.revision = t.revision + 1,
+                t.confluence_processed = false,
+                t.confluence_verdict_id = NULL,
+                t.updated_at = current_timestamp()
+            WHEN NOT MATCHED THEN INSERT (
+                ueo_id, entity_id, entity_type, entity_name, window_start, window_end,
+                fused_risk_score, max_signal_score, signal_count, independent_signal_count,
+                has_cep, has_cet, has_graph, has_negative_correlation,
+                has_ks_recall, has_model_score, has_behavioral,
+                disagreement_score, min_signal_score, score_variance,
+                causal_chain, kill_chain_stage,
+                ks_similar_incidents, ks_prior_suppressions,
+                ks_best_match_id, ks_best_match_similarity,
+                entity_centrality, entity_is_high_value, entity_is_service_account,
+                contributing_event_ids, contributing_alert_ids,
+                confluence_processed, confluence_verdict_id, revision, updated_at, created_at
+            ) VALUES (
+                s.ueo_id, s.entity_id, s.entity_type, s.entity_name, s.window_start, s.window_end,
+                s.fused_risk_score, s.max_signal_score, s.signal_count, s.independent_signal_count,
+                s.has_cep, s.has_cet, s.has_graph, s.has_negative_correlation,
+                s.has_ks_recall, s.has_model_score, s.has_behavioral,
+                s.disagreement_score, s.min_signal_score, s.score_variance,
+                s.causal_chain, s.kill_chain_stage,
+                s.ks_similar_incidents, s.ks_prior_suppressions,
+                s.ks_best_match_id, s.ks_best_match_similarity,
+                s.entity_centrality, s.entity_is_high_value, s.entity_is_service_account,
+                s.contributing_event_ids, s.contributing_alert_ids,
+                s.confluence_processed, s.confluence_verdict_id, 1, current_timestamp(), s.created_at
+            )
+        """)
+
+        # Invalidate the finding each revised-and-bound UEO produced, through the
+        # shared lifecycle state machine (finding_id == ueo_id). We read the
+        # latest revision per finding and WITHDRAW any still-live one; a finding
+        # already terminal is left alone so it is never invalidated twice.
+        if _to_invalidate:
+            findings_invalidated = _invalidate_findings(_to_invalidate)
 
         # Write individual signals with UEO linkage
         signal_details = (
@@ -531,7 +782,8 @@ with mon.time("build_ueos"):
             signal_details, "ueo_signals", cfg.catalog, cfg.schema,
             idempotency_key="signal_id",
         )
-        print(f"Built {ueo_count} UEOs from {signal_count} signals")
+        print(f"Built {ueo_count} UEOs from {signal_count} signals "
+              f"({ueo_revised} revised, {findings_invalidated} findings invalidated)")
     else:
         print(f"No UEOs formed (need >= {min_signals} signals per entity-window)")
 
@@ -622,9 +874,12 @@ result = {
     "notebook": "09_unified_evidence_object",
     "status": "completed",
     "ueos_created": ueo_count,
+    "ueos_revised": ueo_revised if 'ueo_revised' in dir() else 0,
+    "findings_invalidated": findings_invalidated if 'findings_invalidated' in dir() else 0,
     "total_ueos": total_ueos,
     "pending_confluence": pending,
     "signals_harvested": signal_count if 'signal_count' in dir() else 0,
+    "harvest_health": harvest_health if 'harvest_health' in dir() else None,
 }
 mon.log_complete(details=result)
 dbutils.notebook.exit(json.dumps(result))

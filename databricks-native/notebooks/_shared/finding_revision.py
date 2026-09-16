@@ -172,6 +172,22 @@ def next_revision(prev_row, action, identity, produced_at,
     return _stamp(row, identity, produced_at)
 
 
+def invalidate_revision(prev_row, identity, produced_at, superseded_by=None) -> dict:
+    """Invalidate a live finding whose underlying evidence changed.
+
+    When the evidence object a finding rests on gains new signals, the prior
+    assertion — and any approval bound to its exact revision — must no longer
+    stand. Emits a SUPERSEDE revision when a replacement finding id is supplied,
+    otherwise a WITHDRAW. It delegates to ``next_revision``, so invalidating an
+    already-terminal finding raises (a finding is never invalidated twice)."""
+    if superseded_by:
+        return next_revision(
+            prev_row, SUPERSEDE, identity, produced_at,
+            supersedes_finding_id=superseded_by,
+        )
+    return next_revision(prev_row, WITHDRAW, identity, produced_at)
+
+
 # Column order for the durable `finding_revisions` ledger. Kept beside the
 # builders so the DDL and the emitted rows cannot drift apart.
 REVISION_COLUMNS = (
