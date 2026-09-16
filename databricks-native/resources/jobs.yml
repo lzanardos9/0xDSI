@@ -1958,6 +1958,29 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
 
+    mitre_coverage:
+      name: "[0xDSI] Analytics 13 - MITRE ATT&CK Coverage"
+      schedule:
+        quartz_cron_expression: "0 */30 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - scipy==1.14.1
+              - scikit-learn==1.5.2
+              - networkx==3.4.2
+      tasks:
+        - task_key: compute_mitre_coverage
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/analytics/13_mitre_coverage.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+
     # ─────────────────────────────────────────────────────
     # PHASE 2: CET DRIFT, BYTECODE SEMANTICS, DELTA REPLAY
     # ─────────────────────────────────────────────────────

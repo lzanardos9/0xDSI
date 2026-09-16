@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Shield, Target, AlertTriangle, CheckCircle2, XCircle, TrendingUp, ChevronRight, Eye, Zap, Activity, Filter, Grid3x3 as Grid3X3, X } from "lucide-react";
+import { lakehouse } from "../lib/lakehouse";
 
 type Status = "covered" | "partial" | "gap" | "detected";
 interface Technique {
@@ -135,6 +136,53 @@ export default function MitreAttackMatrix() {
   const [showAgentLog, setShowAgentLog] = useState(false);
   const [agentLog, setAgentLog] = useState<{time: string; msg: string; type: 'deploy' | 'detect' | 'resolve'}[]>([]);
   const [rippleCol, setRippleCol] = useState(-1);
+  const [live, setLive] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await lakehouse
+        .from("mitre_coverage_metrics")
+        .select("*")
+        .order("calculated_at", { ascending: false })
+        .limit(1);
+      if (!active || error) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return;
+      let metrics: any[] = [];
+      try {
+        metrics = typeof row.technique_metrics === "string"
+          ? JSON.parse(row.technique_metrics)
+          : row.technique_metrics || [];
+      } catch {
+        metrics = [];
+      }
+      if (!Array.isArray(metrics) || !metrics.length) return;
+      const byId = new Map<string, any>();
+      for (const m of metrics) byId.set(m.technique_id, m);
+      setTactics((prev) =>
+        prev.map((tac) => ({
+          ...tac,
+          techniques: tac.techniques.map((t) => {
+            const m = byId.get(t.id);
+            if (!m) return t;
+            return {
+              ...t,
+              status: (m.status as Status) || t.status,
+              rules: typeof m.rule_count === "number" ? m.rule_count : t.rules,
+              recentDetections: typeof m.detection_count === "number" ? m.detection_count : t.recentDetections,
+              risk: typeof m.risk_ten === "number" && m.risk_ten > 0 ? m.risk_ten : t.risk,
+              activeRules: Array.isArray(m.active_rules) && m.active_rules.length ? m.active_rules : t.activeRules,
+            };
+          }),
+        }))
+      );
+      setLive(true);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const allTechniques = tactics.flatMap((t) => t.techniques);
   const totalCov = allTechniques.filter((t) => t.status === "covered" || t.status === "detected").length;
@@ -161,6 +209,7 @@ export default function MitreAttackMatrix() {
   }, []);
 
   useEffect(() => {
+    if (live) return; // live coverage present: reflect reality, don't simulate
     const iv = setInterval(() => {
       const now = new Date().toLocaleTimeString();
       setTactics(prev => {
@@ -205,7 +254,7 @@ export default function MitreAttackMatrix() {
       });
     }, 5000);
     return () => clearInterval(iv);
-  }, []);
+  }, [live]);
 
   const filtered = (techniques: Technique[]) =>
     filter === "all" ? techniques : techniques.filter((t) => t.status === filter);

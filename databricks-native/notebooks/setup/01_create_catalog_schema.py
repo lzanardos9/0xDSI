@@ -470,7 +470,24 @@ CREATE TABLE IF NOT EXISTS industry_threat_posture (
 USING DELTA
 """)
 
-print("Analytics rollup tables created: soc_optimization_metrics, platform_economics_metrics, industry_threat_posture")
+spark.sql(f"""
+CREATE TABLE IF NOT EXISTS mitre_coverage_metrics (
+    id STRING DEFAULT uuid(),
+    window_hours INT,
+    coverage_pct DOUBLE,
+    technique_count INT,
+    covered_count INT,
+    detected_count INT,
+    partial_count INT,
+    gap_count INT,
+    technique_metrics STRING,
+    tactic_summary STRING,
+    calculated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+print("Analytics rollup tables created: soc_optimization_metrics, platform_economics_metrics, industry_threat_posture, mitre_coverage_metrics")
 
 # COMMAND ----------
 
