@@ -163,6 +163,64 @@ class BaseAgent(ABC):
         except Exception:
             pass
 
+    # ── Single tool executor ──────────────────────────────────────────
+    # Every agent (batch and interactive) runs UC-function tools through
+    # this one method so escaping and execution live in exactly one place.
+
+    @staticmethod
+    def _uc_literal(value: Any) -> str:
+        """Escape a Python value as a safe SQL literal for a UC function call.
+
+        Tool arguments originate from the LLM, which can be steered by
+        attacker-controlled alert text, so they are never interpolated raw.
+        Strings have NUL stripped and single quotes doubled; structured
+        values are JSON-encoded and escaped the same way.
+        """
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, (int, float)):
+            return str(value)
+        if isinstance(value, str):
+            text = value
+        else:
+            text = json.dumps(value)
+        escaped = text.replace("\x00", "").replace("'", "''")
+        return f"'{escaped}'"
+
+    def _run_uc_tool(self, tool_name: str, arguments: Optional[dict]) -> Any:
+        """Resolve a registered tool, run its UC function safely, return its value.
+
+        Raises ValueError if the tool is not registered for this agent, and
+        propagates execution errors so callers decide how to surface them.
+        """
+        tool = next((t for t in self._tools if t.name == tool_name), None)
+        if tool is None:
+            raise ValueError(f"Tool '{tool_name}' not registered for agent '{self.agent_name}'")
+
+        # Tool execution needs a SQL-capable runtime. On job/serverless notebook
+        # compute this is the ambient Spark session; a Model Serving container has
+        # none, so fail with an explicit contract instead of an opaque crash. A
+        # serving deployment must inject a SQL runner rather than rely on an
+        # ambient driver -- this keeps the executor free of hidden global state.
+        if getattr(self, "spark", None) is None:
+            raise RuntimeError(
+                f"Tool '{tool_name}' requires a SQL-capable runtime (a Spark session "
+                "on job/serverless notebook compute, or an injected SQL runner in "
+                "Model Serving). None is available in this execution context."
+            )
+
+        args = ", ".join(self._uc_literal(v) for v in (arguments or {}).values())
+        span = self._start_trace(f"tool.{tool_name}")
+        try:
+            rows = self.spark.sql(f"SELECT {tool.full_name}({args})").collect()
+            self._end_trace(span, {"tool": tool_name, "status": "success"})
+            return rows[0][0] if rows else None
+        except Exception as e:
+            self._end_trace(span, {"tool": tool_name, "status": "error", "error": str(e)[:200]})
+            raise
+
 
 class BatchAgent(BaseAgent):
     """
@@ -224,20 +282,7 @@ class BatchAgent(BaseAgent):
 
     def execute_tool(self, tool_name: str, params: dict) -> Any:
         """Execute a registered UC Function tool by name."""
-        tool = next((t for t in self._tools if t.name == tool_name), None)
-        if tool is None:
-            raise ValueError(f"Tool '{tool_name}' not registered for agent '{self.agent_name}'")
-
-        span = self._start_trace(f"tool.{tool_name}")
-        try:
-            result = self.spark.sql(
-                f"SELECT {tool.full_name}({', '.join(self._format_params(params))})"
-            ).collect()
-            self._end_trace(span, {"tool": tool_name, "status": "success"})
-            return result[0][0] if result else None
-        except Exception as e:
-            self._end_trace(span, {"tool": tool_name, "status": "error", "error": str(e)[:200]})
-            raise
+        return self._run_uc_tool(tool_name, params)
 
     def llm_classify(
         self, system: str, user: str, json_mode: bool = True, temperature: float = 0.1
@@ -270,20 +315,6 @@ class BatchAgent(BaseAgent):
         except Exception as e:
             self._end_trace(span, {"error": str(e)[:200]})
             raise
-
-    def _format_params(self, params: dict) -> list[str]:
-        """Format params for SQL UC Function call."""
-        formatted = []
-        for v in params.values():
-            if isinstance(v, str):
-                formatted.append(f"'{v}'")
-            elif isinstance(v, (int, float)):
-                formatted.append(str(v))
-            elif v is None:
-                formatted.append("NULL")
-            else:
-                formatted.append(f"'{json.dumps(v)}'")
-        return formatted
 
     def _log_mlflow_metrics(self, result: AgentResult):
         """Log agent metrics to MLflow experiment."""
@@ -404,19 +435,11 @@ class InteractiveAgent(BaseAgent):
         }
 
     def _execute_tool_call(self, tool_call: dict) -> Any:
-        """Execute a tool call and return the result."""
-        tool_name = tool_call["name"]
-        arguments = tool_call["arguments"]
-
-        tool = next((t for t in self._tools if t.name == tool_name), None)
-        if tool is None:
-            return {"error": f"Unknown tool: {tool_name}"}
-
+        """Execute a tool call and return the result (errors as a payload)."""
         try:
-            result = self.spark.sql(
-                f"SELECT {tool.full_name}({', '.join(self._format_params(arguments))})"
-            ).collect()
-            return result[0][0] if result else None
+            return self._run_uc_tool(tool_call["name"], tool_call.get("arguments"))
+        except ValueError as e:
+            return {"error": str(e)}
         except Exception as e:
             return {"error": f"Tool execution failed: {str(e)[:200]}"}
 
