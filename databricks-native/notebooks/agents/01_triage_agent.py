@@ -47,15 +47,26 @@ logger = logging.getLogger("oxdsi.triage_agent")
 dbutils.widgets.text("batch_size", "50", "Max alerts to process per run")
 dbutils.widgets.text("lookback_hours", "1", "Alert age window")
 dbutils.widgets.text("auto_close_confidence", "0.95", "Confidence threshold for auto-close")
+dbutils.widgets.text("enable_auto_close", "auto", "Auto-close FPs: 'true'/'false', or 'auto' (off in production)")
 
 batch_size = int(dbutils.widgets.get("batch_size"))
 lookback_hours = int(dbutils.widgets.get("lookback_hours"))
 auto_close_confidence = float(dbutils.widgets.get("auto_close_confidence"))
 
+# A text/LLM match must never resolve an alert on its own in production; a human
+# confirms false positives. 'auto' resolves to off in production, on elsewhere.
+_auto_close_raw = dbutils.widgets.get("enable_auto_close").strip().lower()
+if _auto_close_raw in ("true", "false"):
+    enable_auto_close = _auto_close_raw == "true"
+else:
+    enable_auto_close = cfg.environment != "production"
+
 mon.log_event("triage_config_loaded", {
     "batch_size": batch_size,
     "lookback_hours": lookback_hours,
     "auto_close_confidence": auto_close_confidence,
+    "enable_auto_close": enable_auto_close,
+    "environment": cfg.environment,
 })
 
 # COMMAND ----------
@@ -421,13 +432,15 @@ Respond with JSON:
             # Write to triage results table
             safe_append(results_df, triage_table)
 
-            # Auto-close high-confidence false positives
+            # Auto-close high-confidence false positives.
+            # Off by default in production: a text/LLM match must never resolve
+            # an alert on its own; a human confirms false positives.
             auto_close_ids = [
                 r["alert_id"]
                 for r in all_results
                 if r["classification"] == "FALSE_POSITIVE"
                 and r.get("confidence", 0) >= auto_close_confidence
-            ]
+            ] if enable_auto_close else []
 
             if auto_close_ids:
                 ids_df = (

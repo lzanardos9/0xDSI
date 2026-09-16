@@ -1,19 +1,25 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Smoke Test: End-to-End Pipeline
+# MAGIC # Persistence Test: Pipeline Table Storage
 # MAGIC
-# MAGIC Validates the complete detection pipeline by injecting synthetic events
-# MAGIC and verifying that alerts, triage results, and response approvals are created.
+# MAGIC **This is a storage/persistence test, NOT an end-to-end detection test.**
+# MAGIC It verifies that the pipeline tables accept and return records with the
+# MAGIC expected shape. It does NOT prove that any engine detected anything:
+# MAGIC steps 5, 7 and 8 write the match, alert, triage and approval rows by hand
+# MAGIC instead of running the matching, triage and response engines.
 # MAGIC
-# MAGIC **Sequence tested:**
-# MAGIC 1. Insert synthetic event with known IOC
-# MAGIC 2. Insert matching IOC into threat_intel_iocs
-# MAGIC 3. Run threat intel matching (batch mode)
-# MAGIC 4. Verify alert was generated
-# MAGIC 5. Run triage classification
-# MAGIC 6. Verify triage result
-# MAGIC 7. Run automated response
-# MAGIC 8. Verify response approval created
+# MAGIC A true end-to-end detection test (Phase 4/5) must insert data ONLY at the
+# MAGIC system's entry point and observe outputs produced by the real components.
+# MAGIC
+# MAGIC **Sequence exercised (persistence only):**
+# MAGIC 1. Insert synthetic event
+# MAGIC 2. Insert matching IOC
+# MAGIC 3. Verify event row round-trips
+# MAGIC 4. Verify IOC row round-trips
+# MAGIC 5. Manually insert TI match + alert rows (NOT produced by the matcher)
+# MAGIC 6. Verify alert row round-trips
+# MAGIC 7. Manually insert triage result (NOT produced by the triage agent)
+# MAGIC 8. Manually insert response action + approval (NOT produced by Vanguard)
 # MAGIC
 # MAGIC **Usage:** Run after setup + seed. Non-destructive.
 
@@ -133,7 +139,10 @@ print(f"  PASS  IOC verified: type={ioc_row.indicator_type}, value={ioc_row.valu
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 5: Manual Threat Intel Match (Batch)
+# MAGIC ## Step 5: Manual TI Match + Alert (NOT produced by the matcher)
+# MAGIC
+# MAGIC These rows are written by hand to exercise table storage only. This step
+# MAGIC does NOT run the threat-intel matching engine and does NOT prove detection.
 
 # COMMAND ----------
 
@@ -169,7 +178,7 @@ alert_record = spark.createDataFrame([{
     "created_at": datetime.utcnow(),
 }])
 alert_record.write.mode("append").saveAsTable(alerts_table)
-print(f"  PASS  Created TI match {match_id} and alert {alert_id}")
+print(f"  PASS  Stored TI match {match_id} and alert {alert_id} (manual insert)")
 
 # COMMAND ----------
 
@@ -193,7 +202,7 @@ print(f"  PASS  Alert verified: severity={alert_row.severity}, status={alert_row
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 7: Simulate Triage Result
+# MAGIC ## Step 7: Manual Triage Result (NOT produced by the triage agent)
 
 # COMMAND ----------
 
@@ -205,17 +214,17 @@ triage_record = spark.createDataFrame([{
     "alert_id": alert_id,
     "classification": "TRUE_POSITIVE",
     "confidence": 0.92,
-    "reasoning": "Smoke test: known C2 IP matched with high confidence IOC",
+    "reasoning": "Persistence test: row inserted by hand, not classified by the agent",
     "recommended_action": "block_ip",
     "triaged_at": datetime.utcnow(),
 }])
 triage_record.write.mode("append").saveAsTable(triage_table)
-print(f"  PASS  Triage result created: classification=TRUE_POSITIVE, action=block_ip")
+print(f"  PASS  Stored triage result {triage_id} (manual insert)")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Step 8: Simulate Response Approval
+# MAGIC ## Step 8: Manual Response Action + Approval (NOT produced by Vanguard)
 
 # COMMAND ----------
 
@@ -242,7 +251,7 @@ approval_record = spark.createDataFrame([{
     "requested_at": datetime.utcnow(),
 }])
 approval_record.write.mode("append").saveAsTable(approvals_table)
-print(f"  PASS  Response action {action_id} and approval {approval_id} created (pending)")
+print(f"  PASS  Stored response action {action_id} and approval {approval_id} (manual insert, pending)")
 
 # COMMAND ----------
 
@@ -252,26 +261,28 @@ print(f"  PASS  Response action {action_id} and approval {approval_id} created (
 # COMMAND ----------
 
 print("\n" + "=" * 60)
-print(" END-TO-END SMOKE TEST: ALL STEPS PASSED")
+print(" PERSISTENCE TEST: ALL TABLE-STORAGE STEPS PASSED")
+print(" (this does NOT verify detection by any engine)")
 print("=" * 60)
 print(f"""
   Event:    {test_id}
   IOC:      {ioc_id} (IP={test_ip})
-  Match:    {match_id}
-  Alert:    {alert_id} (critical, new)
-  Triage:   {triage_id} (TRUE_POSITIVE)
-  Action:   {action_id} (block_ip, pending_approval)
-  Approval: {approval_id} (pending)
+  Match:    {match_id}   (manual insert)
+  Alert:    {alert_id} (critical, new)   (manual insert)
+  Triage:   {triage_id} (TRUE_POSITIVE)   (manual insert)
+  Action:   {action_id} (block_ip, pending_approval)   (manual insert)
+  Approval: {approval_id} (pending)   (manual insert)
 
-  Pipeline: event -> IOC match -> alert -> triage -> response approval
-  Status:   VERIFIED
+  Verified: pipeline tables accept and return records with the expected shape.
+  NOT verified: that the matcher, triage agent or Vanguard detected anything.
 """)
 
 mon.log_complete(details={
     "status": "ALL_PASSED",
     "test_event_id": test_id,
     "test_alert_id": alert_id,
-    "pipeline_verified": True,
+    "persistence_verified": True,
+    "detection_verified": False,
 })
 
-dbutils.notebook.exit('{"status": "ALL_PASSED", "pipeline_verified": true}')
+dbutils.notebook.exit('{"status": "ALL_PASSED", "persistence_verified": true, "detection_verified": false}')

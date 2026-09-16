@@ -27,6 +27,15 @@ from pyspark.sql.types import (
 dbutils.widgets.text("auto_respond_threshold", "0.9", "Auto-respond confidence threshold")
 threshold = float(dbutils.widgets.get("auto_respond_threshold"))
 
+# Auto-approval must never happen on confidence alone in production; a human
+# approves every action. 'auto' resolves to off in production, on elsewhere.
+dbutils.widgets.text("enable_auto_approve", "auto", "Auto-approve responses: 'true'/'false', or 'auto' (off in production)")
+_auto_approve_raw = dbutils.widgets.get("enable_auto_approve").strip().lower()
+if _auto_approve_raw in ("true", "false"):
+    enable_auto_approve = _auto_approve_raw == "true"
+else:
+    enable_auto_approve = cfg.environment != "production"
+
 require_tables("alerts", "response_actions", "response_approvals")
 
 # Table paths
@@ -90,7 +99,7 @@ try:
             if not action_config:
                 action_config = {"action_type": "investigate", "description": "Assign to analyst for investigation"}
 
-            if alert.confidence_score and alert.confidence_score >= threshold:
+            if enable_auto_approve and alert.confidence_score and alert.confidence_score >= threshold:
                 auto_responses.append({
                     "alert_id": alert.id,
                     "action_type": action_config["action_type"],

@@ -36,14 +36,15 @@ class VANGUARDAgent(InteractiveAgent):
 
     Specializes in:
     - Recommending response actions based on threat severity
-    - Executing high-confidence automated responses
+    - Recommending high-confidence responses for operator approval
     - Escalating uncertain actions for human review
     - Creating audit trails with chain of custody
     - Tracking response effectiveness
 
-    Uses confidence thresholds:
-    - > 0.90: Auto-execute containment
-    - 0.70-0.90: Require human approval
+    Confidence informs recommendation priority only; authorization is always an
+    operator/policy decision and every request is recorded as pending_approval:
+    - > 0.90: Recommend containment, high priority for operator approval
+    - 0.70-0.90: Recommend containment, route to SOC manager
     - < 0.70: Reject or require investigation
     """
 
@@ -184,16 +185,19 @@ For each potential response action, evaluate:
 - **Scope**: Is this targeted or broad? (single host/department/enterprise)
 - **Urgency**: How fast must we act? (immediate/urgent/planned)
 
-Confidence Thresholds (these govern how a request is QUEUED, not whether enforcement happened):
-- **> 0.90**: Queue an auto-approved containment request (you have my authority to approve it)
-- **0.70-0.90**: Queue a request that requires human approval (escalate to SOC manager)
+Confidence guides your RECOMMENDATION only. You never approve or authorize an action
+yourself: authorization is a policy/operator decision made outside this conversation.
+Every request your tool creates is recorded as pending_approval regardless of confidence:
+- **> 0.90**: Recommend containment and flag it high-priority for operator approval
+- **0.70-0.90**: Recommend containment and route to a SOC manager for approval
 - **< 0.70**: Reject or require further investigation
 
 IMPORTANT — truthful reporting:
-Your execute_response_action tool RECORDS and QUEUES an action for downstream enforcement
-connectors; it does not itself block IPs or disable accounts. Never tell the user an action
-has been completed or enforced. Say the request has been recorded/queued (and whether it was
-auto-approved or is awaiting approval), and that enforcement is carried out by the connectors.
+Your execute_response_action tool RECORDS a pending_approval request for downstream enforcement
+connectors; it does not itself block IPs or disable accounts, and it does not approve anything.
+Never tell the user an action has been completed, enforced, or auto-approved. Say the request has
+been recorded and is awaiting operator approval, and that enforcement is carried out by the
+connectors only after that approval.
 
 Response Action Types (each RECORDS a request; enforcement is downstream and reversible):
 1. **block_ip**: Request to blacklist an IP at firewall/proxy
@@ -207,7 +211,7 @@ Your Response Process:
 2. Assess impact: get_asset_info on affected resources
 3. Decide action: evaluate certainty, reversibility, impact
 4. Score confidence: provide 0-1.0 confidence score
-5. Recommend decision: auto-execute, approval_required, or reject
+5. Recommend decision: recommend_containment (awaiting approval) or reject
 6. Create audit record: document decision rationale
 7. Track outcome: log action execution status
 
@@ -215,12 +219,12 @@ Response Output Structure:
 1. **Threat Assessment**: Summary of what we're responding to
 2. **Action Recommendation**: What should be done (block_ip, disable_user, etc.)
 3. **Target**: Specific IP, username, hostname, etc.
-4. **Request Status**: recorded/queued, and auto-approved vs awaiting approval (NOT "enforced")
+4. **Request Status**: recorded and awaiting operator approval (NOT "enforced", NOT "approved")
 5. **Justification**: Why this action is appropriate
 5. **Business Impact**: Expected impact on operations
 6. **Reversibility**: Can it be undone?
-7. **Confidence Score**: 0-1.0 (auto-execute if > 0.90)
-8. **Decision**: auto_execute, require_approval, or reject
+7. **Confidence Score**: 0-1.0 (informs recommendation priority only)
+8. **Recommendation**: recommend_containment (awaiting approval) or reject
 9. **Audit Trail**: Action ID, timestamp, reasoning
 
 Guidelines for Safe Responses:

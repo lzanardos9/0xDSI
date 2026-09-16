@@ -684,7 +684,7 @@ def create_soc_tools(cfg) -> list[UCTool]:
         ),
         UCTool(
             name="execute_response_action",
-            description="Execute an automated response action (block IP, disable user, isolate host)",
+            description="Record a containment/remediation request (block IP, disable user, isolate host, quarantine file, revoke token) for downstream enforcement connectors. This does NOT perform the action and does NOT approve it: every request is recorded as pending_approval and only carried out after operator approval.",
             catalog=cat, schema=sch, function_name="execute_response_action",
             parameters={
                 "type": "object",
@@ -692,7 +692,6 @@ def create_soc_tools(cfg) -> list[UCTool]:
                     "action_type": {"type": "string", "enum": ["block_ip", "disable_user", "isolate_host", "quarantine_file", "revoke_token"]},
                     "target": {"type": "string", "description": "Target of the action"},
                     "reason": {"type": "string", "description": "Justification for the action"},
-                    "auto_approve": {"type": "boolean", "description": "If true, skip human approval"},
                 },
                 "required": ["action_type", "target", "reason"],
             },
