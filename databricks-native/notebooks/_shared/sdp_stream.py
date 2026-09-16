@@ -36,7 +36,8 @@ from typing import Optional
 
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import (
-    col, from_json, expr, coalesce, lit, to_timestamp, current_timestamp, when
+    col, from_json, expr, coalesce, lit, to_timestamp, current_timestamp, when,
+    sha2, concat_ws
 )
 from pyspark.sql.types import (
     StructType, StructField, StringType, TimestampType
@@ -49,6 +50,9 @@ logger = logging.getLogger("oxdsi.sdp_stream")
 
 # Standard event schema on ZeroBus Kafka topic
 ZEROBUS_EVENT_SCHEMA = StructType([
+    # Optional native id from the producing connector; when present it wins over
+    # the derived Kafka-coordinate id so upstream correlation stays intact.
+    StructField("event_id", StringType(), True),
     StructField("event_type", StringType(), True),
     StructField("timestamp", StringType(), True),
     StructField("source", StringType(), True),
@@ -62,6 +66,13 @@ ZEROBUS_EVENT_SCHEMA = StructType([
     StructField("severity", StringType(), True),
     StructField("description", StringType(), True),
     StructField("raw_log", StringType(), True),
+    # Network / DNS / proxy indicators consumed by domain IOC matching.
+    StructField("dest_domain", StringType(), True),
+    StructField("url", StringType(), True),
+    # File / process indicators consumed by hash IOC matching.
+    StructField("file_hash", StringType(), True),
+    StructField("process_hash", StringType(), True),
+    StructField("sha256", StringType(), True),
 ])
 
 VALID_SEVERITIES = ["info", "low", "medium", "high", "critical"]
@@ -168,7 +179,7 @@ def create_sdp_stream(
     normalized = (
         parsed
         .select(
-            expr("uuid()").alias("id"),
+            deterministic_event_id().alias("id"),
             coalesce(col("_parsed.event_type"), lit("unknown")).alias("event_type"),
             coalesce(
                 to_timestamp(col("_parsed.timestamp")),
@@ -186,6 +197,11 @@ def create_sdp_stream(
             _normalize_severity(col("_parsed.severity")).alias("severity"),
             col("_parsed.description").alias("description"),
             col("_parsed.raw_log").alias("raw_log"),
+            col("_parsed.dest_domain").alias("dest_domain"),
+            col("_parsed.url").alias("url"),
+            col("_parsed.file_hash").alias("file_hash"),
+            col("_parsed.process_hash").alias("process_hash"),
+            col("_parsed.sha256").alias("sha256"),
             *(_kafka_metadata_cols(parsed) if include_kafka_metadata else []),
         )
         # Drop events that failed to parse entirely
@@ -208,6 +224,36 @@ def _normalize_severity(severity_col):
     return (
         when(severity_col.isin(VALID_SEVERITIES), severity_col)
         .otherwise(lit("info"))
+    )
+
+
+# Columns TI matching (and other detectors) expect on the stream but which the
+# events Delta table may predate. Kept in one place so both the Kafka and the
+# Delta-fallback paths expose an identical schema.
+_ENRICHMENT_COLUMNS = ("dest_domain", "url", "file_hash", "process_hash", "sha256")
+
+
+def deterministic_event_id():
+    """Stable event id derived from the Kafka coordinate (topic/partition/offset).
+
+    A native ``event_id`` from the payload wins when present. Both the Bronze
+    ingestion path and this realtime SDP path derive the id the SAME way, so a
+    single Kafka record resolves to ONE id everywhere instead of a fresh random
+    UUID per consumer — which is what lets Bronze rows and realtime detections
+    be joined on ``id``.
+    """
+    return coalesce(
+        col("_parsed.event_id"),
+        sha2(
+            concat_ws(
+                "||",
+                lit("kafka"),
+                col("_kafka_topic"),
+                col("_kafka_partition").cast("string"),
+                col("_kafka_offset").cast("string"),
+            ),
+            256,
+        ),
     )
 
 
@@ -265,6 +311,20 @@ def create_sdp_stream_with_fallback(
             .option("ignoreChanges", "true")
             .option("maxFilesPerTrigger", 500)
             .table(events_table)
-            .withWatermark("timestamp", watermark)
         )
+        # Guarantee the same enrichment columns as the Kafka path. Older events
+        # tables may not have them as top-level columns; pull from the
+        # `normalized` map when available, else project a typed NULL so
+        # downstream domain/hash matching analyzes cleanly instead of crashing.
+        has_normalized = "normalized" in fallback_stream.columns
+        for _c in _ENRICHMENT_COLUMNS:
+            if _c in fallback_stream.columns:
+                continue
+            source_expr = (
+                col("normalized").getItem(_c) if has_normalized
+                else lit(None).cast("string")
+            )
+            fallback_stream = fallback_stream.withColumn(_c, source_expr)
+
+        fallback_stream = fallback_stream.withWatermark("timestamp", watermark)
         return fallback_stream, "delta"

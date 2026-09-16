@@ -102,6 +102,7 @@ def bronze_kafka_events():
         ]))
 
     event_schema = StructType([
+        StructField("event_id", StringType(), True),
         StructField("event_type", StringType(), True),
         StructField("timestamp", StringType(), True),
         StructField("source_ip", StringType(), True),
@@ -131,7 +132,16 @@ def bronze_kafka_events():
         )
         .withColumn("_parsed", from_json(col("raw_value"), event_schema, {"mode": "PERMISSIVE"}))
         .select(
-            expr("uuid()").alias("id"),
+            # Deterministic id from the Kafka coordinate (must match sdp_stream.py's
+            # deterministic_event_id): the same Kafka record resolves to ONE id in
+            # both Bronze and the realtime detector, so they can be joined on `id`.
+            coalesce(
+                col("_parsed.event_id"),
+                sha2(concat_ws("||", lit("kafka"),
+                               col("source_topic"),
+                               col("source_partition").cast("string"),
+                               col("source_offset").cast("string")), 256),
+            ).alias("id"),
             coalesce(col("_parsed.event_type"), lit("unknown")).alias("event_type"),
             coalesce(to_timestamp(col("_parsed.timestamp")), col("kafka_timestamp")).alias("timestamp"),
             col("_parsed.source_ip").alias("source_ip"),
