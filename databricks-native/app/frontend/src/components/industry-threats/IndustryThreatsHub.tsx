@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Radio, Factory, Heart, Zap, ShoppingCart, Navigation, BookOpen, Package,
   DollarSign, ChevronRight, Shield, Activity, TrendingUp, AlertTriangle
 } from 'lucide-react';
+import { lakehouse } from '../../lib/lakehouse';
 import TelcoThreats from './TelcoThreats';
 import ManufacturingThreats from './ManufacturingThreats';
 import HealthcareThreats from './HealthcareThreats';
@@ -29,6 +30,32 @@ export default function IndustryThreatsHub({ initialIndustry }: { initialIndustr
   const [selected, setSelected] = useState<IndustryId | null>(
     (initialIndustry as IndustryId) || null
   );
+  const [counts, setCounts] = useState<Record<string, { threats: number; critical: number }>>({});
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await lakehouse
+        .from('industry_threat_posture')
+        .select('industry_id, threat_count, critical_count')
+        .order('calculated_at', { ascending: false });
+      if (!active || error || !Array.isArray(data)) return;
+      const next: Record<string, { threats: number; critical: number }> = {};
+      for (const row of data) {
+        const id = row.industry_id;
+        if (!id || next[id]) continue;
+        next[id] = { threats: Number(row.threat_count) || 0, critical: Number(row.critical_count) || 0 };
+      }
+      if (Object.keys(next).length) setCounts(next);
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const industries = INDUSTRIES.map((ind) => ({
+    ...ind,
+    threats: counts[ind.id]?.threats ?? ind.threats,
+    critical: counts[ind.id]?.critical ?? ind.critical,
+  }));
 
   if (selected) {
     return (
@@ -55,8 +82,8 @@ export default function IndustryThreatsHub({ initialIndustry }: { initialIndustr
     );
   }
 
-  const totalThreats = INDUSTRIES.reduce((a, i) => a + i.threats, 0);
-  const totalCritical = INDUSTRIES.reduce((a, i) => a + i.critical, 0);
+  const totalThreats = industries.reduce((a, i) => a + i.threats, 0);
+  const totalCritical = industries.reduce((a, i) => a + i.critical, 0);
 
   return (
     <div className="p-6 space-y-6">
@@ -99,7 +126,7 @@ export default function IndustryThreatsHub({ initialIndustry }: { initialIndustr
 
       {/* Industry cards grid */}
       <div className="grid grid-cols-2 gap-4">
-        {INDUSTRIES.map(ind => {
+        {industries.map(ind => {
           const Icon = ind.icon;
           return (
             <button key={ind.id} onClick={() => setSelected(ind.id)}

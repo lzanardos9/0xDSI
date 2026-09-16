@@ -398,6 +398,83 @@ print("Threat intelligence tables created")
 # COMMAND ----------
 
 # MAGIC %md
+# MAGIC ## Analytics Rollup Tables (Phase 1 Dashboards)
+
+# COMMAND ----------
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS soc_optimization_metrics (
+    id STRING DEFAULT uuid(),
+    window_hours INT,
+    health_score DOUBLE,
+    detection_score DOUBLE,
+    response_score DOUBLE,
+    coverage_score DOUBLE,
+    mttd_minutes DOUBLE,
+    mttr_minutes DOUBLE,
+    alert_volume BIGINT,
+    open_critical BIGINT,
+    auto_resolve_rate DOUBLE,
+    false_positive_rate DOUBLE,
+    analyst_count INT,
+    data_source_health STRING,
+    rule_effectiveness STRING,
+    coverage_domains STRING,
+    recommendations STRING,
+    cost_current DOUBLE,
+    cost_optimized DOUBLE,
+    cost_savings DOUBLE,
+    cost_savings_pct DOUBLE,
+    cost_tiers STRING,
+    calculated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS platform_economics_metrics (
+    id STRING DEFAULT uuid(),
+    window_hours INT,
+    monthly_cost DOUBLE,
+    cost_per_event DOUBLE,
+    cost_per_alert DOUBLE,
+    projected_annual DOUBLE,
+    total_gb_day DOUBLE,
+    monthly_events BIGINT,
+    ingestion STRING,
+    billing_rows STRING,
+    optimizations STRING,
+    sentinel_analytics_cost DOUBLE,
+    sentinel_lake_cost DOUBLE,
+    savings_vs_sentinel_pct DOUBLE,
+    current_line STRING,
+    optimized_line STRING,
+    calculated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+spark.sql("""
+CREATE TABLE IF NOT EXISTS industry_threat_posture (
+    id STRING DEFAULT uuid(),
+    industry_id STRING,
+    label STRING,
+    threat_count BIGINT,
+    critical_count BIGINT,
+    active_campaigns BIGINT,
+    ioc_count BIGINT,
+    top_techniques STRING,
+    top_actors STRING,
+    calculated_at TIMESTAMP DEFAULT current_timestamp()
+)
+USING DELTA
+""")
+
+print("Analytics rollup tables created: soc_optimization_metrics, platform_economics_metrics, industry_threat_posture")
+
+# COMMAND ----------
+
+# MAGIC %md
 # MAGIC ## Agent System Tables
 
 # COMMAND ----------

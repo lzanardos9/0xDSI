@@ -4,6 +4,7 @@ import {
   AlertTriangle, CheckCircle2, ArrowUpRight, ArrowDownRight, Calculator,
   Target, Clock, Settings, ChevronRight, Activity, Download, Brain, Minus, Plus, Eye,
 } from 'lucide-react';
+import { lakehouse } from '../lib/lakehouse';
 
 const useAnimatedCounter = (end: number, duration = 1400, decimals = 0) => {
   const [val, setVal] = useState(0);
@@ -33,7 +34,7 @@ const useInView = () => {
   return { ref, visible };
 };
 
-const ingestion = [
+const DEFAULT_ingestion = [
   { name: 'Endpoint', gb: 450, color: '#3B82F6' },
   { name: 'Network', gb: 320, color: '#8B5CF6' },
   { name: 'Cloud', gb: 180, color: '#06B6D4' },
@@ -41,9 +42,17 @@ const ingestion = [
   { name: 'Email', gb: 65, color: '#EF4444' },
   { name: 'Custom', gb: 40, color: '#10B981' },
 ];
-const totalGB = ingestion.reduce((s, i) => s + i.gb, 0);
+const SOURCE_COLORS = ['#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444', '#14B8A6', '#0EA5E9', '#22C55E'];
+const colorFor = (name: string) => {
+  let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return SOURCE_COLORS[h % SOURCE_COLORS.length];
+};
+const OPT_ICONS = [Database, Activity, Shield, Settings];
+const parsePE = (v: unknown, fb: any) => {
+  try { return typeof v === 'string' ? JSON.parse(v) : (v ?? fb); } catch { return fb; }
+};
 
-const billingRows = [
+const DEFAULT_billingRows = [
   { item: 'Compute (vCPU-hours)', units: '2,400 hrs', rate: '$0.0042/hr', cost: 10080 },
   { item: 'Hot Storage (SSD)', units: '12 TB', rate: '$0.23/GB/mo', cost: 2760 },
   { item: 'Cold Storage (Archive)', units: '84 TB', rate: '$0.004/GB/mo', cost: 336 },
@@ -52,7 +61,7 @@ const billingRows = [
   { item: 'ML Inference', units: '840K inf.', rate: '$12.80/1K', cost: 10752 },
 ];
 
-const optimizations = [
+const DEFAULT_optimizations = [
   { title: 'Cold-tier endpoint telemetry after 72h', savings: 8400, pct: 78, icon: Database },
   { title: 'Deduplicate network flow logs', savings: 3200, pct: 62, icon: Activity },
   { title: 'Compress identity audit payloads', savings: 2100, pct: 45, icon: Shield },
@@ -88,6 +97,40 @@ export default function PlatformEconomics() {
   const [chartDrawn, setChartDrawn] = useState(false);
   const { ref: chartRef, visible: chartVisible } = useInView();
 
+  const [ingestion, setIngestion] = useState<any[]>(DEFAULT_ingestion);
+  const [billingRows, setBillingRows] = useState<any[]>(DEFAULT_billingRows);
+  const [optimizations, setOptimizations] = useState<any[]>(DEFAULT_optimizations);
+  const [econ, setEcon] = useState<any | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await lakehouse
+        .from('platform_economics_metrics')
+        .select('*')
+        .order('calculated_at', { ascending: false })
+        .limit(1);
+      if (!active || error) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return;
+      const ing = parsePE(row.ingestion, []);
+      if (Array.isArray(ing) && ing.length)
+        setIngestion(ing.map((i: any) => ({ name: i.name, gb: i.gb, color: colorFor(String(i.name)) })));
+      const br = parsePE(row.billing_rows, []);
+      if (Array.isArray(br) && br.length)
+        setBillingRows(br.map((r: any) => ({ item: r.item, units: r.units, rate: r.rate, cost: Math.round(r.cost) })));
+      const opt = parsePE(row.optimizations, []);
+      if (Array.isArray(opt) && opt.length)
+        setOptimizations(opt.map((o: any, idx: number) => ({ title: o.title, savings: Math.round(o.savings), pct: o.pct, icon: OPT_ICONS[idx % OPT_ICONS.length] })));
+      setEcon({
+        ...row,
+        current_line: parsePE(row.current_line, null),
+        optimized_line: parsePE(row.optimized_line, null),
+      });
+    })();
+    return () => { active = false; };
+  }, []);
+
   useEffect(() => { setMounted(true); const t = setTimeout(() => setSavingsRevealed(true), 1800); return () => clearTimeout(t); }, []);
   useEffect(() => { if (chartVisible) { const t = setTimeout(() => setChartDrawn(true), 200); return () => clearTimeout(t); } }, [chartVisible]);
 
@@ -97,20 +140,33 @@ export default function PlatformEconomics() {
     setTimeout(() => setPulse(false), 600);
   }, []);
 
+  const totalGB = ingestion.reduce((s: number, i: any) => s + i.gb, 0);
+  const oxdsi = econ?.monthly_cost ?? 24800;
+  const costPerEvent = econ?.cost_per_event ?? 0.0023;
+  const costPerAlert = econ?.cost_per_alert ?? 4.72;
+  const projectedAnnual = econ?.projected_annual ?? 285600;
+  const monthlyCostRounded = Math.round(oxdsi);
+  const projectedAnnualRounded = Math.round(projectedAnnual);
+
   const hoursSaved = roiInputs.team * 12 + roiInputs.incidents * 2.4;
   const costSaved = (hoursSaved * roiInputs.salary / 2080) + (roiInputs.incidents * roiInputs.incidentCost * 0.34);
-  const roiPct = ((costSaved - 24800) / 24800 * 100);
-  const payback = roiPct > 0 ? (24800 / (costSaved / 12)).toFixed(1) : 'N/A';
+  const roiPct = ((costSaved - oxdsi) / oxdsi * 100);
+  const payback = roiPct > 0 ? (oxdsi / (costSaved / 12)).toFixed(1) : 'N/A';
 
-  const sentinelAnalytics = totalGB * 2.46 * 30;
-  const sentinelLake = totalGB * 0.05 * 30;
-  const oxdsi = 24800;
-  const savingsPct = ((sentinelAnalytics - oxdsi) / sentinelAnalytics * 100).toFixed(0);
+  const sentinelAnalytics = econ?.sentinel_analytics_cost ?? totalGB * 2.46 * 30;
+  const sentinelLake = econ?.sentinel_lake_cost ?? totalGB * 0.05 * 30;
+  const savingsPct = econ?.savings_vs_sentinel_pct != null
+    ? String(Math.round(econ.savings_vs_sentinel_pct))
+    : (sentinelAnalytics > 0 ? ((sentinelAnalytics - oxdsi) / sentinelAnalytics * 100).toFixed(0) : '0');
 
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const budgetCap = 28000;
-  const currentLine = [22000,23100,23800,24800,25900,27200,28600,30100,31800,33600,35500,37500];
-  const optimizedLine = [22000,22400,22200,21800,21500,21200,20800,20500,20200,19800,19500,19200];
+  const currentLine = (Array.isArray(econ?.current_line) && econ.current_line.length === 12)
+    ? econ.current_line
+    : [22000,23100,23800,24800,25900,27200,28600,30100,31800,33600,35500,37500];
+  const optimizedLine = (Array.isArray(econ?.optimized_line) && econ.optimized_line.length === 12)
+    ? econ.optimized_line
+    : [22000,22400,22200,21800,21500,21200,20800,20500,20200,19800,19500,19200];
   const toSVG = (vals: number[]) => vals.map((v, i) => `${60 + i * 56},${180 - ((v - 18000) / 22000) * 160}`).join(' ');
 
   let runningTotal = 0;
@@ -134,10 +190,10 @@ export default function PlatformEconomics() {
 
         {/* Cost Overview Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card icon={DollarSign} label="Monthly Cost" value={24800} prefix="$" trend={-3.2} avg="$31,200" color="#3B82F6" delay={0} />
-          <Card icon={Zap} label="Cost / Event" value={0.0023} prefix="$" trend={-8.1} avg="$0.0041" color="#8B5CF6" delay={100} />
-          <Card icon={AlertTriangle} label="Cost / Alert" value={4.72} prefix="$" trend={5.3} avg="$8.90" color="#F59E0B" delay={200} />
-          <Card icon={Target} label="Projected Annual" value={285600} prefix="$" trend={-3.2} avg="$374,400" color="#06B6D4" delay={300} />
+          <Card icon={DollarSign} label="Monthly Cost" value={monthlyCostRounded} prefix="$" trend={-3.2} avg="$31,200" color="#3B82F6" delay={0} />
+          <Card icon={Zap} label="Cost / Event" value={costPerEvent} prefix="$" trend={-8.1} avg="$0.0041" color="#8B5CF6" delay={100} />
+          <Card icon={AlertTriangle} label="Cost / Alert" value={costPerAlert} prefix="$" trend={5.3} avg="$8.90" color="#F59E0B" delay={200} />
+          <Card icon={Target} label="Projected Annual" value={projectedAnnualRounded} prefix="$" trend={-3.2} avg="$374,400" color="#06B6D4" delay={300} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

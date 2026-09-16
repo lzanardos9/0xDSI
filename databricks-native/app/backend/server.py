@@ -703,6 +703,9 @@ ALLOWED_TABLES = [
     "threat_escalation_contracts", "graph_pattern_scores",
     "threat_radar_items", "threat_radar_sources", "threat_radar_runs",
     "threat_radar_proposals",
+    # Analytics rollups (Phase 1 dashboards)
+    "soc_optimization_metrics", "platform_economics_metrics",
+    "industry_threat_posture",
     # Ray distributed SLM training telemetry (written by the ml_training notebook)
     "dslm_ray_runs", "dslm_ray_workers", "dslm_ray_timeline",
     # Phase 1: Entity Spine, Knowledge Store, UEO

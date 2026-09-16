@@ -1890,6 +1890,74 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
 
+    soc_optimization:
+      name: "[0xDSI] Analytics 09 - SOC Optimization & Health"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - scipy==1.14.1
+              - scikit-learn==1.5.2
+              - networkx==3.4.2
+      tasks:
+        - task_key: compute_soc_health
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/analytics/09_soc_optimization.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+
+    platform_economics:
+      name: "[0xDSI] Analytics 10 - Platform Economics"
+      schedule:
+        quartz_cron_expression: "0 0 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - scipy==1.14.1
+              - scikit-learn==1.5.2
+              - networkx==3.4.2
+      tasks:
+        - task_key: compute_economics
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/analytics/10_platform_economics.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_hours: "24"
+
+    industry_threat_posture:
+      name: "[0xDSI] Analytics 12 - Industry Threat Posture"
+      schedule:
+        quartz_cron_expression: "0 0 */4 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - scipy==1.14.1
+              - scikit-learn==1.5.2
+              - networkx==3.4.2
+      tasks:
+        - task_key: compute_posture
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/analytics/12_industry_threat_posture.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
     # ─────────────────────────────────────────────────────
     # PHASE 2: CET DRIFT, BYTECODE SEMANTICS, DELTA REPLAY
     # ─────────────────────────────────────────────────────

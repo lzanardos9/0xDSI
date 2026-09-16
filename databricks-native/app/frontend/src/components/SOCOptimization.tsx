@@ -4,6 +4,7 @@ import {
   Zap, Shield, Users, Database, Clock, BarChart3, Target, Brain, DollarSign,
   Settings, ChevronRight, ArrowUpRight, ArrowDownRight, Minus, Eye,
 } from 'lucide-react';
+import { lakehouse } from '../lib/lakehouse';
 
 // --- Animated Counter Hook ---
 function useAnimatedValue(target: number, duration = 1200) {
@@ -115,7 +116,7 @@ function ShiftHeatmap({ data }: { data: number[][] }) {
 }
 
 // --- STATIC DATA ---
-const recommendations = [
+const DEFAULT_recommendations = [
   { id: 1, priority: 'critical' as const, title: 'Enable EDR telemetry correlation for lateral movement detection', impact: 'Reduces MTTD by 42%' },
   { id: 2, priority: 'critical' as const, title: 'Tune authentication anomaly rules to reduce false positives', impact: 'Eliminates 180 false alerts/day' },
   { id: 3, priority: 'high' as const, title: 'Deploy UEBA behavioral baselines for privileged accounts', impact: 'Covers 23% detection gap' },
@@ -123,7 +124,7 @@ const recommendations = [
   { id: 5, priority: 'medium' as const, title: 'Integrate cloud WAF logs for application-layer visibility', impact: 'Expands coverage to 8 new vectors' },
 ];
 
-const dataSources = [
+const DEFAULT_dataSources = [
   { name: 'Endpoint', rate: '12.4K eps', lastEvent: '2s ago', health: 'healthy', data: [40, 42, 38, 45, 50, 48, 52, 49, 55, 53] },
   { name: 'Firewall', rate: '8.2K eps', lastEvent: '1s ago', health: 'healthy', data: [30, 32, 28, 35, 33, 36, 34, 38, 37, 35] },
   { name: 'Cloud Trail', rate: '3.1K eps', lastEvent: '15s ago', health: 'warning', data: [20, 18, 22, 15, 25, 12, 28, 14, 30, 16] },
@@ -132,7 +133,7 @@ const dataSources = [
   { name: 'DNS', rate: '5.7K eps', lastEvent: '1s ago', health: 'healthy', data: [25, 28, 26, 30, 27, 32, 29, 31, 33, 30] },
 ];
 
-const rules = [
+const DEFAULT_rules = [
   { name: 'Brute Force Detection', tp: 89, fp: 11, mttr: '4.2m', sn: 8.1, trend: 'up' as const },
   { name: 'Lateral Movement', tp: 72, fp: 28, mttr: '12.8m', sn: 2.6, trend: 'down' as const },
   { name: 'Data Exfiltration', tp: 94, fp: 6, mttr: '6.1m', sn: 15.7, trend: 'up' as const },
@@ -148,11 +149,27 @@ const analysts = [
   { name: 'Sarah Kim', alerts: 61, resolution: '4.3m', escalation: 5, heatmap: Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => Math.floor(Math.random() * 8))) },
 ];
 
-const radarDomains = [
+const DEFAULT_radarDomains = [
   { label: 'Endpoint', value: 82 }, { label: 'Network', value: 71 }, { label: 'Identity', value: 58 },
   { label: 'Cloud', value: 45 }, { label: 'Email', value: 76 }, { label: 'Data', value: 39 },
   { label: 'Application', value: 63 }, { label: 'IoT/OT', value: 28 },
 ];
+
+const DEFAULT_cost_tiers = [
+  { tier: 'Hot Storage', current: 9200, optimized: 7100, action: 'Reduce retention from 90d to 30d for low-value logs' },
+  { tier: 'SIEM Licensing', current: 8400, optimized: 5800, action: 'Consolidate duplicate log sources, drop debug-level' },
+  { tier: 'Cloud Compute', current: 4800, optimized: 3500, action: 'Right-size detection engine nodes, enable auto-scaling' },
+  { tier: 'Third-party Feeds', current: 2400, optimized: 1800, action: 'Drop 2 underperforming threat intel feeds' },
+];
+
+const sparkFrom = (base: number) => {
+  const b = Math.max(1, base);
+  return Array.from({ length: 10 }, (_, i) => Math.round(b * (0.8 + 0.35 * Math.sin(i * 0.9))));
+};
+
+const parseJson = (v: unknown, fallback: any) => {
+  try { return typeof v === 'string' ? JSON.parse(v) : (v ?? fallback); } catch { return fallback; }
+};
 
 const priorityStyle = { critical: 'bg-red-500/20 text-red-400 border-red-500/30', high: 'bg-amber-500/20 text-amber-400 border-amber-500/30', medium: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
 const healthDot = { healthy: 'bg-emerald-400', warning: 'bg-yellow-400', degraded: 'bg-red-400' };
@@ -165,8 +182,76 @@ const sourceIcons: Record<string, React.ReactNode> = {
 export default function SOCOptimization() {
   const [applied, setApplied] = useState<Set<number>>(new Set());
   const [visible, setVisible] = useState(false);
+  const [recommendations, setRecommendations] = useState<any[]>(DEFAULT_recommendations);
+  const [dataSources, setDataSources] = useState<any[]>(DEFAULT_dataSources);
+  const [rules, setRules] = useState<any[]>(DEFAULT_rules);
+  const [radarDomains, setRadarDomains] = useState<any[]>(DEFAULT_radarDomains);
+  const [scores, setScores] = useState({ health: 67, detection: 74, response: 81, coverage: 52 });
+  const [cost, setCost] = useState<{ current: number; optimized: number; savings: number; savingsPct: number; tiers: any[] }>(
+    { current: 24800, optimized: 18200, savings: 6600, savingsPct: 26.6, tiers: DEFAULT_cost_tiers }
+  );
 
   useEffect(() => { setVisible(true); }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await lakehouse
+        .from('soc_optimization_metrics')
+        .select('*')
+        .order('calculated_at', { ascending: false })
+        .limit(1);
+      if (!active || error) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return;
+
+      setScores({
+        health: Math.round(row.health_score ?? 67),
+        detection: Math.round(row.detection_score ?? 74),
+        response: Math.round(row.response_score ?? 81),
+        coverage: Math.round(row.coverage_score ?? 52),
+      });
+
+      const recs = parseJson(row.recommendations, []);
+      if (Array.isArray(recs) && recs.length)
+        setRecommendations(recs.map((r: any, i: number) => ({ id: i + 1, priority: r.priority, title: r.title, impact: r.impact })));
+
+      const dsh = parseJson(row.data_source_health, []);
+      if (Array.isArray(dsh) && dsh.length)
+        setDataSources(dsh.map((d: any) => ({
+          name: d.name,
+          rate: d.eps >= 1 ? `${d.eps.toFixed(1)} eps` : `${(d.event_count ?? 0).toLocaleString()} evts`,
+          lastEvent: (d.last_event_age_seconds ?? 0) < 60 ? `${d.last_event_age_seconds ?? 0}s ago` : `${Math.round((d.last_event_age_seconds ?? 0) / 60)}m ago`,
+          health: d.health,
+          data: sparkFrom(d.eps || d.event_count || 1),
+        })));
+
+      const re = parseJson(row.rule_effectiveness, []);
+      if (Array.isArray(re) && re.length)
+        setRules(re.map((r: any) => ({
+          name: r.name,
+          tp: Math.round(r.tp_pct ?? 0),
+          fp: Math.round(r.fp_pct ?? 0),
+          mttr: `${row.mttr_minutes ?? 0}m`,
+          sn: r.fp_pct > 0 ? +((r.tp_pct ?? 0) / r.fp_pct).toFixed(1) : (r.tp_pct ?? 0),
+          trend: 'flat' as const,
+        })));
+
+      const cd = parseJson(row.coverage_domains, []);
+      if (Array.isArray(cd) && cd.length)
+        setRadarDomains(cd.map((d: any) => ({ label: d.label, value: Math.round(d.value ?? 0) })));
+
+      const tiers = parseJson(row.cost_tiers, []);
+      setCost({
+        current: Math.round(row.cost_current ?? 24800),
+        optimized: Math.round(row.cost_optimized ?? 18200),
+        savings: Math.round(row.cost_savings ?? 6600),
+        savingsPct: +(row.cost_savings_pct ?? 26.6),
+        tiers: Array.isArray(tiers) && tiers.length ? tiers : DEFAULT_cost_tiers,
+      });
+    })();
+    return () => { active = false; };
+  }, []);
 
   const handleApply = (id: number) => setApplied((prev) => new Set(prev).add(id));
 
@@ -199,11 +284,11 @@ export default function SOCOptimization() {
       <div className="grid grid-cols-12 gap-6">
         {/* Health Score */}
         <div className="col-span-3 bg-slate-800/50 rounded-xl border border-slate-700/50 p-5 flex flex-col items-center gap-4">
-          <div className="pulse-ring"><HealthScoreRing score={67} /></div>
+          <div className="pulse-ring"><HealthScoreRing score={scores.health} /></div>
           <div className="w-full space-y-3">
-            <ProgressBar label="Detection" value={74} delay={0} />
-            <ProgressBar label="Response" value={81} delay={150} />
-            <ProgressBar label="Coverage" value={52} delay={300} />
+            <ProgressBar label="Detection" value={scores.detection} delay={0} />
+            <ProgressBar label="Response" value={scores.response} delay={150} />
+            <ProgressBar label="Coverage" value={scores.coverage} delay={300} />
           </div>
         </div>
 
@@ -310,32 +395,27 @@ export default function SOCOptimization() {
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-slate-900/60 rounded-lg p-4 border border-slate-700/30 text-center">
               <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Current Spend</p>
-              <p className="text-2xl font-bold text-red-400">$24,800</p>
+              <p className="text-2xl font-bold text-red-400">${cost.current.toLocaleString()}</p>
               <p className="text-[10px] text-slate-500">/month</p>
             </div>
             <div className="bg-slate-900/60 rounded-lg p-4 border border-slate-700/30 text-center">
               <p className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">Optimized</p>
-              <p className="text-2xl font-bold text-emerald-400">$18,200</p>
+              <p className="text-2xl font-bold text-emerald-400">${cost.optimized.toLocaleString()}</p>
               <p className="text-[10px] text-slate-500">/month</p>
             </div>
             <div className="bg-emerald-500/10 rounded-lg p-4 border border-emerald-500/30 text-center flex flex-col justify-center">
               <p className="text-[10px] text-emerald-400 uppercase tracking-wide mb-1">Savings</p>
-              <p className="text-2xl font-bold text-emerald-300">$6,600</p>
-              <p className="text-xs text-emerald-400 flex items-center justify-center gap-1 mt-1"><TrendingDown size={12} />26.6% reduction</p>
+              <p className="text-2xl font-bold text-emerald-300">${cost.savings.toLocaleString()}</p>
+              <p className="text-xs text-emerald-400 flex items-center justify-center gap-1 mt-1"><TrendingDown size={12} />{cost.savingsPct}% reduction</p>
             </div>
           </div>
           <div className="mt-4 space-y-2">
-            {[
-              { tier: 'Hot Storage', current: '$9,200', opt: '$7,100', action: 'Reduce retention from 90d to 30d for low-value logs' },
-              { tier: 'SIEM Licensing', current: '$8,400', opt: '$5,800', action: 'Consolidate duplicate log sources, drop debug-level' },
-              { tier: 'Cloud Compute', current: '$4,800', opt: '$3,500', action: 'Right-size detection engine nodes, enable auto-scaling' },
-              { tier: 'Third-party Feeds', current: '$2,400', opt: '$1,800', action: 'Drop 2 underperforming threat intel feeds' },
-            ].map((t) => (
+            {cost.tiers.map((t: any) => (
               <div key={t.tier} className="flex items-center gap-3 text-xs bg-slate-900/40 rounded-lg p-2.5 border border-slate-700/20">
                 <span className="w-28 text-slate-400 font-medium">{t.tier}</span>
-                <span className="w-16 text-right text-red-400/70">{t.current}</span>
+                <span className="w-16 text-right text-red-400/70">${Math.round(t.current).toLocaleString()}</span>
                 <ChevronRight size={12} className="text-slate-600" />
-                <span className="w-16 text-right text-emerald-400">{t.opt}</span>
+                <span className="w-16 text-right text-emerald-400">${Math.round(t.optimized).toLocaleString()}</span>
                 <span className="flex-1 text-slate-500 truncate">{t.action}</span>
               </div>
             ))}
