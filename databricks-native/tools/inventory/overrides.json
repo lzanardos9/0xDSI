@@ -20,11 +20,6 @@
       "shipping_status": "experimental",
       "capability": "evidence-fusion",
       "notes": "Dempster-Shafer combiner. Pure functions unit-tested (tests/test_fuse_math.py, 12 cases). Evidence-independence and calibrated-probability semantics disputed by REV2-02/03/06 (Phase 3 open)."
-    },
-    "tests/smoke_test_e2e_pipeline.py": {
-      "shipping_status": "test",
-      "capability": "e2e-smoke",
-      "notes": "Requires a live Spark/Databricks session; cannot run in this environment (recorded BLOCKED in the baseline)."
     }
   }
 }

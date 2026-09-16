@@ -57,8 +57,7 @@
       "claim": "Events are matched against IOCs to raise alerts.",
       "state": "implemented",
       "evidence": [
-        "notebooks/detection/",
-        "tests/smoke_test_e2e_pipeline.py"
+        "notebooks/detection/"
       ],
       "tests": [],
       "blockers": [
