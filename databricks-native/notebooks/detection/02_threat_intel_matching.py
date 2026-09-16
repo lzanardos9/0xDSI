@@ -39,6 +39,7 @@ mon.log_event("config_loaded", {
 
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
+from pyspark.sql import Window
 
 # COMMAND ----------
 
@@ -283,16 +284,41 @@ def write_ti_alerts(batch_df, batch_id):
         return
 
     with mon.time("ti_match_batch"):
-        # Dedup: skip indicators already alerted in dedup window
+        # Affected entity: the internal host/user this IOC was observed on. For a
+        # bad source_ip the entity IS that ip; for a host reaching a bad dest_ip /
+        # domain / hash it is the internal source_ip (falling back to user_id).
+        batch_keyed = batch_df.withColumn(
+            "entity_key", coalesce(col("source_ip"), col("user_id"), lit("unknown"))
+        )
+
+        # Collapse within-batch repeats to ONE row per (indicator, entity,
+        # match_type) so many events from the same host on the same IOC produce a
+        # single finding — but two different hosts still produce two findings.
+        dedup_window = Window.partitionBy(
+            "matched_indicator", "entity_key", "match_type"
+        ).orderBy(col("timestamp").asc())
+        batch_dedup = (
+            batch_keyed
+            .withColumn("_rn", row_number().over(dedup_window))
+            .filter(col("_rn") == 1)
+            .drop("_rn")
+        )
+
+        # Cross-batch dedup is scoped per (indicator, entity, match_type): we only
+        # suppress an IOC already alerted FOR THE SAME ENTITY inside the window.
+        # A second compromised host hitting the same indicator is NOT hidden.
         recent_matches = spark.sql(f"""
-            SELECT DISTINCT matched_indicator
+            SELECT DISTINCT
+                matched_indicator,
+                match_type,
+                COALESCE(source_ip, user_id, 'unknown') AS entity_key
             FROM {ti_matches_table}
             WHERE matched_at > current_timestamp() - INTERVAL {dedup_hours} HOURS
         """)
 
-        new_matches = batch_df.join(
+        new_matches = batch_dedup.join(
             recent_matches,
-            batch_df.matched_indicator == recent_matches.matched_indicator,
+            ["matched_indicator", "match_type", "entity_key"],
             "left_anti"
         )
 
@@ -321,6 +347,7 @@ def write_ti_alerts(batch_df, batch_id):
             ))
             .withColumn("description", concat(
                 lit("IOC matched on "), col("match_type"),
+                lit(" for entity "), col("entity_key"),
                 lit(". Event: "), col("event_type"),
                 lit(". Source: "), coalesce(col("ioc_source"), lit("unknown")),
                 lit(". Confidence: "), format_number(col("confidence"), 2)
