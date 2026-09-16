@@ -1215,12 +1215,17 @@ async def entity_spine_users(
 ):
     """List all entities from the entity_spine with optional search."""
     try:
-        where_clause = f"WHERE entity_type = '{entity_type}'"
+        where_clause = "WHERE entity_type = :entity_type"
+        params: dict = {"entity_type": entity_type}
         if search:
-            safe_search = search.replace("'", "''")
-            where_clause += f" AND (lower(canonical_name) LIKE '%{safe_search.lower()}%' OR lower(display_name) LIKE '%{safe_search.lower()}%' OR lower(department) LIKE '%{safe_search.lower()}%')"
+            where_clause += (
+                " AND (lower(canonical_name) LIKE :search"
+                " OR lower(display_name) LIKE :search"
+                " OR lower(department) LIKE :search)"
+            )
+            params["search"] = f"%{search.lower()}%"
 
-        total = query(f"SELECT COUNT(*) as cnt FROM {fqn('entity_spine')} {where_clause}")[0]["cnt"]
+        total = query(f"SELECT COUNT(*) as cnt FROM {fqn('entity_spine')} {where_clause}", params)[0]["cnt"]
 
         entities = query(f"""
             SELECT entity_id, entity_type, canonical_name, display_name,
@@ -1231,7 +1236,7 @@ async def entity_spine_users(
             {where_clause}
             ORDER BY observation_count DESC, last_seen DESC
             LIMIT {limit} OFFSET {offset}
-        """)
+        """, params)
 
         by_department = query(f"""
             SELECT COALESCE(department, 'Unknown') as department, COUNT(*) as cnt
@@ -1240,7 +1245,7 @@ async def entity_spine_users(
             GROUP BY department
             ORDER BY cnt DESC
             LIMIT 20
-        """)
+        """, params)
 
         return {
             "entities": entities,
@@ -1282,51 +1287,66 @@ async def entity_spine_import(request: Request):
         attributes = json.dumps(entity.get("attributes", {}))
 
         try:
-            # Check if entity exists
-            existing = query(f"""
-                SELECT entity_id FROM {fqn('entity_spine')}
-                WHERE canonical_name = '{canonical_name.replace("'", "''")}'
-                  AND entity_type = '{entity_type}'
-                LIMIT 1
-            """)
+            existing = query(
+                f"SELECT entity_id FROM {fqn('entity_spine')} "
+                "WHERE canonical_name = :canonical_name AND entity_type = :entity_type LIMIT 1",
+                {"canonical_name": canonical_name, "entity_type": entity_type},
+            )
 
             if existing:
-                # Update
-                execute(f"""
+                execute_write(
+                    f"""
                     UPDATE {fqn('entity_spine')} SET
-                        display_name = '{display_name.replace("'", "''")}',
-                        department = '{department.replace("'", "''")}',
-                        owner = '{owner.replace("'", "''")}',
-                        is_high_value = {str(is_high_value).lower()},
-                        is_service_account = {str(is_service_account).lower()},
-                        tags = '{tags.replace("'", "''")}',
-                        attributes = '{attributes.replace("'", "''")}',
+                        display_name = :display_name,
+                        department = :department,
+                        owner = :owner,
+                        is_high_value = :is_high_value,
+                        is_service_account = :is_service_account,
+                        tags = :tags,
+                        attributes = :attributes,
                         updated_at = current_timestamp()
-                    WHERE entity_id = '{existing[0]["entity_id"]}'
-                """)
+                    WHERE entity_id = :entity_id
+                    """,
+                    {
+                        "display_name": display_name,
+                        "department": department,
+                        "owner": owner,
+                        "is_high_value": bool(is_high_value),
+                        "is_service_account": bool(is_service_account),
+                        "tags": tags,
+                        "attributes": attributes,
+                        "entity_id": existing[0]["entity_id"],
+                    },
+                )
             else:
-                # Insert
                 eid = str(uuid.uuid4())
-                execute(f"""
+                execute_write(
+                    f"""
                     INSERT INTO {fqn('entity_spine')} (
                         entity_id, entity_type, canonical_name, display_name,
                         department, owner, is_high_value, is_service_account,
                         tags, attributes, first_seen, last_seen,
                         observation_count, risk_score, updated_at
                     ) VALUES (
-                        '{eid}', '{entity_type}',
-                        '{canonical_name.replace("'", "''")}',
-                        '{display_name.replace("'", "''")}',
-                        '{department.replace("'", "''")}',
-                        '{owner.replace("'", "''")}',
-                        {str(is_high_value).lower()},
-                        {str(is_service_account).lower()},
-                        '{tags.replace("'", "''")}',
-                        '{attributes.replace("'", "''")}',
-                        current_timestamp(), current_timestamp(),
+                        :entity_id, :entity_type, :canonical_name, :display_name,
+                        :department, :owner, :is_high_value, :is_service_account,
+                        :tags, :attributes, current_timestamp(), current_timestamp(),
                         0, 0.0, current_timestamp()
                     )
-                """)
+                    """,
+                    {
+                        "entity_id": eid,
+                        "entity_type": entity_type,
+                        "canonical_name": canonical_name,
+                        "display_name": display_name,
+                        "department": department,
+                        "owner": owner,
+                        "is_high_value": bool(is_high_value),
+                        "is_service_account": bool(is_service_account),
+                        "tags": tags,
+                        "attributes": attributes,
+                    },
+                )
             imported += 1
         except Exception as e:
             errors.append(f"{canonical_name}: {str(e)[:100]}")
@@ -1812,11 +1832,11 @@ async def simulate_threat(request: Request):
     body = await request.json()
     scenario = body.get("scenario", "brute_force")
     try:
-        simulated_events = query(f"""
-            SELECT * FROM {fqn('events')}
-            WHERE event_type LIKE '%{scenario}%'
-            ORDER BY timestamp DESC LIMIT 10
-        """)
+        simulated_events = query(
+            f"SELECT * FROM {fqn('events')} WHERE event_type LIKE :pattern "
+            "ORDER BY timestamp DESC LIMIT 10",
+            {"pattern": f"%{scenario}%"},
+        )
         return {"scenario": scenario, "simulated_events": simulated_events, "status": "complete"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2205,15 +2225,22 @@ async def generate_edge_token(request: Request):
     expires_at = datetime.utcnow() + timedelta(hours=expires_hours)
 
     try:
-        execute(f"""
+        execute_write(
+            f"""
             INSERT INTO {fqn('connector_install_tokens')} (
                 token_id, token, dna_name, site_name, created_by, expires_at
             ) VALUES (
-                '{str(uuid.uuid4())}', '{token}', '{dna_name}',
-                '{site_name}', 'ui_admin',
-                '{expires_at.strftime("%Y-%m-%d %H:%M:%S")}'
+                :token_id, :token, :dna_name, :site_name, 'ui_admin', :expires_at
             )
-        """)
+            """,
+            {
+                "token_id": str(uuid.uuid4()),
+                "token": token,
+                "dna_name": dna_name,
+                "site_name": site_name,
+                "expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
+            },
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2243,13 +2270,16 @@ async def register_edge_collector(request: Request):
     binary_version = body.get("binary_version", "1.0.0")
 
     # Validate token
-    token_rows = query(f"""
+    token_rows = query(
+        f"""
         SELECT token_id, dna_name, site_name FROM {fqn('connector_install_tokens')}
-        WHERE token = '{token.replace("'", "''")}'
+        WHERE token = :token
           AND used = false
           AND (expires_at IS NULL OR expires_at > current_timestamp())
         LIMIT 1
-    """)
+        """,
+        {"token": token},
+    )
 
     if not token_rows:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -2257,25 +2287,42 @@ async def register_edge_collector(request: Request):
     t = token_rows[0]
     collector_id = str(uuid.uuid4())
 
-    execute(f"""
+    execute_write(
+        f"""
         INSERT INTO {fqn('connector_deployments')} (
             deployment_id, collector_id, dna_name, dna_version,
             hostname, ip_address, os_type, os_version,
             install_method, actual_state, binary_version,
             registration_token, site_name
         ) VALUES (
-            '{str(uuid.uuid4())}', '{collector_id}', '{t["dna_name"]}', '1.0.0',
-            '{hostname.replace("'", "''")}', '{ip_address}', '{os_type}', '{os_version}',
-            'token', 'running', '{binary_version}',
-            '{token}', '{t.get("site_name", "default")}'
+            :deployment_id, :collector_id, :dna_name, '1.0.0',
+            :hostname, :ip_address, :os_type, :os_version,
+            'token', 'running', :binary_version,
+            :token, :site_name
         )
-    """)
+        """,
+        {
+            "deployment_id": str(uuid.uuid4()),
+            "collector_id": collector_id,
+            "dna_name": t["dna_name"],
+            "hostname": hostname,
+            "ip_address": ip_address,
+            "os_type": os_type,
+            "os_version": os_version,
+            "binary_version": binary_version,
+            "token": token,
+            "site_name": t.get("site_name", "default"),
+        },
+    )
 
-    execute(f"""
+    execute_write(
+        f"""
         UPDATE {fqn('connector_install_tokens')}
-        SET used = true, used_by_collector = '{collector_id}', used_at = current_timestamp()
-        WHERE token_id = '{t["token_id"]}'
-    """)
+        SET used = true, used_by_collector = :collector_id, used_at = current_timestamp()
+        WHERE token_id = :token_id
+        """,
+        {"collector_id": collector_id, "token_id": t["token_id"]},
+    )
 
     return {"collector_id": collector_id, "dna_name": t["dna_name"], "status": "registered"}
 
@@ -2290,36 +2337,55 @@ async def edge_heartbeat(request: Request):
         raise HTTPException(status_code=400, detail="collector_id required")
 
     try:
-        execute(f"""
+        execute_write(
+            f"""
             INSERT INTO {fqn('connector_telemetry')} (
                 telemetry_id, collector_id, events_per_second, bytes_per_second,
                 error_count, buffer_usage_pct, uptime_seconds, cpu_percent,
                 memory_mb, disk_buffer_mb, connection_status, latency_ms, last_event_at
             ) VALUES (
-                '{str(uuid.uuid4())}', '{collector_id}',
-                {body.get('eps', 0)}, {body.get('bps', 0)},
-                {body.get('errors', 0)}, {body.get('buffer_pct', 0)},
-                {body.get('uptime', 0)}, {body.get('cpu', 0)},
-                {body.get('memory_mb', 0)}, {body.get('disk_buffer_mb', 0)},
-                '{body.get('status', 'connected')}', {body.get('latency_ms', 0)},
+                :telemetry_id, :collector_id, :eps, :bps,
+                :errors, :buffer_pct, :uptime, :cpu,
+                :memory_mb, :disk_buffer_mb, :status, :latency_ms,
                 current_timestamp()
             )
-        """)
+            """,
+            {
+                "telemetry_id": str(uuid.uuid4()),
+                "collector_id": collector_id,
+                "eps": body.get("eps", 0),
+                "bps": body.get("bps", 0),
+                "errors": body.get("errors", 0),
+                "buffer_pct": body.get("buffer_pct", 0),
+                "uptime": body.get("uptime", 0),
+                "cpu": body.get("cpu", 0),
+                "memory_mb": body.get("memory_mb", 0),
+                "disk_buffer_mb": body.get("disk_buffer_mb", 0),
+                "status": body.get("status", "connected"),
+                "latency_ms": body.get("latency_ms", 0),
+            },
+        )
 
         # Update deployment state
-        execute(f"""
+        execute_write(
+            f"""
             UPDATE {fqn('connector_deployments')}
             SET actual_state = 'running', last_config_sync = current_timestamp(), updated_at = current_timestamp()
-            WHERE collector_id = '{collector_id}'
-        """)
+            WHERE collector_id = :collector_id
+            """,
+            {"collector_id": collector_id},
+        )
 
         # Return desired config (so collector can reconcile)
-        config = query(f"""
+        config = query(
+            f"""
             SELECT desired_state, desired_dna_version, custom_params
             FROM {fqn('connector_deployments')}
-            WHERE collector_id = '{collector_id}'
+            WHERE collector_id = :collector_id
             LIMIT 1
-        """)
+            """,
+            {"collector_id": collector_id},
+        )
 
         return {"ack": True, "config": config[0] if config else {}}
     except Exception as e:
@@ -2338,14 +2404,14 @@ async def edge_connector_action(request: Request):
 
     try:
         if action == "stop":
-            execute(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'stopped', updated_at = current_timestamp() WHERE collector_id = '{collector_id}'")
+            execute_write(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'stopped', updated_at = current_timestamp() WHERE collector_id = :collector_id", {"collector_id": collector_id})
         elif action == "restart":
-            execute(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'restarting', updated_at = current_timestamp() WHERE collector_id = '{collector_id}'")
+            execute_write(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'restarting', updated_at = current_timestamp() WHERE collector_id = :collector_id", {"collector_id": collector_id})
         elif action == "upgrade":
             version = body.get("version", "latest")
-            execute(f"UPDATE {fqn('connector_deployments')} SET desired_dna_version = '{version}', updated_at = current_timestamp() WHERE collector_id = '{collector_id}'")
+            execute_write(f"UPDATE {fqn('connector_deployments')} SET desired_dna_version = :version, updated_at = current_timestamp() WHERE collector_id = :collector_id", {"version": version, "collector_id": collector_id})
         elif action == "decommission":
-            execute(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'decommissioned', actual_state = 'decommissioned', updated_at = current_timestamp() WHERE collector_id = '{collector_id}'")
+            execute_write(f"UPDATE {fqn('connector_deployments')} SET desired_state = 'decommissioned', actual_state = 'decommissioned', updated_at = current_timestamp() WHERE collector_id = :collector_id", {"collector_id": collector_id})
         else:
             raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
