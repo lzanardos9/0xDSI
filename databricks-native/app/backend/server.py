@@ -515,6 +515,35 @@ async def enforce_control_rbac(request: Request, call_next):
 # /ready are liveness/readiness probes and are not under /api.
 _PUBLIC_API_PATHS = {"/api/health", "/api/auth/session"}
 
+# Agent / notebook tool paths (REV2-17). These endpoints do not live under
+# /api/control/ but still perform privileged work on the caller's behalf:
+# invoking Foundation Model serving endpoints (billable), triggering Databricks
+# jobs / compute, orchestrating agents, or fetching operator-supplied external
+# URLs. They must require at least analyst role, not merely a verified identity.
+# Edge-connector device endpoints are intentionally excluded: they use a
+# separate device-token model, not SSO analyst identity.
+_AGENT_TOOL_PATHS = {
+    "/api/ai-assistant",
+    "/api/agent-chat",
+    "/api/agent-orchestrator",
+    "/api/correlation-engine",
+    "/api/generate-correlation-rule",
+    "/api/generate-connector",
+    "/api/simulate-threat",
+    "/api/analyze-document",
+    "/api/enrichment-engine",
+    "/api/threat-radar/analyze",
+    "/api/threat-radar/fetch",
+    "/api/threat-radar-probe",
+    "/api/threat-radar-analyze",
+    "/api/threat-radar-fetch",
+    "/api/geopolitical-risk-fetch",
+    "/api/feature-lab",
+    "/api/feature-lab/run",
+    "/api/feature-runtime",
+    "/api/migrate-dashboard",
+}
+
 
 @app.middleware("http")
 async def require_identity_for_api(request: Request, call_next):
@@ -525,6 +554,10 @@ async def require_identity_for_api(request: Request, call_next):
     authorization could be skipped simply by reaching a route that forgot to
     call authorize(). Gating here guarantees a verified SSO identity for all of
     them; write/RPC/control routes keep their stricter role checks on top.
+
+    Agent / notebook tool paths additionally require analyst role: they invoke
+    LLMs, trigger jobs, orchestrate agents or fetch external URLs, so a bare
+    verified identity is not enough.
     """
     path = request.url.path
     if (
@@ -533,7 +566,10 @@ async def require_identity_for_api(request: Request, call_next):
         and path not in _PUBLIC_API_PATHS
     ):
         try:
-            _require_authenticated(_get_user_from_request(request))
+            user = _get_user_from_request(request)
+            _require_authenticated(user)
+            if path in _AGENT_TOOL_PATHS:
+                _require_analyst(user)
         except HTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     return await call_next(request)
