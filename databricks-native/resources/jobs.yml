@@ -184,8 +184,7 @@ resources:
               lookback_minutes: "15"
 
     formula_prioritization:
-      name: "[0xDSI] Formula Priority Scoring Engine"
-      schedule:
+      name: "[0xDSI] Formula Priority Scoring Engine"      schedule:
         quartz_cron_expression: "0 */3 * * * ?"
         timezone_id: "UTC"
       environments:
@@ -206,6 +205,30 @@ resources:
               schema: ${var.schema}
               lookback_minutes: "30"
               min_score_threshold: "70"
+
+    threat_escalation_scoring:
+      name: "[0xDSI] Detection 08 - Threat Escalation Priority Scoring"
+      schedule:
+        quartz_cron_expression: "0 */3 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+            dependencies:
+              - scipy==1.14.1
+              - scikit-learn==1.5.2
+              - networkx==3.4.2
+      tasks:
+        - task_key: score_event_priority
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/08_threat_escalation_priority.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "15"
+              max_events: "5000"
 
     # ─────────────────────────────────────────────────────
     # RESPONSE AGENTS (Scheduled)
@@ -1605,6 +1628,16 @@ resources:
               schema: ${var.schema}
               lookback_minutes: "10"
 
+        - task_key: escalation_scoring
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/detection/08_threat_escalation_priority.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              lookback_minutes: "10"
+              max_events: "5000"
+
         - task_key: graph_correlation_step
           environment_key: default
           notebook_task:
@@ -1660,6 +1693,7 @@ resources:
             - task_key: behavioral_detection
             - task_key: slm_classification
             - task_key: formula_scoring
+            - task_key: escalation_scoring
             - task_key: graph_correlation_step
             - task_key: negative_correlation_step
             - task_key: entity_drift_step
