@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { lakehouse } from '../../lib/lakehouse';
 
 type DefconLevel = 1 | 2 | 3 | 4 | 5;
 type Trending = 'up' | 'down' | 'flat';
@@ -74,6 +75,37 @@ const useSharedThreatState = (): SharedThreatState => {
   const [compositeRiskScore, setCompositeRiskScore] = useState(() => computeComposite(INITIAL_METRICS));
   const [trending, setTrending] = useState<Trending>('flat');
   const prevScoreRef = useRef(computeComposite(INITIAL_METRICS));
+  const liveRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await lakehouse
+        .from('overview_metrics')
+        .select('*')
+        .order('calculated_at', { ascending: false })
+        .limit(1);
+      if (!active || error) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return;
+      let rm: any[] = [];
+      try {
+        rm = typeof row.risk_metrics === 'string' ? JSON.parse(row.risk_metrics) : (row.risk_metrics || []);
+      } catch {
+        rm = [];
+      }
+      if (!Array.isArray(rm) || !rm.length) return;
+      const byLabel = new Map<string, number>();
+      for (const m of rm) {
+        if (m && typeof m.value === 'number') byLabel.set(m.label, m.value);
+      }
+      liveRef.current = true;
+      setMetrics(prev => prev.map(m => (byLabel.has(m.label) ? { ...m, value: byLabel.get(m.label)! } : m)));
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const setDefconLevel = useCallback((level: DefconLevel) => {
     setDefconLevelRaw(level);
@@ -95,6 +127,7 @@ const useSharedThreatState = (): SharedThreatState => {
 
   useEffect(() => {
     const id = setInterval(() => {
+      if (liveRef.current) return; // live snapshot present: don't simulate drift
       setMetrics(prev => {
         const next = prev.map(m => ({ ...m }));
         const indices = Array.from({ length: 5 }, (_, i) => i);
@@ -132,6 +165,7 @@ const useSharedThreatState = (): SharedThreatState => {
 
   useEffect(() => {
     const id = setInterval(() => {
+      if (liveRef.current) return; // live snapshot present: don't simulate DEFCON drift
       setDefconLevelRaw(prev => {
         const roll = Math.random();
         if (roll > 0.55) return prev;

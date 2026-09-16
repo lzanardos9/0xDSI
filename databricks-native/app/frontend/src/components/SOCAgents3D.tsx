@@ -95,6 +95,7 @@ export default function SOCAgents3D() {
   const [selected, setSelected] = useState<AgentDef | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [liveStats, setLiveStats] = useState({ events: 24567, threats: 156, packets: 0, alertLevel: 'ELEVATED' });
+  const liveStatsRef = useRef(false);
   const [alertFlash, setAlertFlash] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatHistory, setChatHistory] = useState<Record<string, ChatMessage[]>>({});
@@ -198,6 +199,31 @@ export default function SOCAgents3D() {
       cancelled = true;
       clearInterval(pollInterval);
     };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await lakehouse
+        .from('overview_metrics')
+        .select('*')
+        .order('calculated_at', { ascending: false })
+        .limit(1);
+      if (!active || error) return;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return;
+      const events = Number(row.events_window) || Number(row.total_events) || 0;
+      const threats = Number(row.threats) || Number(row.open_alerts) || 0;
+      if (!events && !threats) return;
+      liveStatsRef.current = true;
+      setLiveStats({
+        events,
+        threats,
+        packets: 0,
+        alertLevel: (row.alert_level as string) || 'ELEVATED',
+      });
+    })();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -441,12 +467,14 @@ export default function SOCAgents3D() {
         scenario.severity
       );
 
-      setLiveStats(prev => ({
-        ...prev,
-        events: prev.events + Math.floor(Math.random() * 50) + 10,
-        packets: prev.packets + 1,
-        threats: prev.threats + (scenario.severity === 'critical' ? 1 : 0),
-      }));
+      if (!liveStatsRef.current) {
+        setLiveStats(prev => ({
+          ...prev,
+          events: prev.events + Math.floor(Math.random() * 50) + 10,
+          packets: prev.packets + 1,
+          threats: prev.threats + (scenario.severity === 'critical' ? 1 : 0),
+        }));
+      }
     }, 1600);
 
     const pulseInterval = setInterval(() => {
@@ -468,10 +496,10 @@ export default function SOCAgents3D() {
     const alertInterval = setInterval(() => {
       if (Math.random() > 0.6) {
         setAlertFlash(true);
-        setLiveStats(prev => ({ ...prev, alertLevel: 'CRITICAL' }));
+        if (!liveStatsRef.current) setLiveStats(prev => ({ ...prev, alertLevel: 'CRITICAL' }));
         setTimeout(() => {
           setAlertFlash(false);
-          setLiveStats(prev => ({ ...prev, alertLevel: Math.random() > 0.5 ? 'ELEVATED' : 'HIGH' }));
+          if (!liveStatsRef.current) setLiveStats(prev => ({ ...prev, alertLevel: Math.random() > 0.5 ? 'ELEVATED' : 'HIGH' }));
         }, 2000);
       }
     }, 8000);

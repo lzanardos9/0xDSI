@@ -146,15 +146,35 @@ const AgentBricksSOC = () => {
           completed_at: t.completed_at || t.updated_at || new Date().toISOString(),
         })));
       }
+      const agentRows = (agentsResult.data as any[]) || [];
+      const taskRows = (tasksResult.data as any[]) || [];
+      const totalTasks = agentRows.reduce((s, a) => s + (Number(a.tasks_completed) || 0), 0);
+      const rawAccuracy = agentRows.length
+        ? agentRows.reduce((s, a) => s + (Number(a.accuracy_rate) || 0), 0) / agentRows.length
+        : 0;
+      const accuracyPct = rawAccuracy <= 1 ? rawAccuracy * 100 : rawAccuracy;
+      const avgResp = agentRows.length
+        ? agentRows.reduce((s, a) => s + (Number(a.avg_response_time) || 0), 0) / agentRows.length
+        : 0;
+      const escalated = taskRows.filter((t: any) => t.escalated).length;
+
+      const { data: ovData } = await lakehouse
+        .from('overview_metrics')
+        .select('*')
+        .order('calculated_at', { ascending: false })
+        .limit(1);
+      const ov = (Array.isArray(ovData) ? ovData[0] : ovData) || {};
+
       setMetrics({
-        alerts_auto_triaged: 1247,
-        alerts_escalated: 89,
-        false_positives_filtered: 892,
-        avg_triage_time_seconds: 2.4,
-        iocs_enriched: 3421,
-        automated_responses: 156,
-        analyst_time_saved_hours: 342,
-        accuracy_rate: 97.2,
+        alerts_auto_triaged: totalTasks,
+        alerts_escalated: escalated,
+        false_positives_filtered: Number(ov.false_positives) || 0,
+        avg_triage_time_seconds: Math.round(avgResp * 10) / 10,
+        iocs_enriched: Number(ov.iocs_enriched) || 0,
+        automated_responses: Number(ov.automated_responses) || 0,
+        // Modeled: each autonomously handled task saves ~15 min of analyst time.
+        analyst_time_saved_hours: Math.round(totalTasks * 0.25 * 10) / 10,
+        accuracy_rate: Math.round(accuracyPct * 10) / 10,
       });
       setLoading(false);
     } catch (error) {
