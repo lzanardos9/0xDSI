@@ -237,8 +237,14 @@ spark.sql("""
 CREATE TABLE IF NOT EXISTS cep_pattern_matches (
     id STRING DEFAULT uuid(),
     rule_id STRING NOT NULL,
+    entity_id STRING,
+    pattern_name STRING,
+    confidence DOUBLE,
+    severity STRING,
     matched_at TIMESTAMP DEFAULT current_timestamp(),
     event_ids ARRAY<STRING>,
+    mitre_tactic STRING,
+    mitre_technique STRING,
     score DOUBLE,
     context MAP<STRING, STRING>
 )
@@ -1895,6 +1901,9 @@ spark.sql("""
 CREATE TABLE IF NOT EXISTS confluence_verdicts (
     id STRING NOT NULL,
     entity_id STRING NOT NULL,
+    ueo_id STRING,
+    finding_id STRING,
+    revision INT,
     fused_score DOUBLE NOT NULL,
     priority STRING,
     contributing_lenses STRING,

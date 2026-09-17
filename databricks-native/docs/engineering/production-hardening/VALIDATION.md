@@ -7,6 +7,47 @@ gates are not claimed as passed.
 PyYAML is not stdlib; installed locally for config parsing
 (`pip install --break-system-packages pyyaml` → 6.0.3).
 
+## Gate B — recoverable detection path
+
+Offline suite (all script-style; run each directly): **32/32 test files pass.**
+
+Key Gate B regressions:
+```
+python3 tests/property/test_ti_recovery.py            # 7 passed  (H-030 fault injection)
+python3 tests/contract/test_idempotent_persistence.py # 4 passed  (append/uuid -> MERGE contract)
+python3 tests/property/test_event_identity.py         # 7 passed  (deterministic source-scoped id)
+python3 tests/property/test_monitor_health.py         # 8 passed  (severity/coverage-derived health)
+python3 tests/contract/test_serverless_notebook_apis.py # 2 passed (now flags triggers + cache/persist)
+python3 tests/contract/test_cep_signal_contract.py    # 5 passed  (B4 CEP->UEO lineage/MITRE contract)
+python3 tests/contract/test_revision_thread.py        # 6 passed  (B6 revision thread + stale-approval refusal)
+```
+
+B4 (H-020) proof: `cep_pattern_matches` had three disagreeing shapes and the
+producer dropped `event_ids`/MITRE. The regression pins the contract
+(`CEP_PATTERN_MATCH_COLUMNS`) as the single source of truth and asserts the
+producer emits it without stripping lineage, the setup DDL matches, and the UEO
+CEP lens reads `event_ids` (not the vanished `matched_events`) and carries MITRE.
+
+B6 (H-050) proof: the revision thread was severed at FUSE (no revision column)
+and at the verdict (entity_id only). The regression asserts source continuity
+UEO->`fuse_results`->`confluence_verdicts`->`response_actions`, and
+behaviourally that an approval binds to the live revision and `can_execute`
+refuses once the finding is re-confirmed at a new revision.
+
+H-030 fault-injection proof: crash BEFORE the alert write leaves the match
+un-alerted; the retry rediscovers it (obligation is a query) and emits exactly
+one alert. Crash AFTER the alert but before the mark re-emits onto the same
+deterministic alert id (no duplicate). Both asserted.
+
+H-080 (discovered by the broadened serverless scan): with PyYAML present,
+`tests/contract/test_serverless_notebook_apis.py` maps serverless jobs to their
+notebooks and flags 12 using classic-only APIs (processingTime triggers,
+cache/unpersist). Tracked BLOCKED, allowlisted, rot-guarded. threat-intel is
+fixed and NOT allowlisted.
+
+Frontend build (`VITE_DATABRICKS_MODE=true npm run build`) passes.
+Workspace/staging/live streaming validation remains BLOCKED (no target).
+
 ## Phase 0 / Phase 1 — bundle configuration
 
 ### Reproduce H-001 (before fix)

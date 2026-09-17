@@ -23,6 +23,12 @@ logger = logging.getLogger("oxdsi.monitoring")
 AUDIT_TABLE = "notebook_audit_events"
 METRICS_TABLE = "notebook_metrics"
 
+# Health severity ordering. The final health status a run reports is derived from
+# the worst severity it actually logged, so a run that emitted warnings or errors
+# can never sign off as "healthy".
+_SEVERITY_RANK = {"info": 0, "warning": 1, "error": 2}
+_SEVERITY_TO_HEALTH = {"info": "healthy", "warning": "degraded", "error": "error"}
+
 AUDIT_SCHEMA = StructType([
     StructField("event_id", StringType(), False),
     StructField("notebook_path", StringType(), False),
@@ -86,6 +92,9 @@ class Monitor:
         self._metrics: dict = {}
         self._events: list = []
         self._enabled = config.enable_monitoring
+        # Worst severity seen this run; survives _flush so a warning/error logged
+        # early still shapes the final health status even after events are written.
+        self._max_severity = "info"
 
     def log_event(self, event_type: str, details=None, severity: str = "info"):
         """Log a named event with optional structured details."""
@@ -106,7 +115,7 @@ class Monitor:
         self._start_time = time.time()
         self._log_event("notebook_start", "info", "Notebook execution started")
 
-    def log_complete(self, rows_processed: int = 0, details=None):
+    def log_complete(self, rows_processed: int = 0, details=None, status: str = None):
         """Log successful notebook completion with summary metrics."""
         import json as _json
         elapsed = (time.time() - self._start_time) * 1000
@@ -123,7 +132,30 @@ class Monitor:
             details=details_str,
         )
         self._flush()
-        self.report_health("healthy", events_processed=rows_processed)
+        resolved = status or self._derive_health_status(
+            details if isinstance(details, dict) else None
+        )
+        self.report_health(
+            resolved,
+            events_processed=rows_processed,
+            error_message="" if resolved == "healthy"
+            else f"run completed with status={resolved}",
+        )
+
+    def _derive_health_status(self, details=None) -> str:
+        """Final status for a completed run. Never "healthy" if a warning or error
+        was logged; can be forced to "degraded" by an incomplete-coverage signal,
+        and an explicit health/status in details always wins."""
+        if isinstance(details, dict):
+            explicit = details.get("health") or details.get("status")
+            if isinstance(explicit, str) and explicit:
+                return explicit
+        status = _SEVERITY_TO_HEALTH.get(self._max_severity, "healthy")
+        if status == "healthy" and isinstance(details, dict):
+            coverage = details.get("coverage")
+            if isinstance(coverage, (int, float)) and not isinstance(coverage, bool) and coverage < 1.0:
+                status = "degraded"
+        return status
 
     def report_health(self, status: str = "healthy", events_processed: int = 0, error_message: str = ""):
         """Update pipeline_health table with current status."""
@@ -279,6 +311,9 @@ class Monitor:
             "created_at": datetime.now(timezone.utc),
         }
         self._events.append(event)
+
+        if _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(self._max_severity, 0):
+            self._max_severity = severity
 
         # Also log to Python logger for notebook output
         log_fn = getattr(logger, severity if severity != "error" else "error", logger.info)

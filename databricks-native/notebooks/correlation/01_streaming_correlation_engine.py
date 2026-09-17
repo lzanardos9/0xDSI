@@ -428,19 +428,39 @@ def write_correlation_matches(batch_df, batch_id):
         if not validated_rows:
             return
 
-        # Write pattern matches
+        # Write pattern matches on the canonical cep_pattern_matches contract
+        # (contracts.CEP_PATTERN_MATCH_COLUMNS). event_ids and MITRE are PRESERVED
+        # here — dropping them (the old bug) destroyed event lineage and technique
+        # attribution before the Unified Evidence Object could read them.
         match_schema = StructType([
-            StructField("source_ip", StringType()),
+            StructField("entity_id", StringType()),
+            StructField("pattern_name", StringType()),
             StructField("event_type", StringType()),
             StructField("event_count", IntegerType()),
-            StructField("ks_confidence", DoubleType()),
+            StructField("confidence", DoubleType()),
             StructField("severity", StringType()),
             StructField("rule_id", StringType()),
-            StructField("rule_name", StringType()),
+            StructField("mitre_tactic", StringType()),
+            StructField("mitre_technique", StringType()),
+            StructField("event_ids", ArrayType(StringType())),
         ])
 
+        def _to_canonical_match(r):
+            return {
+                "entity_id": r.get("source_ip") or r.get("entity_id"),
+                "pattern_name": r.get("rule_name") or r.get("rule_id"),
+                "event_type": r.get("event_type"),
+                "event_count": r.get("event_count"),
+                "confidence": float(r.get("ks_confidence", 0.0) or 0.0),
+                "severity": r.get("severity"),
+                "rule_id": r.get("rule_id"),
+                "mitre_tactic": r.get("mitre_tactic"),
+                "mitre_technique": r.get("mitre_technique"),
+                "event_ids": list(r.get("event_ids") or []),
+            }
+
         validated_df = spark.createDataFrame(
-            [{k: v for k, v in r.items() if k not in ("event_ids", "mitre_tactic", "mitre_technique")} for r in validated_rows],
+            [_to_canonical_match(r) for r in validated_rows],
             schema=match_schema
         )
 
@@ -448,11 +468,10 @@ def write_correlation_matches(batch_df, batch_id):
             validated_df
             .withColumn("id", expr("uuid()"))
             .withColumn("matched_at", current_timestamp())
-            .withColumn("score", col("ks_confidence"))
         )
 
         matches_table = cfg.get_table_path("cep_pattern_matches")
-        matches.write.mode("append").saveAsTable(matches_table)
+        matches.write.mode("append").option("mergeSchema", "true").saveAsTable(matches_table)
 
         # Generate alerts for high-confidence detections (with dedup)
         alert_candidates = [r for r in validated_rows if r["ks_confidence"] > 0.9]

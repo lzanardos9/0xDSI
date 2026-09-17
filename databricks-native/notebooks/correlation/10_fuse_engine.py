@@ -68,8 +68,12 @@ from calibration import (
 FUSE_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "0xdsi://correlation/fuse_engine")
 
 
-def make_fuse_id(ueo_id):
-    return str(uuid.uuid5(FUSE_NAMESPACE, f"fuse::{ueo_id}"))
+def make_fuse_id(ueo_id, revision=1):
+    # Revision-scoped identity: re-fusing a finding at a new revision (late
+    # evidence bumped the UEO) is a DISTINCT fuse row, so the downstream verdict
+    # and any approval bind to the exact revision that was fused, never an older
+    # one silently overwritten on this append-only table.
+    return str(uuid.uuid5(FUSE_NAMESPACE, f"fuse::{ueo_id}::r{revision}"))
 
 
 def make_disagreement_id(ueo_id, high_class, low_class):
@@ -89,6 +93,10 @@ spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {fuse_table} (
     fuse_id STRING NOT NULL,
     ueo_id STRING NOT NULL,
+    -- finding_id == ueo_id; revision rides from the UEO so the approval layer can
+    -- bind the exact finding revision it authorizes (REV2-20).
+    finding_id STRING,
+    revision INT DEFAULT 1,
     entity_id STRING NOT NULL,
     entity_name STRING,
     -- Dempster-Shafer belief masses
@@ -132,8 +140,16 @@ TBLPROPERTIES (
 )
 """)
 
-spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {disagreement_table} (
+# Existing deployments predate the revision thread; add the columns idempotently
+# so the append below (and the approval layer downstream) can rely on them.
+for _col, _decl in (("finding_id", "STRING"), ("revision", "INT")):
+    try:
+        spark.sql(f"ALTER TABLE {fuse_table} ADD COLUMNS ({_col} {_decl})")
+        if _col == "revision":
+            spark.sql(f"UPDATE {fuse_table} SET revision = 1 WHERE revision IS NULL")
+            spark.sql(f"UPDATE {fuse_table} SET finding_id = ueo_id WHERE finding_id IS NULL")
+    except Exception:
+        pass  # column already present
     disagreement_id STRING NOT NULL,
     fuse_id STRING NOT NULL,
     ueo_id STRING NOT NULL,
@@ -357,7 +373,11 @@ with mon.time("dempster_shafer_fusion"):
         ueo_id = ueo_row["ueo_id"]
         entity_id = ueo_row["entity_id"]
         entity_name = ueo_row.get("entity_name", "")
-        fuse_id = make_fuse_id(ueo_id)
+        # finding_id == ueo_id (correlation/09). revision originates at the UEO and
+        # must ride the whole detection path so the approval layer can pin the
+        # exact finding revision it authorizes (REV2-20).
+        revision = int(ueo_row.get("revision", 1) or 1)
+        fuse_id = make_fuse_id(ueo_id, revision)
 
         ueo_signals = signals_pd[signals_pd["ueo_id"] == ueo_id].to_dict("records")
 
@@ -504,6 +524,8 @@ with mon.time("dempster_shafer_fusion"):
         fuse_results.append({
             "fuse_id": fuse_id,
             "ueo_id": ueo_id,
+            "finding_id": ueo_id,
+            "revision": revision,
             "entity_id": entity_id,
             "entity_name": entity_name,
             "belief_threat": belief_threat,
@@ -546,6 +568,8 @@ with mon.time("dempster_shafer_fusion"):
 FUSE_SCHEMA = StructType([
     StructField("fuse_id", StringType(), False),
     StructField("ueo_id", StringType(), False),
+    StructField("finding_id", StringType(), True),
+    StructField("revision", IntegerType(), True),
     StructField("entity_id", StringType(), False),
     StructField("entity_name", StringType(), True),
     StructField("belief_threat", DoubleType(), False),

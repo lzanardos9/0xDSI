@@ -133,6 +133,62 @@ def test_log_complete_reports_health():
     )
 
 
+def _status_reported(mon, spark):
+    """Extract the status literal from the MERGE report_health issued."""
+    health_sql = [q for q in spark.sql_calls if "pipeline_health" in q]
+    assert health_sql, "no pipeline_health write was issued"
+    import re
+    m = re.search(r"status\s*=\s*'([^']+)'", health_sql[-1])
+    assert m, "could not find status literal in health MERGE"
+    return m.group(1)
+
+
+def test_clean_run_reports_healthy():
+    spark = _RecordingSpark()
+    mon = M.Monitor(spark, _FakeConfig())
+    mon.log_start()
+    mon.log_complete(rows_processed=5)
+    assert _status_reported(mon, spark) == "healthy"
+
+
+def test_run_with_a_warning_is_degraded_not_healthy():
+    spark = _RecordingSpark()
+    mon = M.Monitor(spark, _FakeConfig())
+    mon.log_start()
+    mon.log_warning("partial source unavailable")
+    mon.log_complete(rows_processed=5)
+    assert _status_reported(mon, spark) == "degraded", (
+        "a run that logged a warning must not sign off as healthy"
+    )
+
+
+def test_run_with_an_error_reports_error():
+    spark = _RecordingSpark()
+    mon = M.Monitor(spark, _FakeConfig())
+    mon.log_start()
+    mon.log_error(RuntimeError("boom"), "detection")  # log_error flushes events
+    mon.log_complete(rows_processed=0)
+    assert _status_reported(mon, spark) == "error", (
+        "an error logged mid-run must survive the flush and shape final health"
+    )
+
+
+def test_incomplete_coverage_downgrades_to_degraded():
+    spark = _RecordingSpark()
+    mon = M.Monitor(spark, _FakeConfig())
+    mon.log_start()
+    mon.log_complete(rows_processed=5, details={"coverage": 0.6})
+    assert _status_reported(mon, spark) == "degraded"
+
+
+def test_explicit_status_override_wins():
+    spark = _RecordingSpark()
+    mon = M.Monitor(spark, _FakeConfig())
+    mon.log_start()
+    mon.log_complete(rows_processed=5, status="error")
+    assert _status_reported(mon, spark) == "error"
+
+
 if __name__ == "__main__":
     passed = 0
     failed = 0

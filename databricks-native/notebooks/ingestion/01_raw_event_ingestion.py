@@ -58,9 +58,14 @@ from pyspark.sql.types import *
 # Per-batch accounting so a received record can never vanish without a trace.
 # _shared is already on sys.path via the bootstrap cell above.
 from ingest_accounting import build_accounting_row, UNCLASSIFIED_REASON
+# One identity rule shared with the realtime SDP path so a single source record
+# resolves to the SAME id on both, and a redelivery is not a new observation.
+from event_identity import derive_event_id, ENRICHMENT_COLUMNS
 
 # Expected event schema (PERMISSIVE mode will capture malformed records)
 EVENT_SCHEMA = StructType([
+    # Native id from the producing connector; wins over the derived id when set.
+    StructField("event_id", StringType(), True),
     StructField("event_type", StringType(), True),
     StructField("timestamp", StringType(), True),
     StructField("source", StringType(), True),
@@ -74,6 +79,12 @@ EVENT_SCHEMA = StructType([
     StructField("severity", StringType(), True),
     StructField("description", StringType(), True),
     StructField("raw_log", StringType(), True),
+    # Domain / network / file indicators consumed by domain & hash IOC matching.
+    StructField("dest_domain", StringType(), True),
+    StructField("url", StringType(), True),
+    StructField("file_hash", StringType(), True),
+    StructField("process_hash", StringType(), True),
+    StructField("sha256", StringType(), True),
     StructField("_corrupt_record", StringType(), True),
 ])
 
@@ -252,6 +263,8 @@ def parse_raw_stream(raw_df):
             .withColumn("_source_offset", lit(0).cast("long"))
             .withColumn("_kafka_timestamp", current_timestamp())
             .withColumn("_parsed", struct(
+                (col("event_id") if "event_id" in raw_df.columns
+                 else lit(None).cast("string")).alias("event_id"),
                 col("event_type"),
                 col("timestamp").cast("string").alias("timestamp"),
                 col("source"),
@@ -265,6 +278,8 @@ def parse_raw_stream(raw_df):
                 col("severity"),
                 col("description"),
                 col("raw_log"),
+                *[(col(_c) if _c in raw_df.columns else lit(None).cast("string")).alias(_c)
+                  for _c in ENRICHMENT_COLUMNS],
                 lit(None).cast("string").alias("_corrupt_record"),
             ))
         )
@@ -411,12 +426,32 @@ def _auto_discover_entities(valid_events):
         logger.warning(f"Entity auto-discovery failed (non-critical): {e}")
 
 
+def _merge_events_idempotent(valid_events):
+    """Idempotent upsert into Bronze `events`, keyed on the stable event id.
+
+    A redelivered source record carries the SAME derived id (see event_identity),
+    so MERGEing on id and inserting only when absent means a replay collapses onto
+    the existing row instead of creating a second logical observation. Delta
+    schema autoMerge preserves the previous ``mergeSchema`` column-evolution
+    behavior. This replaces the former ``append`` writer, which minted a fresh
+    uuid per row and double-counted on every retry.
+    """
+    events_table = get_table_path(cfg, "events")
+    spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+    valid_events.createOrReplaceTempView("_valid_events_batch")
+    spark.sql(f"""
+        MERGE INTO {events_table} AS t
+        USING _valid_events_batch AS s
+        ON t.id = s.id
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+
+
 def process_ingestion_batch(batch_df, batch_id):
     """Process a micro-batch: route valid events to Bronze, failures to DLQ."""
     if batch_df.isEmpty():
         return
 
-    batch_df.cache()
     _batch_metrics["batches"] += 1
 
     # Count what we pulled from the source BEFORE routing, so reconciliation
@@ -429,7 +464,13 @@ def process_ingestion_batch(batch_df, batch_id):
             batch_df
             .filter(col("_is_valid") == True)
             .select(
-                expr("uuid()").alias("id"),
+                derive_event_id(
+                    col("_parsed.event_id"),
+                    col("_source_topic"),
+                    col("_source_partition"),
+                    col("_source_offset"),
+                    col("_raw_value"),
+                ).alias("id"),
                 coalesce(col("_parsed.event_type"), lit("unknown")).alias("event_type"),
                 coalesce(
                     to_timestamp(col("_parsed.timestamp")),
@@ -447,6 +488,11 @@ def process_ingestion_batch(batch_df, batch_id):
                 coalesce(col("_parsed.severity"), lit("info")).alias("severity"),
                 col("_parsed.description").alias("description"),
                 col("_parsed.raw_log").alias("raw_log"),
+                col("_parsed.dest_domain").alias("dest_domain"),
+                col("_parsed.url").alias("url"),
+                col("_parsed.file_hash").alias("file_hash"),
+                col("_parsed.process_hash").alias("process_hash"),
+                col("_parsed.sha256").alias("sha256"),
                 col("_source_topic").alias("source_topic"),
                 col("_source_partition").alias("source_partition"),
                 col("_source_offset").alias("source_offset"),
@@ -462,9 +508,7 @@ def process_ingestion_batch(batch_df, batch_id):
 
         valid_count = valid_events.count()
         if valid_count > 0:
-            valid_events.write.mode("append").option("mergeSchema", "true").saveAsTable(
-                get_table_path(cfg, "events")
-            )
+            _merge_events_idempotent(valid_events)
             _batch_metrics["valid"] += valid_count
 
             # ── UEBA Auto-Discovery ──
@@ -545,8 +589,13 @@ def process_ingestion_batch(batch_df, batch_id):
         except Exception:
             pass  # Agent status update is non-critical
 
-    finally:
-        batch_df.unpersist()
+    except Exception as batch_err:
+        # A batch failure must be visible and must fail the micro-batch so the
+        # stream retries from the last committed offsets, rather than being
+        # silently swallowed. (This block previously only existed to unpersist a
+        # cache; caching is unsupported on serverless compute and was removed.)
+        mon.log_error(batch_err, context=f"Ingestion batch {batch_id} failed")
+        raise
 
 
 # COMMAND ----------

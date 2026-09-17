@@ -37,11 +37,14 @@ from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import (
     col, from_json, expr, coalesce, lit, to_timestamp, current_timestamp, when,
-    sha2, concat_ws
 )
 from pyspark.sql.types import (
     StructType, StructField, StringType, TimestampType
 )
+
+# One identity rule shared with the Bronze ingestion path so a single Kafka
+# record resolves to the SAME id on both, enabling Bronze<->realtime joins.
+from event_identity import derive_event_id, ENRICHMENT_COLUMNS
 
 logger = logging.getLogger("oxdsi.sdp_stream")
 
@@ -228,32 +231,26 @@ def _normalize_severity(severity_col):
 
 
 # Columns TI matching (and other detectors) expect on the stream but which the
-# events Delta table may predate. Kept in one place so both the Kafka and the
-# Delta-fallback paths expose an identical schema.
-_ENRICHMENT_COLUMNS = ("dest_domain", "url", "file_hash", "process_hash", "sha256")
+# events Delta table may predate. Sourced from the shared identity module so the
+# Kafka path, the Delta-fallback path and the Bronze writer stay in lockstep.
+_ENRICHMENT_COLUMNS = ENRICHMENT_COLUMNS
 
 
 def deterministic_event_id():
-    """Stable event id derived from the Kafka coordinate (topic/partition/offset).
+    """Stable event id for the realtime SDP path.
 
-    A native ``event_id`` from the payload wins when present. Both the Bronze
-    ingestion path and this realtime SDP path derive the id the SAME way, so a
-    single Kafka record resolves to ONE id everywhere instead of a fresh random
-    UUID per consumer — which is what lets Bronze rows and realtime detections
-    be joined on ``id``.
+    Delegates to the shared ``event_identity.derive_event_id`` so this path and
+    the Bronze ingestion path apply an IDENTICAL rule (native ``event_id`` wins,
+    else a sha256 over scope/topic/partition/offset/payload). That is what lets a
+    single Kafka record resolve to ONE id everywhere and Bronze rows be joined to
+    realtime detections on ``id``.
     """
-    return coalesce(
+    return derive_event_id(
         col("_parsed.event_id"),
-        sha2(
-            concat_ws(
-                "||",
-                lit("kafka"),
-                col("_kafka_topic"),
-                col("_kafka_partition").cast("string"),
-                col("_kafka_offset").cast("string"),
-            ),
-            256,
-        ),
+        col("_kafka_topic"),
+        col("_kafka_partition"),
+        col("_kafka_offset"),
+        col("json_payload"),
     )
 
 

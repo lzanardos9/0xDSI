@@ -39,10 +39,19 @@ except ImportError:
     HAVE_YAML = False
 
 # Serverless-incompatible APIs, matched against notebook source text.
+#   * sparkContext.* low-level entry points are not exposed on serverless.
+#   * A fixed processingTime trigger is classic-compute only; serverless streams
+#     accept availableNow / once. A DYNAMIC `.trigger(**resolve())` is fine — only
+#     a hardcoded `.trigger(processingTime=...)` literal is flagged.
+#   * RDD/DataFrame cache/persist/unpersist are not available on serverless.
 FORBIDDEN = {
     "sparkContext.broadcast": re.compile(r"\.sparkContext\.broadcast\s*\("),
     "sparkContext.setCheckpointDir": re.compile(r"\.sparkContext\.setCheckpointDir\s*\("),
     "sparkContext.parallelize": re.compile(r"\.sparkContext\.parallelize\s*\("),
+    "trigger(processingTime=...)": re.compile(r"\.trigger\s*\(\s*processingTime"),
+    ".cache()": re.compile(r"\.cache\s*\(\s*\)"),
+    ".persist(": re.compile(r"\.persist\s*\("),
+    ".unpersist(": re.compile(r"\.unpersist\s*\("),
 }
 
 # Notebooks whose serverless incompatibility is a tracked, workspace-BLOCKED
@@ -52,6 +61,26 @@ KNOWN_BLOCKED = {
     # Requires GraphFrames (a JVM library) + RDD checkpointing; the correct fix
     # is classic compute, which needs staging validation. Tracked as H-004.
     "notebooks/analytics/01_trend_engine_cet.py": "H-004",
+
+    # H-080: systemic serverless incompatibility discovered when this regression
+    # was broadened to cover fixed processingTime triggers and cache/persist.
+    # These jobs are declared serverless in the bundle yet use classic-only APIs;
+    # each needs either a serverless-safe trigger (availableNow/once) or a move to
+    # classic compute, plus staging validation. Deferred to Gate A (serverless
+    # compatibility). The detection-path fix (02_threat_intel_matching) is NOT
+    # listed here: it is fixed and must stay green.
+    "notebooks/agents/26_realtime_graph_cep.py": "H-080",
+    "notebooks/correlation/03_graph_correlation.py": "H-080",
+    "notebooks/correlation/04_temporal_window_correlator.py": "H-080",
+    "notebooks/correlation/05_supply_chain_risk.py": "H-080",
+    "notebooks/correlation/06_cloud_posture.py": "H-080",
+    "notebooks/correlation/07_detection_confluence.py": "H-080",
+    "notebooks/ingestion/02_enrichment_pipeline.py": "H-080",
+    "notebooks/ingestion/05_kafka_eventhub_connector.py": "H-080",
+    "notebooks/ingestion/07_lakebase_sync.py": "H-080",
+    "notebooks/ingestion/08_typed_bronze_partitioner.py": "H-080",
+    "notebooks/ingestion/10_plc_ot_protocol_connector.py": "H-080",
+    "notebooks/ml_training/06_graph_neighborhood_embeddings.py": "H-080",
 }
 
 

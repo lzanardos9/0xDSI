@@ -22,6 +22,7 @@
 dbutils.widgets.text("checkpoint_path", "", "Checkpoint override (optional)")
 dbutils.widgets.text("min_confidence", "0.5", "Minimum IOC confidence to match")
 dbutils.widgets.text("dedup_window_hours", "4", "Suppress duplicate matches for N hours")
+dbutils.widgets.text("trigger_mode", "availableNow", "Stream trigger: availableNow | once | <interval e.g. 30 seconds>")
 
 checkpoint_base = dbutils.widgets.get("checkpoint_path") or cfg.get_checkpoint_path("threat_intel_matching")
 min_confidence = float(dbutils.widgets.get("min_confidence"))
@@ -40,6 +41,19 @@ mon.log_event("config_loaded", {
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark.sql import Window
+
+
+def _resolve_trigger():
+    """Serverless compute only accepts availableNow / once; a fixed processingTime
+    interval is CLASSIC-compute only. Default to availableNow so the job is
+    serverless-safe out of the box."""
+    raw = dbutils.widgets.get("trigger_mode").strip()
+    low = raw.lower()
+    if low in ("", "availablenow", "available_now"):
+        return {"availableNow": True}
+    if low == "once":
+        return {"once": True}
+    return {"processingTime": raw}
 
 # COMMAND ----------
 
@@ -258,28 +272,53 @@ all_matches = all_matches.unionByName(hash_matches)
 alerts_table = cfg.get_table_path("alerts")
 ti_matches_table = cfg.get_table_path("threat_intel_matches")
 
-# Ensure matches table exists for dedup
+# The match table doubles as the durable alert obligation: `id` is a DETERMINISTIC
+# finding id (indicator + type + entity + dedup window), and `alert_emitted` marks
+# whether its alert has been written. A crash after a match is stored but before
+# its alert is written leaves alert_emitted = false, so the next batch rediscovers
+# it and completes the alert (recoverable — see _shared/ti_recovery.py).
 spark.sql(f"""
     CREATE TABLE IF NOT EXISTS {ti_matches_table} (
         id STRING,
         event_id STRING,
         match_type STRING,
         matched_indicator STRING,
+        entity_key STRING,
         threat_type STRING,
         confidence DOUBLE,
         ioc_source STRING,
         source_ip STRING,
         user_id STRING,
         event_type STRING,
-        matched_at TIMESTAMP
+        matched_at TIMESTAMP,
+        alert_id STRING,
+        alert_emitted BOOLEAN
     )
     USING DELTA
     TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
+# Idempotent, additive upgrade for tables created by an earlier version (no data
+# loss: only adds missing columns).
+_existing_cols = {f.name for f in spark.table(ti_matches_table).schema.fields}
+for _cname, _ctype in (("entity_key", "STRING"), ("alert_id", "STRING"),
+                       ("alert_emitted", "BOOLEAN")):
+    if _cname not in _existing_cols:
+        spark.sql(f"ALTER TABLE {ti_matches_table} ADD COLUMNS ({_cname} {_ctype})")
+
+# Seconds in one dedup window; the finding id carries a window bucket so the SAME
+# entity+IOC re-alerts in a later window but stays a single finding within one.
+_dedup_window_seconds = dedup_hours * 3600
+
 
 def write_ti_alerts(batch_df, batch_id):
-    """Write threat intel matches with deduplication."""
+    """Persist threat-intel findings and settle their alert obligation.
+
+    Ordering mirrors _shared/ti_recovery.MatchAlertReconciler: (1) MERGE findings
+    (idempotent on the deterministic id), (2) read findings that still owe an
+    alert (the durable obligation — a query, so it survives a restart), (3) MERGE
+    those alerts (idempotent on the deterministic alert id), (4) mark them last.
+    Any partial failure retries safely to exactly one alert per finding."""
     if batch_df.isEmpty():
         return
 
@@ -304,43 +343,49 @@ def write_ti_alerts(batch_df, batch_id):
             .drop("_rn")
         )
 
-        # Cross-batch dedup is scoped per (indicator, entity, match_type): we only
-        # suppress an IOC already alerted FOR THE SAME ENTITY inside the window.
-        # A second compromised host hitting the same indicator is NOT hidden.
-        recent_matches = spark.sql(f"""
-            SELECT DISTINCT
-                matched_indicator,
-                match_type,
-                COALESCE(source_ip, user_id, 'unknown') AS entity_key
-            FROM {ti_matches_table}
-            WHERE matched_at > current_timestamp() - INTERVAL {dedup_hours} HOURS
+        # Deterministic finding id: indicator + type + entity + fixed dedup window
+        # bucket. Cross-batch dedup falls out of the MERGE below — the same finding
+        # in the same window can never insert twice — with no presence-based
+        # left-anti that could hide an un-alerted survivor of a crash.
+        _bucket = floor(unix_timestamp(current_timestamp()) / lit(_dedup_window_seconds))
+        prepared = (
+            batch_dedup
+            .withColumn("id", sha2(concat_ws("||",
+                col("matched_indicator"), col("match_type"),
+                col("entity_key"), _bucket.cast("string")), 256))
+            .withColumn("matched_at", current_timestamp())
+            .withColumn("alert_id", lit(None).cast("string"))
+            .withColumn("alert_emitted", lit(False))
+            .select("id", "event_id", "match_type", "matched_indicator",
+                    "entity_key", "threat_type", "confidence", "ioc_source",
+                    "source_ip", "user_id", "event_type", "matched_at",
+                    "alert_id", "alert_emitted")
+        )
+
+        # Step 1 — MERGE findings first (idempotent on id). WHEN NOT MATCHED only,
+        # so an already-emitted finding keeps alert_emitted = true.
+        prepared.createOrReplaceTempView("_ti_prepared_batch")
+        spark.sql(f"""
+            MERGE INTO {ti_matches_table} t
+            USING _ti_prepared_batch s ON t.id = s.id
+            WHEN NOT MATCHED THEN INSERT *
         """)
 
-        new_matches = batch_dedup.join(
-            recent_matches,
-            ["matched_indicator", "match_type", "entity_key"],
-            "left_anti"
-        )
-
-        match_count = new_matches.count()
-        if match_count == 0:
+        # Step 2 — the durable obligation: findings that still owe an alert. Read
+        # from the table (not the batch) so a survivor of an earlier crashed batch
+        # is picked up here.
+        pending = spark.sql(f"""
+            SELECT * FROM {ti_matches_table}
+            WHERE (alert_emitted IS NULL OR alert_emitted = false)
+              AND matched_at > current_timestamp() - INTERVAL {dedup_hours} HOURS
+        """)
+        if pending.isEmpty():
             return
 
-        # Persist matches for dedup tracking
-        matches_to_store = (
-            new_matches
-            .withColumn("id", expr("uuid()"))
-            .withColumn("matched_at", current_timestamp())
-            .select("id", "event_id", "match_type", "matched_indicator",
-                    "threat_type", "confidence", "ioc_source",
-                    "source_ip", "user_id", "event_type", "matched_at")
-        )
-        matches_to_store.write.mode("append").saveAsTable(ti_matches_table)
-
-        # Generate alerts
+        # Step 3 — MERGE alerts (idempotent on the deterministic alert id).
         alerts = (
-            new_matches
-            .withColumn("id", expr("uuid()"))
+            pending
+            .withColumn("alert_pk", sha2(concat(lit("alert||"), col("id")), 256))
             .withColumn("title", concat(
                 lit("Threat Intel: "), col("threat_type"),
                 lit(" ("), col("matched_indicator"), lit(")")
@@ -361,16 +406,33 @@ def write_ti_alerts(batch_df, batch_id):
             .withColumn("source", lit("threat_intel_matching"))
             .withColumn("confidence_score", col("confidence"))
             .withColumn("created_at", current_timestamp())
-            .select("id", "title", "description", "severity", "status",
-                    "source", "confidence_score", "created_at")
+            .select(col("alert_pk").alias("id"), "title", "description", "severity",
+                    "status", "source", "confidence_score", "created_at")
         )
-        alerts.write.mode("append").saveAsTable(alerts_table)
+        alerts.createOrReplaceTempView("_ti_alerts_batch")
+        spark.sql(f"""
+            MERGE INTO {alerts_table} t
+            USING _ti_alerts_batch s ON t.id = s.id
+            WHEN NOT MATCHED THEN INSERT *
+        """)
 
+        # Step 4 — mark the obligation settled LAST (after the alert is durable).
+        spark.sql(f"""
+            MERGE INTO {ti_matches_table} t
+            USING (SELECT id, sha2(concat('alert||', id), 256) AS alert_id
+                   FROM {ti_matches_table}
+                   WHERE (alert_emitted IS NULL OR alert_emitted = false)
+                     AND matched_at > current_timestamp() - INTERVAL {dedup_hours} HOURS) s
+            ON t.id = s.id
+            WHEN MATCHED THEN UPDATE SET t.alert_emitted = true, t.alert_id = s.alert_id
+        """)
+
+        emitted = pending.count()
         mon.log_detection("threat_intel_match", {
             "batch_id": batch_id,
-            "matches": match_count,
+            "matches": emitted,
         })
-        print(f"TI batch {batch_id}: {match_count} new IOC matches")
+        print(f"TI batch {batch_id}: {emitted} IOC findings alerted")
 
 # COMMAND ----------
 
@@ -385,7 +447,7 @@ try:
         .foreachBatch(write_ti_alerts)
         .option("checkpointLocation", f"{checkpoint_base}/ti_match")
         .queryName("threat_intel_matching")
-        .trigger(processingTime="30 seconds")
+        .trigger(**_resolve_trigger())
         .start()
     )
 

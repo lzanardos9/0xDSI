@@ -86,3 +86,27 @@ DETECTION_SIGNAL_CLASSES = (
     "behavioral_anomaly",
     "threat_intel",
 )
+
+# Canonical shape of the cep_pattern_matches table — the CEP boundary where a
+# complex-event/correlation producer hands a match to the Unified Evidence Object
+# builder (correlation/09). This table historically had THREE disagreeing shapes
+# (the setup DDL, what streaming_correlation_engine wrote, and what the UEO lens
+# read), and the producer explicitly dropped event_ids + MITRE — destroying event
+# lineage and technique attribution at the boundary (REV2-B4). Every CEP producer
+# MUST write at least these columns, and the UEO CEP lens reads only these.
+CEP_PATTERN_MATCH_COLUMNS = (
+    "id",              # source_alert_id
+    "entity_id",       # resolved entity the match is about (entity_ref)
+    "pattern_name",    # human name of the rule/pattern (entity_ref fallback + explanation)
+    "confidence",      # DOUBLE 0..1 (raw_score)
+    "severity",        # STRING
+    "matched_at",      # TIMESTAMP (signal_timestamp)
+    "event_ids",       # ARRAY<STRING> raw event lineage — MUST survive to the UEO
+    "mitre_tactic",    # STRING technique attribution — MUST survive to the UEO
+    "mitre_technique",  # STRING
+    "rule_id",         # STRING lineage back to the rule
+)
+
+# Fields a CEP producer must NOT strip before writing cep_pattern_matches. The
+# regression asserts no producer drops these (the exact bug B4 fixed).
+CEP_LINEAGE_FIELDS = ("event_ids", "mitre_tactic", "mitre_technique")

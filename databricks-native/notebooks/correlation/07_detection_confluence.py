@@ -475,6 +475,9 @@ def run_fusion_pipeline(cutoff_str):
         verdicts.append({
             "id": verdict_id,
             "entity_id": v["entity_id"],
+            "ueo_id": None,
+            "finding_id": None,
+            "revision": None,
             "fused_score": v["fused_score"],
             "priority": v["priority"],
             "contributing_lenses": json.dumps(v["contributing_lenses"]),
@@ -516,6 +519,13 @@ def persist_verdicts(verdicts, lineage_edges):
     verdict_schema = StructType([
         StructField("id", StringType(), False),
         StructField("entity_id", StringType(), False),
+        # Finding lineage: present on fuse-aware verdicts so a response action can
+        # link to the finding (finding_id == ueo_id) and the approval layer can
+        # bind the exact revision it authorizes (REV2-20). NULL on legacy verdicts
+        # that computed fusion straight from signals with no UEO.
+        StructField("ueo_id", StringType(), True),
+        StructField("finding_id", StringType(), True),
+        StructField("revision", IntegerType(), True),
         StructField("fused_score", DoubleType(), False),
         StructField("priority", StringType(), False),
         StructField("contributing_lenses", StringType(), False),
@@ -529,7 +539,7 @@ def persist_verdicts(verdicts, lineage_edges):
     ])
 
     verdicts_df = spark.createDataFrame(verdicts, schema=verdict_schema)
-    verdicts_df.write.mode("append").saveAsTable(verdicts_table)
+    verdicts_df.write.mode("append").option("mergeSchema", "true").saveAsTable(verdicts_table)
 
     if lineage_edges:
         lineage_table = cfg.get_table_path("confluence_lineage")
@@ -706,6 +716,9 @@ def run_fuse_aware_pipeline():
         verdicts.append({
             "id": str(uuid.uuid4()),
             "entity_id": row.entity_id,
+            "ueo_id": row.ueo_id,
+            "finding_id": row.finding_id if row.finding_id is not None else row.ueo_id,
+            "revision": row.revision,
             "fused_score": fused_score,
             "priority": priority,
             "contributing_lenses": json.dumps(row.causal_chain_events or []),

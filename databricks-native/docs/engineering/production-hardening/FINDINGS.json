@@ -1,6 +1,6 @@
 {
   "schema": "0xdsi-production-hardening-findings/v1",
-  "generated": "2026-09-16",
+  "generated": "2026-09-16T23:14:22.615658+00:00",
   "note": "Reported defects from the engagement brief are tracked as hypotheses. Status reflects what has been reproduced/fixed against the current working tree, not the audited baseline. Live gates are BLOCKED, never PASSED, without an authorized workspace.",
   "findings": [
     {
@@ -52,7 +52,7 @@
       "phase": 1,
       "affected_path": "notebooks/correlation/01_streaming_correlation_engine.py, notebooks/correlation/04_temporal_window_correlator.py, notebooks/ml_training/06_graph_neighborhood_embeddings.py, notebooks/analytics/01_trend_engine_cet.py",
       "evidence": "Deployment-aware audit mapped jobs whose environment spec sets environment_version (serverless) to the notebooks they deploy, then scanned those files. Four deployed serverless notebooks used APIs serverless does not expose (https://docs.databricks.com/aws/en/compute/serverless/limitations): streaming_correlation, temporal_window_correlator and graph_neighborhood used spark.sparkContext.broadcast; trend_engine_cet used spark.sparkContext.setCheckpointDir and imports GraphFrames (a JVM library, absent from its serverless dependency list).",
-      "regression": "tests/contract/test_serverless_notebook_apis.py",
+      "regression": "tests/contract/test_serverless_notebook_apis.py (now also flags hardcoded processingTime triggers and cache/persist/unpersist on serverless-deployed notebooks)",
       "status": "FIXED_STATIC",
       "fix": "Replaced the three broadcast lookups with plain closure capture (Spark serializes captured Python objects to executors), which is semantically identical for the small baseline/projection maps and offline-verified clean. trend_engine_cet cannot be fixed by a Python edit: GraphFrames + RDD checkpointing require classic compute, so its serverless-to-classic migration is tracked as BLOCKED pending staging validation and allowlisted in the regression."
     },
@@ -63,18 +63,20 @@
       "phase": 2,
       "affected_path": "notebooks/_shared/sdp_stream.py, notebooks/pipelines/bronze_ingestion.py",
       "evidence": "Prior session unified deterministic content-addressed IDs over Kafka coordinates across the streaming and durable paths.",
-      "regression": "tests/property/test_idempotency.py",
-      "status": "VERIFIED_OFFLINE"
+      "regression": "tests/property/test_idempotency.py + tests/property/test_event_identity.py (native-id precedence, deterministic hash basis, payload disambiguation) + tests/contract/test_idempotent_persistence.py",
+      "status": "VERIFIED_OFFLINE",
+      "fix": " Unified all raw-event id derivation onto notebooks/_shared/event_identity.derive_event_id (Bronze ingestion + realtime SDP), and switched Bronze event persistence from append+uuid() to an idempotent MERGE on the stable id."
     },
     {
       "id": "H-020",
       "title": "Producer/consumer signal-shape mismatch at canonical boundary",
       "severity": "high",
       "phase": 3,
-      "affected_path": "notebooks/_shared/contracts.py, notebooks/correlation/09_unified_evidence_object.py",
-      "evidence": "Prior session added DETECTION_SIGNAL_COLUMNS/CLASSES and projected the evidence builder to the canonical shape.",
-      "regression": "tests/contract/test_phase2_contracts.py",
-      "status": "VERIFIED_OFFLINE"
+      "affected_path": "notebooks/_shared/contracts.py, notebooks/correlation/09_unified_evidence_object.py, notebooks/correlation/01_streaming_correlation_engine.py, notebooks/setup/01_create_catalog_schema.py",
+      "evidence": "Prior session added DETECTION_SIGNAL_COLUMNS/CLASSES and projected the evidence builder to the canonical shape. Gate B (B4) closed the CEP boundary, where cep_pattern_matches had THREE disagreeing shapes: the setup DDL, the producer (01_streaming_correlation_engine) and the UEO CEP lens (09) each expected different columns, and the producer explicitly DROPPED event_ids + mitre_tactic/mitre_technique before writing, destroying event lineage and MITRE attribution at the boundary; the UEO lens then read a matched_events column that no longer existed.",
+      "regression": "tests/contract/test_phase2_contracts.py + tests/contract/test_cep_signal_contract.py (contract covers every column the UEO reads; producer emits the canonical columns and does NOT strip lineage/MITRE; UEO lens reads event_ids and carries MITRE; DDL defines the canonical columns)",
+      "status": "VERIFIED_OFFLINE",
+      "fix": "Added contracts.CEP_PATTERN_MATCH_COLUMNS + CEP_LINEAGE_FIELDS as the single source of truth. The producer now writes an explicit canonical schema that PRESERVES event_ids/mitre_tactic/mitre_technique (the drop-comprehension is gone); the setup DDL was expanded to match; and the UEO CEP lens now projects event_ids AS source_event_ids (was the nonexistent matched_events) and folds the MITRE technique into the explanation."
     },
     {
       "id": "H-030",
@@ -83,18 +85,20 @@
       "phase": 4,
       "affected_path": "notebooks/detection/02_threat_intel_matching.py",
       "evidence": "Reported match-written/alert-missing recovery gap. The offline fault-injection regression cannot import the real logic: notebooks/detection/02_threat_intel_matching.py runs dbutils.widgets and spark.sql at module top level, so it is not importable without a live runtime. Reproducing this offline needs the match-persist/alert-emit step extracted into an importable _shared helper (a streaming-detector refactor) or a Databricks workspace; not attempted blind to preserve detector semantics.",
-      "regression": "BLOCKED (needs extract-to-helper refactor or workspace)",
-      "status": "BLOCKED"
+      "regression": "tests/property/test_ti_recovery.py (fault-injection: crash between match and alert, crash between alert and mark, idempotent replay) + tests/contract/test_idempotent_persistence.py",
+      "status": "FIXED_STATIC",
+      "fix": "Reframed match->alert as a durable obligation in notebooks/_shared/ti_recovery.py (pure, offline-testable) and mirrored it in notebooks/detection/02_threat_intel_matching.py: (1) MERGE findings on a deterministic id (indicator+type+entity+dedup-window bucket), (2) read findings whose alert_emitted flag is still false (the obligation is a query, so it survives a restart), (3) MERGE alerts on a deterministic alert id, (4) mark alert_emitted last. The old presence-based left-anti dedup that permanently suppressed an un-alerted crash survivor is gone; any partial failure retries to exactly one alert per finding while every entity is retained."
     },
     {
       "id": "H-050",
       "title": "UEO revisions not bound through FUSE/Confluence/findings/approvals",
       "severity": "high",
       "phase": 5,
-      "affected_path": "notebooks/correlation/09_unified_evidence_object.py, notebooks/_shared/finding_revision.py",
-      "evidence": "Prior session switched UEO writes to a revision-bumping MERGE upsert and added invalidate_revision + _invalidate_findings to WITHDRAW the bound finding when evidence changes. Full FUSE->verdict->approval fencing chain still to be proven end to end.",
-      "regression": "tests/property/test_finding_revision.py",
-      "status": "IN_PROGRESS"
+      "affected_path": "notebooks/correlation/09_unified_evidence_object.py, notebooks/_shared/finding_revision.py, notebooks/correlation/10_fuse_engine.py, notebooks/correlation/07_detection_confluence.py, notebooks/setup/01_create_catalog_schema.py, notebooks/_shared/response_actions.py",
+      "evidence": "Prior session switched UEO writes to a revision-bumping MERGE upsert and added invalidate_revision + _invalidate_findings to WITHDRAW the bound finding when evidence changes. Gate B (B6) proved the FUSE->Confluence->verdict->approval fencing chain end to end: the thread was SEVERED because fuse_results had no revision column (fuse_id was keyed on ueo_id only, so re-fusion at a new revision silently overwrote identity) and confluence_verdicts kept only entity_id, dropping ueo_id/revision so a verdict could not be traced to the finding whose revision the approval binds.",
+      "regression": "tests/property/test_finding_revision.py + tests/contract/test_revision_thread.py (source: revision is continuous UEO->fuse_results->confluence_verdicts->response_actions; behaviour: an approval binds to the live revision and can_execute refuses once the finding is re-confirmed at a new revision)",
+      "status": "VERIFIED_OFFLINE",
+      "fix": "fuse_results now carries finding_id + revision (idempotent ADD COLUMNS for existing deployments) and fuse_id is revision-scoped (fuse::{ueo_id}::r{revision}) so each revision's fusion is a distinct row. confluence_verdicts gained ueo_id/finding_id/revision (nullable; the fuse-aware builder populates finding_id from the fuse lineage, the legacy signal-only builder leaves them NULL). The approval layer (response_actions.py + server.py) was already revision-bound; the thread now reaches it."
     },
     {
       "id": "H-060",
@@ -103,8 +107,9 @@
       "phase": 6,
       "affected_path": "notebooks/_shared/monitoring.py, notebooks/correlation/09_unified_evidence_object.py",
       "evidence": "Confirmed a live defect: Monitor.report_health referenced self._cfg while __init__ stored self._config, so every call raised AttributeError, which a bare `except: pass` swallowed -- pipeline_health was never written yet log_complete believed it reported 'healthy'. Fixed self._cfg -> self._config and replaced the silent swallow with logger.exception so a health-write failure is visible. Regression imports the real monitoring module (via an import-boundary pyspark shim) and asserts (1) report_health issues exactly one MERGE into pipeline_health, (2) a failing write is logged at ERROR not swallowed, (3) log_complete drives a health write. This complements the prior-session UEO harvest health work (HEALTHY/DEGRADED/UNAVAILABLE).",
-      "regression": "tests/property/test_monitor_health.py",
-      "status": "VERIFIED_OFFLINE"
+      "regression": "tests/property/test_monitor_health.py (write actually lands; failures logged not swallowed; clean=healthy, warning=degraded, error=error, incomplete coverage=degraded, explicit override wins)",
+      "status": "VERIFIED_OFFLINE",
+      "fix": " log_complete no longer hardcodes \"healthy\": final status is derived from the worst severity logged during the run (which survives audit-buffer flushes) plus an optional coverage/health signal in details, with an explicit override honored."
     },
     {
       "id": "H-070",
@@ -125,6 +130,17 @@
       "evidence": "Prior session built an entry-only suite: writes only to Kafka/landing, asserts only on published outputs, 10 required scenarios, per-scenario probe isolation. Offline contract passes; live run BLOCKED pending workspace.",
       "regression": "tests/e2e/test_e2e_entry_only.py",
       "status": "VERIFIED_OFFLINE"
+    },
+    {
+      "id": "H-080",
+      "title": "Systemic serverless-incompatible streaming/caching APIs across deployed jobs",
+      "severity": "high",
+      "phase": 1,
+      "affected_path": "notebooks/agents/26_realtime_graph_cep.py; notebooks/correlation/03_graph_correlation.py; notebooks/correlation/04_temporal_window_correlator.py; notebooks/correlation/05_supply_chain_risk.py; notebooks/correlation/06_cloud_posture.py; notebooks/correlation/07_detection_confluence.py; notebooks/ingestion/02_enrichment_pipeline.py; notebooks/ingestion/05_kafka_eventhub_connector.py; notebooks/ingestion/07_lakebase_sync.py; notebooks/ingestion/08_typed_bronze_partitioner.py; notebooks/ingestion/10_plc_ot_protocol_connector.py; notebooks/ml_training/06_graph_neighborhood_embeddings.py",
+      "evidence": "When the serverless-API regression was broadened (Gate B) to cover fixed processingTime triggers and DataFrame cache/persist/unpersist, 12 notebooks that the bundle declares on serverless compute were found using classic-only APIs: hardcoded .trigger(processingTime=...) streaming triggers and .cache()/.unpersist(). Serverless streams accept only availableNow/once and do not expose cache/persist. These jobs would fail at runtime on serverless.",
+      "regression": "tests/contract/test_serverless_notebook_apis.py \u2014 each notebook is in the KNOWN_BLOCKED allowlist keyed to H-080 so a NEW violation still fails the suite, and test_known_blocked_notebooks_are_still_blocked prevents the allowlist from rotting once each is migrated.",
+      "status": "BLOCKED",
+      "fix": "Deferred to Gate A (serverless compatibility): each notebook needs either a serverless-safe trigger (availableNow/once) or a move to classic compute, and cache/persist removal or a classic-compute move, then staging validation. The detection-path notebook (02_threat_intel_matching) was fixed in Gate B via a widget-driven _resolve_trigger defaulting to availableNow and is intentionally NOT allowlisted."
     }
   ]
 }

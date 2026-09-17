@@ -2,22 +2,22 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 514,
-  "total_bytes": 10607000,
+  "total_files": 548,
+  "total_bytes": 10871309,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
       "backend_service": 4,
       "build_config": 12,
-      "databricks_notebook": 131,
+      "databricks_notebook": 137,
       "deployment_config": 5,
-      "documentation": 7,
+      "documentation": 10,
       "frontend_entry": 1,
       "frontend_module": 298,
-      "other": 1,
-      "shared_library": 19,
+      "other": 2,
+      "shared_library": 25,
       "stylesheet": 1,
-      "test": 20,
+      "test": 38,
       "test_script": 1,
       "tooling": 4
     },
@@ -25,27 +25,27 @@
       "asset": 10,
       "build_config": 18,
       "deployment": 5,
-      "documentation": 7,
+      "documentation": 10,
       "experimental": 1,
       "production": 3,
       "setup": 5,
-      "shared_library": 18,
-      "test": 21,
-      "unreviewed": 426
+      "shared_library": 24,
+      "test": 39,
+      "unreviewed": 433
     },
     "by_runtime": {
       "browser": 300,
       "build-tooling": 16,
       "databricks-bundle": 5,
-      "databricks-spark": 131,
-      "n/a": 18,
-      "python": 20,
-      "python (databricks runtime)": 19,
+      "databricks-spark": 137,
+      "n/a": 22,
+      "python": 38,
+      "python (databricks runtime)": 25,
       "python-fastapi": 4,
       "shell": 1
     },
     "reviewed": 4,
-    "unreviewed": 426
+    "unreviewed": 433
   },
   "artifacts": [
     {
@@ -117,8 +117,8 @@
       "runtime": "python-fastapi",
       "shipping_status": "production",
       "review": "curated",
-      "sha256": "e13bb8c72d7b123d64b2081d4f639d5224a394baf29b6a21f180272e87d5f52e",
-      "bytes": 174148,
+      "sha256": "9f400ba2a25861d9e9d7e9c84bd310019a666346f5cd862704c74014e4c05add",
+      "bytes": 174332,
       "capability": "data-api-gateway",
       "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
     },
@@ -301,8 +301,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "efa295bfff6d5ca5e381e355df1b918967a3676deb0a0ddba990a2c7853ed00c",
-      "bytes": 32798
+      "sha256": "8ff307af6736d31ec1087f55f32ae4e65101d66530806b439678d187dbc96135",
+      "bytes": 33980
     },
     {
       "path": "app/frontend/src/components/AgentCodeConfiguration.tsx",
@@ -724,8 +724,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "e8b74b81adba0c73b6fd92997a6f724e308936ef76023acb2655007c594e3731",
-      "bytes": 43269
+      "sha256": "f25e64ed14e8c4a15144d9d5ae2208810411b09919dbc018420f6afc362d8497",
+      "bytes": 45030
     },
     {
       "path": "app/frontend/src/components/ModelPoisoningGuard.tsx",
@@ -796,8 +796,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "c84a99c4a633671f9ce26954386ebd5c57e68152e87bea08b714ec7ce9a36715",
-      "bytes": 20610
+      "sha256": "067549c12330c1f51e97459f6ce1e01f7294287db8abe2b63bba3e403bf71038",
+      "bytes": 23442
     },
     {
       "path": "app/frontend/src/components/ProductionSettings.tsx",
@@ -922,8 +922,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "6d0a5e6fb2897e66291afb6590310133eebe12333d82a1fd5f92b5fe742d94e7",
-      "bytes": 37945
+      "sha256": "36b4c8c839c170f8f647f93f37a55cee3f77520db85629b8d20fd30a0aa0c4d9",
+      "bytes": 38880
     },
     {
       "path": "app/frontend/src/components/SOCOptimization.tsx",
@@ -931,8 +931,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "a95ee47cd727d0b93e9368754bfef5f6e85a966668dfb94883a4eb4a30c6f100",
-      "bytes": 21741
+      "sha256": "165a29368cb2a85a5c77019e190867eeb083dbf1266d216df0aa8982eda7dac2",
+      "bytes": 25422
     },
     {
       "path": "app/frontend/src/components/SessionListsPanel.tsx",
@@ -1399,8 +1399,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "8f71698e636ca542a219391c191f51bd408e3d59a9d460706c6a37514bde520f",
-      "bytes": 4773
+      "sha256": "12e29f74321d6ddf5d703534aafb56feff158f843e2c0ef1808a53f08d9063bc",
+      "bytes": 5989
     },
     {
       "path": "app/frontend/src/components/confluence/KSValidationPanel.tsx",
@@ -2083,8 +2083,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "1940dcb5b891ee316be2d160dde3d1652717f28cd0d259ce496f3e45b7408ea4",
-      "bytes": 8885
+      "sha256": "8b9aac09f5bb56d6aa7fff93d4f0f2e768398fdf7f07569dc6df8797f0df2551",
+      "bytes": 9957
     },
     {
       "path": "app/frontend/src/components/industry-threats/ManufacturingThreats.tsx",
@@ -2974,8 +2974,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "7fab97ddcdede326a2c807eeef116e4d341b6271547a11a32e63fbf45a5172d2",
-      "bytes": 93455
+      "sha256": "ab68e1750f720a2f7b2f19ae05eb3b6c9071f2b42cb0d316d686f467c3462d2b",
+      "bytes": 93829
     },
     {
       "path": "app/package.json",
@@ -3050,6 +3050,42 @@
       "bytes": 4888
     },
     {
+      "path": "docs/engineering/production-hardening/FINDINGS.json",
+      "artifact_type": "other",
+      "runtime": "n/a",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "565f72ead68ce4ab6e2843558e4e84f85c8afc68ea90290b72e5033731ad97f3",
+      "bytes": 15758
+    },
+    {
+      "path": "docs/engineering/production-hardening/PLAN.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "5578d139b9138d37b376b9473433f9194eec6d6269a23f5f5d1c82dc76c83dc6",
+      "bytes": 2734
+    },
+    {
+      "path": "docs/engineering/production-hardening/RESUME.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "37c281c2e23c8874f46560b90e878322c55746c002c19119c686caf00e4c4b35",
+      "bytes": 6728
+    },
+    {
+      "path": "docs/engineering/production-hardening/VALIDATION.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "6754773ced2071e2eeec18f106bf333eba256cdbefc567dc4d65e576c6aaab90",
+      "bytes": 7557
+    },
+    {
       "path": "notebooks/_shared/__init__.py",
       "artifact_type": "shared_library",
       "runtime": "python (databricks runtime)",
@@ -3064,8 +3100,17 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "9859cf3a47585b671548605a789a2277a1a5eb374176fa84ca5cd2b65377adc6",
-      "bytes": 29342
+      "sha256": "8a563f8a614e72d50c147026db242e331e50e8a6caa6ac250e3d605a3e32921e",
+      "bytes": 32792
+    },
+    {
+      "path": "notebooks/_shared/analytics_math.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "15962fefd1ea037c9d158ab27a3dcbc56b5bb1bc813f28d6cdacb90f2b44bed4",
+      "bytes": 2938
     },
     {
       "path": "notebooks/_shared/bootstrap.py",
@@ -3102,8 +3147,8 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "94227cdf7cb3621e04479e42639e754825b407fc7336086df193f0f131dc9c37",
-      "bytes": 2508
+      "sha256": "96c2435c82c9eff2f26405a943f540ce0eca260f80767be688dcf8dabbd3f268",
+      "bytes": 5367
     },
     {
       "path": "notebooks/_shared/delta_helpers.py",
@@ -3115,13 +3160,31 @@
       "bytes": 13200
     },
     {
+      "path": "notebooks/_shared/escalation_formula.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "dc5068944ffebedb89f58ca89090d92569b6621d91487809c8bd5862180c145f",
+      "bytes": 6241
+    },
+    {
+      "path": "notebooks/_shared/event_identity.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "fabc3f4f8060057e6204ca570086da21f4d1c85b7e21c88fa4695fefe533b177",
+      "bytes": 2769
+    },
+    {
       "path": "notebooks/_shared/finding_revision.py",
       "artifact_type": "shared_library",
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "fea52016d5e571c89422780715156c39d9b564fe702d3842f746d1ad46202a63",
-      "bytes": 6777
+      "sha256": "d4143e7966a84481d1d5e3a83376e8fe8bed953813fcf89d64ca6f518bb7245e",
+      "bytes": 7568
     },
     {
       "path": "notebooks/_shared/idempotency.py",
@@ -3151,6 +3214,15 @@
       "bytes": 23177
     },
     {
+      "path": "notebooks/_shared/mitre_coverage.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "b6be71f82c369ae57e9aef74d54933b7c6d3e742cc91071a6fa670aa55255d29",
+      "bytes": 2069
+    },
+    {
       "path": "notebooks/_shared/model_eval.py",
       "artifact_type": "shared_library",
       "runtime": "python (databricks runtime)",
@@ -3165,8 +3237,17 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "56b43dd847dad0fa68eace6bc3c152cc3f4f3d13a352a1275962c922c5a83f3f",
-      "bytes": 13981
+      "sha256": "12a184758d61b45b2d79d5e4f56c16827b5bd06cf944cc74145d2ee998b9615a",
+      "bytes": 16219
+    },
+    {
+      "path": "notebooks/_shared/overview_rollup.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "dba74ecdbdfbd0a9d5cc93712ed3635743ef30603d95efdd7fb73e3ec43a9130",
+      "bytes": 2682
     },
     {
       "path": "notebooks/_shared/pipeline_metrics.py",
@@ -3192,8 +3273,8 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "ea5822ee7420c61e12507f94e84b7fac3f93cbd317fce866cba2999f77602c19",
-      "bytes": 9501
+      "sha256": "edcd22b2a7c753bc8dda17a8a638a0af9db94de933926082cfa5381237d73680",
+      "bytes": 12246
     },
     {
       "path": "notebooks/_shared/secrets.py",
@@ -3221,6 +3302,15 @@
       "review": "auto",
       "sha256": "bc93209f94cfb07084f712eff1f40b2abb00d3fec1175b098ef3621f5b194c73",
       "bytes": 9580
+    },
+    {
+      "path": "notebooks/_shared/ti_recovery.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "486cad2935e193fc5a4249768f72181c938f7a4574f89755af7ad811f8ec53aa",
+      "bytes": 5970
     },
     {
       "path": "notebooks/agents/01_triage_agent.py",
@@ -3808,13 +3898,58 @@
       "bytes": 7650
     },
     {
+      "path": "notebooks/analytics/09_soc_optimization.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f5653e6a922014c5b9975e20a2a1ff66ebaf93ce0c25af370e54d6e79c0a37f0",
+      "bytes": 13230
+    },
+    {
+      "path": "notebooks/analytics/10_platform_economics.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "15dd9e968cc1bfb87080e4395a04e859ed877ae7580e463f38696864058206b4",
+      "bytes": 7216
+    },
+    {
+      "path": "notebooks/analytics/12_industry_threat_posture.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "79ab88b13c8a0d2c1d215cf9d15604652986c1216878e369aa4626dfea479bf7",
+      "bytes": 4431
+    },
+    {
+      "path": "notebooks/analytics/13_mitre_coverage.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "8136b6c041a017e4b408325c47bdfa0add20579c8c423bc8ddd868ed996052db",
+      "bytes": 5656
+    },
+    {
+      "path": "notebooks/analytics/14_overview_rollup.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0b14776591c74081f54ed9b3b296c292a1bf05bbdaf92bf4db04069259affe1d",
+      "bytes": 7819
+    },
+    {
       "path": "notebooks/correlation/01_streaming_correlation_engine.py",
       "artifact_type": "databricks_notebook",
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "934125a906d2c7e22f739085e7f8730ebb38b82dc5c6bbb973211d17d8c9514b",
-      "bytes": 22656
+      "sha256": "cfc02cb5bf19d0a3de2ea3aaa8e02aa580f141291a079ec01c8ed6e67d9956b5",
+      "bytes": 23729
     },
     {
       "path": "notebooks/correlation/02_negative_correlation.py",
@@ -3840,8 +3975,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "a7908fb324974ee221ed59b1c540e4c8d493788e00cf29813df00c39313a463c",
-      "bytes": 15760
+      "sha256": "939a92e8582e9da5219dbb91813893f4521c4e76697b38085186d0202bbd13b1",
+      "bytes": 15813
     },
     {
       "path": "notebooks/correlation/05_supply_chain_risk.py",
@@ -3867,8 +4002,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "65c4db7c194ed87054cca2ef8689ea368dbc82987c6df1e3c1abb6331b8df866",
-      "bytes": 34085
+      "sha256": "13b043bddab6c094570f8a55e937a89997aca8aa9764ae62d64a554528ce2f27",
+      "bytes": 34837
     },
     {
       "path": "notebooks/correlation/08_entity_spine.py",
@@ -3885,8 +4020,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "94f4af40374ac7d4f26d63ffe693ab58e938ca3c616768c82b0b6d4d6c5bb2c9",
-      "bytes": 24455
+      "sha256": "ad55174d1176c87ef097752a087e6dd363cf0f18871c6eed96d98f1b63730e31",
+      "bytes": 38344
     },
     {
       "path": "notebooks/correlation/10_fuse_engine.py",
@@ -3894,8 +4029,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "experimental",
       "review": "curated",
-      "sha256": "a098f7a70eba4a57d0e6b949be468562f07cbbf9237cd2f25ccd2c6542dc2a39",
-      "bytes": 27022,
+      "sha256": "be7fc91c3459202e4671e3dee9670941c020b1e33549ed49f4a346c8d1e128e8",
+      "bytes": 28515,
       "capability": "evidence-fusion",
       "notes": "Dempster-Shafer combiner. Pure functions unit-tested (tests/test_fuse_math.py, 12 cases). Evidence-independence and calibrated-probability semantics disputed by REV2-02/03/06 (Phase 3 open)."
     },
@@ -3914,8 +4049,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "e110e8dd76d8f83660c2b0e031b3f4903d1e1f60a585f1435a4440d1425f2ce2",
-      "bytes": 11817
+      "sha256": "0dd9e74c4b358e2fdb323a15c4be79a2b9871483389264eb7c12bb47b343e6e1",
+      "bytes": 16756
     },
     {
       "path": "notebooks/detection/03_detection_slm.py",
@@ -3972,13 +4107,22 @@
       "bytes": 17624
     },
     {
+      "path": "notebooks/detection/08_threat_escalation_priority.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "da8d207e4b6357f9638eeaf875796ad74a24b0953b3cec31acac93b274378265",
+      "bytes": 12858
+    },
+    {
       "path": "notebooks/ingestion/01_raw_event_ingestion.py",
       "artifact_type": "databricks_notebook",
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "ccc6643ca657c58b641c92b1a770b9a584213cf5b49808efb8b29b39dc4ea412",
-      "bytes": 22421
+      "sha256": "d5deb952c01322822d3203b8d32168a43642ffddc1e94776c4f5c94b829aa422",
+      "bytes": 25128
     },
     {
       "path": "notebooks/ingestion/02_enrichment_pipeline.py",
@@ -4229,8 +4373,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "e3642630fdf8c371b7fd6a19329defc159638f1285f393dbb0d9844e914bf94e",
-      "bytes": 17700
+      "sha256": "280b67dca76b2949148ba764ac081a52b966d6c192d41302001e4bdb99d7ada6",
+      "bytes": 17781
     },
     {
       "path": "notebooks/ml_training/07_ray_slm_distributed_training.py",
@@ -4301,8 +4445,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "cc58601c9053172fc76f4c146533f57ea59e62555bd59448b4b0182f654b9512",
-      "bytes": 7855
+      "sha256": "4db2ae4e3e96976e9b122f71b95507f0ac020f5a850508dc0819191c890b82cb",
+      "bytes": 8459
     },
     {
       "path": "notebooks/pipelines/gold_analytics.py",
@@ -4373,8 +4517,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "setup",
       "review": "auto",
-      "sha256": "6c3215ae1ae48bc05513502212e75efc61af3599ba0cd6d20c2e2652decbbb86",
-      "bytes": 88345
+      "sha256": "24505039c46989611c4375b0157bc4e1fa39d7d9107ea8ee77bf1bfc034d2800",
+      "bytes": 91488
     },
     {
       "path": "notebooks/setup/02_seed_demo_data.py",
@@ -4445,8 +4589,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "3d973d2eadb28920a48a65424812c25ca4bff26cc589d8ae523121fcdc3cb9b8",
-      "bytes": 95591
+      "sha256": "525b64383a3e085efc0be555c1dad3e3c124e309771c87293970d8e7e3968d91",
+      "bytes": 100408
     },
     {
       "path": "resources/pipelines.yml",
@@ -4463,8 +4607,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "2d91e7baa2e50562efe125d7ac2d8b34c6013322ca49ea56197ceebd5e91b24c",
-      "bytes": 3632
+      "sha256": "de63435718bf4d5a8d6bbee244cf74c42cddbb74780b3f6f76dfe9f0f91a917e",
+      "bytes": 4122
     },
     {
       "path": "tests/contract/test_backend_imports.py",
@@ -4474,6 +4618,42 @@
       "review": "auto",
       "sha256": "99dd2a7743d553a84878012ea52625019e4f6bda850b75882393ca8adfd776b7",
       "bytes": 3504
+    },
+    {
+      "path": "tests/contract/test_bundle_config.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "c7f0dac58cb380b18e018533084b7a8fd2e332b6e566f8783ef1ee924cf2d57a",
+      "bytes": 5621
+    },
+    {
+      "path": "tests/contract/test_cep_signal_contract.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "77dfa297b53ac67b7f7c2c438f9b3bdc5294779ccab6328e45917a882ee50eac",
+      "bytes": 4231
+    },
+    {
+      "path": "tests/contract/test_idempotent_persistence.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "d4e712dded45b26e29500e2044f5d590d74d2b38143e4dbe6d92bbbf0d224d80",
+      "bytes": 3209
+    },
+    {
+      "path": "tests/contract/test_migration_idempotency.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "61df8e806081eac6c54365dd232927537350dec466f0577fec9c25a6543fcd6c",
+      "bytes": 3238
     },
     {
       "path": "tests/contract/test_phase0_inventory.py",
@@ -4490,8 +4670,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "40365c2cbdaed1d725f1dc6d5cb15fe7900c55b72126cd3bc3d20b7e0eced98d",
-      "bytes": 4568
+      "sha256": "96bb095ffff728f81827c559aaad2e1642e8963a06b14e693df6ca1f4b25a856",
+      "bytes": 6435
     },
     {
       "path": "tests/contract/test_release_readiness.py",
@@ -4503,6 +4683,60 @@
       "bytes": 3266
     },
     {
+      "path": "tests/contract/test_revision_thread.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "5a8fa5d8a20763d96417809ea48c5db96e83a92722f216d55a316e54059835b1",
+      "bytes": 5577
+    },
+    {
+      "path": "tests/contract/test_serverless_notebook_apis.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "a199f592321eabebbeed08413fedf9fa9ed870ec1e9174bbfc40263751bf050e",
+      "bytes": 7989
+    },
+    {
+      "path": "tests/e2e/README.md",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "0a3a233e48a2603f9a9f97c6c74be55b9c6a5e72aac3ba391e9df433c1152085",
+      "bytes": 1596
+    },
+    {
+      "path": "tests/e2e/harness.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "1b4e9e68653b0c3e7e27e8436133c42dad7246765edb0af31e16d3feb4daa154",
+      "bytes": 6451
+    },
+    {
+      "path": "tests/e2e/scenarios.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "aac598f1ebe4ef745308a0fda811adb4df1ea50ac582f935e49f5f932dbfbc27",
+      "bytes": 17099
+    },
+    {
+      "path": "tests/e2e/test_e2e_entry_only.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "a7a12a6ac9cbb72fcf2f334e0241f457f9997b4cac5da525f45060e2666fd30e",
+      "bytes": 4234
+    },
+    {
       "path": "tests/persistence_test_storage.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -4510,6 +4744,15 @@
       "review": "auto",
       "sha256": "6b6002940a65236167e69ef446d0dc79bf69fd7d8012216d8995454733af7c60",
       "bytes": 8857
+    },
+    {
+      "path": "tests/property/test_analytics_math.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "2f1edc296ea1f254afa041cb342ec7dc8685b39d412cde03fd6db1fd5ffa64e0",
+      "bytes": 2725
     },
     {
       "path": "tests/property/test_audit_persistence.py",
@@ -4539,6 +4782,24 @@
       "bytes": 4956
     },
     {
+      "path": "tests/property/test_escalation_formula.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "1e3c5abcface56b8fb8c0f98802b517001c65a6faed3ad393280174b6579cfe0",
+      "bytes": 6628
+    },
+    {
+      "path": "tests/property/test_event_identity.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "4700a1080961fd06ba77c40840142719d4ebfa879febb6a5ba29e9891a9df482",
+      "bytes": 4836
+    },
+    {
       "path": "tests/property/test_finding_revision.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -4566,6 +4827,15 @@
       "bytes": 3475
     },
     {
+      "path": "tests/property/test_mitre_coverage.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "2be5495f557dc580e5a06f3c72666738dc2eae1579ada4438ba2a6ed19d1507a",
+      "bytes": 2491
+    },
+    {
       "path": "tests/property/test_model_eval.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -4573,6 +4843,24 @@
       "review": "auto",
       "sha256": "dd1032f0481e6b352b206549e7cd49c2ecd96c251ff4706cf67c1e3906622d63",
       "bytes": 4853
+    },
+    {
+      "path": "tests/property/test_monitor_health.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "f6de1d01fe432810db6ffe4faeb38630101fa499c94b4e1e4d134466957e41d9",
+      "bytes": 7106
+    },
+    {
+      "path": "tests/property/test_overview_rollup.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "6f8c327a0f2f0ffe4c5c655664bd789b8a9b2e1cedba7a0e2d31ec9378177ba9",
+      "bytes": 2611
     },
     {
       "path": "tests/property/test_pipeline_metrics.py",
@@ -4611,6 +4899,15 @@
       "bytes": 7488
     },
     {
+      "path": "tests/property/test_ti_recovery.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "761bd1be740814eb48fdb15cfa3996900368402a1e096a6510a28aeee82ee259",
+      "bytes": 6527
+    },
+    {
       "path": "tests/security/test_phase1_authz.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -4618,6 +4915,15 @@
       "review": "auto",
       "sha256": "dc695f09dbd7f6df8feaefd3051e5bac185285ff02d811698b5633a5d63e16c3",
       "bytes": 7181
+    },
+    {
+      "path": "tests/security/test_tool_arg_validation.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "e9d2c5fd45cc6cee843a5821faca0eaddc4ef9b4c3b0d2e2e30be227cf37279d",
+      "bytes": 4256
     },
     {
       "path": "tests/smoke_test_app.sh",

@@ -297,13 +297,16 @@ LENS_SPECS = [
     ("cep_pattern_matches", """
         SELECT
             id AS source_alert_id,
-            COALESCE(entity_id, pattern_name) AS entity_ref,
+            COALESCE(entity_id, pattern_name, rule_id) AS entity_ref,
             'cep' AS signal_class,
             'cep_engine' AS signal_source,
-            CAST(confidence AS DOUBLE) AS raw_score,
+            CAST(COALESCE(confidence, score) AS DOUBLE) AS raw_score,
             matched_at AS signal_timestamp,
-            matched_events AS source_event_ids,
-            CONCAT('CEP: ', pattern_name, ' (', severity, ')') AS explanation
+            event_ids AS source_event_ids,
+            CONCAT('CEP: ', COALESCE(pattern_name, rule_id),
+                   CASE WHEN mitre_technique IS NOT NULL
+                        THEN CONCAT(' [', mitre_technique, ']') ELSE '' END,
+                   ' (', COALESCE(severity, 'medium'), ')') AS explanation
         FROM {table}
         WHERE matched_at > '{cutoff}'
     """),
