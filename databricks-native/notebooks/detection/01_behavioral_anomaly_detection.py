@@ -57,6 +57,7 @@ import mlflow.spark
 import numpy as np
 from scipy import stats as scipy_stats
 from sklearn.ensemble import IsolationForest
+from detector_semantics import iforest_anomaly_norm
 
 experiment_path = f"/Shared/0xDSI/experiments/behavioral_anomaly_detection"
 mlflow.set_experiment(experiment_path)
@@ -321,8 +322,10 @@ with mon.time("iforest_ks_validation"):
         # Isolation Forest anomalies need only 1 significant feature (subspace anomaly)
         if len(anomalous_features) >= 1:
             avg_confidence = total_ks_confidence / len(anomalous_features)
-            # Blend iforest anomaly score with KS confidence
-            iforest_norm = min(1.0, abs(float(user_row["iforest_score"])) / 0.3)
+            # Blend iforest anomaly score with KS confidence. The score is
+            # SIGNED (negative = anomalous); only the anomalous side is evidence,
+            # so a strongly-normal user no longer scores a spurious 1.0.
+            iforest_norm = iforest_anomaly_norm(user_row["iforest_score"], 0.3)
             blended_confidence = 0.5 * avg_confidence + 0.5 * iforest_norm
             risk_score = int(min(100, blended_confidence * 100))
 
