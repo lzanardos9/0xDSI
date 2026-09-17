@@ -7,6 +7,32 @@ gates are not claimed as passed.
 PyYAML is not stdlib; installed locally for config parsing
 (`pip install --break-system-packages pyyaml` → 6.0.3).
 
+## Gate C + D — detector semantics & reproducible offline gate
+
+The whole offline gate is now one command:
+```
+python3 tools/ci/run_offline_gate.py
+# notebooks compiled : 163 (0 failed)
+# test files         : 33 (33 passed, 0 failed)
+# OFFLINE GATE       : PASS
+```
+It runs `py_compile` over every notebook plus every `tests/**/test_*.py`, and is
+wired into `.github/workflows/offline-gate.yml` and `make gate-offline`. The
+syntax layer caught a real latent regression (`10_fuse_engine.py` unmatched
+parenthesis from the B6 edit) that the frontend build and source-extraction
+tests could not see.
+
+Gate C detector-semantics regression:
+```
+python3 tests/property/test_detector_semantics.py   # 14 passed
+```
+Proves the fixed math (Isolation-Forest sign, beacon regularity vs the inverted
+uniform test, Jaccard vs containment, probability clamp) and that each host
+notebook delegates to `_shared/detector_semantics.py` with the defective path
+removed. The KS-recall threshold moved 0.72->0.4 for Jaccard's scale — flagged
+in `RELEASE_EVIDENCE.md` for live re-tuning. Full gate status table lives in
+`RELEASE_EVIDENCE.md`.
+
 ## Gate B — recoverable detection path
 
 Offline suite (all script-style; run each directly): **32/32 test files pass.**

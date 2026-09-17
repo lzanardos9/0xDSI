@@ -3,7 +3,30 @@
 Branch: current working tree (no git in this environment; do not reset to the
 audited baseline).
 
-## Gate B — recoverable detection path (this session)
+## Gate C — detector semantics + Gate D — offline evidence/CI (this session)
+- **Gate C (H-040, FIXED_STATIC)** — audited the statistical/ML detectors and
+  fixed five clear defects, extracting the corrected math into the pure,
+  importable `notebooks/_shared/detector_semantics.py` (mirrors `calibration.py`):
+  Isolation-Forest sign bug (F2), inverted uniform beacon test (F4), asymmetric
+  KS-recall similarity -> Jaccard (F6, threshold default 0.72->0.4, flag for live
+  re-tuning), unclamped Monte-Carlo probability (F7), and the negative-correlation
+  empty-window liveness gate (F9). Regression
+  `tests/property/test_detector_semantics.py` (14 tests). Four operating-point
+  issues (self-contaminated UEBA baseline, daily-vs-window scale mismatch,
+  circular 'KS validation', cross-window reuse_ratio/Kleene depth) are recorded,
+  deferred to a workspace-backed pass rather than tuned blind.
+- **Gate D (H-100, VERIFIED_OFFLINE)** — made the offline evidence reproducible.
+  New `tools/ci/run_offline_gate.py` (py_compile over all 163 notebooks + every
+  `tests/**/test_*.py`), wired into `.github/workflows/offline-gate.yml` and a
+  `make gate-offline` target, plus `RELEASE_EVIDENCE.md`. The syntax layer
+  immediately caught a real latent regression: `10_fuse_engine.py` had an
+  unmatched parenthesis from the B6 revision-column edit (the frontend build and
+  source-extraction tests never import notebooks, so it had slipped through) —
+  fixed.
+- Offline gate: **163 notebooks compile, 33/33 test files pass.** Frontend build
+  passes. Gate A + all live/workspace validation remain BLOCKED.
+
+## Gate B — recoverable detection path (earlier this session)
 - **H-030 FIXED (offline)** — reframed threat-intel match->alert as a durable
   obligation. New pure, importable `notebooks/_shared/ti_recovery.py`
   (deterministic match/alert ids + 4-step reconciler: MERGE match, read

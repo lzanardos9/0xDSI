@@ -1,4 +1,4 @@
-.PHONY: help install build clean test deploy-dev deploy-staging deploy-prod lint check inventory baseline phase0
+.PHONY: help install build clean test gate-offline deploy-dev deploy-staging deploy-prod lint check inventory baseline phase0
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 0xDSI Agentic SOC Platform - Databricks Native
@@ -51,6 +51,9 @@ deploy: ## One-command deploy (uses deploy.sh)
 test: ## Run smoke tests
 	python tests/smoke_test_e2e_pipeline.py
 	python tests/smoke_validate_schema.py
+
+gate-offline: ## Run the full offline hardening gate (notebook syntax + every test file)
+	python3 tools/ci/run_offline_gate.py
 
 inventory: ## Regenerate the artifact manifest (docs/engineering/)
 	python3 tools/inventory/generate_manifest.py

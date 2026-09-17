@@ -1,0 +1,48 @@
+name: Offline Hardening Gate
+
+# Runs every check that does NOT require a live Databricks workspace. Live gates
+# (databricks bundle validate, job runs, streaming, load) require an authorized
+# target and are tracked BLOCKED in docs/engineering/production-hardening.
+#
+# Assumes databricks-native/ is the repository root. If it is nested under a
+# parent repo, move this file to <repo-root>/.github/workflows/ and set
+# defaults.run.working-directory accordingly.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install test dependencies
+        # pyyaml: bundle-config contract test. numpy/scipy: imported by a few
+        # notebooks so py_compile + any importable helper resolves cleanly.
+        run: pip install pyyaml numpy scipy
+
+      - name: Regenerate artifact manifest (must be committed up to date)
+        run: python3 tools/inventory/generate_manifest.py
+
+      - name: Offline hardening gate (notebook syntax + full test suite)
+        run: python3 tools/ci/run_offline_gate.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend dependencies
+        run: cd app && npm ci
+
+      - name: Build frontend
+        run: cd app && VITE_DATABRICKS_MODE=true npm run build

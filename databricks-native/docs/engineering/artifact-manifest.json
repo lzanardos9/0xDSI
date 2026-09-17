@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 548,
-  "total_bytes": 10871309,
+  "total_files": 553,
+  "total_bytes": 10899221,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -11,43 +11,52 @@
       "build_config": 12,
       "databricks_notebook": 137,
       "deployment_config": 5,
-      "documentation": 10,
+      "documentation": 11,
       "frontend_entry": 1,
       "frontend_module": 298,
-      "other": 2,
-      "shared_library": 25,
+      "other": 3,
+      "shared_library": 26,
       "stylesheet": 1,
-      "test": 38,
+      "test": 39,
       "test_script": 1,
-      "tooling": 4
+      "tooling": 5
     },
     "by_shipping_status": {
       "asset": 10,
-      "build_config": 18,
+      "build_config": 19,
       "deployment": 5,
-      "documentation": 10,
+      "documentation": 11,
       "experimental": 1,
       "production": 3,
       "setup": 5,
-      "shared_library": 24,
-      "test": 39,
-      "unreviewed": 433
+      "shared_library": 25,
+      "test": 40,
+      "unreviewed": 434
     },
     "by_runtime": {
       "browser": 300,
-      "build-tooling": 16,
+      "build-tooling": 17,
       "databricks-bundle": 5,
       "databricks-spark": 137,
-      "n/a": 22,
-      "python": 38,
-      "python (databricks runtime)": 25,
+      "n/a": 24,
+      "python": 39,
+      "python (databricks runtime)": 26,
       "python-fastapi": 4,
       "shell": 1
     },
     "reviewed": 4,
-    "unreviewed": 433
+    "unreviewed": 434
   },
   "artifacts": [
+    {
+      "path": ".github/workflows/offline-gate.yml",
+      "artifact_type": "other",
+      "runtime": "n/a",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "98d065f65edf4a66676b9a7af53906114bfd921c1b6b321d5c13a7e016c48068",
+      "bytes": 1513
+    },
     {
       "path": "ARCHITECTURE_DEEP_DIVE.md",
       "artifact_type": "documentation",
@@ -63,8 +72,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "58c34fe27e22809df56385eeb5ba3ffd47151a0577db868b445fa741b22281b2",
-      "bytes": 4824
+      "sha256": "33eb1bbf56438e3179e9b1c9e0284e386fbc96bd4fa310ff65e6ebeb2081c82f",
+      "bytes": 4965
     },
     {
       "path": "README.md",
@@ -3055,8 +3064,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "565f72ead68ce4ab6e2843558e4e84f85c8afc68ea90290b72e5033731ad97f3",
-      "bytes": 15758
+      "sha256": "bce4ad985722df2a1177ef0d93c74e1f5bb553e171656226faa0bdd5d2292d91",
+      "bytes": 19683
     },
     {
       "path": "docs/engineering/production-hardening/PLAN.md",
@@ -3068,13 +3077,22 @@
       "bytes": 2734
     },
     {
+      "path": "docs/engineering/production-hardening/RELEASE_EVIDENCE.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "4edf76261df73f630fed73e8b64124c0b215047a0471efea163795e01f17f7ca",
+      "bytes": 4452
+    },
+    {
       "path": "docs/engineering/production-hardening/RESUME.md",
       "artifact_type": "documentation",
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "37c281c2e23c8874f46560b90e878322c55746c002c19119c686caf00e4c4b35",
-      "bytes": 6728
+      "sha256": "5c0fc7ea5b528e5acd1a325b9ee2865cf84b4f34dc639f62604e6c0d585302e7",
+      "bytes": 8351
     },
     {
       "path": "docs/engineering/production-hardening/VALIDATION.md",
@@ -3082,8 +3100,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "6754773ced2071e2eeec18f106bf333eba256cdbefc567dc4d65e576c6aaab90",
-      "bytes": 7557
+      "sha256": "8254786c83076c9ef1ccf0203a03b96970d730b4a95e45890cdaed7ea1502c50",
+      "bytes": 8683
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -3158,6 +3176,15 @@
       "review": "auto",
       "sha256": "a105587e87718dd7dd115fa2bfeb3e3b5a6ccf1b217905be1f18e9f7e798b3cf",
       "bytes": 13200
+    },
+    {
+      "path": "notebooks/_shared/detector_semantics.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "41e36f910506a2ef2180281ba18a864c1c681a36110bc4f6e544f486ffc816c0",
+      "bytes": 4385
     },
     {
       "path": "notebooks/_shared/escalation_formula.py",
@@ -3876,8 +3903,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "46916c3dadcf8d3181bbc9d1fb69893aaf6f3512b6ebdffab2ed4fb5e3ca2589",
-      "bytes": 14724
+      "sha256": "6b60951155fcdaa4daeaa9dd5cd3d8e17ea5d9c75f10a810f0c1d1f9e86323fd",
+      "bytes": 14964
     },
     {
       "path": "notebooks/analytics/07_cet_native_bridge.py",
@@ -3957,8 +3984,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "0b930719ee4aa5b5e7e78f117e61aafc93f3d38a85ae05698088641b108a492d",
-      "bytes": 6841
+      "sha256": "d232dea0c4a89b7cafeea900fff14431fdbda7cc6da1df8eb041263050e6fb91",
+      "bytes": 7846
     },
     {
       "path": "notebooks/correlation/03_graph_correlation.py",
@@ -3975,8 +4002,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "939a92e8582e9da5219dbb91813893f4521c4e76697b38085186d0202bbd13b1",
-      "bytes": 15813
+      "sha256": "abae20ec54efe74c7d799db0691ad569373d64bdc1094eefe845ef30fd4ef443",
+      "bytes": 15748
     },
     {
       "path": "notebooks/correlation/05_supply_chain_risk.py",
@@ -4029,8 +4056,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "experimental",
       "review": "curated",
-      "sha256": "be7fc91c3459202e4671e3dee9670941c020b1e33549ed49f4a346c8d1e128e8",
-      "bytes": 28515,
+      "sha256": "2658e3be8ab7177bbf2ad21d642e1bd10b1eaa1dc4e68034309a2ff0ab5dd49c",
+      "bytes": 28581,
       "capability": "evidence-fusion",
       "notes": "Dempster-Shafer combiner. Pure functions unit-tested (tests/test_fuse_math.py, 12 cases). Evidence-independence and calibrated-probability semantics disputed by REV2-02/03/06 (Phase 3 open)."
     },
@@ -4040,8 +4067,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "12aeb13bd0726be61963fc8fcb219167e4b2454489963bed99dca260439a17e9",
-      "bytes": 19504
+      "sha256": "b9fd27a4d94137f2d1cb9183f5a2ea96668c4e36c0a52baf174913bcb8026775",
+      "bytes": 19724
     },
     {
       "path": "notebooks/detection/02_threat_intel_matching.py",
@@ -4094,8 +4121,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "ab445725079400a7c0e64f93c8306e40584e3bd06a2b9fac79ceb4534f2af31b",
-      "bytes": 12369
+      "sha256": "e1f59151cbe607c057e97ecf48dca51285a6be3eaba3257e90cd5cccfbf3aaa3",
+      "bytes": 12754
     },
     {
       "path": "notebooks/detection/08_ot_protocol_anomaly_detection.py",
@@ -4782,6 +4809,15 @@
       "bytes": 4956
     },
     {
+      "path": "tests/property/test_detector_semantics.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "8b56af4114798c6d239f956cf428bb9cbe62170fe9481c4de8abfa163c34c529",
+      "bytes": 5685
+    },
+    {
       "path": "tests/property/test_escalation_formula.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -4951,6 +4987,15 @@
       "review": "auto",
       "sha256": "7ac50245d7fe7666929ac164f6d74e789c8abc59c1986a8fc723b0a07e0c2221",
       "bytes": 4298
+    },
+    {
+      "path": "tools/ci/run_offline_gate.py",
+      "artifact_type": "tooling",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "601029591a2f5d9a4707a129da6c3bc2726007888b5018330bd7be63df563867",
+      "bytes": 3211
     },
     {
       "path": "tools/inventory/classify.py",

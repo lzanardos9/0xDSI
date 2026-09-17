@@ -141,6 +141,28 @@
       "regression": "tests/contract/test_serverless_notebook_apis.py \u2014 each notebook is in the KNOWN_BLOCKED allowlist keyed to H-080 so a NEW violation still fails the suite, and test_known_blocked_notebooks_are_still_blocked prevents the allowlist from rotting once each is migrated.",
       "status": "BLOCKED",
       "fix": "Deferred to Gate A (serverless compatibility): each notebook needs either a serverless-safe trigger (availableNow/once) or a move to classic compute, and cache/persist removal or a classic-compute move, then staging validation. The detection-path notebook (02_threat_intel_matching) was fixed in Gate B via a widget-driven _resolve_trigger defaulting to availableNow and is intentionally NOT allowlisted."
+    },
+    {
+      "id": "H-040",
+      "title": "Detectors emit uncalibrated or logically-inverted scores (detector semantics)",
+      "severity": "high",
+      "phase": 8,
+      "affected_path": "notebooks/_shared/detector_semantics.py, notebooks/detection/01_behavioral_anomaly_detection.py, notebooks/correlation/04_temporal_window_correlator.py, notebooks/detection/07_ks_recall_lens.py, notebooks/analytics/06_monte_carlo_threat_forecast.py, notebooks/correlation/02_negative_correlation.py",
+      "evidence": "Gate C audited the statistical/ML detectors for math that runs clean but produces wrong scores. Five concrete defects fixed: (F2) Isolation-Forest confidence read abs() of a SIGNED decision_function, so a strongly-NORMAL user scored as anomalous as an attacker; (F4) the beacon detector declared 'periodic' when inter-arrival times were consistent with a UNIFORM distribution (the opposite of a fixed cadence, and failing to reject a null is not evidence for it); (F6) KS-recall similarity normalised the token intersection by the alert length alone (a containment ratio), so a short alert fully inside a long entry scored 1.0 and over-recalled; (F7) Monte-Carlo transition probabilities were perturbed by additive Gaussian noise and compared to a uniform draw WITHOUT clamping, so tail probabilities fired always/never and biased the simulated attack paths; (F9) negative-correlation 'absence' fired on an empty window with no liveness check, so a fresh deploy or ingestion outage tripped every rule at once. Four further issues (self-contaminated UEBA baseline, daily-vs-window baseline scale mismatch, circular 'KS validation', cross-window reuse_ratio / Kleene depth) change a detector's operating point and are deferred to a workspace-backed pass.",
+      "regression": "tests/property/test_detector_semantics.py (14 tests: pure-helper unit tests for the fixed math + source-scan that each host notebook delegates to the fix and the defective path is gone)",
+      "status": "FIXED_STATIC",
+      "fix": "Extracted the fixed math into the pure, importable notebooks/_shared/detector_semantics.py (iforest_anomaly_norm, is_periodic_beacon, clamp_unit, jaccard_similarity), mirroring the calibration.py pattern, and wired each notebook to it. The KS-recall match threshold default moved 0.72 -> 0.4 to match Jaccard's scale (flagged for live re-tuning). The four operating-point issues are recorded, not changed blind."
+    },
+    {
+      "id": "H-100",
+      "title": "Offline hardening evidence not reproducible; no CI gate; notebook syntax unchecked",
+      "severity": "medium",
+      "phase": 10,
+      "affected_path": "tools/ci/run_offline_gate.py, .github/workflows/offline-gate.yml, Makefile, docs/engineering/production-hardening/RELEASE_EVIDENCE.md",
+      "evidence": "Gate D. The offline evidence lived only in prose and a smoke-test Make target; there was no single command that ran every offline check, and nothing compiled the notebooks (the frontend build does not touch them and the source-extraction tests do not import them). Building the gate immediately caught a real latent regression: 10_fuse_engine.py had an unmatched parenthesis introduced while threading the B6 revision columns, which py_compile flagged.",
+      "regression": "tools/ci/run_offline_gate.py (py_compile over all 163 notebooks + every tests/**/test_*.py; exits non-zero on any failure) wired into .github/workflows/offline-gate.yml and `make gate-offline`",
+      "status": "VERIFIED_OFFLINE",
+      "fix": "Added a reproducible offline-gate runner (notebook syntax + full test suite), a CI workflow that runs it plus a manifest-freshness regeneration and the frontend build, a `gate-offline` Make target, and RELEASE_EVIDENCE.md documenting the reproduce steps, gate status (A BLOCKED; B/C/D verified offline) and the explicitly-BLOCKED live gates. Fixed the fuse_engine syntax regression the gate surfaced."
     }
   ]
 }
