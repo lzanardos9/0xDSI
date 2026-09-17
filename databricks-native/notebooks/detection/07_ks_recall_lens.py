@@ -34,7 +34,7 @@
 # COMMAND ----------
 
 dbutils.widgets.text("lookback_minutes", "10", "Minutes to look back for unchecked alerts")
-dbutils.widgets.text("similarity_threshold", "0.72", "Minimum similarity for KS match")
+dbutils.widgets.text("similarity_threshold", "0.4", "Minimum Jaccard similarity for KS match")
 dbutils.widgets.text("max_items", "500", "Max items to check per run")
 dbutils.widgets.text("embedding_model", "databricks-bge-large-en", "Embedding model endpoint")
 
@@ -182,11 +182,18 @@ with mon.time("ks_recall"):
         .withColumn("common_tokens",
             size(array_intersect(col("a.alert_tokens"), col("k.ks_tokens")))
         )
-        .withColumn("max_tokens",
-            greatest(size(col("a.alert_tokens")), lit(1))
+        # Symmetric Jaccard |A n B| / |A u B|. Normalising by the alert length
+        # alone was a containment ratio: a short alert fully inside a long KS
+        # entry scored 1.0 regardless of how little of the entry matched, which
+        # systematically over-recalled.
+        .withColumn("union_tokens",
+            greatest(
+                size(col("a.alert_tokens")) + size(col("k.ks_tokens")) - col("common_tokens"),
+                lit(1),
+            )
         )
         .withColumn("token_similarity",
-            col("common_tokens").cast("double") / col("max_tokens").cast("double")
+            col("common_tokens").cast("double") / col("union_tokens").cast("double")
         )
         .filter(col("token_similarity") >= similarity_threshold)
         .select(
