@@ -340,13 +340,30 @@ def vacuum_table(
     logger.info(f"Vacuumed {full_table} (retention={retention_hours}h)")
 
 
+def resolve_stream_trigger(interval: str = "availableNow") -> dict:
+    """Map a requested trigger to a Structured Streaming trigger kwargs dict.
+
+    Serverless compute accepts only ``availableNow`` / ``once`` triggers; a fixed
+    ``processingTime`` interval requires classic compute. Defaulting to
+    ``availableNow`` keeps every streaming write serverless-safe out of the box;
+    classic jobs pass an explicit interval (e.g. "30 seconds") to run continuously.
+    """
+    val = (interval or "availableNow").strip()
+    low = val.lower()
+    if low in ("", "availablenow", "available_now"):
+        return {"availableNow": True}
+    if low == "once":
+        return {"once": True}
+    return {"processingTime": val}
+
+
 def streaming_append(
     df: DataFrame,
     table: str,
     checkpoint_path: str,
     catalog: str = "",
     schema: str = "",
-    trigger_interval: str = "10 seconds",
+    trigger_interval: str = "availableNow",
     query_name: Optional[str] = None,
     partition_by: Optional[list] = None,
 ):
@@ -373,7 +390,7 @@ def streaming_append(
         .option("checkpointLocation", checkpoint_path)
         .option("mergeSchema", "true")
         .queryName(name)
-        .trigger(processingTime=trigger_interval)
+        .trigger(**resolve_stream_trigger(trigger_interval))
     )
 
     if partition_by:
@@ -386,7 +403,7 @@ def streaming_foreach_batch(
     df: DataFrame,
     batch_handler,
     checkpoint_path: str,
-    trigger_interval: str = "10 seconds",
+    trigger_interval: str = "availableNow",
     query_name: str = "foreach_batch",
 ):
     """
@@ -411,7 +428,7 @@ def streaming_foreach_batch(
         .foreachBatch(batch_handler)
         .option("checkpointLocation", checkpoint_path)
         .queryName(query_name)
-        .trigger(processingTime=trigger_interval)
+        .trigger(**resolve_stream_trigger(trigger_interval))
         .start()
     )
 

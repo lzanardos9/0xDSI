@@ -26,7 +26,8 @@ jobs:
           python-version: "3.13"
 
       - name: Install test dependencies
-        # pyyaml: bundle-config contract test. numpy/scipy: imported by a few
+        # pyyaml: bundle-config + serverless-notebook-API contract tests.
+        # numpy/scipy: imported by a few
         # notebooks so py_compile + any importable helper resolves cleanly.
         run: pip install pyyaml numpy scipy
 

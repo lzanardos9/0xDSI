@@ -23,6 +23,15 @@ variables:
   secret_scope:
     default: soc-secrets
     description: "Databricks secret scope for API keys"
+  classic_spark_version:
+    default: "15.4.x-scala2.12"
+    description: "Databricks Runtime for classic job clusters (continuous streaming + JVM libraries such as GraphFrames)"
+  classic_node_type_id:
+    default: "m5d.2xlarge"
+    description: "Worker node type for classic job clusters. Cloud-specific - override per workspace (e.g. Standard_D8ds_v5 on Azure, n2-standard-8 on GCP)"
+  graphframes_maven:
+    default: "graphframes:graphframes:0.8.4-db1-spark3.5-s_2.12"
+    description: "GraphFrames Maven coordinate for the trend engine. Must match the classic runtime - validate in staging before production"
 
 targets:
   dev:

@@ -3,7 +3,7 @@
   "generator_version": "1.0.0",
   "root": "databricks-native",
   "total_files": 553,
-  "total_bytes": 10899221,
+  "total_bytes": 10907398,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -3019,8 +3019,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "d78e6794d903e1108747b27faf5ef1d4d139736bb421dcf51d02b618119ab220",
-      "bytes": 1166
+      "sha256": "c746aa9d07ee953e52b45f8ef14ca9fa22789eb2569d329c889eca873898efee",
+      "bytes": 1780
     },
     {
       "path": "deploy.sh",
@@ -3064,8 +3064,8 @@
       "runtime": "n/a",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "bce4ad985722df2a1177ef0d93c74e1f5bb553e171656226faa0bdd5d2292d91",
-      "bytes": 19683
+      "sha256": "78f7d09ad08a32ef086278717a1d22dadfa5e91bd3fa00440377b5a662f39442",
+      "bytes": 21104
     },
     {
       "path": "docs/engineering/production-hardening/PLAN.md",
@@ -3091,8 +3091,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "5c0fc7ea5b528e5acd1a325b9ee2865cf84b4f34dc639f62604e6c0d585302e7",
-      "bytes": 8351
+      "sha256": "196bc3b9e937b4338a2b6df3e259427e638d891933d1fd1cbff8583c4b3cef10",
+      "bytes": 10319
     },
     {
       "path": "docs/engineering/production-hardening/VALIDATION.md",
@@ -3100,8 +3100,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "8254786c83076c9ef1ccf0203a03b96970d730b4a95e45890cdaed7ea1502c50",
-      "bytes": 8683
+      "sha256": "0784a8fde30d1e8b0746af9bba07d05eed8ffa6e2682d45c70b616adfc143983",
+      "bytes": 9213
     },
     {
       "path": "notebooks/_shared/__init__.py",
@@ -3136,8 +3136,8 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "81394ba0b57a0e4683fcf945fccf38cccfe23905dfa4c6b1d1743fdb76e60914",
-      "bytes": 4463
+      "sha256": "4dfa950a7205065a70c8c9dbd8416c0e5bc26ea5e08e7c491fe3df4100090c13",
+      "bytes": 4491
     },
     {
       "path": "notebooks/_shared/calibration.py",
@@ -3174,8 +3174,8 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "a105587e87718dd7dd115fa2bfeb3e3b5a6ccf1b217905be1f18e9f7e798b3cf",
-      "bytes": 13200
+      "sha256": "83a0b895c71bdf5e081875f3f0b8c6561be5cc8c3625f1b900b085338db7a065",
+      "bytes": 13949
     },
     {
       "path": "notebooks/_shared/detector_semantics.py",
@@ -3993,8 +3993,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "0194160709d662b240723537e20483a4b1bf16d8e20612a20d4f757ee41a1691",
-      "bytes": 12511
+      "sha256": "779eace41b9d1f6787b07a0d81d802be1e6cc5e011c922dfae06969b267d0d27",
+      "bytes": 12404
     },
     {
       "path": "notebooks/correlation/04_temporal_window_correlator.py",
@@ -4011,8 +4011,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "f9c765d424303832f1ced29bd9459cfb37b4195a8a284535e0ef2168e5f2f3e6",
-      "bytes": 13254
+      "sha256": "174815c241e238df0805c7ee153d13d24ea0a73b29bd8c02f78e889424150ddb",
+      "bytes": 13253
     },
     {
       "path": "notebooks/correlation/06_cloud_posture.py",
@@ -4020,8 +4020,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "ff27089ccab7b67014037857ebbf41e000e010d622baeca9d928377c4e29bee3",
-      "bytes": 17746
+      "sha256": "2733d06a150911048c657b12083401453a383b3c04f3e185d80848be6751a1e3",
+      "bytes": 17745
     },
     {
       "path": "notebooks/correlation/07_detection_confluence.py",
@@ -4029,8 +4029,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "13b043bddab6c094570f8a55e937a89997aca8aa9764ae62d64a554528ce2f27",
-      "bytes": 34837
+      "sha256": "03c9066440e3e92fd424eacd41cef8ecb73fb2181132d601fe2ae5c9dca2b393",
+      "bytes": 34836
     },
     {
       "path": "notebooks/correlation/08_entity_spine.py",
@@ -4202,8 +4202,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "b5e05420c6431fb78e238482515fc6a0daf09349a157bcd561ac5a3f9064a5d0",
-      "bytes": 17010
+      "sha256": "aabfb10c239dd875e9c889f17e16cdee0b55700c8269c32af82cb0af608bd5d5",
+      "bytes": 17097
     },
     {
       "path": "notebooks/ingestion/08_typed_bronze_partitioner.py",
@@ -4400,8 +4400,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "280b67dca76b2949148ba764ac081a52b966d6c192d41302001e4bdb99d7ada6",
-      "bytes": 17781
+      "sha256": "321392ae064cb6ae2d0f363b5756284aacc1d57dbaebd763525a0c00c2d4c465",
+      "bytes": 17726
     },
     {
       "path": "notebooks/ml_training/07_ray_slm_distributed_training.py",
@@ -4616,8 +4616,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "525b64383a3e085efc0be555c1dad3e3c124e309771c87293970d8e7e3968d91",
-      "bytes": 100408
+      "sha256": "156b4dc8b3009a1f19f2677431e6ac26e802306c269fdac64e937d8fa4f2600c",
+      "bytes": 103755
     },
     {
       "path": "resources/pipelines.yml",
@@ -4724,8 +4724,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "a199f592321eabebbeed08413fedf9fa9ed870ec1e9174bbfc40263751bf050e",
-      "bytes": 7989
+      "sha256": "fab1c372d75156544d9648bf2fe54704282e84e411be14927d48171bfc22f51a",
+      "bytes": 7587
     },
     {
       "path": "tests/e2e/README.md",

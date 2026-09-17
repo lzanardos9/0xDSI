@@ -36,6 +36,7 @@ from delta_helpers import (
     safe_append, safe_merge, safe_overwrite_partition,
     ensure_table_exists, optimize_table, vacuum_table,
     streaming_append, streaming_foreach_batch, add_metadata_columns,
+    resolve_stream_trigger,
 )
 from monitoring import Monitor, create_audit_table
 from secrets import SecretsManager, SecretNotFound, KNOWN_SECRETS

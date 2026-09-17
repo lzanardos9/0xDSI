@@ -65,14 +65,20 @@ un-alerted; the retry rediscovers it (obligation is a query) and emits exactly
 one alert. Crash AFTER the alert but before the mark re-emits onto the same
 deterministic alert id (no duplicate). Both asserted.
 
-H-080 (discovered by the broadened serverless scan): with PyYAML present,
-`tests/contract/test_serverless_notebook_apis.py` maps serverless jobs to their
-notebooks and flags 12 using classic-only APIs (processingTime triggers,
-cache/unpersist). Tracked BLOCKED, allowlisted, rot-guarded. threat-intel is
-fixed and NOT allowlisted.
+H-080 / H-004 (Gate A — serverless compatibility, FIXED_STATIC): with PyYAML
+present, `tests/contract/test_serverless_notebook_apis.py` maps serverless jobs
+to their notebooks and finds **zero** offenders across the 95 serverless
+notebooks; `KNOWN_BLOCKED` is now empty. The seven always-on continuous
+streaming jobs plus the GraphFrames `trend_engine_cet` were moved to classic job
+clusters in `resources/jobs.yml`; the serverless-scheduled notebooks had
+cache/persist removed and their fixed processingTime triggers replaced with the
+shared `resolve_stream_trigger()` helper (default availableNow). All resource
+YAML still parses.
 
 Frontend build (`VITE_DATABRICKS_MODE=true npm run build`) passes.
-Workspace/staging/live streaming validation remains BLOCKED (no target).
+Live validation still BLOCKED (no target): `databricks bundle validate` + a run
+on classic and serverless compute, and confirming the classic node types /
+GraphFrames Maven coordinate for the deployment cloud.
 
 ## Phase 0 / Phase 1 — bundle configuration
 
@@ -124,9 +130,10 @@ python3 tests/contract/test_serverless_notebook_apis.py
 - `sparkContext.broadcast` removed from all three streaming/ML notebooks;
   small lookup maps now captured by closure (semantically identical).
 - `analytics/01_trend_engine_cet.py` (GraphFrames + `sparkContext.setCheckpointDir`)
-  is **BLOCKED**: requires classic compute + the GraphFrames Maven library, which
-  needs staging validation. Allowlisted in the regression with a rot guard so a
-  new violation still fails and the allowlist cannot go stale.
+  was migrated in Gate A: its job now runs on a dedicated classic cluster
+  (`cet_classic`) with the GraphFrames Maven library from the `graphframes_maven`
+  bundle variable, so it is off the serverless path. Live staging validation of
+  the classic runtime + Maven coordinate on the target cloud remains BLOCKED.
 
 ## Phase 6 — durable health (H-060)
 

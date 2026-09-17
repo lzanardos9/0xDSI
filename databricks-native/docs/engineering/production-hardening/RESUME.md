@@ -3,6 +3,32 @@
 Branch: current working tree (no git in this environment; do not reset to the
 audited baseline).
 
+## Gate A — serverless compatibility (this session)
+- **H-080 + H-004 residual (FIXED_STATIC)** — reconciled every notebook's Spark
+  API usage with the compute its job actually runs on. Seven always-on
+  continuous streaming jobs (`enrichment_pipeline`, `kafka_ingestion`,
+  `temporal_window_correlator`, `realtime_graph_cep`, `typed_bronze_partitioner`,
+  `lakebase_sync_streaming`, `ot_protocol_ingestion`) plus the GraphFrames
+  `trend_engine_cet` were moved from serverless to **classic job clusters** in
+  `resources/jobs.yml` (`job_clusters` + `new_cluster`, `data_security_mode:
+  SINGLE_USER`, runtime/node type from new `classic_spark_version` /
+  `classic_node_type_id` / `graphframes_maven` bundle variables, pip deps
+  re-declared as task `libraries`) — there continuous `processingTime` streaming,
+  `cache/persist`, RDD checkpointing and JVM libraries are all supported.
+- The serverless-scheduled notebooks were instead made serverless-safe:
+  `graph_correlation` and `graph_neighborhood_embeddings` had all
+  `.cache()`/`.unpersist()` removed; `supply_chain_risk`, `cloud_posture`,
+  `detection_confluence` and `lakebase_sync` had hardcoded
+  `.trigger(processingTime=...)` replaced with a shared `resolve_stream_trigger()`
+  helper added to `_shared/delta_helpers.py` (and routed the previously-
+  `processingTime` `streaming_append`/`streaming_foreach_batch` writers through
+  it, default `availableNow`), exported via `bootstrap`.
+- `KNOWN_BLOCKED` in `tests/contract/test_serverless_notebook_apis.py` is now
+  **empty**; with PyYAML present both contract tests pass and the serverless set
+  (95 notebooks) has zero offenders. **Still BLOCKED:** the live
+  `databricks bundle validate` + a run on classic and serverless compute, and
+  confirming the classic node types / GraphFrames coordinate for the target cloud.
+
 ## Gate C — detector semantics + Gate D — offline evidence/CI (this session)
 - **Gate C (H-040, FIXED_STATIC)** — audited the statistical/ML detectors and
   fixed five clear defects, extracting the corrected math into the pure,
@@ -112,10 +138,11 @@ audited baseline).
 - `npm run build` passes.
 
 ## Next exact steps (all require a Databricks workspace — BLOCKED offline)
-1. Phase 1 residual (BLOCKED): migrate `trend_engine_cet` from serverless to a
-   classic job cluster with the GraphFrames Maven library, then validate in
-   staging. No in-repo cluster pattern exists to copy and node types / Spark
-   version / Maven coords are cloud-specific; do not author blind.
+1. Gate A live validation (BLOCKED): run `databricks bundle validate`, then start
+   the classic streaming jobs and confirm the `classic_spark_version` /
+   `classic_node_type_id` values and the `graphframes_maven` coordinate resolve on
+   the target cloud; confirm the serverless-scheduled notebooks drain correctly
+   under `availableNow`.
 2. Phase 4 (**H-030**, FIXED_STATIC): the durable obligation is proven offline
    via `tests/property/test_ti_recovery.py`; a live workspace run of the
    streaming detector is the remaining confidence step.
@@ -128,7 +155,8 @@ audited baseline).
   offline test job's deps).
 
 ## Recommendation
-`OFFLINE_VERIFIED_ONLY`. Offline-verifiable defects (H-001, H-004 broadcast
-cases, H-020, H-030, H-050, H-060, H-070) are fixed with regressions; the
-`trend_engine_cet` compute migration and H-080 (12 serverless-incompatible
-notebooks) are truthfully BLOCKED pending a workspace.
+`OFFLINE_VERIFIED_ONLY`. Offline-verifiable defects (H-001, H-004, H-020, H-030,
+H-050, H-060, H-070, H-080) are fixed with regressions; the Gate A serverless->
+classic migration is code-complete and offline-verified, with only the live
+`databricks bundle validate` + staging run on classic/serverless compute truthfully
+BLOCKED pending an authorized workspace.
