@@ -81,7 +81,7 @@ with mon.time("graph_construction"):
         AND hostname IS NOT NULL
     """)
 
-    nodes = ip_nodes.union(user_nodes).union(host_nodes).distinct().cache()
+    nodes = ip_nodes.union(user_nodes).union(host_nodes).distinct()
     node_count = nodes.count()
 
     # Edges: Connections between entities in the same events
@@ -116,7 +116,7 @@ with mon.time("graph_construction"):
         WHERE timestamp > current_timestamp() - INTERVAL {lookback_hours} HOURS
         AND user_id IS NOT NULL AND source_ip IS NOT NULL
         GROUP BY user_id, source_ip
-    """).cache()
+    """)
 
     edge_count = edges.count()
     mon.log_event("graph_built", {"nodes": node_count, "edges": edge_count})
@@ -146,7 +146,7 @@ with mon.time("path_detection"):
         )
         # Temporal ordering: hop1 should happen before or near hop2
         .filter(col("first_hop_time") <= col("second_hop_time") + expr("INTERVAL 5 MINUTES"))
-    ).cache()
+    )
 
     two_hop_count = two_hop_paths.count()
 
@@ -172,7 +172,7 @@ with mon.time("path_detection"):
             .filter(col("max_severity").isin("high", "critical"))
             .orderBy(col("total_weight").desc())
             .limit(max_alerts)
-        ).cache()
+        )
         three_hop_count = three_hop_paths.count()
 
     mon.log_event("paths_detected", {
@@ -340,12 +340,7 @@ with mon.time("graph_persist"):
 
 # COMMAND ----------
 
-# Clean up cached DataFrames
-nodes.unpersist()
-edges.unpersist()
-if three_hop_paths is not None:
-    three_hop_paths.unpersist()
-two_hop_paths.unpersist()
+# Serverless compute manages caching automatically; no manual unpersist needed.
 
 mon.log_complete(details={
     "nodes": node_count,

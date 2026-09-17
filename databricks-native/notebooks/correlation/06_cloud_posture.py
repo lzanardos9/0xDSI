@@ -199,7 +199,7 @@ if mode == "streaming":
         .writeStream
         .foreachBatch(detect_cspm_batch)
         .option("checkpointLocation", get_checkpoint_path(cfg, "cloud_posture"))
-        .trigger(processingTime="30 seconds")
+        .trigger(**resolve_stream_trigger())
         .queryName("cspm_correlation_detector")
         .start()
     )

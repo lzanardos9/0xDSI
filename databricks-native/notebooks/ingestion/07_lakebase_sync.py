@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 dbutils.widgets.text("mode", "streaming", "Execution mode: streaming | batch | full_refresh")
 dbutils.widgets.text("max_concurrent_streams", "6", "Max concurrent streaming queries")
-dbutils.widgets.text("trigger_interval", "10 seconds", "Streaming trigger interval")
+dbutils.widgets.text("trigger_interval", "availableNow", "Stream trigger: availableNow | once | <interval e.g. 10 seconds> (interval requires classic compute)")
 
 mode = dbutils.widgets.get("mode")
 max_streams = int(dbutils.widgets.get("max_concurrent_streams"))
@@ -284,7 +284,7 @@ def start_cdc_stream(config: dict) -> StreamingQuery:
         .writeStream
         .foreachBatch(write_cdc_batch)
         .option("checkpointLocation", checkpoint)
-        .trigger(processingTime=trigger_interval)
+        .trigger(**resolve_stream_trigger(trigger_interval))
         .queryName(f"lakebase_cdc_{config['source_table']}")
         .start()
     )

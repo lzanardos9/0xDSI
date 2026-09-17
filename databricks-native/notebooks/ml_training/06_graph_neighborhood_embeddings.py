@@ -143,7 +143,6 @@ try:
                 F.max("timestamp").alias("last_seen"),
             )
         )
-        edges.cache()
         edge_count = edges.count()
         mon.log_event("edges_built", {"edge_count": edge_count})
 
@@ -164,7 +163,7 @@ try:
                          "weight", "edge_risk", "edge_type_diversity", "last_seen")
             .union(edges.select(F.col("b").alias("node"), F.col("a").alias("neighbor"),
                                 "weight", "edge_risk", "edge_type_diversity", "last_seen"))
-        ).cache()
+        )
 
         deg = (
             adj.groupBy("node")
@@ -329,7 +328,6 @@ try:
                 "two_hop_reach", "risk_score", "lookback_hours", "updated_at",
             )
         )
-        embedded.cache()
         entity_count = embedded.count()
 
     # ------------------------------------------------------------------

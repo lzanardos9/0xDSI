@@ -121,7 +121,7 @@ if mode == "streaming":
         .writeStream
         .foreachBatch(detect_supply_chain_batch)
         .option("checkpointLocation", get_checkpoint_path(cfg, "supply_chain_risk"))
-        .trigger(processingTime="30 seconds")
+        .trigger(**resolve_stream_trigger())
         .queryName("supply_chain_risk_detector")
         .start()
     )

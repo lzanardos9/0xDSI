@@ -57,31 +57,23 @@ FORBIDDEN = {
 # Notebooks whose serverless incompatibility is a tracked, workspace-BLOCKED
 # migration (cannot be fixed by an offline Python edit), keyed to its finding.
 # A notebook NOT in this map that references a forbidden API fails the test.
-KNOWN_BLOCKED = {
-    # Requires GraphFrames (a JVM library) + RDD checkpointing; the correct fix
-    # is classic compute, which needs staging validation. Tracked as H-004.
-    "notebooks/analytics/01_trend_engine_cet.py": "H-004",
-
-    # H-080: systemic serverless incompatibility discovered when this regression
-    # was broadened to cover fixed processingTime triggers and cache/persist.
-    # These jobs are declared serverless in the bundle yet use classic-only APIs;
-    # each needs either a serverless-safe trigger (availableNow/once) or a move to
-    # classic compute, plus staging validation. Deferred to Gate A (serverless
-    # compatibility). The detection-path fix (02_threat_intel_matching) is NOT
-    # listed here: it is fixed and must stay green.
-    "notebooks/agents/26_realtime_graph_cep.py": "H-080",
-    "notebooks/correlation/03_graph_correlation.py": "H-080",
-    "notebooks/correlation/04_temporal_window_correlator.py": "H-080",
-    "notebooks/correlation/05_supply_chain_risk.py": "H-080",
-    "notebooks/correlation/06_cloud_posture.py": "H-080",
-    "notebooks/correlation/07_detection_confluence.py": "H-080",
-    "notebooks/ingestion/02_enrichment_pipeline.py": "H-080",
-    "notebooks/ingestion/05_kafka_eventhub_connector.py": "H-080",
-    "notebooks/ingestion/07_lakebase_sync.py": "H-080",
-    "notebooks/ingestion/08_typed_bronze_partitioner.py": "H-080",
-    "notebooks/ingestion/10_plc_ot_protocol_connector.py": "H-080",
-    "notebooks/ml_training/06_graph_neighborhood_embeddings.py": "H-080",
-}
+#
+# Gate A (serverless compatibility) resolved every prior entry:
+#   * The continuous real-time jobs (H-080: enrichment_pipeline, kafka_ingestion,
+#     temporal_window_correlator, realtime_graph_cep, typed_bronze_partitioner,
+#     lakebase_sync_streaming, ot_protocol_ingestion) and the GraphFrames trend
+#     engine (H-004) were moved to CLASSIC job clusters in resources/jobs.yml, so
+#     they no longer run on the serverless execution path this test scans.
+#   * The serverless-scheduled notebooks (graph_correlation,
+#     graph_neighborhood_embeddings, supply_chain_risk, cloud_posture,
+#     detection_confluence, lakebase full refresh) were made serverless-safe:
+#     cache/persist removed and fixed processingTime triggers replaced with the
+#     shared resolve_stream_trigger() helper (availableNow by default).
+# Nothing is legitimately blocked today, so this map is empty. A NEW serverless
+# notebook that references a forbidden API will fail the test below. The live
+# staging validation (databricks bundle validate + a run on classic and
+# serverless compute) still requires an authorized workspace.
+KNOWN_BLOCKED = {}
 
 
 def _serverless_notebooks():

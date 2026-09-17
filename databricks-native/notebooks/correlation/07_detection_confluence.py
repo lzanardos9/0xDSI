@@ -817,7 +817,7 @@ if mode == "streaming":
         .writeStream
         .foreachBatch(confluence_streaming_batch)
         .option("checkpointLocation", get_checkpoint_path(cfg, "detection_confluence"))
-        .trigger(processingTime="30 seconds")
+        .trigger(**resolve_stream_trigger())
         .queryName("detection_confluence_fusion")
         .start()
     )
