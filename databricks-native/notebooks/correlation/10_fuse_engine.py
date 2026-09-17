@@ -150,6 +150,9 @@ for _col, _decl in (("finding_id", "STRING"), ("revision", "INT")):
             spark.sql(f"UPDATE {fuse_table} SET finding_id = ueo_id WHERE finding_id IS NULL")
     except Exception:
         pass  # column already present
+
+spark.sql(f"""
+CREATE TABLE IF NOT EXISTS {disagreement_table} (
     disagreement_id STRING NOT NULL,
     fuse_id STRING NOT NULL,
     ueo_id STRING NOT NULL,

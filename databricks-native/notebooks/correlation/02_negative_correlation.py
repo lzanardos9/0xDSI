@@ -78,8 +78,27 @@ spark.sql(f"""
 
 detections = []
 
+# Liveness gate: "absence" is only meaningful if ingestion is actually flowing.
+# On a fresh deploy or an ingestion outage the events table is empty, which would
+# otherwise trip EVERY absence rule simultaneously (a false-"missing" storm). If
+# no events of ANY type arrived in the widest rule window, the pipeline is not
+# alive and we skip absence detection this run rather than manufacture alerts.
+_max_window = max((int(r.absence_window_seconds) for r in neg_rules), default=0)
+_liveness_query = (
+    qb()
+    .select("COUNT(*) as cnt")
+    .from_table(events_table)
+    .where_raw(f"timestamp > current_timestamp() - INTERVAL {_max_window} SECONDS")
+    .limit(1)
+    .build()
+)
+ingestion_alive = _max_window > 0 and spark.sql(_liveness_query).collect()[0].cnt > 0
+if not ingestion_alive:
+    print("SKIPPED: no events ingested in the scan window; absence detection cannot run")
+    mon.log_event("absence_scan_skipped_no_ingestion", {"max_window_seconds": _max_window})
+
 with mon.time("absence_check"):
-    for rule in neg_rules:
+    for rule in neg_rules if ingestion_alive else []:
         window_seconds = rule.absence_window_seconds
         expected_type = rule.expected_event_type
         rule_id = rule.id

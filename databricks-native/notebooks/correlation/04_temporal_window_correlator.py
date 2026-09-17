@@ -45,6 +45,7 @@ from pyspark.sql.functions import *
 from pyspark.sql.types import *
 import numpy as np
 from scipy import stats as scipy_stats
+from detector_semantics import is_periodic_beacon
 
 # COMMAND ----------
 
@@ -194,24 +195,11 @@ def beacon_ks_test(timestamps, alpha=0.01):
     if len(iats) < 4:
         return False, 0.0
 
-    mean_iat = np.mean(iats)
-    if mean_iat < 1.0:
-        return False, 0.0
-
-    cv = np.std(iats) / max(mean_iat, 0.001)
-
-    if cv < 0.15:
-        confidence = min(0.99, 1 - cv)
-        return True, confidence
-    elif cv < 0.3:
-        ks_stat, p_value = scipy_stats.kstest(
-            iats, 'uniform', args=(min(iats), max(iats) - min(iats))
-        )
-        is_periodic = p_value > 0.05
-        if is_periodic:
-            return True, float(1 - cv)
-
-    return False, 0.0
+    # Regularity-based periodicity (see _shared/detector_semantics.py). The old
+    # branch declared a beacon when the intervals were "consistent with uniform"
+    # (KS p > 0.05) -- backwards, since uniform spacing is the opposite of a
+    # fixed cadence and failing to reject a null is not evidence for it.
+    return is_periodic_beacon([float(x) for x in iats])
 
 # COMMAND ----------
 

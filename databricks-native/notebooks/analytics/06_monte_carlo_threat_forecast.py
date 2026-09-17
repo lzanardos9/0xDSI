@@ -21,6 +21,7 @@ import json
 import time
 import uuid
 import numpy as np
+from detector_semantics import clamp_unit
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from dataclasses import dataclass, field
@@ -167,9 +168,11 @@ def run_single_simulation(
         np.random.shuffle(available)
 
         for flow in available:
-            # Add noise to calibrated probability
+            # Add noise to calibrated probability, then clamp: an unclamped
+            # value > 1 makes the transition fire on every draw and < 0 makes it
+            # never fire, biasing the simulated path frequencies at the tails.
             noise = np.random.normal(0, 0.05)
-            effective_prob = flow["calibrated_prob"] + noise
+            effective_prob = clamp_unit(flow["calibrated_prob"] + noise)
 
             if np.random.random() < effective_prob:
                 current_domain = flow["to_idx"]
