@@ -1,3 +1,6 @@
+[functions.aviation-live]
+verify_jwt = false
+
 [functions.analyze-communication-psychology]
 verify_jwt = false
 
