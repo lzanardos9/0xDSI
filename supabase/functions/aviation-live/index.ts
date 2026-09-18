@@ -109,13 +109,29 @@ Deno.serve(async (req: Request) => {
     const region = REGIONS[regionKey] || REGIONS.europe;
     const [lamin, lomin, lamax, lomax] = region.bbox;
 
-    // Regional traffic + global emergency squawks (fully open, no key).
-    const [regional, sq7700, sq7500, sq7600] = await Promise.all([
-      fetchJson(`https://api.adsb.lol/v2/lat/${region.lat}/lon/${region.lon}/dist/250`, 12000),
-      fetchJson(`https://api.adsb.lol/v2/squawk/7700`, 8000),
-      fetchJson(`https://api.adsb.lol/v2/squawk/7500`, 8000),
-      fetchJson(`https://api.adsb.lol/v2/squawk/7600`, 8000),
-    ]);
+    // Open ADS-B mirrors (no key). Try each until one answers.
+    const MIRRORS = [
+      { name: "adsb.fi", base: "https://opendata.adsb.fi/api/v2" },
+      { name: "adsb.lol", base: "https://api.adsb.lol/v2" },
+    ];
+
+    let sourceName = "";
+    let regional: any = null;
+    let sq7700: any = null, sq7500: any = null, sq7600: any = null;
+
+    for (const m of MIRRORS) {
+      const [reg, s77, s75, s76] = await Promise.all([
+        fetchJson(`${m.base}/lat/${region.lat}/lon/${region.lon}/dist/250`, 9000),
+        fetchJson(`${m.base}/squawk/7700`, 6000),
+        fetchJson(`${m.base}/squawk/7500`, 6000),
+        fetchJson(`${m.base}/squawk/7600`, 6000),
+      ]);
+      if (reg && Array.isArray(reg.ac)) {
+        sourceName = m.name;
+        regional = reg; sq7700 = s77; sq7500 = s75; sq7600 = s76;
+        break;
+      }
+    }
 
     if (!regional || !Array.isArray(regional.ac)) {
       return new Response(
@@ -200,7 +216,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         region: regionKey,
-        source: "adsb.lol",
+        source: sourceName,
         bbox: { lamin, lomin, lamax, lomax },
         feedTime: Math.floor(Date.now() / 1000),
         globalEmergencies: emergencyAc.length,
