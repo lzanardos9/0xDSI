@@ -1010,8 +1010,9 @@ function LiveSky() {
   );
 }
 
-export default function AirlineThreats() {
+export default function AirlineThreats({ embeddedTab }: { embeddedTab?: string } = {}) {
   const [tab, setTab] = useState<TabId>('live');
+  const activeTab = (embeddedTab ?? tab) as TabId;
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Animated aircraft attack-surface data-bus diagram
@@ -1087,7 +1088,8 @@ export default function AirlineThreats() {
   ];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className={embeddedTab ? 'space-y-6' : 'p-6 space-y-6'}>
+      {!embeddedTab && (<>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -1133,11 +1135,12 @@ export default function AirlineThreats() {
           );
         })}
       </div>
+      </>)}
 
       {/* Connected fleet: diagram + cards */}
-      {tab === 'live' && <LiveSky />}
+      {activeTab === 'live' && <LiveSky />}
 
-      {tab === 'connected' && (
+      {activeTab === 'connected' && (
         <div className="space-y-4">
           <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
@@ -1153,28 +1156,28 @@ export default function AirlineThreats() {
         </div>
       )}
 
-      {tab === 'datalink' && (
+      {activeTab === 'datalink' && (
         <div className="space-y-4">
           <div className="flex items-center gap-2"><Radio size={14} className="text-cyan-400" /><span className="text-xs text-cyan-400 font-mono font-bold">DATALINK / SATCOM THREAT FEED</span></div>
           {DATA.datalink.map((e) => <UseCaseCard key={e.id} e={e} />)}
         </div>
       )}
 
-      {tab === 'enterprise' && (
+      {activeTab === 'enterprise' && (
         <div className="space-y-4">
           <div className="flex items-center gap-2"><Users size={14} className="text-cyan-400" /><span className="text-xs text-cyan-400 font-mono font-bold">PASSENGER / BOOKING / LOYALTY THREATS</span></div>
           {DATA.enterprise.map((e) => <UseCaseCard key={e.id} e={e} />)}
         </div>
       )}
 
-      {tab === 'webapi' && (
+      {activeTab === 'webapi' && (
         <div className="space-y-4">
           <div className="flex items-center gap-2"><Globe size={14} className="text-cyan-400" /><span className="text-xs text-cyan-400 font-mono font-bold">WEB / MOBILE / API THREATS</span></div>
           {DATA.webapi.map((e) => <UseCaseCard key={e.id} e={e} />)}
         </div>
       )}
 
-      {tab === 'ground' && (
+      {activeTab === 'ground' && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
@@ -1192,7 +1195,7 @@ export default function AirlineThreats() {
         </div>
       )}
 
-      {tab === 'gnss' && (
+      {activeTab === 'gnss' && (
         <div className="space-y-4">
           <div className="flex items-center gap-2"><Target size={14} className="text-red-400" /><span className="text-xs text-red-400 font-mono font-bold">GNSS SPOOFING / TIMING THREATS</span></div>
           {DATA.gnss.map((e) => <UseCaseCard key={e.id} e={e} />)}
@@ -1200,7 +1203,7 @@ export default function AirlineThreats() {
       )}
 
       {/* Campaigns & incidents */}
-      {tab === 'incidents' && (
+      {activeTab === 'incidents' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2"><Skull size={14} className="text-red-400" /><span className="text-xs text-red-400 font-mono font-bold">REAL-WORLD AIRLINE CAMPAIGNS & BREACHES</span></div>
           <p className="text-[11px] text-slate-500 leading-relaxed">Public, attributed incidents affecting airlines and their supply chain - from web skimming and data theft to destructive intrusions and 2025 identity-driven campaigns. Use them to pressure-test detections and tabletop exercises.</p>
@@ -1231,7 +1234,7 @@ export default function AirlineThreats() {
       )}
 
       {/* Research library */}
-      {tab === 'research' && (
+      {activeTab === 'research' && (
         <div className="space-y-3">
           <div className="flex items-center gap-2"><BookOpen size={14} className="text-cyan-400" /><span className="text-xs text-cyan-400 font-mono font-bold">RESEARCH & ATTACK-VECTOR LIBRARY</span></div>
           <p className="text-[11px] text-slate-500 leading-relaxed">Each airline use case above is modeled on published aviation-security research from DEF CON, Black Hat, HITB, academic venues and safety reporting. Scenarios are illustrative threat models for detection engineering - not operational instructions.</p>

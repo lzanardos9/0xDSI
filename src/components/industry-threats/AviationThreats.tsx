@@ -466,8 +466,9 @@ const complianceColor = (s: string) => {
 
 // --- Component ---
 
-export default function AviationThreats() {
+export default function AviationThreats({ embeddedTab }: { embeddedTab?: string } = {}) {
   const [tab, setTab] = useState<'adsb' | 'atc' | 'maritime' | 'compliance'>('adsb');
+  const activeTab = (embeddedTab ?? tab) as 'adsb' | 'atc' | 'maritime' | 'compliance';
   const [liveADSB, setLiveADSB] = useState(ADSB_THREATS);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -695,7 +696,8 @@ export default function AviationThreats() {
   ];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className={embeddedTab ? 'space-y-6' : 'p-6 space-y-6'}>
+      {!embeddedTab && (<>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -741,9 +743,10 @@ export default function AviationThreats() {
           );
         })}
       </div>
+      </>)}
 
       {/* ========== ADS-B Threats Tab ========== */}
-      {tab === 'adsb' && (
+      {activeTab === 'adsb' && (
         <div className="space-y-4">
           {/* Canvas: Flight paths + GPS jamming zones */}
           <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4 relative overflow-hidden">
@@ -803,7 +806,7 @@ export default function AviationThreats() {
       )}
 
       {/* ========== ATC Systems Tab ========== */}
-      {tab === 'atc' && (
+      {activeTab === 'atc' && (
         <div className="space-y-4">
           {/* ATC summary stats */}
           <div className="grid grid-cols-3 gap-4">
@@ -858,7 +861,7 @@ export default function AviationThreats() {
       )}
 
       {/* ========== Maritime VSAT Tab ========== */}
-      {tab === 'maritime' && (
+      {activeTab === 'maritime' && (
         <div className="space-y-4">
           {/* Maritime summary */}
           <div className="grid grid-cols-4 gap-3">
@@ -926,7 +929,7 @@ export default function AviationThreats() {
       )}
 
       {/* ========== AVSEC Compliance Tab ========== */}
-      {tab === 'compliance' && (
+      {activeTab === 'compliance' && (
         <div className="space-y-4">
           {/* Compliance overview */}
           <div className="grid grid-cols-4 gap-3">

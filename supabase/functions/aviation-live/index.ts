@@ -50,17 +50,24 @@ const FT_TO_M = 0.3048;
 const KT_TO_MS = 0.514444;
 const FTMIN_TO_MS = 0.00508;
 
+const diag: string[] = [];
+
 async function fetchJson(url: string, ms: number): Promise<any | null> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), ms);
+  const started = Date.now();
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": "0xDSI-AviationLive/1.1", Accept: "application/json" },
       signal: ac.signal,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      diag.push(`${url} -> HTTP ${res.status} in ${Date.now() - started}ms`);
+      return null;
+    }
     return await res.json();
-  } catch {
+  } catch (e) {
+    diag.push(`${url} -> ${e instanceof Error ? e.name + ": " + e.message : "error"} in ${Date.now() - started}ms`);
     return null;
   } finally {
     clearTimeout(timer);
@@ -104,55 +111,68 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    diag.length = 0;
     const url = new URL(req.url);
     const regionKey = (url.searchParams.get("region") || "europe").toLowerCase();
     const region = REGIONS[regionKey] || REGIONS.europe;
     const [lamin, lomin, lamax, lomax] = region.bbox;
 
-    // Open ADS-B mirrors (no key). Try each until one answers.
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabase = supabaseUrl && serviceKey ? createClient(supabaseUrl, serviceKey) : null;
+
+    // Open ADS-B mirrors (no key). One request each to stay under rate limits.
+    // Emergency squawks are detected from this same regional feed.
     const MIRRORS = [
-      { name: "adsb.fi", base: "https://opendata.adsb.fi/api/v2" },
       { name: "adsb.lol", base: "https://api.adsb.lol/v2" },
+      { name: "adsb.fi", base: "https://opendata.adsb.fi/api/v2" },
     ];
 
     let sourceName = "";
     let regional: any = null;
-    let sq7700: any = null, sq7500: any = null, sq7600: any = null;
 
     for (const m of MIRRORS) {
-      const [reg, s77, s75, s76] = await Promise.all([
-        fetchJson(`${m.base}/lat/${region.lat}/lon/${region.lon}/dist/250`, 9000),
-        fetchJson(`${m.base}/squawk/7700`, 6000),
-        fetchJson(`${m.base}/squawk/7500`, 6000),
-        fetchJson(`${m.base}/squawk/7600`, 6000),
-      ]);
+      const reg = await fetchJson(`${m.base}/lat/${region.lat}/lon/${region.lon}/dist/250`, 9000);
       if (reg && Array.isArray(reg.ac)) {
         sourceName = m.name;
-        regional = reg; sq7700 = s77; sq7500 = s75; sq7600 = s76;
+        regional = reg;
         break;
       }
     }
 
+    // Upstream rate-limited or unreachable: fall back to last good cached payload.
     if (!regional || !Array.isArray(regional.ac)) {
+      if (supabase) {
+        const { data: cached } = await supabase
+          .from("aviation_live_cache")
+          .select("payload, updated_at")
+          .eq("region", regionKey)
+          .maybeSingle();
+        if (cached?.payload) {
+          const ageSec = Math.round((Date.now() - new Date(cached.updated_at).getTime()) / 1000);
+          return new Response(
+            JSON.stringify({ ...cached.payload, stale: true, cacheAgeSec: ageSec, diag }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      }
       return new Response(
-        JSON.stringify({ error: "Live ADS-B feed unavailable", region: regionKey }),
+        JSON.stringify({ error: "Live ADS-B feed unavailable", region: regionKey, diag }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
     const regionAc: AdsbAircraft[] = regional.ac;
-    const emergencyAc: AdsbAircraft[] = [sq7700, sq7500, sq7600]
-      .flatMap((r) => (r && Array.isArray(r.ac) ? r.ac : []));
 
-    let airborne = 0, onGround = 0;
+    let airborne = 0, onGround = 0, emergencies = 0;
     const threatMap = new Map<string, Threat>();
 
     for (const a of regionAc) {
       isAirborne(a) ? airborne++ : onGround++;
-      const t = detectThreat(a);
-      if (t) threatMap.set(t.icao24, t);
-    }
-    for (const a of emergencyAc) {
+      if (a.squawk === "7500" || a.squawk === "7700" || a.squawk === "7600" ||
+          (a.emergency && a.emergency !== "none")) {
+        emergencies++;
+      }
       const t = detectThreat(a);
       if (t) threatMap.set(t.icao24, t);
     }
@@ -163,11 +183,8 @@ Deno.serve(async (req: Request) => {
     });
 
     // Persist notable (critical/high) events for rolling history.
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     let recent: unknown[] = [];
-    if (supabaseUrl && serviceKey) {
-      const supabase = createClient(supabaseUrl, serviceKey);
+    if (supabase) {
       const notable = threats.filter((t) => t.severity === "critical" || t.severity === "high");
       if (notable.length) {
         const detectedAt = new Date().toISOString();
@@ -213,18 +230,26 @@ Deno.serve(async (req: Request) => {
         squawk: a.squawk ?? null,
       }));
 
+    const payload = {
+      region: regionKey,
+      source: sourceName,
+      bbox: { lamin, lomin, lamax, lomax },
+      feedTime: Math.floor(Date.now() / 1000),
+      globalEmergencies: emergencies,
+      stats: { total: regionAc.length, airborne, onGround, threats: threats.length },
+      aircraft: sample,
+      threats,
+      recent,
+    };
+
+    if (supabase) {
+      await supabase
+        .from("aviation_live_cache")
+        .upsert({ region: regionKey, payload, updated_at: new Date().toISOString() });
+    }
+
     return new Response(
-      JSON.stringify({
-        region: regionKey,
-        source: sourceName,
-        bbox: { lamin, lomin, lamax, lomax },
-        feedTime: Math.floor(Date.now() / 1000),
-        globalEmergencies: emergencyAc.length,
-        stats: { total: regionAc.length, airborne, onGround, threats: threats.length },
-        aircraft: sample,
-        threats,
-        recent,
-      }),
+      JSON.stringify(payload),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err) {
