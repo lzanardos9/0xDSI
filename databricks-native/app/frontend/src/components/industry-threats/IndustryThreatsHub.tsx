@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Radio, Factory, Heart, Zap, ShoppingCart, Navigation, BookOpen, Package,
-  DollarSign, ChevronRight, Shield, Activity, TrendingUp, AlertTriangle
+  DollarSign, ChevronRight, Shield, Activity, TrendingUp, AlertTriangle, Plane
 } from 'lucide-react';
 import { lakehouse } from '../../lib/lakehouse';
 import TelcoThreats from './TelcoThreats';
@@ -10,6 +10,7 @@ import HealthcareThreats from './HealthcareThreats';
 import EnergyThreats from './EnergyThreats';
 import RetailThreats from './RetailThreats';
 import AviationThreats from './AviationThreats';
+import AirlineThreats from './AirlineThreats';
 import EducationThreats from './EducationThreats';
 import CPGThreats from './CPGThreats';
 
@@ -20,6 +21,7 @@ const INDUSTRIES = [
   { id: 'energy', label: 'Energy & Utilities', icon: Zap, color: 'from-emerald-500/20 to-green-500/20', border: 'border-emerald-500/30', text: 'text-emerald-400', threats: 1567, critical: 23, description: 'Grid SCADA, Pipeline, Smart Meters, NERC CIP' },
   { id: 'retail', label: 'Retail & E-Commerce', icon: ShoppingCart, color: 'from-teal-500/20 to-emerald-500/20', border: 'border-teal-500/30', text: 'text-teal-400', threats: 3421, critical: 41, description: 'POS Malware, E-Commerce Fraud, PCI DSS' },
   { id: 'aviation', label: 'Aviation & Maritime', icon: Navigation, color: 'from-sky-500/20 to-blue-500/20', border: 'border-sky-500/30', text: 'text-sky-400', threats: 678, critical: 8, description: 'ADS-B, ATC Systems, Maritime VSAT' },
+  { id: 'airline', label: 'Airlines', icon: Plane, color: 'from-cyan-500/20 to-blue-500/20', border: 'border-cyan-500/30', text: 'text-cyan-400', threats: 1934, critical: 21, description: 'Connected Fleet, ACARS/SATCOM, Booking/GDS, Loyalty, Ground IoT' },
   { id: 'education', label: 'Education', icon: BookOpen, color: 'from-blue-500/20 to-emerald-500/20', border: 'border-blue-500/30', text: 'text-blue-400', threats: 1892, critical: 15, description: 'Student Data, Research IP, Campus Network' },
   { id: 'cpg', label: 'Consumer Packaged Goods', icon: Package, color: 'from-amber-500/20 to-orange-500/20', border: 'border-amber-500/30', text: 'text-amber-400', threats: 2134, critical: 29, description: 'Supply Chain, Anti-Counterfeit, Formula IP, Food Safety' },
 ] as const;
@@ -76,6 +78,7 @@ export default function IndustryThreatsHub({ initialIndustry }: { initialIndustr
         {selected === 'energy' && <EnergyThreats />}
         {selected === 'retail' && <RetailThreats />}
         {selected === 'aviation' && <AviationThreats />}
+        {selected === 'airline' && <AirlineThreats />}
         {selected === 'education' && <EducationThreats />}
         {selected === 'cpg' && <CPGThreats />}
       </div>
