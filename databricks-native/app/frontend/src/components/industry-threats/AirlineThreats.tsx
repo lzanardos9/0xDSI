@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Plane, Cpu, Radio, Ticket, Boxes, BookOpen, AlertTriangle, Clock, MapPin,
-  Shield, Activity, Wifi, HardDrive, Database, Fuel, Luggage, Users,
-  ChevronRight, Target, Zap, GitBranch, Lock, Gauge, ScanLine
+  Plane, Cpu, Radio, Ticket, Boxes, BookOpen, AlertTriangle, Clock,
+  Shield, Activity, Wifi, HardDrive, Fuel, Luggage, Users,
+  ChevronRight, Target, Zap, GitBranch, Lock, Gauge, ScanLine,
+  Globe, Skull, Calendar
 } from 'lucide-react';
 
 /**
@@ -101,6 +102,30 @@ const CONNECTED: UseCase[] = [
     ref: 'Pen Test Partners EFB research',
     timestamp: '6m ago',
   },
+  {
+    id: 'con-006',
+    type: 'Boeing 787 Crew Information System Exposure',
+    severity: 'critical',
+    description: 'Vulnerabilities in the Crew Information System/Maintenance System (CIS/MS) network of an e-enabled widebody, reachable from lower-trust networks, could theoretically be chained toward the Common Data Network - the exact concern IOActive raised after reverse-engineering the 787 core network.',
+    telemetry: 'CIS/MS auth logs, VxWorks service exposure, inter-network ACL violations, CDN gateway flow anomalies',
+    vector: 'Memory-corruption in CIS/MS services + weak inter-domain ACLs',
+    systems: 'Boeing 787 CIS/MS, Common Data Network, VxWorks avionics',
+    control: 'Patch CIS/MS, harden inter-domain ACLs, monitor CDN gateway',
+    ref: 'Santamarta (IOActive) - Reversing the Boeing 787 Core Network, BH USA 2019',
+    timestamp: '2m ago',
+  },
+  {
+    id: 'con-007',
+    type: 'TCAS / ACAS Resolution Advisory Spoofing',
+    severity: 'high',
+    description: 'Fabricated Mode-S / ADS-B intruder tracks injected to trigger spurious TCAS Resolution Advisories, inducing unnecessary climb/descent commands and destabilizing traffic flow in a busy terminal area.',
+    telemetry: 'TCAS RA rate vs. baseline, phantom intruder correlation with radar, Mode-S reply anomalies',
+    vector: 'Mode-S/ADS-B intruder injection into collision-avoidance logic',
+    systems: 'TCAS II / ACAS X, Mode-S transponder',
+    control: 'Cross-validate RA triggers with primary radar; RA anomaly baselining',
+    ref: 'ACAS/TCAS spoofing research',
+    timestamp: '5m ago',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -154,6 +179,30 @@ const DATALINK: UseCase[] = [
     control: 'ATN-B2 authentication rollout; voice cross-verify of datalink clearances',
     ref: 'Aviation datalink security literature',
     timestamp: '5m ago',
+  },
+  {
+    id: 'dl-005',
+    type: 'ADS-C Position Contract Manipulation',
+    severity: 'high',
+    description: 'Automatic Dependent Surveillance-Contract reports over oceanic airspace altered or replayed so the ground system holds a stale/false position, degrading procedural separation on North Atlantic and Pacific tracks.',
+    telemetry: 'ADS-C report cadence vs. contract, position jump detection, FANS logon origin',
+    vector: 'ADS-C report forgery/replay on FANS-1/A',
+    systems: 'ADS-C, FANS-1/A, oceanic separation tools',
+    control: 'Contract-integrity checks, cross-source position fusion, ATN-B2 auth',
+    ref: 'Oceanic surveillance security analysis',
+    timestamp: '7m ago',
+  },
+  {
+    id: 'dl-006',
+    type: 'In-Flight Wi-Fi Crew/Passenger Segmentation Bypass',
+    severity: 'high',
+    description: 'Weak isolation between the passenger connectivity network and the crew/EFB network lets an onboard attacker reach crew tablets, cabin-crew apps, or the content-loading server from a paid Wi-Fi seat.',
+    telemetry: 'Passenger-VLAN to crew-VLAN flows, rogue DHCP/ARP on cabin net, EFB inbound connections',
+    vector: 'Cabin network VLAN hopping / weak isolation',
+    systems: 'In-flight connectivity, cabin services network, crew EFB Wi-Fi',
+    control: 'Strict VLAN/firewall isolation, client isolation on passenger SSID',
+    ref: 'Pen Test Partners in-flight Wi-Fi research',
+    timestamp: '9m ago',
   },
 ];
 
@@ -221,6 +270,30 @@ const ENTERPRISE: UseCase[] = [
     ref: 'E-commerce/airline booking abuse pattern',
     timestamp: '7m ago',
   },
+  {
+    id: 'ent-006',
+    type: 'Biometric Boarding / Facial-Match Spoofing',
+    severity: 'medium',
+    description: 'Presentation attacks (printed photo, deepfake, or injected camera feed) against curb-to-gate facial-recognition boarding, plus concerns over the retention and sharing of the biometric gallery linked to PNRs.',
+    telemetry: 'Liveness-check failures, match-confidence anomalies, gallery access/export logs',
+    vector: 'Presentation/injection attack on face-match + biometric data exposure',
+    systems: 'Biometric boarding (facial recognition), traveler-verification service',
+    control: 'Liveness detection, secured camera path, minimized biometric retention',
+    ref: 'Biometric boarding assurance research',
+    timestamp: '9m ago',
+  },
+  {
+    id: 'ent-007',
+    type: 'Air Cargo / e-Freight & AWB Fraud',
+    severity: 'high',
+    description: 'Manipulation of electronic air waybills and dangerous-goods declarations in the cargo booking platform to misdeclare hazmat, divert high-value freight, or defraud through falsified weight/charges across the cargo community system.',
+    telemetry: 'AWB amendment history, DG-declaration mismatch, weight vs. manifest delta, off-hours edits',
+    vector: 'Cargo platform account abuse / EDI (CargoIMP/CargoXML) injection',
+    systems: 'Cargo management, e-AWB, community system (CCS)',
+    control: 'Change auditing, DG cross-validation, EDI partner authentication',
+    ref: 'Air-cargo digital fraud analysis',
+    timestamp: '12m ago',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -287,6 +360,30 @@ const GROUND: UseCase[] = [
     ref: 'Connected-aircraft turnaround research',
     timestamp: '8m ago',
   },
+  {
+    id: 'grd-006',
+    type: 'Drone / UAS Incursion & Airspace Disruption',
+    severity: 'high',
+    description: 'Unauthorized drone activity over the movement area forces runway closures and ground stops - the Gatwick 2018 pattern - while spoofed Remote-ID or GPS-driven geofence evasion complicates counter-UAS attribution.',
+    telemetry: 'Counter-UAS radar/RF detections, Remote-ID inconsistencies, runway-closure correlation',
+    vector: 'Malicious/negligent UAS operation + Remote-ID spoofing',
+    systems: 'Counter-UAS sensors, airport ops, Remote-ID',
+    control: 'C-UAS detection + geofence enforcement, response playbook, RF direction-finding',
+    ref: 'Gatwick 2018 drone disruption; counter-UAS research',
+    timestamp: '10m ago',
+  },
+  {
+    id: 'grd-007',
+    type: 'Crew Rostering / Scheduling Ransomware',
+    severity: 'critical',
+    description: 'Ransomware detonated in the crew-management and rostering platform strands crews out of position, breaches duty-time limits, and cascades into mass cancellations - a documented cause of multi-day operational meltdowns.',
+    telemetry: 'Mass file-encryption signatures, roster DB availability, backup-restore RTO, bulk crew re-assignments',
+    vector: 'Ransomware via phished ops-staff credentials / RDP',
+    systems: 'Crew management, rostering, flight ops control',
+    control: 'Immutable backups, network segmentation, MFA, tested recovery runbooks',
+    ref: 'Airline operational ransomware incidents',
+    timestamp: '13m ago',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -317,7 +414,173 @@ const GNSS: UseCase[] = [
     ref: 'GNSS timing-dependency analyses',
     timestamp: '2m ago',
   },
+  {
+    id: 'gps-003',
+    type: 'ILS / Instrument Landing System Spoofing',
+    severity: 'critical',
+    description: 'Low-cost SDR transmitters spoof the ILS localizer and glideslope on final approach, inducing subtle lateral/vertical offsets that can steer an aircraft off the runway centerline in low-visibility conditions - demonstrated in a controlled study.',
+    telemetry: 'ILS deviation vs. GNSS/RNP cross-check, signal-strength anomalies, off-centerline trend on approach',
+    vector: 'RF spoofing of localizer/glideslope on 108-112 MHz / 329-335 MHz',
+    systems: 'ILS localizer & glideslope, autoland, approach guidance',
+    control: 'Multi-sensor approach monitoring (GNSS/RNP cross-check), signal anomaly detection',
+    ref: 'Sathaye, Schepers, Ranganathan, Noubir - Wireless Attacks on ILS, USENIX Security 2019',
+    timestamp: '40s ago',
+  },
 ];
+
+// ---------------------------------------------------------------------------
+// 6. Web / Mobile / API surface
+// ---------------------------------------------------------------------------
+const WEBAPI: UseCase[] = [
+  {
+    id: 'web-001',
+    type: 'Magecart Payment-Page Skimming',
+    severity: 'critical',
+    description: 'Malicious JavaScript injected into the booking/payment flow via a compromised third-party script or tag manager silently exfiltrates card and passenger data - the technique behind the British Airways 2018 breach and its landmark regulatory fine.',
+    telemetry: 'CSP violation reports, outbound beacons to unknown hosts, script-integrity (SRI) failures, new third-party tags',
+    vector: 'Supply-chain JS injection into checkout',
+    systems: 'Booking engine, payment page, tag manager, third-party scripts',
+    control: 'Strict CSP + SRI, script allow-listing, client-side integrity monitoring',
+    ref: 'British Airways Magecart breach, 2018 (ICO fine)',
+    timestamp: '14s ago',
+  },
+  {
+    id: 'web-002',
+    type: 'Mobile App API BOLA / IDOR (PNR & Loyalty Exposure)',
+    severity: 'critical',
+    description: 'Broken Object-Level Authorization in the airline mobile/web API: incrementing a booking or member ID returns another traveler\'s PNR, documents, and loyalty balance - the #1 OWASP API risk and a recurring airline bug-bounty finding.',
+    telemetry: 'Sequential object-ID access per token, cross-account read ratio, 403-then-200 probing patterns',
+    vector: 'Missing object-level authZ on REST/GraphQL endpoints',
+    systems: 'Mobile/Web API gateway, booking & loyalty services',
+    control: 'Per-object authorization checks, non-enumerable IDs, API abuse detection',
+    ref: 'OWASP API Security Top 10 (API1: BOLA)',
+    timestamp: '38s ago',
+  },
+  {
+    id: 'web-003',
+    type: 'OAuth / Session Token Theft on Loyalty Portal',
+    severity: 'high',
+    description: 'Stolen or replayed session/refresh tokens (via XSS, open redirect, or leaked mobile logs) grant persistent access to member accounts and stored payment instruments without tripping password-based alerts.',
+    telemetry: 'Token reuse across geos/devices, refresh-token replay, redirect-URI mismatches, XSS payload hits',
+    vector: 'XSS / open redirect / token leakage -> session hijack',
+    systems: 'Identity provider, loyalty portal, mobile app',
+    control: 'Short-lived tokens, sender-constrained tokens, redirect allow-list, XSS hardening',
+    ref: 'OWASP API Security Top 10 (API2)',
+    timestamp: '2m ago',
+  },
+  {
+    id: 'web-004',
+    type: 'Automated Fare/Seat Scraping & Inventory Denial',
+    severity: 'medium',
+    description: 'High-volume bots scrape fares and hold seats without purchasing, distorting revenue management, denying inventory to real customers, and inflating GDS look-to-book fees.',
+    telemetry: 'Look-to-book ratio, headless-browser fingerprints, seat-hold-without-purchase spikes',
+    vector: 'Scraper/hold bots against booking API',
+    systems: 'Internet booking engine, inventory, revenue management',
+    control: 'Bot management, proof-of-work/CAPTCHA on holds, hold-expiry tuning',
+    ref: 'Airline bot-abuse pattern',
+    timestamp: '6m ago',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// 7. Real-world campaigns & incidents (named, public)
+// ---------------------------------------------------------------------------
+interface Incident {
+  id: string;
+  name: string;
+  year: string;
+  actor: string;
+  technique: string;
+  impact: string;
+  scale: string;
+  severity: Sev;
+}
+
+const INCIDENTS: Incident[] = [
+  {
+    id: 'inc-001',
+    name: 'Qantas customer-data breach',
+    year: '2025',
+    actor: 'Scattered Spider / ShinyHunters (via third-party platform)',
+    technique: 'Vishing of a call-center vendor to reach a cloud CRM, then bulk data export',
+    impact: 'Personal data of ~6 million customers exposed; later tied to a broader extortion campaign',
+    scale: '~6M records',
+    severity: 'critical',
+  },
+  {
+    id: 'inc-002',
+    name: 'Aeroflot systems destruction',
+    year: '2025',
+    actor: 'Silent Crow + Belarusian Cyber-Partisans',
+    technique: 'Long-term persistence culminating in destructive wiping of internal infrastructure',
+    impact: 'Thousands of servers reportedly destroyed; dozens of flights cancelled amid a multi-day outage',
+    scale: '~7,000 servers / 40+ flights',
+    severity: 'critical',
+  },
+  {
+    id: 'inc-003',
+    name: 'Scattered Spider targets US airlines',
+    year: '2025',
+    actor: 'Scattered Spider (UNC3944)',
+    technique: 'Social-engineering of IT help desks + MFA-fatigue to seize privileged access',
+    impact: 'FBI/industry warning; disruption at multiple carriers including Hawaiian and WestJet',
+    scale: 'Sector-wide campaign',
+    severity: 'critical',
+  },
+  {
+    id: 'inc-004',
+    name: 'British Airways payment skimming',
+    year: '2018',
+    actor: 'Magecart',
+    technique: 'Malicious JavaScript on the booking/payment site (web skimming)',
+    impact: 'Payment and personal data of ~400,000+ customers stolen; £20M ICO fine',
+    scale: '~400K cards',
+    severity: 'critical',
+  },
+  {
+    id: 'inc-005',
+    name: 'Cathay Pacific data breach',
+    year: '2018',
+    actor: 'Undisclosed / prolonged intrusion',
+    technique: 'Sustained unauthorized access to passenger databases',
+    impact: 'Data of 9.4M passengers exposed; £500K UK regulatory penalty',
+    scale: '9.4M passengers',
+    severity: 'high',
+  },
+  {
+    id: 'inc-006',
+    name: 'SITA passenger-service breach',
+    year: '2021',
+    actor: 'Supply-chain intrusion (shared PSS provider)',
+    technique: 'Compromise of a shared passenger-service platform',
+    impact: 'Frequent-flyer/PNR data exposed across Star Alliance & oneworld members (incl. Air India ~4.5M)',
+    scale: 'Multi-carrier / millions',
+    severity: 'critical',
+  },
+  {
+    id: 'inc-007',
+    name: 'EasyJet customer breach',
+    year: '2020',
+    actor: 'Undisclosed',
+    technique: 'Unauthorized access to customer records',
+    impact: '9M customers affected; 2,208 payment-card details accessed',
+    scale: '9M customers',
+    severity: 'high',
+  },
+  {
+    id: 'inc-008',
+    name: 'Bangkok Airways ransomware',
+    year: '2021',
+    actor: 'LockBit',
+    technique: 'Ransomware with data theft & leak-site extortion',
+    impact: 'Over 200GB of data exfiltrated, including passenger PII and travel documents',
+    scale: '200GB+ exfiltrated',
+    severity: 'high',
+  },
+];
+
+const sevDot = (s: string) =>
+  s === 'critical' ? 'bg-red-400' : s === 'high' ? 'bg-orange-400' : s === 'medium' ? 'bg-amber-400' : 'bg-emerald-400';
 
 // ---------------------------------------------------------------------------
 // Research library (citations)
@@ -395,6 +658,46 @@ const RESEARCH: Research[] = [
     takeaway: 'Documented widespread GNSS spoofing near conflict zones corrupting aircraft IRS/clocks and forcing diversions - the most current large-scale airline threat.',
     maps: 'GNSS spoofing, timing attacks',
   },
+  {
+    id: 'r10',
+    title: 'Wireless Attacks on Aircraft Instrument Landing Systems',
+    authors: 'Harshad Sathaye, Domien Schepers, Aanjhan Ranganathan, Guevara Noubir (Northeastern)',
+    venue: 'USENIX Security 2019',
+    takeaway: 'Showed practical SDR spoofing of ILS localizer/glideslope that can steer an aircraft off centerline on approach, with countermeasure discussion.',
+    maps: 'ILS / NAVAID spoofing',
+  },
+  {
+    id: 'r11',
+    title: 'Arm IDA and Cross Check: Reversing the Boeing 787 Core Network',
+    authors: 'Ruben Santamarta (IOActive)',
+    venue: 'Black Hat USA 2019',
+    takeaway: 'Reverse-engineered 787 CIS/MS firmware and argued for potential cross-domain reachability toward the Common Data Network - a landmark e-enabled-aircraft study.',
+    maps: 'Connected fleet, domain segmentation',
+  },
+  {
+    id: 'r12',
+    title: 'Scattered Spider (UNC3944) targeting of the airline sector',
+    authors: 'FBI / Mandiant / CrowdStrike advisories',
+    venue: '2025',
+    takeaway: 'Documented help-desk social engineering and MFA-fatigue to obtain privileged access at airlines and their vendors, driving several 2025 incidents.',
+    maps: 'Identity abuse, help-desk vishing, incidents tab',
+  },
+  {
+    id: 'r13',
+    title: 'OWASP API Security Top 10',
+    authors: 'OWASP',
+    venue: '2023',
+    takeaway: 'Codifies BOLA/IDOR, broken authentication and other API risks that recur in airline mobile/web booking and loyalty APIs.',
+    maps: 'Web/Mobile/API surface',
+  },
+  {
+    id: 'r14',
+    title: 'On the Security of ADS-B and Wireless Air-Traffic Communication',
+    authors: 'Martin Strohmeier, Vincent Lenders, Ivan Martinovic et al. (OpenSky)',
+    venue: 'IEEE / academic (2014-2020)',
+    takeaway: 'Body of work quantifying spoofing/jamming feasibility and perception-vs-reality of air-traffic communication security using real-world data.',
+    maps: 'ADS-B, datalink threat modeling',
+  },
 ];
 
 const METRICS = [
@@ -413,12 +716,13 @@ const sevColor = (s: string) => {
   return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
 };
 
-type TabId = 'connected' | 'datalink' | 'enterprise' | 'ground' | 'gnss' | 'research';
+type TabId = 'connected' | 'datalink' | 'enterprise' | 'webapi' | 'ground' | 'gnss' | 'incidents' | 'research';
 
-const DATA: Record<Exclude<TabId, 'research'>, UseCase[]> = {
+const DATA: Record<'connected' | 'datalink' | 'enterprise' | 'webapi' | 'ground' | 'gnss', UseCase[]> = {
   connected: CONNECTED,
   datalink: DATALINK,
   enterprise: ENTERPRISE,
+  webapi: WEBAPI,
   ground: GROUND,
   gnss: GNSS,
 };
@@ -528,8 +832,10 @@ export default function AirlineThreats() {
     { id: 'connected', label: 'Connected Fleet', icon: Cpu },
     { id: 'datalink', label: 'ACARS / SATCOM', icon: Radio },
     { id: 'enterprise', label: 'Booking / Loyalty', icon: Ticket },
+    { id: 'webapi', label: 'Web / Mobile / API', icon: Globe },
     { id: 'ground', label: 'Airport / Ground IoT', icon: Boxes },
-    { id: 'gnss', label: 'GNSS Spoofing', icon: Target },
+    { id: 'gnss', label: 'GNSS / Nav Spoof', icon: Target },
+    { id: 'incidents', label: 'Campaigns & Incidents', icon: Skull },
     { id: 'research', label: 'Research Library', icon: BookOpen },
   ];
 
@@ -612,6 +918,13 @@ export default function AirlineThreats() {
         </div>
       )}
 
+      {tab === 'webapi' && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2"><Globe size={14} className="text-cyan-400" /><span className="text-xs text-cyan-400 font-mono font-bold">WEB / MOBILE / API THREATS</span></div>
+          {DATA.webapi.map((e) => <UseCaseCard key={e.id} e={e} />)}
+        </div>
+      )}
+
       {tab === 'ground' && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -634,6 +947,37 @@ export default function AirlineThreats() {
         <div className="space-y-4">
           <div className="flex items-center gap-2"><Target size={14} className="text-red-400" /><span className="text-xs text-red-400 font-mono font-bold">GNSS SPOOFING / TIMING THREATS</span></div>
           {DATA.gnss.map((e) => <UseCaseCard key={e.id} e={e} />)}
+        </div>
+      )}
+
+      {/* Campaigns & incidents */}
+      {tab === 'incidents' && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2"><Skull size={14} className="text-red-400" /><span className="text-xs text-red-400 font-mono font-bold">REAL-WORLD AIRLINE CAMPAIGNS & BREACHES</span></div>
+          <p className="text-[11px] text-slate-500 leading-relaxed">Public, attributed incidents affecting airlines and their supply chain - from web skimming and data theft to destructive intrusions and 2025 identity-driven campaigns. Use them to pressure-test detections and tabletop exercises.</p>
+          {INCIDENTS.map((inc) => (
+            <div key={inc.id} className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`w-2 h-2 rounded-full ${sevDot(inc.severity)}`} />
+                  <span className="text-sm font-semibold text-white">{inc.name}</span>
+                  <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] rounded-full bg-slate-500/10 text-slate-300 border border-slate-500/20"><Calendar size={10} />{inc.year}</span>
+                </div>
+                <span className={`px-2 py-0.5 text-[10px] rounded-full border ${sevColor(inc.severity)} whitespace-nowrap`}>{inc.scale}</span>
+              </div>
+              <div className="flex items-center gap-1 mt-2 text-[11px] text-red-300/90"><Skull size={11} />{inc.actor}</div>
+              <div className="grid md:grid-cols-2 gap-2 mt-2">
+                <div className="bg-[#0A1628] border border-[#1e293b] rounded-lg p-2">
+                  <div className="flex items-center gap-1 text-[10px] text-orange-400 font-mono mb-0.5"><Zap size={10} />TECHNIQUE</div>
+                  <div className="text-[10px] text-slate-400 leading-relaxed">{inc.technique}</div>
+                </div>
+                <div className="bg-[#0A1628] border border-[#1e293b] rounded-lg p-2">
+                  <div className="flex items-center gap-1 text-[10px] text-cyan-400 font-mono mb-0.5"><AlertTriangle size={10} />IMPACT</div>
+                  <div className="text-[10px] text-slate-400 leading-relaxed">{inc.impact}</div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
