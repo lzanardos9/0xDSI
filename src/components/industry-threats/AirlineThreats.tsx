@@ -5,6 +5,7 @@ import {
   ChevronRight, Target, Zap, GitBranch, Lock, Gauge, ScanLine,
   Globe, Skull, Calendar, Satellite, RefreshCw, MapPin, Radar
 } from 'lucide-react';
+import { WORLD_LAND } from '../../data/worldLand';
 
 /**
  * Airline-operator attack surface. Distinct from the Aviation & Maritime view
@@ -864,10 +865,50 @@ function LiveSky() {
     const projY = (lat: number) => pad + (1 - (lat - lamin) / (lamax - lamin)) * (H - pad * 2);
 
     ctx.clearRect(0, 0, W, H);
-    // grid
-    ctx.strokeStyle = 'rgba(30,41,59,0.4)'; ctx.lineWidth = 0.5;
-    for (let x = 0; x <= W; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y <= H; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // Ocean background
+    ctx.fillStyle = '#0a1220';
+    ctx.fillRect(0, 0, W, H);
+
+    // Land masses (coastlines from Natural Earth low-res outlines)
+    ctx.lineJoin = 'round';
+    for (const ring of WORLD_LAND) {
+      // Skip polygons entirely outside the current view for speed
+      let anyInside = false;
+      for (const [lon, lat] of ring) {
+        if (lon >= lomin - 20 && lon <= lomax + 20 && lat >= lamin - 20 && lat <= lamax + 20) { anyInside = true; break; }
+      }
+      if (!anyInside) continue;
+      ctx.beginPath();
+      for (let i = 0; i < ring.length; i++) {
+        const x = projX(ring[i][0]), y = projY(ring[i][1]);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(30,58,95,0.35)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(56,189,248,0.35)';
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+
+    // Lat/lon graticule with labels
+    ctx.strokeStyle = 'rgba(56,189,248,0.08)';
+    ctx.fillStyle = 'rgba(148,163,184,0.55)';
+    ctx.lineWidth = 0.5;
+    ctx.font = '9px ui-monospace, monospace';
+    const lonStep = (lomax - lomin) > 30 ? 10 : 5;
+    const latStep = (lamax - lamin) > 30 ? 10 : 5;
+    for (let lon = Math.ceil(lomin / lonStep) * lonStep; lon <= lomax; lon += lonStep) {
+      const x = projX(lon);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      ctx.fillText(`${lon}\u00b0`, x + 2, H - 4);
+    }
+    for (let lat = Math.ceil(lamin / latStep) * latStep; lat <= lamax; lat += latStep) {
+      const y = projY(lat);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      ctx.fillText(`${lat}\u00b0`, 3, y - 3);
+    }
 
     // aircraft dots
     for (const a of data.aircraft) {
