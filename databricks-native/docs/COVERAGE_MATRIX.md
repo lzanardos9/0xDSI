@@ -78,7 +78,8 @@ change. This file is the human-readable mirror.
 
 ## Next phase
 
-**Phase 1 — Deterministic authority kernel.** Extract the propose/approve/dispatch/verify
-checks from `_shared/response_actions.py` into a standalone, fully unit-tested authority
-kernel with explicit ROE/scope rules and reason codes, so every action decision is
-deterministic and explainable independent of any LLM.
+**Phase 2 — VANGUARD vertical slice.** Wire the deterministic authority kernel
+(`_shared/authority_kernel.py`, Phase 1 — complete and unit-tested) in front of
+`07_vanguard_response.py`, so every proposed containment first passes `decide()`
+for a reason-coded outcome, then enters the `response_actions.py` approve →
+dispatch → verify lifecycle. This makes one agent's path end-to-end governed.

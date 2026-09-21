@@ -185,12 +185,21 @@ function StatCard({ Icon, label, value, sub, tone }: { Icon: typeof ShieldCheck;
   );
 }
 
-type TabKey = 'overview' | 'agents' | 'matrix' | 'timeline' | 'leases' | 'evidence';
+interface AuthorityRule {
+  reason_code: string;
+  rule_name: string;
+  decision: Decision;
+  why: string;
+  eval_order: number;
+}
+
+type TabKey = 'overview' | 'agents' | 'matrix' | 'rules' | 'timeline' | 'leases' | 'evidence';
 
 const TABS: Array<{ key: TabKey; label: string; Icon: typeof ShieldCheck }> = [
   { key: 'overview', label: 'Overview', Icon: Scale },
   { key: 'agents', label: 'Agent Registry', Icon: Cpu },
   { key: 'matrix', label: 'Coverage Matrix', Icon: Grid3x3 },
+  { key: 'rules', label: 'Authority Rules', Icon: Gavel },
   { key: 'timeline', label: 'Action Timeline', Icon: Activity },
   { key: 'leases', label: 'Capability Leases', Icon: KeyRound },
   { key: 'evidence', label: 'Evidence Ledger', Icon: FileCheck },
@@ -202,6 +211,7 @@ export default function EthicalControlPlane() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, Lifecycle>>({});
+  const [rules, setRules] = useState<AuthorityRule[]>([]);
   const [selectedAction, setSelectedAction] = useState<ActionRow | null>(ACTIONS[0]);
   const [leases, setLeases] = useState<LeaseRow[]>(makeLeases);
   const [now, setNow] = useState(Date.now());
@@ -227,6 +237,18 @@ export default function EthicalControlPlane() {
       } finally {
         if (active) setLoading(false);
       }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('ecp_authority_rules')
+        .select('reason_code, rule_name, decision, why, eval_order')
+        .order('eval_order', { ascending: true });
+      if (active && !error && data) setRules(data as AuthorityRule[]);
     })();
     return () => { active = false; };
   }, []);
@@ -480,6 +502,42 @@ export default function EthicalControlPlane() {
               </div>
               <p className="text-[11px] text-slate-600 flex items-center gap-1.5"><FileText size={12} />Source of truth: the coverage matrix table, mirrored in <span className="font-mono">databricks-native/docs/COVERAGE_MATRIX.md</span>. Update both when agents change.</p>
             </>
+          )}
+        </div>
+      )}
+
+      {tab === 'rules' && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-2 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
+            <FileCheck size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-emerald-200/80 leading-relaxed">
+              These are the exact deterministic rules the authority kernel applies, in evaluation order (first match wins) — no
+              model involved. The kernel lives in <span className="font-mono text-emerald-200">databricks-native/notebooks/_shared/authority_kernel.py</span> and
+              is covered by a passing test suite, so these rules are <span className="font-mono">VERIFIED_IN_CODE</span>. A confidence score never changes the outcome.
+            </p>
+          </div>
+          {rules.length === 0 ? (
+            <div className="flex items-center gap-2 text-sm text-slate-400 py-8 justify-center"><Loader2 size={16} className="animate-spin" />Loading authority rules…</div>
+          ) : (
+            <div className="space-y-2">
+              {rules.map((r) => {
+                const dm = DECISION_META[r.decision];
+                const DIcon = dm?.Icon ?? FileCheck;
+                return (
+                  <div key={r.reason_code} className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4 flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-md bg-slate-800/60 border border-[#1e293b] flex items-center justify-center text-[10px] font-mono text-slate-400 shrink-0 mt-0.5">{r.eval_order + 1}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-white">{r.rule_name}</span>
+                        {dm && <Badge tone={dm.tone}><DIcon size={10} />{r.decision.replace(/_/g, ' ')}</Badge>}
+                      </div>
+                      <div className="text-[10px] font-mono text-cyan-300 mt-0.5">{r.reason_code}</div>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{r.why}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
