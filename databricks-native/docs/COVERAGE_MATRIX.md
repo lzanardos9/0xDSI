@@ -76,10 +76,36 @@ The full row-by-row matrix is stored in the `ecp_agent_coverage` table and is wh
 Ethical Control Plane console renders. Update the seed there (and this doc) when agents
 change. This file is the human-readable mirror.
 
+## Completed phases
+
+- **Phase 0 — Inventory + coverage matrix.** The real agents from
+  `databricks-native/` are catalogued with honest status, autonomy and coverage
+  mode, persisted to `ecp_agent_coverage`, and rendered in the console.
+- **Phase 1 — Deterministic authority kernel.** `_shared/authority_kernel.py`
+  gives every action request a reason-coded verdict independent of any LLM;
+  17 unit tests pin its rules, which are mirrored into `ecp_authority_rules`.
+- **Phase 2 — VANGUARD vertical slice.** `_shared/vanguard_governed.py` wires the
+  kernel in front of `07_vanguard_response.py`: every proposed containment first
+  passes `decide()` for a reason-coded outcome, then — only if not denied —
+  enters the `response_actions.py` propose → approve → dispatch → verify
+  lifecycle. A dispatch is only `VERIFIED` when the target is observed to match
+  intent. 10 unit tests pin the slice; representative traces are persisted to
+  `ecp_vanguard_traces` and rendered in the console's Governed Actions tab, labelled
+  `SIMULATION`.
+- **Phase 3 — Broaden the governed perimeter.** The governing logic is lifted out
+  of the VANGUARD bridge into `_shared/governed_agent.py`, a generic engine driven
+  by per-agent action catalogs (`AGENT_CATALOGS`). All three action-capable agents
+  are now registered and governed the same way: VANGUARD Response (07), the
+  Autonomous Response Learner (47), and the Edge Control Plane (49).
+  `vanguard_governed.py` keeps its original API as a thin wrapper. 11 unit tests
+  pin the generic engine across every agent + action; the VANGUARD regression
+  tests still pass. Traces for all three agents are persisted to
+  `ecp_vanguard_traces` (now carrying `agent_key`/`agent_name`) and shown in the
+  console's Governed Actions tab with a per-agent filter.
+
 ## Next phase
 
-**Phase 2 — VANGUARD vertical slice.** Wire the deterministic authority kernel
-(`_shared/authority_kernel.py`, Phase 1 — complete and unit-tested) in front of
-`07_vanguard_response.py`, so every proposed containment first passes `decide()`
-for a reason-coded outcome, then enters the `response_actions.py` approve →
-dispatch → verify lifecycle. This makes one agent's path end-to-end governed.
+**Phase 4 — Explicit authorization for the `PROPOSED` agents.** Open the review of
+the 9 agents currently marked `PROPOSED` in the coverage matrix so each gets an
+explicit authorization decision (approve into a governed catalog, restrict, or
+deny) rather than an implicit one, and record the outcome on each agent's row.

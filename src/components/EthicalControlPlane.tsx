@@ -24,7 +24,6 @@ type Autonomy = 'A0' | 'A1' | 'A2' | 'A3' | 'A4';
 type HonestStatus = 'VERIFIED_IN_CODE' | 'PROPOSED' | 'SIMULATION';
 type Lifecycle = 'ACTIVE' | 'RESTRICTED' | 'PAUSED' | 'QUARANTINED' | 'REVOKED';
 type Decision = 'PERMIT_WITH_CONSTRAINTS' | 'REQUIRE_APPROVAL' | 'REQUIRE_REVIEW' | 'SANDBOX_ONLY' | 'DENY';
-type ActionState = 'PROPOSED' | 'PERMITTED' | 'DISPATCHED' | 'ACCEPTED' | 'VERIFIED' | 'BLOCKED';
 type EffectClass =
   | 'disclosure' | 'external_comm' | 'access_restriction' | 'credential_use' | 'code_execution'
   | 'persistence' | 'delegation' | 'resource_commit' | 'policy_modification' | 'irreversible';
@@ -40,20 +39,6 @@ interface CoverageAgent {
   governance: string;
   notes: string;
   sort_order: number;
-}
-
-interface ActionRow {
-  id: string;
-  ts: string;
-  agent: string;
-  tool: string;
-  target: string;
-  effects: EffectClass[];
-  decision: Decision;
-  state: ActionState;
-  reason: string;
-  authorizedBy: string | null;
-  reasonCode: string;
 }
 
 interface LeaseRow {
@@ -117,8 +102,6 @@ const DECISION_META: Record<Decision, { tone: string; Icon: typeof ShieldCheck }
   DENY: { tone: 'text-rose-300 bg-rose-500/10 border-rose-500/30', Icon: XCircle },
 };
 
-const STATE_ORDER: ActionState[] = ['PROPOSED', 'PERMITTED', 'DISPATCHED', 'ACCEPTED', 'VERIFIED'];
-
 const EFFECT_TONE: Record<EffectClass, string> = {
   disclosure: 'text-sky-300 bg-sky-500/10',
   external_comm: 'text-cyan-300 bg-cyan-500/10',
@@ -142,16 +125,6 @@ const FOUNDATIONS = [
 ];
 
 const AGENTS: CoverageAgent[] = [];
-
-const ACTIONS: ActionRow[] = [
-  { id: 'act-1', ts: '12:04:41', agent: 'VANGUARD Response', tool: 'isolate_host@1.4', target: 'host:WIN-FIN-204', effects: ['access_restriction', 'irreversible'], decision: 'REQUIRE_APPROVAL', state: 'PROPOSED', reason: 'High-impact containment on a production finance host requires dual approval within its risk envelope.', authorizedBy: null, reasonCode: 'ROE.IMPACT.PROD_CRITICAL' },
-  { id: 'act-2', ts: '12:04:22', agent: 'SAGE Enrichment', tool: 'enrich_ioc@2.1', target: 'ioc:5.188.x.x', effects: ['disclosure', 'external_comm'], decision: 'PERMIT_WITH_CONSTRAINTS', state: 'VERIFIED', reason: 'Enrichment against allowlisted source; internal indicators redacted before egress.', authorizedBy: 'standing-policy:enrich-v3', reasonCode: 'POLICY.ENRICH.ALLOWED' },
-  { id: 'act-3', ts: '12:03:58', agent: 'Threat Radar', tool: 'http_fetch@1.0', target: 'https://198.51.100.9/loot', effects: ['external_comm', 'code_execution'], decision: 'DENY', state: 'BLOCKED', reason: 'Discovered host is out of scope. Retrieved text claiming "authorized" is content, not a grant. Egress default-deny.', authorizedBy: null, reasonCode: 'ROE.SCOPE.UNAUTHORIZED_TARGET' },
-  { id: 'act-4', ts: '12:03:30', agent: 'NOVA Investigation', tool: 'query_delta@3.0', target: 'uc:audit.events', effects: ['disclosure'], decision: 'PERMIT_WITH_CONSTRAINTS', state: 'ACCEPTED', reason: 'Purpose-limited read within tenant boundary; row filter applied.', authorizedBy: 'standing-policy:investigate-v2', reasonCode: 'POLICY.READ.TENANT_SCOPED' },
-  { id: 'act-5', ts: '12:02:57', agent: 'Threat Simulator', tool: 'exploit_validate@0.9', target: 'replica:sandbox-77', effects: ['code_execution'], decision: 'SANDBOX_ONLY', state: 'DISPATCHED', reason: 'Exploitation stage permitted only inside isolated replica; production assets excluded.', authorizedBy: 'engagement:RT-2026-014', reasonCode: 'ROE.STAGE.SANDBOX' },
-  { id: 'act-6', ts: '12:02:10', agent: 'CISO Assistant', tool: 'update_policy@1.0', target: 'policy:auto-approve', effects: ['policy_modification'], decision: 'DENY', state: 'BLOCKED', reason: 'Agent cannot modify active policy or approve itself. Protected prohibition — not overridable by approval.', authorizedBy: null, reasonCode: 'CHARTER.PROHIBITION.SELF_AUTHORIZE' },
-  { id: 'act-7', ts: '12:01:44', agent: 'partner-soar-01 (external)', tool: 'delegate_task@1.1', target: 'agent:child-scan-3', effects: ['delegation'], decision: 'REQUIRE_REVIEW', state: 'PROPOSED', reason: 'Federated delegation cannot amplify authority; child scope must be the intersection of parent + policy.', authorizedBy: null, reasonCode: 'DELEGATION.INTERSECTION_ONLY' },
-];
 
 function makeLeases(): LeaseRow[] {
   const now = Date.now();
@@ -193,14 +166,48 @@ interface AuthorityRule {
   eval_order: number;
 }
 
-type TabKey = 'overview' | 'agents' | 'matrix' | 'rules' | 'timeline' | 'leases' | 'evidence';
+interface TraceStep {
+  state: string;
+  note: string;
+}
+
+interface GovernedTrace {
+  id: string;
+  agent_key: string;
+  agent_name: string;
+  scenario: string;
+  action_type: string;
+  target: string;
+  effects: EffectClass[];
+  kernel_decision: Decision;
+  kernel_reason_code: string;
+  kernel_why: string;
+  lifecycle_state: string | null;
+  intended_effect: string | null;
+  steps: TraceStep[];
+  honest_status: HonestStatus;
+  sort_order: number;
+}
+
+const STEP_TONE: Record<string, string> = {
+  PROPOSED: 'bg-sky-500/15 text-sky-300',
+  APPROVED: 'bg-emerald-500/15 text-emerald-300',
+  DISPATCHED: 'bg-cyan-500/15 text-cyan-300',
+  VERIFIED: 'bg-emerald-500/20 text-emerald-200',
+  FAILED: 'bg-rose-500/15 text-rose-300',
+  BLOCKED: 'bg-rose-500/15 text-rose-300',
+  APPROVAL_REFUSED: 'bg-rose-500/15 text-rose-300',
+  DISPATCH_REFUSED: 'bg-rose-500/15 text-rose-300',
+};
+
+type TabKey = 'overview' | 'agents' | 'matrix' | 'rules' | 'governed' | 'leases' | 'evidence';
 
 const TABS: Array<{ key: TabKey; label: string; Icon: typeof ShieldCheck }> = [
   { key: 'overview', label: 'Overview', Icon: Scale },
   { key: 'agents', label: 'Agent Registry', Icon: Cpu },
   { key: 'matrix', label: 'Coverage Matrix', Icon: Grid3x3 },
   { key: 'rules', label: 'Authority Rules', Icon: Gavel },
-  { key: 'timeline', label: 'Action Timeline', Icon: Activity },
+  { key: 'governed', label: 'Governed Actions', Icon: Activity },
   { key: 'leases', label: 'Capability Leases', Icon: KeyRound },
   { key: 'evidence', label: 'Evidence Ledger', Icon: FileCheck },
 ];
@@ -212,7 +219,9 @@ export default function EthicalControlPlane() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, Lifecycle>>({});
   const [rules, setRules] = useState<AuthorityRule[]>([]);
-  const [selectedAction, setSelectedAction] = useState<ActionRow | null>(ACTIONS[0]);
+  const [traces, setTraces] = useState<GovernedTrace[]>([]);
+  const [selectedTrace, setSelectedTrace] = useState<GovernedTrace | null>(null);
+  const [agentFilter, setAgentFilter] = useState<string>('all');
   const [leases, setLeases] = useState<LeaseRow[]>(makeLeases);
   const [now, setNow] = useState(Date.now());
 
@@ -253,6 +262,22 @@ export default function EthicalControlPlane() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('ecp_vanguard_traces')
+        .select('id, agent_key, agent_name, scenario, action_type, target, effects, kernel_decision, kernel_reason_code, kernel_why, lifecycle_state, intended_effect, steps, honest_status, sort_order')
+        .order('sort_order', { ascending: true });
+      if (active && !error && data) {
+        const rows = data as GovernedTrace[];
+        setTraces(rows);
+        setSelectedTrace((prev) => prev ?? rows[0] ?? null);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
   const stats = useMemo(() => {
     const enforced = agents.filter((a) => COVERAGE_META[a.coverage_mode]?.enforced).length;
     const actionCapable = agents.filter((a) => a.can_act).length;
@@ -266,6 +291,17 @@ export default function EthicalControlPlane() {
     for (const a of agents) acc[a.coverage_mode] = (acc[a.coverage_mode] ?? 0) + 1;
     return acc;
   }, [agents]);
+
+  const governedAgents = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const t of traces) if (!seen.has(t.agent_key)) seen.set(t.agent_key, t.agent_name);
+    return Array.from(seen, ([key, name]) => ({ key, name }));
+  }, [traces]);
+
+  const filteredTraces = useMemo(
+    () => (agentFilter === 'all' ? traces : traces.filter((t) => t.agent_key === agentFilter)),
+    [traces, agentFilter],
+  );
 
   const setLifecycle = (file: string, lifecycle: Lifecycle) =>
     setOverrides((prev) => ({ ...prev, [file]: lifecycle }));
@@ -296,9 +332,9 @@ export default function EthicalControlPlane() {
       <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-xl p-3">
         <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
         <p className="text-[11px] text-amber-200/80 leading-relaxed">
-          Phase 0 inventory: the <span className="font-mono text-amber-200">Agent Registry</span> and <span className="font-mono text-amber-200">Coverage Matrix</span> below are the
-          real agents from the <span className="font-mono text-amber-200">databricks-native</span> repository, each labelled with its honest status. The
-          timeline, leases and evidence tabs remain illustrative simulation. Nothing here enforces anything on a live workspace —
+          Phase 3: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span> and
+          <span className="font-mono text-amber-200"> Governed Actions</span> below are driven by the real inventory and the deterministic authority engine from the <span className="font-mono text-amber-200">databricks-native</span> repository.
+          All three action-capable agents now propose through that engine. The leases and evidence tabs remain illustrative simulation. Nothing here enforces anything on a live workspace —
           statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
         </p>
       </div>
@@ -542,67 +578,100 @@ export default function EthicalControlPlane() {
         </div>
       )}
 
-      {tab === 'timeline' && (
-        <div className="grid lg:grid-cols-5 gap-4">
-          <div className="lg:col-span-3 space-y-2">
-            {ACTIONS.map((a) => {
-              const dm = DECISION_META[a.decision];
-              const DIcon = dm.Icon;
-              const active = selectedAction?.id === a.id;
+      {tab === 'governed' && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-2 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
+            <ShieldCheck size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-emerald-200/80 leading-relaxed">
+              Every action the three action-capable agents propose — <span className="font-mono text-emerald-200">VANGUARD Response</span>, the
+              <span className="font-mono text-emerald-200"> Autonomous Response Learner</span> and the <span className="font-mono text-emerald-200">Edge Control Plane</span> — is first run through the
+              deterministic authority kernel for a reason-coded verdict, then — only if not denied — through the propose → approve → dispatch → verify lifecycle.
+              A dispatch is not a completed action: it is only <span className="font-mono">VERIFIED</span> when the target is observed to match intent. Every trace below is
+              produced in code by that exact engine, labelled <span className="font-mono">SIMULATION</span> — nothing runs on a live workspace.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setAgentFilter('all')}
+              className={`px-3 py-1.5 text-[11px] rounded-lg border transition-colors ${agentFilter === 'all' ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300' : 'border-[#1e293b] text-slate-400 hover:text-slate-200'}`}>
+              All agents <span className="text-slate-500">({traces.length})</span>
+            </button>
+            {governedAgents.map((a) => {
+              const count = traces.filter((t) => t.agent_key === a.key).length;
               return (
-                <button key={a.id} onClick={() => setSelectedAction(a)}
-                  className={`w-full text-left bg-[#0b0f1e] border rounded-xl p-3 transition-colors ${active ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-[#1e293b] hover:border-slate-600'}`}>
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[10px] font-mono text-slate-500">{a.ts}</span>
-                      <span className="text-xs font-semibold text-white truncate">{a.agent}</span>
-                    </div>
-                    <Badge tone={dm.tone}><DIcon size={10} />{a.decision.replace(/_/g, ' ')}</Badge>
-                  </div>
-                  <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-400">
-                    <span className="font-mono text-slate-300">{a.tool}</span><ChevronRight size={11} className="text-slate-600" /><span className="font-mono truncate">{a.target}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    {a.effects.map((e) => <span key={e} className={`px-1.5 py-0.5 text-[9px] rounded ${EFFECT_TONE[e]}`}>{e.replace(/_/g, ' ')}</span>)}
-                  </div>
+                <button key={a.key} onClick={() => setAgentFilter(a.key)}
+                  className={`px-3 py-1.5 text-[11px] rounded-lg border transition-colors ${agentFilter === a.key ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300' : 'border-[#1e293b] text-slate-400 hover:text-slate-200'}`}>
+                  {a.name} <span className="text-slate-500">({count})</span>
                 </button>
               );
             })}
           </div>
-
-          <div className="lg:col-span-2">
-            {selectedAction && (
-              <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4 sticky top-4">
-                <div className="flex items-center gap-2 mb-3"><FileCheck size={15} className="text-cyan-300" /><h3 className="text-sm font-bold text-white">Decision Explainer</h3></div>
-                {/* progress chain */}
-                <div className="flex items-center gap-1 mb-4 flex-wrap">
-                  {selectedAction.state === 'BLOCKED' ? (
-                    <Badge tone="text-rose-300 bg-rose-500/10 border-rose-500/30"><Ban size={11} />BLOCKED before dispatch</Badge>
-                  ) : (
-                    STATE_ORDER.map((s) => {
-                      const reached = STATE_ORDER.indexOf(s) <= STATE_ORDER.indexOf(selectedAction.state as ActionState);
-                      return <span key={s} className={`px-1.5 py-0.5 text-[9px] rounded font-mono ${reached ? 'bg-cyan-500/15 text-cyan-300' : 'bg-slate-800 text-slate-600'}`}>{s}</span>;
-                    })
-                  )}
+          <div className="grid lg:grid-cols-5 gap-4">
+            <div className="lg:col-span-3 space-y-2">
+              {filteredTraces.length === 0 && (
+                <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-6 text-center text-xs text-slate-500 flex items-center justify-center gap-2">
+                  <Loader2 size={14} className="animate-spin" />Loading governed traces…
                 </div>
-                <dl className="space-y-2.5 text-[11px]">
-                  <div><dt className="text-slate-500">{selectedAction.decision === 'DENY' ? 'Why denied' : 'Why allowed'}</dt><dd className="text-slate-200 mt-0.5">{selectedAction.reason}</dd></div>
-                  <div><dt className="text-slate-500">Reason code</dt><dd className="text-cyan-300 font-mono mt-0.5">{selectedAction.reasonCode}</dd></div>
-                  <div><dt className="text-slate-500">Who authorized</dt><dd className="mt-0.5">{selectedAction.authorizedBy ? <span className="text-emerald-300 font-mono">{selectedAction.authorizedBy}</span> : <span className="text-rose-300">no authority — held</span>}</dd></div>
-                  <div>
-                    <dt className="text-slate-500">Declared effects</dt>
-                    <dd className="flex flex-wrap gap-1.5 mt-1">{selectedAction.effects.map((e) => <span key={e} className={`px-1.5 py-0.5 text-[9px] rounded ${EFFECT_TONE[e]}`}>{e.replace(/_/g, ' ')}</span>)}</dd>
+              )}
+              {filteredTraces.map((t) => {
+                const dm = DECISION_META[t.kernel_decision];
+                const DIcon = dm.Icon;
+                const active = selectedTrace?.id === t.id;
+                const final = t.lifecycle_state ?? 'BLOCKED';
+                return (
+                  <button key={t.id} onClick={() => setSelectedTrace(t)}
+                    className={`w-full text-left bg-[#0b0f1e] border rounded-xl p-3 transition-colors ${active ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-[#1e293b] hover:border-slate-600'}`}>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <span className="text-xs font-semibold text-white truncate">{t.scenario}</span>
+                      <Badge tone={dm.tone}><DIcon size={10} />{t.kernel_decision.replace(/_/g, ' ')}</Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-400">
+                      <span className="px-1.5 py-0.5 text-[9px] rounded bg-slate-800 text-slate-300">{t.agent_name}</span>
+                      <span className="font-mono text-slate-300">{t.action_type}</span><ChevronRight size={11} className="text-slate-600" /><span className="font-mono truncate">{t.target}</span>
+                    </div>
+                    <div className="flex items-center gap-1 mt-2 flex-wrap">
+                      {t.steps.map((s, i) => (
+                        <span key={i} className="flex items-center gap-1">
+                          {i > 0 && <ChevronRight size={10} className="text-slate-600" />}
+                          <span className={`px-1.5 py-0.5 text-[9px] rounded font-mono ${STEP_TONE[s.state] ?? 'bg-slate-800 text-slate-400'}`}>{s.state.replace(/_/g, ' ')}</span>
+                        </span>
+                      ))}
+                      <span className={`ml-auto px-1.5 py-0.5 text-[9px] rounded font-mono ${STEP_TONE[final] ?? 'bg-slate-800 text-slate-400'}`}>→ {final.replace(/_/g, ' ')}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="lg:col-span-2">
+              {selectedTrace && (
+                <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4 sticky top-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2"><FileCheck size={15} className="text-cyan-300" /><h3 className="text-sm font-bold text-white">Governed Trace</h3></div>
+                    <Badge tone={HONEST_META[selectedTrace.honest_status].tone}>{HONEST_META[selectedTrace.honest_status].label}</Badge>
                   </div>
-                </dl>
-                {selectedAction.decision === 'REQUIRE_APPROVAL' && (
-                  <div className="mt-4 flex items-center gap-2">
-                    <button className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-[11px] rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition-colors"><CheckCircle2 size={12} />Approve (bind digest)</button>
-                    <button className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-[11px] rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 transition-colors"><XCircle size={12} />Deny</button>
+                  <div className="text-[11px] text-slate-400 mb-3"><span className="text-slate-500">Agent:</span> <span className="text-slate-200 font-semibold">{selectedTrace.agent_name}</span></div>
+                  <div className="space-y-1.5 mb-4">
+                    {selectedTrace.steps.map((s, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className={`px-1.5 py-0.5 text-[9px] rounded font-mono shrink-0 ${STEP_TONE[s.state] ?? 'bg-slate-800 text-slate-400'}`}>{s.state.replace(/_/g, ' ')}</span>
+                        <span className="text-[11px] text-slate-400 mt-0.5">{s.note}</span>
+                      </div>
+                    ))}
                   </div>
-                )}
-                <p className="text-[10px] text-slate-600 mt-3">Approvals bind to the action + plan digest and expire. Silence never means consent. (Demo — no live effect.)</p>
-              </div>
-            )}
+                  <dl className="space-y-2.5 text-[11px]">
+                    <div><dt className="text-slate-500">Kernel verdict</dt><dd className="text-slate-200 mt-0.5">{selectedTrace.kernel_why}</dd></div>
+                    <div><dt className="text-slate-500">Reason code</dt><dd className="text-cyan-300 font-mono mt-0.5">{selectedTrace.kernel_reason_code}</dd></div>
+                    <div><dt className="text-slate-500">Final lifecycle state</dt><dd className="mt-0.5">{selectedTrace.lifecycle_state ? <span className="text-emerald-300 font-mono">{selectedTrace.lifecycle_state}</span> : <span className="text-rose-300 font-mono">blocked before lifecycle</span>}</dd></div>
+                    <div><dt className="text-slate-500">Verified outcome requires</dt><dd className="mt-0.5 text-slate-300 font-mono">{selectedTrace.intended_effect ? `observed = "${selectedTrace.intended_effect}"` : '—'}</dd></div>
+                    <div>
+                      <dt className="text-slate-500">Declared effects</dt>
+                      <dd className="flex flex-wrap gap-1.5 mt-1">{selectedTrace.effects.map((e) => <span key={e} className={`px-1.5 py-0.5 text-[9px] rounded ${EFFECT_TONE[e] ?? 'bg-slate-800 text-slate-400'}`}>{e.replace(/_/g, ' ')}</span>)}</dd>
+                    </div>
+                  </dl>
+                  <p className="text-[10px] text-slate-600 mt-3">The kernel decides eligibility; the lifecycle decides execution. Neither trusts the model's confidence — a score never upgrades a decision.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
