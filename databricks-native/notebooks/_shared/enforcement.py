@@ -74,7 +74,8 @@ def _audit(agent_key, agent_name, proposal, decision, outcome, steps, extra=None
     return rec
 
 
-def guard_and_dispatch(agent_key, proposal, context, execute, record, connector_verify=None):
+def guard_and_dispatch(agent_key, proposal, context, execute, record, connector_verify=None,
+                       policy_overlay=None):
     """Execute an action only on a fully authorized path; always record the attempt.
 
     proposal: {action_type, target, reason, proposed_by, confidence, finding_id, ...}
@@ -118,6 +119,26 @@ def guard_and_dispatch(agent_key, proposal, context, execute, record, connector_
     req = G.to_kernel_request(agent_key, proposal)
     decision = K.decide(req, context)
     steps = []
+
+    # 0. Omnigent runner-level policy overlay (Phase 9). Before the kernel is even
+    #    consulted, an operator-authored binding can refuse the action path at the
+    #    runner (a DENY, or an ASK with no human to answer it). The overlay can
+    #    only narrow authority -- it never grants what the kernel would refuse.
+    #    Default None keeps the pre-Phase-9 path unchanged.
+    if policy_overlay is not None:
+        pol_action = {
+            "agent_key": agent_key,
+            "action_type": action_type,
+            "target": proposal.get("target"),
+        }
+        pol_ok, pol_reason = policy_overlay(pol_action)
+        if not pol_ok:
+            steps.append({"state": BLOCKED, "note": f"omnigent policy: {pol_reason}"})
+            pol_decision = K._decision(K.DENY, K.R_SAFE_DEFAULT_DENY,
+                                       f"omnigent policy refused: {pol_reason}")
+            rec = _audit(agent_key, agent_name, proposal, pol_decision, BLOCKED, steps)
+            record(rec)
+            return rec
 
     # 1. Kernel gate. A denial ends here -- the side effect is unreachable.
     if decision["decision"] == K.DENY:

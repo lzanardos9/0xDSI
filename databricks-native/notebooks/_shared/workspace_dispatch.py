@@ -88,7 +88,7 @@ def make_ledger_writer(sink, provenance="simulated"):
 
 
 def dispatch(agent_key, proposal, context, client, ledger, provenance="simulated",
-             connector_verify=None):
+             connector_verify=None, policy_overlay=None):
     """Run one governed action through the chokepoint bound to a real workspace.
 
     client: a WorkspaceClient (apply/observe). In deployment this wraps the
@@ -101,6 +101,11 @@ def dispatch(agent_key, proposal, context, client, ledger, provenance="simulated
             by redeeming a single-use capability lease bound to the action -- or
             the workspace is never touched. Build one with
             `capability.connector_verify(...)`.
+    policy_overlay: optional Omnigent runner-level policy overlay (Phase 9),
+            forwarded to the chokepoint. A callable(action) -> (ok, reason); when
+            supplied, an operator-authored DENY (or an unanswerable ASK) refuses
+            the action path before the kernel is consulted. Build one with
+            `omnigent_pep.policy_overlay(policies)`.
 
     Returns the audit record. `rec["executed"]` is true only when the workspace
     was actually commanded, and `rec["outcome"]` is `VERIFIED` only when the
@@ -111,4 +116,5 @@ def dispatch(agent_key, proposal, context, client, ledger, provenance="simulated
     execute = make_execute(client, action_type, target)
     record = make_ledger_writer(ledger, provenance=provenance)
     return E.guard_and_dispatch(agent_key, proposal, context, execute, record,
-                                connector_verify=connector_verify)
+                                connector_verify=connector_verify,
+                                policy_overlay=policy_overlay)

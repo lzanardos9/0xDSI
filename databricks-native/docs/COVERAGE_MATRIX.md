@@ -216,21 +216,37 @@ change. This file is the human-readable mirror.
   four-method contract. This is `VERIFIED_IN_CODE`: no agent status changes — all
   remain `DEPLOYMENT_READY`.
 
+- **Phase 9 — Omnigent runner-level policy overlay + operator CRUD (completed).**
+  `_shared/omnigent_pep.py` resolves an operator-authored binding to one runner
+  verdict — `ALLOW` (proceed to the chokepoint), `DENY` (refuse the path), or `ASK`
+  (require a human) — deny-by-default, highest priority wins, ties break to the most
+  restrictive verdict. The enforcement chokepoint gains an optional
+  `policy_overlay` gate that runs *before* the kernel is consulted (forwarded through
+  `workspace_dispatch.dispatch` and `databricks_workspace.live_dispatch`); it can only
+  narrow authority — an operator `ALLOW` never resurrects a kernel-denied action. The
+  bindings are real, editable rows in `ecp_omnigent_policies` (RLS on; full CRUD from
+  the console's **Omnigent Policies** tab), resolved by code, not a mock-up. 14
+  resolver unit tests (`omnigent_pep.py`) plus 5 end-to-end tests through the
+  chokepoint (`test_omnigent_pep.py`) all pass. This is `VERIFIED_IN_CODE`: no agent
+  status changes — authoring a binding does **not** mean a live Omnigent runner is
+  mediating that agent, so all agents remain `DEPLOYMENT_READY` and none are
+  `FULLY_GOVERNED`.
+
 ## Next phase
 
 Two tracks remain, both requiring resources this environment does not have:
 
 - **Live-workspace execution (deployment milestone).** Everything up to the live call
   is built and tested offline: the real client, bound-parameter SQL, the promotion
-  gate, the provenance-tagged ledger, and now argument-bound capability leases.
-  Running `databricks_workspace.live_dispatch` for one agent against a live Databricks
-  workspace — with the `execute_response_action` function and response-state table
-  deployed, real credentials, and a redeemed capability — on an approved, in-scope
-  target writes the first `provenance="live"` row; if its independent read-back
-  confirms the effect, the promotion gate flips that one agent to
-  `VERIFIED_IN_DEPLOYMENT`.
-- **Omnigent PEP integration (Phase 9+).** Bind the 0xDSI decision as a runner-level
-  Omnigent policy (ALLOW/DENY/ASK), persist the capability ledger and consumption
-  store to Delta/Supabase (`ecp_capabilities`), and compute an honest
-  EnforcementCoverage per agent — no agent labelled FULLY_GOVERNED until a real
-  Omnigent runner mediates its action paths.
+  gate, the provenance-tagged ledger, argument-bound capability leases, and the
+  runner-level policy overlay. Running `databricks_workspace.live_dispatch` for one
+  agent against a live Databricks workspace — with the `execute_response_action`
+  function and response-state table deployed, real credentials, and a redeemed
+  capability — on an approved, in-scope target writes the first `provenance="live"`
+  row; if its independent read-back confirms the effect, the promotion gate flips that
+  one agent to `VERIFIED_IN_DEPLOYMENT`.
+- **Live Omnigent runner (fully-governed milestone).** The policy resolver and its
+  operator-managed bindings (`ecp_omnigent_policies`) are built and tested in code; the
+  remaining step is a real Omnigent runner that consults them in front of every one of
+  an agent's action paths and computes an honest per-agent EnforcementCoverage. No
+  agent is labelled `FULLY_GOVERNED` until such a runner actually mediates it.

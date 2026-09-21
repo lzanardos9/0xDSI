@@ -6,6 +6,7 @@ import {
   Loader2, Grid3x3, FileText,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import OmnigentPolicies from './OmnigentPolicies';
 
 /**
  * 0xDSI Ethical Control Plane — operator console (DEMO / SHADOW MODE).
@@ -238,7 +239,7 @@ const STEP_TONE: Record<string, string> = {
   DISPATCH_REFUSED: 'bg-rose-500/15 text-rose-300',
 };
 
-type TabKey = 'overview' | 'agents' | 'matrix' | 'rules' | 'governed' | 'leases' | 'evidence';
+type TabKey = 'overview' | 'agents' | 'matrix' | 'rules' | 'governed' | 'leases' | 'omnigent' | 'evidence';
 
 const TABS: Array<{ key: TabKey; label: string; Icon: typeof ShieldCheck }> = [
   { key: 'overview', label: 'Overview', Icon: Scale },
@@ -247,6 +248,7 @@ const TABS: Array<{ key: TabKey; label: string; Icon: typeof ShieldCheck }> = [
   { key: 'rules', label: 'Authority Rules', Icon: Gavel },
   { key: 'governed', label: 'Governed Actions', Icon: Activity },
   { key: 'leases', label: 'Capability Leases', Icon: KeyRound },
+  { key: 'omnigent', label: 'Omnigent Policies', Icon: Network },
   { key: 'evidence', label: 'Evidence Ledger', Icon: FileCheck },
 ];
 
@@ -871,6 +873,8 @@ export default function EthicalControlPlane() {
           <p className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-1"><FileCheck size={12} />The agent never authors its own authoritative receipt — the chokepoint records the outcome, and executed is true only when observed state matched intent.</p>
         </div>
       )}
+
+      {tab === 'omnigent' && <OmnigentPolicies />}
     </div>
   );
 }
