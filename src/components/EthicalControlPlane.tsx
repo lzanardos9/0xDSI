@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ShieldCheck, ShieldAlert, ShieldX, Scale, Gavel, KeyRound, Radar, Ban, Pause, Play,
-  CheckCircle2, XCircle, AlertTriangle, Clock, Fingerprint, Network, GitBranch, Lock,
-  Eye, Activity, Cpu, FileCheck, Timer, ChevronRight, Layers, Zap, UserCheck, Skull,
+  CheckCircle2, XCircle, AlertTriangle, Network, GitBranch, Lock,
+  Eye, Activity, Cpu, FileCheck, Timer, ChevronRight, Layers, Zap, UserCheck,
+  Loader2, Grid3x3, FileText,
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 /**
  * 0xDSI Ethical Control Plane — operator console (DEMO / SHADOW MODE).
@@ -15,9 +17,11 @@ import {
  */
 
 type CoverageMode =
-  | 'OBSERVE_ONLY' | 'ADVISORY' | 'GATEWAY_ENFORCED' | 'RUNTIME_CONTAINED' | 'FEDERATED_ENFORCEMENT';
+  | 'OBSERVE_ONLY' | 'ADVISORY' | 'GATEWAY_ENFORCED' | 'RUNTIME_CONTAINED'
+  | 'SANDBOX_ONLY' | 'SIMULATION' | 'FEDERATED_ENFORCEMENT';
 
 type Autonomy = 'A0' | 'A1' | 'A2' | 'A3' | 'A4';
+type HonestStatus = 'VERIFIED_IN_CODE' | 'PROPOSED' | 'SIMULATION';
 type Lifecycle = 'ACTIVE' | 'RESTRICTED' | 'PAUSED' | 'QUARANTINED' | 'REVOKED';
 type Decision = 'PERMIT_WITH_CONSTRAINTS' | 'REQUIRE_APPROVAL' | 'REQUIRE_REVIEW' | 'SANDBOX_ONLY' | 'DENY';
 type ActionState = 'PROPOSED' | 'PERMITTED' | 'DISPATCHED' | 'ACCEPTED' | 'VERIFIED' | 'BLOCKED';
@@ -25,18 +29,17 @@ type EffectClass =
   | 'disclosure' | 'external_comm' | 'access_restriction' | 'credential_use' | 'code_execution'
   | 'persistence' | 'delegation' | 'resource_commit' | 'policy_modification' | 'irreversible';
 
-interface AgentRow {
-  id: string;
-  name: string;
+interface CoverageAgent {
+  file: string;
+  agent_name: string;
   role: string;
   autonomy: Autonomy;
-  lifecycle: Lifecycle;
-  coverage: CoverageMode;
-  identityVerified: boolean;
-  tenant: string;
-  budgetUsed: number;
-  budgetMax: number;
-  drift: number;
+  coverage_mode: CoverageMode;
+  can_act: boolean;
+  honest_status: HonestStatus;
+  governance: string;
+  notes: string;
+  sort_order: number;
 }
 
 interface ActionRow {
@@ -79,7 +82,15 @@ const COVERAGE_META: Record<CoverageMode, { label: string; tone: string; enforce
   ADVISORY: { label: 'Advisory', tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10', enforced: false },
   GATEWAY_ENFORCED: { label: 'Gateway Enforced', tone: 'text-sky-300 border-sky-500/30 bg-sky-500/10', enforced: true },
   RUNTIME_CONTAINED: { label: 'Runtime Contained', tone: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10', enforced: true },
+  SANDBOX_ONLY: { label: 'Sandbox Only', tone: 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10', enforced: true },
+  SIMULATION: { label: 'Simulation', tone: 'text-violet-300 border-violet-500/30 bg-violet-500/10', enforced: false },
   FEDERATED_ENFORCEMENT: { label: 'Federated', tone: 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10', enforced: true },
+};
+
+const HONEST_META: Record<HonestStatus, { label: string; tone: string; Icon: typeof ShieldCheck }> = {
+  VERIFIED_IN_CODE: { label: 'Verified in code', tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30', Icon: FileCheck },
+  PROPOSED: { label: 'Proposed · review', tone: 'text-amber-300 bg-amber-500/10 border-amber-500/30', Icon: AlertTriangle },
+  SIMULATION: { label: 'Simulation', tone: 'text-violet-300 bg-violet-500/10 border-violet-500/30', Icon: Eye },
 };
 
 const AUTONOMY_META: Record<Autonomy, { label: string; tone: string }> = {
@@ -130,15 +141,7 @@ const FOUNDATIONS = [
   'Safe inability to complete a task is a valid outcome.',
 ];
 
-const AGENTS: AgentRow[] = [
-  { id: 'ag-radar', name: 'Threat Radar', role: 'Intel Collection', autonomy: 'A1', lifecycle: 'ACTIVE', coverage: 'GATEWAY_ENFORCED', identityVerified: true, tenant: 'core', budgetUsed: 38, budgetMax: 100, drift: 0.06 },
-  { id: 'ag-sage', name: 'SAGE Enrichment', role: 'Enrichment', autonomy: 'A2', lifecycle: 'ACTIVE', coverage: 'GATEWAY_ENFORCED', identityVerified: true, tenant: 'core', budgetUsed: 61, budgetMax: 100, drift: 0.11 },
-  { id: 'ag-nova', name: 'NOVA Investigation', role: 'Investigation', autonomy: 'A2', lifecycle: 'ACTIVE', coverage: 'RUNTIME_CONTAINED', identityVerified: true, tenant: 'core', budgetUsed: 47, budgetMax: 100, drift: 0.09 },
-  { id: 'ag-ciso', name: 'CISO Assistant', role: 'Exec Analysis', autonomy: 'A1', lifecycle: 'RESTRICTED', coverage: 'ADVISORY', identityVerified: true, tenant: 'core', budgetUsed: 22, budgetMax: 100, drift: 0.04 },
-  { id: 'ag-vanguard', name: 'VANGUARD Response', role: 'Response', autonomy: 'A3', lifecycle: 'ACTIVE', coverage: 'RUNTIME_CONTAINED', identityVerified: true, tenant: 'core', budgetUsed: 73, budgetMax: 100, drift: 0.18 },
-  { id: 'ag-sim', name: 'Threat Simulator', role: 'Adversary Sim', autonomy: 'A2', lifecycle: 'QUARANTINED', coverage: 'RUNTIME_CONTAINED', identityVerified: true, tenant: 'redlab', budgetUsed: 12, budgetMax: 60, drift: 0.41 },
-  { id: 'ag-ext', name: 'partner-soar-01 (external)', role: 'Federated', autonomy: 'A2', lifecycle: 'ACTIVE', coverage: 'FEDERATED_ENFORCEMENT', identityVerified: false, tenant: 'partner', budgetUsed: 30, budgetMax: 80, drift: 0.22 },
-];
+const AGENTS: CoverageAgent[] = [];
 
 const ACTIONS: ActionRow[] = [
   { id: 'act-1', ts: '12:04:41', agent: 'VANGUARD Response', tool: 'isolate_host@1.4', target: 'host:WIN-FIN-204', effects: ['access_restriction', 'irreversible'], decision: 'REQUIRE_APPROVAL', state: 'PROPOSED', reason: 'High-impact containment on a production finance host requires dual approval within its risk envelope.', authorizedBy: null, reasonCode: 'ROE.IMPACT.PROD_CRITICAL' },
@@ -182,11 +185,12 @@ function StatCard({ Icon, label, value, sub, tone }: { Icon: typeof ShieldCheck;
   );
 }
 
-type TabKey = 'overview' | 'agents' | 'timeline' | 'leases' | 'evidence';
+type TabKey = 'overview' | 'agents' | 'matrix' | 'timeline' | 'leases' | 'evidence';
 
 const TABS: Array<{ key: TabKey; label: string; Icon: typeof ShieldCheck }> = [
   { key: 'overview', label: 'Overview', Icon: Scale },
   { key: 'agents', label: 'Agent Registry', Icon: Cpu },
+  { key: 'matrix', label: 'Coverage Matrix', Icon: Grid3x3 },
   { key: 'timeline', label: 'Action Timeline', Icon: Activity },
   { key: 'leases', label: 'Capability Leases', Icon: KeyRound },
   { key: 'evidence', label: 'Evidence Ledger', Icon: FileCheck },
@@ -194,7 +198,10 @@ const TABS: Array<{ key: TabKey; label: string; Icon: typeof ShieldCheck }> = [
 
 export default function EthicalControlPlane() {
   const [tab, setTab] = useState<TabKey>('overview');
-  const [agents, setAgents] = useState<AgentRow[]>(AGENTS);
+  const [agents, setAgents] = useState<CoverageAgent[]>(AGENTS);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [overrides, setOverrides] = useState<Record<string, Lifecycle>>({});
   const [selectedAction, setSelectedAction] = useState<ActionRow | null>(ACTIONS[0]);
   const [leases, setLeases] = useState<LeaseRow[]>(makeLeases);
   const [now, setNow] = useState(Date.now());
@@ -204,15 +211,42 @@ export default function EthicalControlPlane() {
     return () => clearInterval(iv);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ecp_agent_coverage')
+          .select('file, agent_name, role, autonomy, coverage_mode, can_act, honest_status, governance, notes, sort_order')
+          .order('sort_order', { ascending: true });
+        if (!active) return;
+        if (error) { setLoadError(error.message); }
+        else { setAgents((data ?? []) as CoverageAgent[]); }
+      } catch (err) {
+        if (active) setLoadError(err instanceof Error ? err.message : 'Failed to load coverage matrix');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
   const stats = useMemo(() => {
-    const enforced = agents.filter((a) => COVERAGE_META[a.coverage].enforced).length;
-    const blocked = ACTIONS.filter((a) => a.state === 'BLOCKED').length;
-    const pending = ACTIONS.filter((a) => a.decision === 'REQUIRE_APPROVAL' || a.decision === 'REQUIRE_REVIEW').length;
-    return { enforced, total: agents.length, blocked, pending };
+    const enforced = agents.filter((a) => COVERAGE_META[a.coverage_mode]?.enforced).length;
+    const actionCapable = agents.filter((a) => a.can_act).length;
+    const verified = agents.filter((a) => a.honest_status === 'VERIFIED_IN_CODE').length;
+    const contained = agents.filter((a) => a.coverage_mode === 'RUNTIME_CONTAINED').length;
+    return { enforced, total: agents.length, actionCapable, verified, contained };
   }, [agents]);
 
-  const setLifecycle = (id: string, lifecycle: Lifecycle) =>
-    setAgents((prev) => prev.map((a) => (a.id === id ? { ...a, lifecycle } : a)));
+  const coverageCounts = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const a of agents) acc[a.coverage_mode] = (acc[a.coverage_mode] ?? 0) + 1;
+    return acc;
+  }, [agents]);
+
+  const setLifecycle = (file: string, lifecycle: Lifecycle) =>
+    setOverrides((prev) => ({ ...prev, [file]: lifecycle }));
 
   const revokeLease = (id: string) =>
     setLeases((prev) => prev.map((l) => (l.id === id ? { ...l, revoked: true } : l)));
@@ -240,18 +274,19 @@ export default function EthicalControlPlane() {
       <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-xl p-3">
         <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
         <p className="text-[11px] text-amber-200/80 leading-relaxed">
-          Demonstration console with mock data. Coverage, decisions, leases and evidence shown here are simulated — this view does not
-          enforce anything on a live workspace. Real enforcement lives in the <span className="font-mono text-amber-200">databricks-native</span> notebooks
-          and is not connected yet. Statuses are <span className="font-mono">PROPOSED</span> / <span className="font-mono">VERIFIED_IN_CODE</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
+          Phase 0 inventory: the <span className="font-mono text-amber-200">Agent Registry</span> and <span className="font-mono text-amber-200">Coverage Matrix</span> below are the
+          real agents from the <span className="font-mono text-amber-200">databricks-native</span> repository, each labelled with its honest status. The
+          timeline, leases and evidence tabs remain illustrative simulation. Nothing here enforces anything on a live workspace —
+          statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
         </p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard Icon={ShieldCheck} label="Enforced Coverage" value={`${stats.enforced}/${stats.total}`} sub="agents on a mediated path" tone="text-emerald-300" />
-        <StatCard Icon={Ban} label="Blocked Before Effect" value={String(stats.blocked)} sub="deterministic denials (sim)" tone="text-rose-300" />
-        <StatCard Icon={UserCheck} label="Awaiting Authority" value={String(stats.pending)} sub="approval / review required" tone="text-amber-300" />
-        <StatCard Icon={KeyRound} label="Active Leases" value={String(leases.filter((l) => !l.revoked).length)} sub="short-lived, action-bound" tone="text-cyan-300" />
+        <StatCard Icon={Cpu} label="Agents Inventoried" value={loading ? '—' : String(stats.total)} sub="from databricks-native repo" tone="text-cyan-300" />
+        <StatCard Icon={Zap} label="Action-Capable" value={loading ? '—' : String(stats.actionCapable)} sub="can change external state" tone="text-rose-300" />
+        <StatCard Icon={ShieldCheck} label="Runtime Contained" value={loading ? '—' : String(stats.contained)} sub="propose → approve → verify" tone="text-emerald-300" />
+        <StatCard Icon={FileCheck} label="Verified in Code" value={loading ? '—' : `${stats.verified}/${stats.total}`} sub="control exists in source" tone="text-sky-300" />
       </div>
 
       {/* Tabs */}
@@ -324,55 +359,128 @@ export default function EthicalControlPlane() {
 
       {tab === 'agents' && (
         <div className="space-y-3">
-          {agents.map((a) => {
-            const life = LIFECYCLE_META[a.lifecycle];
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-slate-400 py-8 justify-center"><Loader2 size={16} className="animate-spin" />Loading agent inventory…</div>
+          )}
+          {!loading && loadError && (
+            <div className="flex items-center gap-2 bg-rose-500/5 border border-rose-500/20 rounded-xl p-4 text-sm text-rose-300"><AlertTriangle size={16} />Couldn't load the agent inventory: {loadError}</div>
+          )}
+          {!loading && !loadError && agents.length === 0 && (
+            <div className="text-sm text-slate-500 py-8 text-center">No agents recorded in the coverage matrix yet.</div>
+          )}
+          {!loading && !loadError && agents.map((a) => {
+            const lifecycle: Lifecycle = overrides[a.file] ?? 'ACTIVE';
+            const life = LIFECYCLE_META[lifecycle];
             const LifeIcon = life.Icon;
-            const budgetPct = Math.round((a.budgetUsed / a.budgetMax) * 100);
+            const hs = HONEST_META[a.honest_status];
+            const HsIcon = hs.Icon;
+            const cov = COVERAGE_META[a.coverage_mode];
             return (
-              <div key={a.id} className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4">
+              <div key={a.file} className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-slate-800/60 border border-[#1e293b] flex items-center justify-center shrink-0"><Cpu size={16} className="text-cyan-300" /></div>
+                    <div className="w-9 h-9 rounded-lg bg-slate-800/60 border border-[#1e293b] flex items-center justify-center shrink-0">
+                      {a.can_act ? <Zap size={16} className="text-rose-300" /> : <Eye size={16} className="text-slate-400" />}
+                    </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-white">{a.name}</span>
-                        {a.identityVerified
-                          ? <Badge tone="text-emerald-300 bg-emerald-500/10 border-emerald-500/30"><Fingerprint size={10} />identity verified</Badge>
-                          : <Badge tone="text-amber-300 bg-amber-500/10 border-amber-500/30"><AlertTriangle size={10} />attribution only</Badge>}
+                        <span className="text-sm font-semibold text-white">{a.agent_name}</span>
+                        <Badge tone={hs.tone}><HsIcon size={10} />{hs.label}</Badge>
+                        {a.can_act
+                          ? <Badge tone="text-rose-300 bg-rose-500/10 border-rose-500/30"><Zap size={10} />action-capable</Badge>
+                          : <Badge tone="text-slate-300 bg-slate-500/10 border-slate-500/30"><Eye size={10} />read / analysis</Badge>}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{a.role} · tenant <span className="font-mono">{a.tenant}</span></div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{a.role} · <span className="font-mono">{a.file}</span></div>
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <Badge tone={AUTONOMY_META[a.autonomy].tone}><Zap size={10} />{AUTONOMY_META[a.autonomy].label}</Badge>
-                        <Badge tone={COVERAGE_META[a.coverage].tone}><Radar size={10} />{COVERAGE_META[a.coverage].label}</Badge>
-                        <Badge tone={life.tone}><LifeIcon size={10} />{a.lifecycle}</Badge>
-                        {a.drift > 0.3 && <Badge tone="text-rose-300 bg-rose-500/10 border-rose-500/30"><Skull size={10} />drift {a.drift.toFixed(2)}</Badge>}
+                        {cov && <Badge tone={cov.tone}><Radar size={10} />{cov.label}</Badge>}
+                        {lifecycle !== 'ACTIVE' && <Badge tone={life.tone}><LifeIcon size={10} />{lifecycle}</Badge>}
                       </div>
+                      {a.governance && <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">{a.governance}</p>}
+                      {a.notes && <p className="text-[10px] text-amber-300/70 mt-1 flex items-start gap-1"><AlertTriangle size={10} className="shrink-0 mt-0.5" />{a.notes}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <button onClick={() => setLifecycle(a.id, a.lifecycle === 'PAUSED' ? 'ACTIVE' : 'PAUSED')}
+                    <button onClick={() => setLifecycle(a.file, lifecycle === 'PAUSED' ? 'ACTIVE' : 'PAUSED')}
                       className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] rounded-lg border border-[#1e293b] text-slate-300 hover:bg-slate-800/60 transition-colors">
-                      {a.lifecycle === 'PAUSED' ? <><Play size={12} />Resume</> : <><Pause size={12} />Pause</>}
+                      {lifecycle === 'PAUSED' ? <><Play size={12} />Resume</> : <><Pause size={12} />Pause</>}
                     </button>
-                    <button onClick={() => setLifecycle(a.id, 'QUARANTINED')}
+                    <button onClick={() => setLifecycle(a.file, 'QUARANTINED')}
                       className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] rounded-lg border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 transition-colors">
                       <ShieldX size={12} />Quarantine
                     </button>
-                    <button onClick={() => setLifecycle(a.id, 'REVOKED')}
+                    <button onClick={() => setLifecycle(a.file, 'REVOKED')}
                       className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] rounded-lg border border-rose-500/30 text-rose-300 hover:bg-rose-500/10 transition-colors">
                       <Ban size={12} />Revoke
                     </button>
                   </div>
                 </div>
-                <div className="mt-3">
-                  <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1"><span>Risk budget</span><span>{a.budgetUsed}/{a.budgetMax}</span></div>
-                  <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                    <div className={`h-full rounded-full ${budgetPct > 80 ? 'bg-rose-500' : budgetPct > 60 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${budgetPct}%` }} />
-                  </div>
-                </div>
               </div>
             );
           })}
+          {!loading && !loadError && agents.length > 0 && (
+            <p className="text-[10px] text-slate-600 flex items-center gap-1.5 pt-1"><Lock size={12} />Pause / quarantine / revoke are shadow controls in this demo — they change the view only and do not signal a live workspace.</p>
+          )}
+        </div>
+      )}
+
+      {tab === 'matrix' && (
+        <div className="space-y-4">
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-slate-400 py-8 justify-center"><Loader2 size={16} className="animate-spin" />Loading coverage matrix…</div>
+          )}
+          {!loading && loadError && (
+            <div className="flex items-center gap-2 bg-rose-500/5 border border-rose-500/20 rounded-xl p-4 text-sm text-rose-300"><AlertTriangle size={16} />Couldn't load the coverage matrix: {loadError}</div>
+          )}
+          {!loading && !loadError && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                {(Object.keys(COVERAGE_META) as CoverageMode[]).filter((m) => m !== 'FEDERATED_ENFORCEMENT').map((m) => (
+                  <div key={m} className={`rounded-lg border p-3 ${COVERAGE_META[m].tone}`}>
+                    <div className="text-lg font-bold">{coverageCounts[m] ?? 0}</div>
+                    <div className="text-[10px] font-semibold">{COVERAGE_META[m].label}</div>
+                    <div className="text-[9px] opacity-80 mt-0.5">{COVERAGE_META[m].enforced ? 'mediated path' : 'no preventive claim'}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-wide text-slate-500 border-b border-[#1e293b]">
+                        <th className="px-3 py-2 font-semibold">Agent</th>
+                        <th className="px-3 py-2 font-semibold">Autonomy</th>
+                        <th className="px-3 py-2 font-semibold">Coverage</th>
+                        <th className="px-3 py-2 font-semibold">Acts?</th>
+                        <th className="px-3 py-2 font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agents.map((a) => {
+                        const hs = HONEST_META[a.honest_status];
+                        const cov = COVERAGE_META[a.coverage_mode];
+                        return (
+                          <tr key={a.file} className="border-b border-[#131b2e] hover:bg-slate-800/30 transition-colors">
+                            <td className="px-3 py-2">
+                              <div className="text-xs font-medium text-white">{a.agent_name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">{a.file}</div>
+                            </td>
+                            <td className="px-3 py-2"><Badge tone={AUTONOMY_META[a.autonomy].tone}>{a.autonomy}</Badge></td>
+                            <td className="px-3 py-2">{cov && <Badge tone={cov.tone}>{cov.label}</Badge>}</td>
+                            <td className="px-3 py-2">
+                              {a.can_act ? <span className="text-rose-300 text-[11px] font-semibold">yes</span> : <span className="text-slate-500 text-[11px]">no</span>}
+                            </td>
+                            <td className="px-3 py-2"><Badge tone={hs.tone}>{hs.label}</Badge></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-600 flex items-center gap-1.5"><FileText size={12} />Source of truth: the coverage matrix table, mirrored in <span className="font-mono">databricks-native/docs/COVERAGE_MATRIX.md</span>. Update both when agents change.</p>
+            </>
+          )}
         </div>
       )}
 
