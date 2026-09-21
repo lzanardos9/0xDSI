@@ -121,12 +121,37 @@ change. This file is the human-readable mirror.
     IdP creds + input validation), AI Gateway Guardian (56, advisory).
   - The generic engine now spans five governed agents; `test_governed_agent.py`
     has 15 tests pinning scope denial, the autonomy floor, and the permit path.
+- **Phase 5 — Enforcement chokepoint + append-only ledger.** The kernel, the
+  per-agent catalog and the `response_actions` lifecycle are composed into a
+  single fail-closed dispatch chokepoint, `_shared/enforcement.py`. Its
+  `guard_and_dispatch(agent_key, proposal, context, execute, record)` is the only
+  sanctioned path from a proposed action to a real side effect: the injected
+  `execute` callback runs at most once, and only after the kernel permits **and**
+  a different operator binds an approval to the exact revision. On every path —
+  blocked, not-authorized, execute-error, verified, failed — the `record` sink is
+  called exactly once, so the audit ledger is append-only and complete. An
+  `execute` exception is caught and recorded as `EXECUTE_ERROR` (fail closed, not
+  a silent success). 10 property tests (`test_enforcement.py`) pin that the
+  side-effect callback is unreachable on every rejected path and that each attempt
+  writes exactly one row. A runnable deployment harness
+  (`tests/harness/enforcement_harness.py`) drives the chokepoint against an
+  in-memory `Fleet` across 9 scenarios and asserts the core invariant that the
+  fleet mutates **iff** the guard executed; all 9 pass. The harness output seeds
+  `ecp_enforcement_ledger` (append-only, RLS read-only), surfaced in the console's
+  Evidence Ledger tab with each row's outcome, executed flag, kernel decision and
+  reason code, two-person control (proposer vs approver), observed state and
+  lifecycle steps. Agents proven through the live chokepoint are labelled
+  `ENFORCED` — an honest intermediate between `VERIFIED_IN_CODE` and
+  deployment: the binding is demonstrated in-process, **not** against a live
+  workspace, so nothing is `VERIFIED_IN_DEPLOYMENT`.
 
 ## Next phase
 
-**Phase 5 — From verified-in-code to verified-in-deployment.** Every governed
-decision today is `VERIFIED_IN_CODE` / `SIMULATION`: proven by offline tests, not
-yet enforced against a live workspace. The next step is to bind the kernel and
-lifecycle into the agents' real dispatch path so an action cannot execute without
-a recorded decision, and to promote a governed agent to `VERIFIED_IN_DEPLOYMENT`
-only once that binding is observed end to end.
+**Phase 6 — Observe the binding against the live workspace.** Enforcement today
+is `ENFORCED`: the fail-closed chokepoint is proven in-process by the harness, but
+its `execute` callback is still a test closure over an in-memory fleet, not the
+real Unity Catalog `execute_response_action`. The next step is to route an agent's
+production dispatch through `guard_and_dispatch` with the real `execute`, capture
+the workspace-observed state as the verification signal, and promote that agent to
+`VERIFIED_IN_DEPLOYMENT` only once the binding is observed end to end against the
+live target.

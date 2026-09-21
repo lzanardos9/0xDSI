@@ -10,10 +10,11 @@ import { supabase } from '../lib/supabase';
 /**
  * 0xDSI Ethical Control Plane — operator console (DEMO / SHADOW MODE).
  *
- * IMPORTANT: every value here is mock data rendered for demonstration. Nothing in
- * this view enforces anything on a live Databricks workspace. Coverage, decisions,
- * leases and evidence are simulated so operators can see the intended experience.
- * Enforcement lives in databricks-native notebooks and is not wired here yet.
+ * IMPORTANT: coverage, authority rules, governed traces and the enforcement ledger
+ * are backed by real data from the databricks-native repository — the deterministic
+ * kernel, lifecycle, and the fail-closed enforcement chokepoint. The capability-leases
+ * tab is still illustrative simulation. The chokepoint is proven in-process (harness),
+ * not against a live Databricks workspace, so no status is ever VERIFIED_IN_DEPLOYMENT.
  */
 
 type CoverageMode =
@@ -21,7 +22,7 @@ type CoverageMode =
   | 'SANDBOX_ONLY' | 'SIMULATION' | 'FEDERATED_ENFORCEMENT';
 
 type Autonomy = 'A0' | 'A1' | 'A2' | 'A3' | 'A4';
-type HonestStatus = 'VERIFIED_IN_CODE' | 'PROPOSED' | 'SIMULATION';
+type HonestStatus = 'VERIFIED_IN_CODE' | 'ENFORCED' | 'PROPOSED' | 'SIMULATION';
 type Lifecycle = 'ACTIVE' | 'RESTRICTED' | 'PAUSED' | 'QUARANTINED' | 'REVOKED';
 type Decision = 'PERMIT_WITH_CONSTRAINTS' | 'REQUIRE_APPROVAL' | 'REQUIRE_REVIEW' | 'SANDBOX_ONLY' | 'DENY';
 type EffectClass =
@@ -56,14 +57,31 @@ interface LeaseRow {
   revoked: boolean;
 }
 
-interface EvidenceRow {
+interface EnforcementRecord {
   id: string;
-  ts: string;
-  source: 'BROKER' | 'EXECUTOR' | 'POLICY' | 'SENTINEL';
-  label: string;
-  detail: string;
-  severity: 'info' | 'warn' | 'critical';
+  recorded_at: string;
+  agent_key: string;
+  agent_name: string;
+  action_type: string;
+  target: string;
+  proposed_by: string;
+  approved_by: string;
+  kernel_decision: Decision;
+  kernel_reason_code: string;
+  outcome: string;
+  executed: boolean;
+  observed_state: string;
+  steps: TraceStep[];
+  sort_order: number;
 }
+
+const OUTCOME_META: Record<string, { tone: string; Icon: typeof ShieldCheck }> = {
+  VERIFIED: { tone: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10', Icon: CheckCircle2 },
+  FAILED: { tone: 'text-rose-300 border-rose-500/30 bg-rose-500/10', Icon: XCircle },
+  EXECUTE_ERROR: { tone: 'text-rose-300 border-rose-500/30 bg-rose-500/10', Icon: XCircle },
+  BLOCKED: { tone: 'text-rose-300 border-rose-500/30 bg-rose-500/10', Icon: Ban },
+  NOT_AUTHORIZED: { tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10', Icon: Lock },
+};
 
 const COVERAGE_META: Record<CoverageMode, { label: string; tone: string; enforced: boolean }> = {
   OBSERVE_ONLY: { label: 'Observe Only', tone: 'text-slate-300 border-slate-500/30 bg-slate-500/10', enforced: false },
@@ -77,6 +95,7 @@ const COVERAGE_META: Record<CoverageMode, { label: string; tone: string; enforce
 
 const HONEST_META: Record<HonestStatus, { label: string; tone: string; Icon: typeof ShieldCheck }> = {
   VERIFIED_IN_CODE: { label: 'Verified in code', tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30', Icon: FileCheck },
+  ENFORCED: { label: 'Enforced · fail-closed', tone: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30', Icon: Lock },
   PROPOSED: { label: 'Proposed · review', tone: 'text-amber-300 bg-amber-500/10 border-amber-500/30', Icon: AlertTriangle },
   SIMULATION: { label: 'Simulation', tone: 'text-violet-300 bg-violet-500/10 border-violet-500/30', Icon: Eye },
 };
@@ -138,14 +157,6 @@ function makeLeases(): LeaseRow[] {
     { id: 'lease-b40', agent: 'Threat Simulator', action: 'exploit_validate@0.9', audience: 'broker:sandbox', issuedAt: now - 5_000, ttlSec: 45, useCount: 0, maxUses: 1, revoked: true },
   ];
 }
-
-const EVIDENCE: EvidenceRow[] = [
-  { id: 'ev-1', ts: '12:04:41', source: 'BROKER', label: 'ActionRequest admitted', detail: 'isolate_host bound to plan digest 0x9c…; pending dual approval.', severity: 'info' },
-  { id: 'ev-2', ts: '12:03:58', source: 'POLICY', label: 'Deterministic DENY', detail: 'ROE.SCOPE.UNAUTHORIZED_TARGET — egress blocked before dispatch.', severity: 'critical' },
-  { id: 'ev-3', ts: '12:03:31', source: 'EXECUTOR', label: 'Independent receipt', detail: 'query_delta receipt reconciled with agent telemetry (match).', severity: 'info' },
-  { id: 'ev-4', ts: '12:02:57', source: 'SENTINEL', label: 'Scope probing observed', detail: 'Threat Simulator drift 0.41 — narrowed autonomy, review triggered.', severity: 'warn' },
-  { id: 'ev-5', ts: '12:02:10', source: 'POLICY', label: 'Protected prohibition', detail: 'CHARTER.PROHIBITION.SELF_AUTHORIZE — policy edit refused.', severity: 'critical' },
-];
 
 function Badge({ tone, children }: { tone: string; children: React.ReactNode }) {
   return <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-md border ${tone}`}>{children}</span>;
@@ -229,6 +240,7 @@ export default function EthicalControlPlane() {
   const [overrides, setOverrides] = useState<Record<string, Lifecycle>>({});
   const [rules, setRules] = useState<AuthorityRule[]>([]);
   const [traces, setTraces] = useState<GovernedTrace[]>([]);
+  const [ledger, setLedger] = useState<EnforcementRecord[]>([]);
   const [selectedTrace, setSelectedTrace] = useState<GovernedTrace | null>(null);
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [leases, setLeases] = useState<LeaseRow[]>(makeLeases);
@@ -287,6 +299,18 @@ export default function EthicalControlPlane() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('ecp_enforcement_ledger')
+        .select('id, recorded_at, agent_key, agent_name, action_type, target, proposed_by, approved_by, kernel_decision, kernel_reason_code, outcome, executed, observed_state, steps, sort_order')
+        .order('sort_order', { ascending: true });
+      if (active && !error && data) setLedger(data as EnforcementRecord[]);
+    })();
+    return () => { active = false; };
+  }, []);
+
   const stats = useMemo(() => {
     const enforced = agents.filter((a) => COVERAGE_META[a.coverage_mode]?.enforced).length;
     const actionCapable = agents.filter((a) => a.can_act).length;
@@ -341,10 +365,10 @@ export default function EthicalControlPlane() {
       <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-xl p-3">
         <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
         <p className="text-[11px] text-amber-200/80 leading-relaxed">
-          Phase 3: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span> and
-          <span className="font-mono text-amber-200"> Governed Actions</span> below are driven by the real inventory and the deterministic authority engine from the <span className="font-mono text-amber-200">databricks-native</span> repository.
-          All action-capable agents that passed authorization review now propose through that engine. The leases and evidence tabs remain illustrative simulation. Nothing here enforces anything on a live workspace —
-          statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
+          Phase 5: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span>, <span className="font-mono text-amber-200">Governed Actions</span> and
+          <span className="font-mono text-amber-200"> Evidence Ledger</span> below are driven by the real inventory, the deterministic authority engine, and the fail-closed enforcement chokepoint from the <span className="font-mono text-amber-200">databricks-native</span> repository.
+          Every governed action is now forced through that chokepoint, which records an append-only ledger row on every path. The capability-leases tab remains illustrative simulation. The chokepoint is proven in-process, not against a live workspace —
+          statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">ENFORCED</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
         </p>
       </div>
 
@@ -737,21 +761,64 @@ export default function EthicalControlPlane() {
       )}
 
       {tab === 'evidence' && (
-        <div className="space-y-2">
-          {EVIDENCE.map((e) => {
-            const tone = e.severity === 'critical' ? 'text-rose-300 border-rose-500/30' : e.severity === 'warn' ? 'text-amber-300 border-amber-500/30' : 'text-slate-300 border-slate-500/30';
+        <div className="space-y-3">
+          <div className="bg-[#0b0f1e] border border-cyan-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-cyan-300 text-xs font-semibold mb-1"><Lock size={13} />Append-only enforcement ledger</div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Every governed proposal is forced through a single fail-closed chokepoint. The real side effect runs only after the
+              kernel permits <span className="text-slate-200">and</span> a different operator binds an approval to the exact revision.
+              Each attempt writes exactly one row here — including the ones that were refused. These rows are produced by the enforcement
+              harness running the chokepoint in-process; a row's <span className="text-slate-200">executed</span> flag is true only when a
+              real state change occurred. This is <span className="text-cyan-300 font-semibold">enforced in code</span>, not yet verified against a live workspace.
+            </p>
+          </div>
+          {ledger.length === 0 && (
+            <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4 text-[11px] text-slate-500">No enforcement records loaded.</div>
+          )}
+          {ledger.map((r) => {
+            const om = OUTCOME_META[r.outcome] ?? { tone: 'text-slate-300 border-slate-500/30 bg-slate-500/10', Icon: FileCheck };
+            const OIcon = om.Icon;
             return (
-              <div key={e.id} className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-3 flex items-start gap-3">
-                <span className="text-[10px] font-mono text-slate-500 mt-0.5 shrink-0">{e.ts}</span>
-                <Badge tone={`${tone} bg-transparent`}>{e.source}</Badge>
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold text-white">{e.label}</div>
-                  <div className="text-[11px] text-slate-500">{e.detail}</div>
+              <div key={r.id} className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-white">{r.agent_name}</span>
+                      <span className="text-[11px] font-mono text-cyan-300">{r.action_type}</span>
+                      <span className="text-[11px] text-slate-500">→ {r.target}</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-600 mt-0.5">{new Date(r.recorded_at).toISOString().replace('T', ' ').slice(0, 19)}Z</div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Badge tone={om.tone}><OIcon size={11} />{r.outcome}</Badge>
+                    <Badge tone={r.executed ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' : 'text-slate-400 border-slate-500/30 bg-slate-500/10'}>
+                      {r.executed ? <CheckCircle2 size={11} /> : <XCircle size={11} />}{r.executed ? 'executed' : 'no side effect'}
+                    </Badge>
+                  </div>
                 </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-[10px]">
+                  <div><div className="text-slate-600">Kernel decision</div><div className="text-slate-300 font-mono">{r.kernel_decision}</div></div>
+                  <div><div className="text-slate-600">Reason code</div><div className="text-slate-300 font-mono break-all">{r.kernel_reason_code}</div></div>
+                  <div><div className="text-slate-600">Proposed by</div><div className="text-slate-300 font-mono">{r.proposed_by || '—'}</div></div>
+                  <div><div className="text-slate-600">Approved by</div><div className={`font-mono ${r.approved_by ? 'text-emerald-300' : 'text-slate-500'}`}>{r.approved_by || '— none'}</div></div>
+                </div>
+                {r.observed_state && (
+                  <div className="mt-2 text-[10px]"><span className="text-slate-600">Observed state: </span><span className="text-slate-300 font-mono">{r.observed_state}</span></div>
+                )}
+                {Array.isArray(r.steps) && r.steps.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap mt-3">
+                    {r.steps.map((s, i) => (
+                      <span key={i} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-md ${STEP_TONE[s.state] ?? 'bg-slate-500/15 text-slate-300'}`} title={s.note}>
+                        {s.state}
+                        {i < r.steps.length - 1 && <ChevronRight size={10} className="opacity-50" />}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
-          <p className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-1"><FileCheck size={12} />Executor-originated receipts are reconciled against agent telemetry; the agent never authors its own authoritative receipt. (Demo ledger — mock data.)</p>
+          <p className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-1"><FileCheck size={12} />The agent never authors its own authoritative receipt — the chokepoint records the outcome, and executed is true only when observed state matched intent.</p>
         </div>
       )}
     </div>
