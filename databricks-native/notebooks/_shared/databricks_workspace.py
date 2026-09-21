@@ -128,12 +128,15 @@ class DatabricksWorkspaceClient:
         return None if value is None else str(value)
 
 
-def live_dispatch(agent_key, proposal, context, spark, config, ledger):
+def live_dispatch(agent_key, proposal, context, spark, config, ledger, connector_verify=None):
     """Dispatch one governed action against the live workspace.
 
     Identical to `workspace_dispatch.dispatch` but wires the real
     `DatabricksWorkspaceClient` and stamps the recorded row `provenance="live"`,
-    so and only so it can ever promote an agent to `VERIFIED_IN_DEPLOYMENT`.
+    so and only so it can ever promote an agent to `VERIFIED_IN_DEPLOYMENT`. Any
+    `connector_verify` (a capability redemption) is forwarded to the chokepoint so
+    the live effect is gated by connector-side revalidation too.
     """
     client = DatabricksWorkspaceClient(spark, config)
-    return W.dispatch(agent_key, proposal, context, client, ledger, provenance=LIVE)
+    return W.dispatch(agent_key, proposal, context, client, ledger, provenance=LIVE,
+                      connector_verify=connector_verify)

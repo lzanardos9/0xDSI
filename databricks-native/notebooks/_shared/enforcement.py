@@ -74,7 +74,7 @@ def _audit(agent_key, agent_name, proposal, decision, outcome, steps, extra=None
     return rec
 
 
-def guard_and_dispatch(agent_key, proposal, context, execute, record):
+def guard_and_dispatch(agent_key, proposal, context, execute, record, connector_verify=None):
     """Execute an action only on a fully authorized path; always record the attempt.
 
     proposal: {action_type, target, reason, proposed_by, confidence, finding_id, ...}
@@ -82,6 +82,14 @@ def guard_and_dispatch(agent_key, proposal, context, execute, record):
     execute:  callable() -> observed_state. Invoked at most once, and only after
               the kernel permits and a revision-bound approval clears.
     record:   callable(audit_dict) -> None. Invoked exactly once, on every path.
+    connector_verify: optional callable(action_dict) -> (ok, reason). When given,
+              it is the connector-side revalidation gate (Phase 8): after the
+              kernel and approval clear, the connector independently re-checks the
+              exact action about to be performed -- typically by redeeming a
+              single-use capability lease bound to the action's hash. A failure
+              here means execute is never called (fail closed) and the attempt is
+              recorded NOT_AUTHORIZED, so a stale, replayed or argument-mismatched
+              authorization cannot reach the side effect.
 
     Returns the audit record (also handed to `record`). The record's `executed`
     flag and `outcome` are the source of truth: a caller can trust that
@@ -155,6 +163,28 @@ def guard_and_dispatch(agent_key, proposal, context, execute, record):
                      extra={"approved_by": approver})
         record(rec)
         return rec
+
+    # 2b. Connector-side revalidation (Phase 8). The connector does not trust the
+    #     decision made above: it re-derives the exact action and re-checks
+    #     authorization at the moment of effect (redeeming a single-use,
+    #     argument-bound capability lease). A stale/replayed/argument-mismatched
+    #     authorization fails closed here -- execute is never reached.
+    if connector_verify is not None:
+        effect_action = {
+            "agent_key": agent_key,
+            "action_type": action_type,
+            "target": proposal.get("target"),
+            "finding_id": proposal.get("finding_id"),
+            "finding_revision": action.get("approved_finding_revision"),
+        }
+        cv_ok, cv_reason = connector_verify(effect_action)
+        if not cv_ok:
+            steps.append({"state": NOT_AUTHORIZED, "note": f"connector revalidation: {cv_reason}"})
+            rec = _audit(agent_key, agent_name, proposal, decision, NOT_AUTHORIZED, steps,
+                         extra={"approved_by": approver})
+            record(rec)
+            return rec
+        steps.append({"state": R.APPROVED, "note": f"connector revalidated: {cv_reason}"})
 
     # 3. Authorized. Perform the real side effect exactly once. An exception is
     #    not swallowed into a success: the effect state is unknown, so it is

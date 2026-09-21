@@ -192,14 +192,45 @@ change. This file is the human-readable mirror.
   shows each row's provenance and reserves the `VERIFIED_IN_DEPLOYMENT` label,
   honestly held at zero.
 
+- **Phase 8 — Capability leases: authorization as single-use, argument-bound currency.**
+  Through Phase 7 an authorized action was a boolean state (a different operator had
+  approved a proposal bound to a finding revision). Phase 8 turns authorization into a
+  *lease* that cannot be replayed, raced, or reused after the target argument changes.
+  `_shared/canonical_action.py` fingerprints an action's identity (agent, action,
+  target, finding + revision) into a stable `action_hash`; `_shared/capability.py`
+  mints leases signed with a server-held HMAC key the agent never sees, bound to that
+  hash, time-boxed, revocable, and single-use by default. `verify` is a read-only
+  check; `redeem` verifies **and** atomically claims one use through an injected
+  consumption store, so concurrent redemptions of one single-use lease resolve to
+  exactly one winner. `_shared/reason_codes.py` gives every refusal a stable,
+  greppable code. The enforcement chokepoint gains an optional connector-side
+  revalidation gate: after the kernel and approval clear, the connector re-derives the
+  exact action and redeems the lease against it (`enforcement.guard_and_dispatch(...,
+  connector_verify=...)`, forwarded through `workspace_dispatch.dispatch` and
+  `databricks_workspace.live_dispatch`) — so a stale, replayed or argument-mismatched
+  authorization fails closed and the workspace is never touched. 23 adversarial
+  property tests (`test_capability.py`) probe each attack — TOCTOU argument change,
+  forged/edited lease, expiry, revocation, replay, a 50-thread race, holder mismatch,
+  and the same properties end-to-end through Gate 2. All pure stdlib and offline; the
+  deployment consumption store (Delta/Supabase-backed) will implement the same
+  four-method contract. This is `VERIFIED_IN_CODE`: no agent status changes — all
+  remain `DEPLOYMENT_READY`.
+
 ## Next phase
 
-**Phase 8 — Execute one agent against the live workspace.** Everything up to the
-live call is now built and tested offline: the real client, the bound-parameter SQL,
-the promotion gate, the provenance-tagged ledger. The one remaining step cannot be
-done from this environment — it needs a live Databricks workspace with the
-`execute_response_action` function and response-state table deployed, and real
-credentials. Running `databricks_workspace.live_dispatch` for one agent there, on an
-approved and in-scope target, will write the first `provenance="live"` ledger row;
-if its independent read-back confirms the effect, the promotion gate flips that one
-agent — and only that one — to `VERIFIED_IN_DEPLOYMENT`.
+Two tracks remain, both requiring resources this environment does not have:
+
+- **Live-workspace execution (deployment milestone).** Everything up to the live call
+  is built and tested offline: the real client, bound-parameter SQL, the promotion
+  gate, the provenance-tagged ledger, and now argument-bound capability leases.
+  Running `databricks_workspace.live_dispatch` for one agent against a live Databricks
+  workspace — with the `execute_response_action` function and response-state table
+  deployed, real credentials, and a redeemed capability — on an approved, in-scope
+  target writes the first `provenance="live"` row; if its independent read-back
+  confirms the effect, the promotion gate flips that one agent to
+  `VERIFIED_IN_DEPLOYMENT`.
+- **Omnigent PEP integration (Phase 9+).** Bind the 0xDSI decision as a runner-level
+  Omnigent policy (ALLOW/DENY/ASK), persist the capability ledger and consumption
+  store to Delta/Supabase (`ecp_capabilities`), and compute an honest
+  EnforcementCoverage per agent — no agent labelled FULLY_GOVERNED until a real
+  Omnigent runner mediates its action paths.

@@ -87,7 +87,8 @@ def make_ledger_writer(sink, provenance="simulated"):
     return _record
 
 
-def dispatch(agent_key, proposal, context, client, ledger, provenance="simulated"):
+def dispatch(agent_key, proposal, context, client, ledger, provenance="simulated",
+             connector_verify=None):
     """Run one governed action through the chokepoint bound to a real workspace.
 
     client: a WorkspaceClient (apply/observe). In deployment this wraps the
@@ -95,6 +96,11 @@ def dispatch(agent_key, proposal, context, client, ledger, provenance="simulated
     ledger: an append-only sink for the audit record (list or `.append`-able).
     provenance: 'simulated' for a dry-run, 'live' only against the real
             workspace. Stamped onto the recorded row for the promotion gate.
+    connector_verify: optional connector-side revalidation callback (Phase 8),
+            forwarded to the chokepoint. When supplied it must clear -- typically
+            by redeeming a single-use capability lease bound to the action -- or
+            the workspace is never touched. Build one with
+            `capability.connector_verify(...)`.
 
     Returns the audit record. `rec["executed"]` is true only when the workspace
     was actually commanded, and `rec["outcome"]` is `VERIFIED` only when the
@@ -104,4 +110,5 @@ def dispatch(agent_key, proposal, context, client, ledger, provenance="simulated
     target = proposal.get("target")
     execute = make_execute(client, action_type, target)
     record = make_ledger_writer(ledger, provenance=provenance)
-    return E.guard_and_dispatch(agent_key, proposal, context, execute, record)
+    return E.guard_and_dispatch(agent_key, proposal, context, execute, record,
+                                connector_verify=connector_verify)
