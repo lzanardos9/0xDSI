@@ -51,8 +51,12 @@ ALL_ACTIONS = [
 ]
 
 
-def test_three_action_capable_agents_registered():
-    assert set(G.AGENT_CATALOGS) == {"vanguard", "arl", "edge"}
+A2_AGENT = {"autonomy": K.A2, "lifecycle": "active"}
+A4_AGENT = {"autonomy": K.A4, "lifecycle": "active"}
+
+
+def test_all_governed_agents_registered():
+    assert set(G.AGENT_CATALOGS) == {"vanguard", "arl", "edge", "scanner", "active_list"}
 
 
 def test_unregistered_agent_denied():
@@ -67,14 +71,55 @@ def test_unregistered_action_denied():
     assert t["lifecycle_state"] is None
 
 
-def test_every_action_requires_approval_and_is_proposed():
+def test_every_action_enters_lifecycle_when_eligible():
+    # At the highest autonomy and in scope, no registered action is denied; each
+    # enters the lifecycle at PROPOSED with an intent and an owning agent.
     for key, action in ALL_ACTIONS:
         agent_key, p = _req(key, action)
-        t = G.govern(agent_key, p, _ctx())
-        assert t["kernel"]["decision"] == K.REQUIRE_APPROVAL, (key, action)
+        t = G.govern(agent_key, p, _ctx(agent=A4_AGENT))
+        assert t["kernel"]["decision"] != K.DENY, (key, action)
         assert t["lifecycle_state"] == R.PROPOSED, (key, action)
         assert t["intended_effect"], (key, action)
         assert t["agent_name"], (key, action)
+
+
+def test_hard_to_reverse_effects_require_approval():
+    for action in G.AGENT_CATALOGS["vanguard"]["actions"]:
+        agent_key, p = _req("vanguard", action)
+        t = G.govern(agent_key, p, _ctx())
+        assert t["kernel"]["decision"] == K.REQUIRE_APPROVAL, action
+        assert t["lifecycle_state"] == R.PROPOSED, action
+
+
+def test_scanner_scope_governs_not_approval():
+    # An in-scope scan is a purpose-limited permit; an out-of-scope scan is
+    # denied before it can enter the lifecycle -- discovery does not expand scope.
+    agent_key, p = _req("scanner", "launch_scan", proposed_by="scanner")
+    ok = G.govern(agent_key, p, _ctx(agent=A2_AGENT))
+    assert ok["kernel"]["decision"] == K.PERMIT_WITH_CONSTRAINTS
+    assert ok["lifecycle_state"] == R.PROPOSED
+    bad = G.govern(agent_key, p, _ctx(agent=A2_AGENT, target_in_scope=False))
+    assert bad["kernel"]["decision"] == K.DENY
+    assert bad["kernel"]["reason_code"] == K.R_UNAUTHORIZED_TARGET
+    assert bad["lifecycle_state"] is None
+
+
+def test_blocklist_denied_at_chartered_a2_autonomy():
+    # The Active List Manager is chartered A2, but a block is an access
+    # restriction (A3). The kernel denies it on the autonomy floor -- the
+    # intended, honest outcome, not a bug.
+    agent_key, p = _req("active_list", "add_to_blocklist", proposed_by="list-bot")
+    t = G.govern(agent_key, p, _ctx(agent=A2_AGENT))
+    assert t["kernel"]["decision"] == K.DENY
+    assert t["kernel"]["reason_code"] == K.R_AUTONOMY_INSUFFICIENT
+    assert t["lifecycle_state"] is None
+
+
+def test_watchlist_permitted_at_a2():
+    agent_key, p = _req("active_list", "add_to_watchlist", proposed_by="list-bot")
+    t = G.govern(agent_key, p, _ctx(agent=A2_AGENT))
+    assert t["kernel"]["decision"] == K.PERMIT_WITH_CONSTRAINTS
+    assert t["lifecycle_state"] == R.PROPOSED
 
 
 def test_out_of_scope_blocked_before_lifecycle():

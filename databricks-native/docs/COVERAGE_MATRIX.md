@@ -102,10 +102,31 @@ change. This file is the human-readable mirror.
   tests still pass. Traces for all three agents are persisted to
   `ecp_vanguard_traces` (now carrying `agent_key`/`agent_name`) and shown in the
   console's Governed Actions tab with a per-agent filter.
+- **Phase 4 — Explicit authorization for the `PROPOSED` agents.** Each of the 9
+  agents that sat at `PROPOSED` now carries an explicit `authz_decision` on its
+  `ecp_agent_coverage` row (`GOVERN` / `RESTRICT`), with a plain rationale and
+  conditions, rendered in the console's Agent Registry.
+  - **GOVERN (admitted to the executable catalog + tests):** Glasswing Scanner (41)
+    and Active List Manager (39) join the Edge Control Plane (49). The scanner's
+    governance is scope — an in-scope scan is a purpose-limited permit, an
+    out-of-scope one is denied. The list manager surfaces a real finding: a
+    blocklist write is an access restriction (autonomy A3) but the agent is
+    chartered A2, so the kernel denies the self-service block on the autonomy
+    floor; a re-chartered A3 path then requires bound approval and verified
+    dispatch. These three flip to `VERIFIED_IN_CODE`.
+  - **RESTRICT (decision recorded, not admitted to the catalog):** Threat Radar
+    (24, allowlisted egress only), Connector Version Manager (29, advisory /
+    desired-state only), Vibe Connector Builder (31, sandbox + review), Session
+    List Manager (38, scoped operational lists), UEBA Onboarding (48, validated
+    IdP creds + input validation), AI Gateway Guardian (56, advisory).
+  - The generic engine now spans five governed agents; `test_governed_agent.py`
+    has 15 tests pinning scope denial, the autonomy floor, and the permit path.
 
 ## Next phase
 
-**Phase 4 — Explicit authorization for the `PROPOSED` agents.** Open the review of
-the 9 agents currently marked `PROPOSED` in the coverage matrix so each gets an
-explicit authorization decision (approve into a governed catalog, restrict, or
-deny) rather than an implicit one, and record the outcome on each agent's row.
+**Phase 5 — From verified-in-code to verified-in-deployment.** Every governed
+decision today is `VERIFIED_IN_CODE` / `SIMULATION`: proven by offline tests, not
+yet enforced against a live workspace. The next step is to bind the kernel and
+lifecycle into the agents' real dispatch path so an action cannot execute without
+a recorded decision, and to promote a governed agent to `VERIFIED_IN_DEPLOYMENT`
+only once that binding is observed end to end.

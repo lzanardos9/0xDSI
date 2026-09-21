@@ -67,6 +67,31 @@ AGENT_CATALOGS = {
             "revoke_token": {"effects": ("credential_use",), "intended_effect": "revoked"},
         },
     },
+    # Approved into the governed set in Phase 4. A scan is a resource-committing
+    # operation against a target: its governance is scope, not approval, so the
+    # kernel permits an in-scope scan (purpose-limited) and denies an
+    # out-of-scope one -- discovery does not expand scope.
+    "scanner": {
+        "agent_name": "Glasswing Scanner",
+        "actions": {
+            "launch_scan": {"effects": ("resource_commit",), "intended_effect": "scan_completed"},
+            "schedule_scan": {"effects": ("resource_commit",), "intended_effect": "scheduled"},
+        },
+    },
+    # Approved into the governed set in Phase 4. Watchlist writes are
+    # observational and permitted; blocklist writes are an access restriction,
+    # which requires A3 -- so at this agent's chartered A2 autonomy the kernel
+    # correctly denies a self-service block. That denial is the intended,
+    # honest outcome, not a bug: a block must be re-chartered or routed through a
+    # higher-authority approval path.
+    "active_list": {
+        "agent_name": "Active List Manager",
+        "actions": {
+            "add_to_watchlist": {"effects": ("observe",), "intended_effect": "watchlisted"},
+            "add_to_blocklist": {"effects": ("access_restriction",), "intended_effect": "blocked"},
+            "remove_from_blocklist": {"effects": ("access_restriction",), "intended_effect": "unblocked"},
+        },
+    },
 }
 
 

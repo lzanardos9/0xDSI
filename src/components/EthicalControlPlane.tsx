@@ -38,6 +38,9 @@ interface CoverageAgent {
   honest_status: HonestStatus;
   governance: string;
   notes: string;
+  authz_decision?: string;
+  authz_rationale?: string;
+  authz_conditions?: string;
   sort_order: number;
 }
 
@@ -189,6 +192,12 @@ interface GovernedTrace {
   sort_order: number;
 }
 
+const AUTHZ_META: Record<string, { label: string; tone: string; Icon: typeof ShieldCheck }> = {
+  GOVERN: { label: 'Governed', tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30', Icon: ShieldCheck },
+  RESTRICT: { label: 'Restricted', tone: 'text-amber-300 bg-amber-500/10 border-amber-500/30', Icon: Lock },
+  DENY: { label: 'Denied', tone: 'text-rose-300 bg-rose-500/10 border-rose-500/30', Icon: Ban },
+};
+
 const STEP_TONE: Record<string, string> = {
   PROPOSED: 'bg-sky-500/15 text-sky-300',
   APPROVED: 'bg-emerald-500/15 text-emerald-300',
@@ -236,7 +245,7 @@ export default function EthicalControlPlane() {
       try {
         const { data, error } = await supabase
           .from('ecp_agent_coverage')
-          .select('file, agent_name, role, autonomy, coverage_mode, can_act, honest_status, governance, notes, sort_order')
+          .select('file, agent_name, role, autonomy, coverage_mode, can_act, honest_status, governance, notes, authz_decision, authz_rationale, authz_conditions, sort_order')
           .order('sort_order', { ascending: true });
         if (!active) return;
         if (error) { setLoadError(error.message); }
@@ -334,7 +343,7 @@ export default function EthicalControlPlane() {
         <p className="text-[11px] text-amber-200/80 leading-relaxed">
           Phase 3: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span> and
           <span className="font-mono text-amber-200"> Governed Actions</span> below are driven by the real inventory and the deterministic authority engine from the <span className="font-mono text-amber-200">databricks-native</span> repository.
-          All three action-capable agents now propose through that engine. The leases and evidence tabs remain illustrative simulation. Nothing here enforces anything on a live workspace —
+          All action-capable agents that passed authorization review now propose through that engine. The leases and evidence tabs remain illustrative simulation. Nothing here enforces anything on a live workspace —
           statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
         </p>
       </div>
@@ -444,6 +453,11 @@ export default function EthicalControlPlane() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-white">{a.agent_name}</span>
                         <Badge tone={hs.tone}><HsIcon size={10} />{hs.label}</Badge>
+                        {a.authz_decision && AUTHZ_META[a.authz_decision] && (() => {
+                          const az = AUTHZ_META[a.authz_decision];
+                          const AzIcon = az.Icon;
+                          return <Badge tone={az.tone}><AzIcon size={10} />{az.label}</Badge>;
+                        })()}
                         {a.can_act
                           ? <Badge tone="text-rose-300 bg-rose-500/10 border-rose-500/30"><Zap size={10} />action-capable</Badge>
                           : <Badge tone="text-slate-300 bg-slate-500/10 border-slate-500/30"><Eye size={10} />read / analysis</Badge>}
@@ -455,6 +469,13 @@ export default function EthicalControlPlane() {
                         {lifecycle !== 'ACTIVE' && <Badge tone={life.tone}><LifeIcon size={10} />{lifecycle}</Badge>}
                       </div>
                       {a.governance && <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">{a.governance}</p>}
+                      {a.authz_decision && (a.authz_rationale || a.authz_conditions) && (
+                        <div className="mt-2 rounded-lg border border-[#1e293b] bg-slate-900/40 p-2.5 space-y-1">
+                          <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Authorization decision</div>
+                          {a.authz_rationale && <p className="text-[11px] text-slate-300 leading-relaxed">{a.authz_rationale}</p>}
+                          {a.authz_conditions && <p className="text-[11px] text-emerald-300/80 leading-relaxed flex items-start gap-1"><ShieldCheck size={11} className="shrink-0 mt-0.5" />{a.authz_conditions}</p>}
+                        </div>
+                      )}
                       {a.notes && <p className="text-[10px] text-amber-300/70 mt-1 flex items-start gap-1"><AlertTriangle size={10} className="shrink-0 mt-0.5" />{a.notes}</p>}
                     </div>
                   </div>
@@ -583,11 +604,11 @@ export default function EthicalControlPlane() {
           <div className="flex items-start gap-2 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
             <ShieldCheck size={15} className="text-emerald-400 shrink-0 mt-0.5" />
             <p className="text-[11px] text-emerald-200/80 leading-relaxed">
-              Every action the three action-capable agents propose — <span className="font-mono text-emerald-200">VANGUARD Response</span>, the
-              <span className="font-mono text-emerald-200"> Autonomous Response Learner</span> and the <span className="font-mono text-emerald-200">Edge Control Plane</span> — is first run through the
+              Every action a <span className="font-mono text-emerald-200">governed</span> agent proposes is first run through the
               deterministic authority kernel for a reason-coded verdict, then — only if not denied — through the propose → approve → dispatch → verify lifecycle.
-              A dispatch is not a completed action: it is only <span className="font-mono">VERIFIED</span> when the target is observed to match intent. Every trace below is
-              produced in code by that exact engine, labelled <span className="font-mono">SIMULATION</span> — nothing runs on a live workspace.
+              A dispatch is not a completed action: it is only <span className="font-mono">VERIFIED</span> when the target is observed to match intent. As of Phase 4 the governed
+              set spans containment (VANGUARD, the Autonomous Response Learner), fleet control (Edge Control Plane), active scanning (Glasswing Scanner) and enforcement-list writes
+              (Active List Manager). Every trace below is produced in code by that exact engine, labelled <span className="font-mono">SIMULATION</span> — nothing runs on a live workspace.
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
