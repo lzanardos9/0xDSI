@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
   Network, ShieldCheck, Ban, HelpCircle, Plus, Pencil, Trash2,
-  Save, X, Power, AlertTriangle, Loader2,
+  Save, X, Power, AlertTriangle, Loader2, ListChecks, Workflow,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import OmnigentArchitecture from './OmnigentArchitecture';
 
 interface OmnigentPolicy {
   id: string;
@@ -63,6 +64,7 @@ export default function OmnigentPolicies() {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [subView, setSubView] = useState<'policies' | 'architecture'>('policies');
 
   const load = async () => {
     const { data, error: err } = await supabase
@@ -184,6 +186,29 @@ export default function OmnigentPolicies() {
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center gap-1 bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-1 w-fit">
+        <button
+          onClick={() => setSubView('policies')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-lg transition-colors ${
+            subView === 'policies' ? 'bg-cyan-500/15 text-cyan-200 border border-cyan-500/40' : 'text-slate-400 border border-transparent hover:text-slate-200'
+          }`}
+        >
+          <ListChecks size={13} />Policies
+        </button>
+        <button
+          onClick={() => setSubView('architecture')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-lg transition-colors ${
+            subView === 'architecture' ? 'bg-cyan-500/15 text-cyan-200 border border-cyan-500/40' : 'text-slate-400 border border-transparent hover:text-slate-200'
+          }`}
+        >
+          <Workflow size={13} />How it works
+        </button>
+      </div>
+
+      {subView === 'architecture' ? (
+        <OmnigentArchitecture />
+      ) : (
+      <>
       <div className="bg-[#0b0f1e] border border-cyan-500/20 rounded-xl p-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 text-cyan-300 text-xs font-semibold">
@@ -348,6 +373,8 @@ export default function OmnigentPolicies() {
           </div>
         );
       })}
+      </>
+      )}
     </div>
   );
 }
