@@ -14,7 +14,9 @@ import { supabase } from '../lib/supabase';
  * are backed by real data from the databricks-native repository — the deterministic
  * kernel, lifecycle, the fail-closed enforcement chokepoint, the production dispatch
  * binding (independent read-back verification) and its real Unity Catalog client.
- * The capability-leases tab is still illustrative simulation. A promotion gate marks
+ * The capability-leases tab is backed by real records produced by the capability
+ * engine driven through the chokepoint (tests/harness/capability_ledger.py).
+ * A promotion gate marks
  * an agent VERIFIED_IN_DEPLOYMENT only from a ledger row of provenance 'live'; every
  * row today is 'simulated', so all agents are honestly held at DEPLOYMENT_READY.
  */
@@ -47,16 +49,28 @@ interface CoverageAgent {
   sort_order: number;
 }
 
-interface LeaseRow {
+interface CapabilityRecord {
   id: string;
-  agent: string;
-  action: string;
-  audience: string;
-  issuedAt: number;
-  ttlSec: number;
-  useCount: number;
-  maxUses: number;
+  capability_id: string;
+  agent_key: string;
+  agent_name: string;
+  action_type: string;
+  target: string;
+  issued_by: string;
+  issued_to: string;
+  action_hash: string;
+  issued_at: string;
+  expires_at: string;
+  max_uses: number;
+  uses_consumed: number;
   revoked: boolean;
+  status: string;
+  reason_code: string;
+  dispatched: boolean;
+  dispatch_outcome: string;
+  provenance: string;
+  scenario: string;
+  sort_order: number;
 }
 
 interface EnforcementRecord {
@@ -84,6 +98,15 @@ const OUTCOME_META: Record<string, { tone: string; Icon: typeof ShieldCheck }> =
   EXECUTE_ERROR: { tone: 'text-rose-300 border-rose-500/30 bg-rose-500/10', Icon: XCircle },
   BLOCKED: { tone: 'text-rose-300 border-rose-500/30 bg-rose-500/10', Icon: Ban },
   NOT_AUTHORIZED: { tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10', Icon: Lock },
+};
+
+const CAP_STATUS_META: Record<string, { tone: string; Icon: typeof ShieldCheck }> = {
+  CONSUMED: { tone: 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10', Icon: CheckCircle2 },
+  ACTIVE: { tone: 'text-sky-300 border-sky-500/30 bg-sky-500/10', Icon: KeyRound },
+  EXHAUSTED: { tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10', Icon: Timer },
+  REVOKED: { tone: 'text-rose-300 border-rose-500/30 bg-rose-500/10', Icon: Ban },
+  EXPIRED: { tone: 'text-slate-300 border-slate-500/30 bg-slate-500/10', Icon: Timer },
+  INVALID: { tone: 'text-rose-300 border-rose-500/30 bg-rose-500/10', Icon: XCircle },
 };
 
 const COVERAGE_META: Record<CoverageMode, { label: string; tone: string; enforced: boolean }> = {
@@ -152,16 +175,6 @@ const FOUNDATIONS = [
 ];
 
 const AGENTS: CoverageAgent[] = [];
-
-function makeLeases(): LeaseRow[] {
-  const now = Date.now();
-  return [
-    { id: 'lease-9f2', agent: 'SAGE Enrichment', action: 'enrich_ioc@2.1', audience: 'broker:enrich', issuedAt: now - 40_000, ttlSec: 120, useCount: 1, maxUses: 1, revoked: false },
-    { id: 'lease-3a7', agent: 'NOVA Investigation', action: 'query_delta@3.0', audience: 'broker:read', issuedAt: now - 15_000, ttlSec: 90, useCount: 0, maxUses: 3, revoked: false },
-    { id: 'lease-c11', agent: 'VANGUARD Response', action: 'isolate_host@1.4', audience: 'broker:respond', issuedAt: now - 8_000, ttlSec: 60, useCount: 0, maxUses: 1, revoked: false },
-    { id: 'lease-b40', agent: 'Threat Simulator', action: 'exploit_validate@0.9', audience: 'broker:sandbox', issuedAt: now - 5_000, ttlSec: 45, useCount: 0, maxUses: 1, revoked: true },
-  ];
-}
 
 function Badge({ tone, children }: { tone: string; children: React.ReactNode }) {
   return <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-md border ${tone}`}>{children}</span>;
@@ -248,13 +261,7 @@ export default function EthicalControlPlane() {
   const [ledger, setLedger] = useState<EnforcementRecord[]>([]);
   const [selectedTrace, setSelectedTrace] = useState<GovernedTrace | null>(null);
   const [agentFilter, setAgentFilter] = useState<string>('all');
-  const [leases, setLeases] = useState<LeaseRow[]>(makeLeases);
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const iv = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(iv);
-  }, []);
+  const [capabilities, setCapabilities] = useState<CapabilityRecord[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -316,6 +323,18 @@ export default function EthicalControlPlane() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data, error } = await supabase
+        .from('ecp_capabilities')
+        .select('id, capability_id, agent_key, agent_name, action_type, target, issued_by, issued_to, action_hash, issued_at, expires_at, max_uses, uses_consumed, revoked, status, reason_code, dispatched, dispatch_outcome, provenance, scenario, sort_order')
+        .order('sort_order', { ascending: true });
+      if (active && !error && data) setCapabilities(data as CapabilityRecord[]);
+    })();
+    return () => { active = false; };
+  }, []);
+
   const stats = useMemo(() => {
     const enforced = agents.filter((a) => COVERAGE_META[a.coverage_mode]?.enforced).length;
     const actionCapable = agents.filter((a) => a.can_act).length;
@@ -344,9 +363,6 @@ export default function EthicalControlPlane() {
   const setLifecycle = (file: string, lifecycle: Lifecycle) =>
     setOverrides((prev) => ({ ...prev, [file]: lifecycle }));
 
-  const revokeLease = (id: string) =>
-    setLeases((prev) => prev.map((l) => (l.id === id ? { ...l, revoked: true } : l)));
-
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -372,7 +388,7 @@ export default function EthicalControlPlane() {
         <p className="text-[11px] text-amber-200/80 leading-relaxed">
           Phase 7: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span>, <span className="font-mono text-amber-200">Governed Actions</span> and
           <span className="font-mono text-amber-200"> Evidence Ledger</span> below are driven by the real inventory, the deterministic authority engine, and the fail-closed enforcement chokepoint from the <span className="font-mono text-amber-200">databricks-native</span> repository.
-          The production dispatch binding now has a real Unity Catalog client, and a promotion gate reserves the top status: an agent only becomes <span className="font-mono text-amber-200">VERIFIED_IN_DEPLOYMENT</span> once a real action has run against the live workspace and its independent read-back confirmed the effect. Every ledger row today is a <span className="font-mono text-amber-200">simulated</span> dry-run, so the gate holds every agent at <span className="font-mono text-amber-200">DEPLOYMENT_READY</span> — zero are verified in deployment. The capability-leases tab remains illustrative simulation. Nothing has yet run against the live workspace —
+          The production dispatch binding now has a real Unity Catalog client, and a promotion gate reserves the top status: an agent only becomes <span className="font-mono text-amber-200">VERIFIED_IN_DEPLOYMENT</span> once a real action has run against the live workspace and its independent read-back confirmed the effect. Every ledger row today is a <span className="font-mono text-amber-200">simulated</span> dry-run, so the gate holds every agent at <span className="font-mono text-amber-200">DEPLOYMENT_READY</span> — zero are verified in deployment. The capability-leases tab is now backed by real code-produced lease records. Nothing has yet run against the live workspace —
           statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">ENFORCED</span> / <span className="font-mono">DEPLOYMENT_READY</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>; <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span> exists but is honestly held at zero.
         </p>
       </div>
@@ -727,41 +743,64 @@ export default function EthicalControlPlane() {
       )}
 
       {tab === 'leases' && (
-        <div className="space-y-2">
-          {leases.map((l) => {
-            const ageMs = now - l.issuedAt;
-            const remaining = Math.max(0, l.ttlSec - Math.floor(ageMs / 1000));
-            const expired = remaining <= 0;
-            const dead = l.revoked || expired || l.useCount >= l.maxUses;
+        <div className="space-y-3">
+          <div className="bg-[#0b0f1e] border border-cyan-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-cyan-300 text-xs font-semibold mb-1"><KeyRound size={13} />Capability leases — authorization as single-use, argument-bound currency</div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              An approval is not the same as an executable capability. Each authorized action is minted into a lease signed with a
+              server-held key the agent never sees, <span className="text-slate-200">bound to the exact action</span> — a canonical hash of
+              agent, action, target and finding revision — then time-boxed and single-use by default. At the moment of effect the connector
+              re-derives the action and <span className="text-slate-200">redeems</span> the lease: a replay, a revoked or expired lease, a
+              forged lease, or an argument changed since approval (TOCTOU) all fail closed and the workspace is never touched. Every row
+              below is produced by the real capability engine driven through the enforcement chokepoint
+              (<span className="font-mono text-amber-200">tests/harness/capability_ledger.py</span>) — the status and reason code are what
+              the code decided, not a mock-up.
+            </p>
+          </div>
+          {capabilities.length === 0 && (
+            <div className="bg-[#0b0f1e] border border-[#1e293b] rounded-xl p-4 text-[11px] text-slate-500">No capability records loaded.</div>
+          )}
+          {capabilities.map((c) => {
+            const sm = CAP_STATUS_META[c.status] ?? { tone: 'text-slate-300 border-slate-500/30 bg-slate-500/10', Icon: KeyRound };
+            const SIcon = sm.Icon;
+            const dead = c.status !== 'ACTIVE' && c.status !== 'CONSUMED';
             return (
-              <div key={l.id} className={`bg-[#0b0f1e] border rounded-xl p-4 ${dead ? 'border-rose-500/20 opacity-70' : 'border-[#1e293b]'}`}>
-                <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div key={c.id} className={`bg-[#0b0f1e] border rounded-xl p-4 ${dead ? 'border-rose-500/15' : 'border-[#1e293b]'}`}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-3 min-w-0">
                     <KeyRound size={16} className={dead ? 'text-rose-400' : 'text-cyan-300'} />
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold text-white font-mono">{l.id}</div>
-                      <div className="text-[11px] text-slate-500">{l.agent} · <span className="font-mono">{l.action}</span> · aud <span className="font-mono">{l.audience}</span></div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-semibold text-white font-mono">{c.capability_id}</span>
+                        <span className="text-[11px] font-mono text-cyan-300">{c.action_type}</span>
+                        <span className="text-[11px] text-slate-500">→ {c.target}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{c.agent_name} · issued by <span className="font-mono text-slate-400">{c.issued_by}</span> to <span className="font-mono text-slate-400">{c.issued_to}</span></div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className={`text-sm font-bold font-mono flex items-center gap-1 ${expired ? 'text-rose-300' : remaining < 20 ? 'text-amber-300' : 'text-emerald-300'}`}><Timer size={12} />{l.revoked ? 'REVOKED' : expired ? 'EXPIRED' : `${remaining}s`}</div>
-                      <div className="text-[10px] text-slate-500">uses {l.useCount}/{l.maxUses}</div>
-                    </div>
-                    {!dead && (
-                      <button onClick={() => revokeLease(l.id)} className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] rounded-lg border border-rose-500/30 text-rose-300 hover:bg-rose-500/10 transition-colors"><Ban size={12} />Revoke</button>
-                    )}
+                  <div className="flex items-center gap-1.5">
+                    <Badge tone={sm.tone}><SIcon size={11} />{c.status}</Badge>
+                    <Badge tone={c.dispatched ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' : 'text-slate-400 border-slate-500/30 bg-slate-500/10'}>
+                      {c.dispatched ? <CheckCircle2 size={11} /> : <XCircle size={11} />}{c.dispatched ? 'dispatched' : 'no side effect'}
+                    </Badge>
                   </div>
                 </div>
-                {!l.revoked && !expired && (
-                  <div className="mt-2 h-1 rounded-full bg-slate-800 overflow-hidden">
-                    <div className="h-full bg-cyan-500 rounded-full transition-all duration-1000" style={{ width: `${(remaining / l.ttlSec) * 100}%` }} />
-                  </div>
-                )}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-[10px]">
+                  <div><div className="text-slate-600">Uses</div><div className="text-slate-300 font-mono">{c.uses_consumed}/{c.max_uses}</div></div>
+                  <div><div className="text-slate-600">Reason code</div><div className="text-slate-300 font-mono break-all">{c.reason_code}</div></div>
+                  <div><div className="text-slate-600">Dispatch outcome</div><div className="text-slate-300 font-mono">{c.dispatch_outcome}</div></div>
+                  <div><div className="text-slate-600">Bound to (action hash)</div><div className="text-slate-300 font-mono break-all">{c.action_hash.slice(0, 16)}…</div></div>
+                </div>
+                <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-500">
+                  <Timer size={11} />
+                  <span className="font-mono">{new Date(c.issued_at).toISOString().replace('T', ' ').slice(0, 19)}Z → {new Date(c.expires_at).toISOString().replace('T', ' ').slice(0, 19)}Z</span>
+                  <span className={`ml-1 font-mono ${c.provenance === 'live' ? 'text-emerald-300' : 'text-sky-300'}`}>{c.provenance}</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-2">{c.scenario}</p>
               </div>
             );
           })}
-          <p className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-1"><Lock size={12} />Leases are short-lived, audience- and action-bound. A cached lease is not sufficient for immediate revocation — the broker rechecks the revocation epoch before every side effect.</p>
+          <p className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-1"><Lock size={12} />A lease is redeemed at most once per use, atomically — a replay or a concurrent race loses. Nothing cached authorizes a side effect: the connector re-checks and consumes the lease at the moment of effect.</p>
         </div>
       )}
 
