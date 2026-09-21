@@ -144,14 +144,36 @@ change. This file is the human-readable mirror.
   `ENFORCED` — an honest intermediate between `VERIFIED_IN_CODE` and
   deployment: the binding is demonstrated in-process, **not** against a live
   workspace, so nothing is `VERIFIED_IN_DEPLOYMENT`.
+- **Phase 6 — Production dispatch binding with independent read-back.** The
+  enforcement chokepoint's `execute` callback is lifted out of the test closure
+  into a deployment-shaped binding, `_shared/workspace_dispatch.py`. It builds
+  `execute` from a `WorkspaceClient` whose two responsibilities are *separate*:
+  `apply` issues the command (in deployment, the Unity Catalog
+  `execute_response_action`) and `observe` reads the target's state back (in
+  deployment, a status query). The state fed to verification is the independent
+  read-back, **never** the command's own claim of success — so a command that
+  returns without error but does not take effect (a firewall that silently drops
+  the rule) is recorded `FAILED`, not a false success. The client and the ledger
+  sink are injected, so the binding imports no Spark and runs offline like the
+  rest of `_shared`. 12 property tests (`test_workspace_dispatch.py`) pin the
+  read-back property, that the workspace is touched only on a fully authorized
+  path, and that each attempt writes exactly one ledger row. A runnable dry-run
+  (`tests/harness/deployment_dryrun.py`) drives the binding against a
+  `SimulatedWorkspace` across 7 scenarios — including the silently-dropped-command
+  case — and asserts the workspace is commanded **iff** the guard executed; all 7
+  pass and their records reseed `ecp_enforcement_ledger`. VANGUARD Response, the
+  Edge Connector Control Plane and the Active List Manager now carry the honest
+  status `DEPLOYMENT_READY`: their production binding is written and proven end to
+  end against a *simulated* workspace. This is **not** `VERIFIED_IN_DEPLOYMENT` —
+  that requires running this same binding against the live Databricks workspace
+  and observing the read-back there.
 
 ## Next phase
 
-**Phase 6 — Observe the binding against the live workspace.** Enforcement today
-is `ENFORCED`: the fail-closed chokepoint is proven in-process by the harness, but
-its `execute` callback is still a test closure over an in-memory fleet, not the
-real Unity Catalog `execute_response_action`. The next step is to route an agent's
-production dispatch through `guard_and_dispatch` with the real `execute`, capture
-the workspace-observed state as the verification signal, and promote that agent to
-`VERIFIED_IN_DEPLOYMENT` only once the binding is observed end to end against the
-live target.
+**Phase 7 — Observe the binding against the live workspace.** The binding is
+`DEPLOYMENT_READY`: its `apply`/`observe` client is still a simulated in-memory
+workspace, not the live Unity Catalog `execute_response_action` plus a real status
+read-back. The next step is to supply the real `WorkspaceClient`, run one agent's
+production dispatch through `workspace_dispatch.dispatch` against the live target,
+capture the workspace's own read-back as the verification signal, and promote that
+agent to `VERIFIED_IN_DEPLOYMENT` only once that binding is observed end to end.

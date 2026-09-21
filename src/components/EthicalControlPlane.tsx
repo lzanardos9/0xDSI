@@ -12,9 +12,11 @@ import { supabase } from '../lib/supabase';
  *
  * IMPORTANT: coverage, authority rules, governed traces and the enforcement ledger
  * are backed by real data from the databricks-native repository — the deterministic
- * kernel, lifecycle, and the fail-closed enforcement chokepoint. The capability-leases
- * tab is still illustrative simulation. The chokepoint is proven in-process (harness),
- * not against a live Databricks workspace, so no status is ever VERIFIED_IN_DEPLOYMENT.
+ * kernel, lifecycle, the fail-closed enforcement chokepoint, and the production
+ * dispatch binding that verifies each action by an independent workspace read-back.
+ * The capability-leases tab is still illustrative simulation. The binding is proven
+ * end to end against a simulated workspace (a dry-run), so agents are at most
+ * DEPLOYMENT_READY — never VERIFIED_IN_DEPLOYMENT until observed on the live workspace.
  */
 
 type CoverageMode =
@@ -22,7 +24,7 @@ type CoverageMode =
   | 'SANDBOX_ONLY' | 'SIMULATION' | 'FEDERATED_ENFORCEMENT';
 
 type Autonomy = 'A0' | 'A1' | 'A2' | 'A3' | 'A4';
-type HonestStatus = 'VERIFIED_IN_CODE' | 'ENFORCED' | 'PROPOSED' | 'SIMULATION';
+type HonestStatus = 'VERIFIED_IN_CODE' | 'ENFORCED' | 'DEPLOYMENT_READY' | 'PROPOSED' | 'SIMULATION';
 type Lifecycle = 'ACTIVE' | 'RESTRICTED' | 'PAUSED' | 'QUARANTINED' | 'REVOKED';
 type Decision = 'PERMIT_WITH_CONSTRAINTS' | 'REQUIRE_APPROVAL' | 'REQUIRE_REVIEW' | 'SANDBOX_ONLY' | 'DENY';
 type EffectClass =
@@ -96,6 +98,7 @@ const COVERAGE_META: Record<CoverageMode, { label: string; tone: string; enforce
 const HONEST_META: Record<HonestStatus, { label: string; tone: string; Icon: typeof ShieldCheck }> = {
   VERIFIED_IN_CODE: { label: 'Verified in code', tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30', Icon: FileCheck },
   ENFORCED: { label: 'Enforced · fail-closed', tone: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30', Icon: Lock },
+  DEPLOYMENT_READY: { label: 'Deployment ready · binding proven', tone: 'text-sky-300 bg-sky-500/10 border-sky-500/30', Icon: Network },
   PROPOSED: { label: 'Proposed · review', tone: 'text-amber-300 bg-amber-500/10 border-amber-500/30', Icon: AlertTriangle },
   SIMULATION: { label: 'Simulation', tone: 'text-violet-300 bg-violet-500/10 border-violet-500/30', Icon: Eye },
 };
@@ -365,10 +368,10 @@ export default function EthicalControlPlane() {
       <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-xl p-3">
         <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
         <p className="text-[11px] text-amber-200/80 leading-relaxed">
-          Phase 5: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span>, <span className="font-mono text-amber-200">Governed Actions</span> and
+          Phase 6: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span>, <span className="font-mono text-amber-200">Governed Actions</span> and
           <span className="font-mono text-amber-200"> Evidence Ledger</span> below are driven by the real inventory, the deterministic authority engine, and the fail-closed enforcement chokepoint from the <span className="font-mono text-amber-200">databricks-native</span> repository.
-          Every governed action is now forced through that chokepoint, which records an append-only ledger row on every path. The capability-leases tab remains illustrative simulation. The chokepoint is proven in-process, not against a live workspace —
-          statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">ENFORCED</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
+          Every governed action is forced through that chokepoint, and a production dispatch binding now performs each action against a workspace and verifies it by an independent read-back — so a command that runs but does not take effect is recorded as failed, not a false success. The binding is proven end to end against a simulated workspace (a dry-run), so those agents are <span className="font-mono text-amber-200">DEPLOYMENT_READY</span>; the capability-leases tab remains illustrative simulation. Nothing has yet run against the live workspace —
+          statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">ENFORCED</span> / <span className="font-mono">DEPLOYMENT_READY</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
         </p>
       </div>
 
@@ -767,9 +770,11 @@ export default function EthicalControlPlane() {
             <p className="text-[11px] text-slate-400 leading-relaxed">
               Every governed proposal is forced through a single fail-closed chokepoint. The real side effect runs only after the
               kernel permits <span className="text-slate-200">and</span> a different operator binds an approval to the exact revision.
-              Each attempt writes exactly one row here — including the ones that were refused. These rows are produced by the enforcement
-              harness running the chokepoint in-process; a row's <span className="text-slate-200">executed</span> flag is true only when a
-              real state change occurred. This is <span className="text-cyan-300 font-semibold">enforced in code</span>, not yet verified against a live workspace.
+              Each attempt writes exactly one row here — including the ones that were refused. The production dispatch binding issues the
+              command and then verifies it by an <span className="text-slate-200">independent read-back</span> of the target's state, so a
+              row's <span className="text-slate-200">executed</span> flag is true only when the workspace was commanded, and the outcome is
+              <span className="text-slate-200"> verified</span> only when the read-back matched intent. These rows come from the dry-run against a
+              simulated workspace — the binding is <span className="text-sky-300 font-semibold">deployment ready</span>, not yet observed against the live workspace.
             </p>
           </div>
           {ledger.length === 0 && (
