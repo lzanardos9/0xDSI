@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, ShieldAlert, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom } from 'lucide-react';
+import { Shield, ShieldAlert, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom, Scale } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { trackView, setCurrentView } from '../lib/activityTracker';
 import ThreatGlobe from './ThreatGlobe';
@@ -75,6 +75,7 @@ import MCPRegistry from './MCPRegistry';
 import PhishingSimulator from './PhishingSimulator';
 import AttackUniverse from './AttackUniverse';
 import AgentControlPlane from './AgentControlPlane';
+import EthicalControlPlane from './EthicalControlPlane';
 import { supabase } from '../lib/supabase';
 
 const Dashboard = () => {
@@ -305,6 +306,7 @@ const Dashboard = () => {
         { id: 'swarmcrucible', label: 'Swarm Crucible', icon: Swords },
         { id: 'trendengine', label: 'CET Trend Engine', icon: GitBranch },
         { id: 'borrowedauthority', label: 'Borrowed Authority', icon: ShieldAlert },
+        { id: 'ethicalcontrolplane', label: 'Ethical Control Plane', icon: Scale },
         { id: 'featurelab', label: 'Feature Lab', icon: Sparkles },
         { id: 'chronoweave', label: 'ChronoWeave', icon: Atom },
         { id: 'detectionslm', label: 'Detection SLM (Beta)', icon: Brain },
@@ -1029,6 +1031,7 @@ const Dashboard = () => {
           {selectedView === 'swarmcrucible' && <SwarmCrucible />}
           {selectedView === 'trendengine' && <TrendEngineCET />}
           {selectedView === 'borrowedauthority' && <OperationBorrowedAuthority />}
+          {selectedView === 'ethicalcontrolplane' && <EthicalControlPlane />}
           {selectedView === 'mitre' && <MitreAttackMatrix />}
           {selectedView === 'entityinvestigation' && <EntityInvestigation />}
           {selectedView === 'aisummarizer' && <AIIncidentSummarizer />}
