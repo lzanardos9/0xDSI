@@ -167,13 +167,39 @@ change. This file is the human-readable mirror.
   end against a *simulated* workspace. This is **not** `VERIFIED_IN_DEPLOYMENT` —
   that requires running this same binding against the live Databricks workspace
   and observing the read-back there.
+- **Phase 7 — Real Unity Catalog client + a promotion gate that cannot lie.** The
+  binding's simulated client is joined by the real one, `DatabricksWorkspaceClient`
+  in `_shared/databricks_workspace.py`: `apply` invokes the Unity Catalog
+  `execute_response_action(action_type, target)` function and `observe` reads the
+  target's state back from the response-state table. `spark` is injected (duck-typed,
+  no pyspark import, import-safe offline); object names come from operator config and
+  are validated against a strict identifier whitelist, and action_type/target are
+  passed as **bound parameters** (`spark.sql(sql, args=...)`), never concatenated, so
+  a crafted target cannot inject SQL. `live_dispatch` wires this client through the
+  same chokepoint and stamps the recorded row `provenance="live"`. The honesty is
+  enforced by `_shared/deployment_promotion.py`: an agent becomes
+  `VERIFIED_IN_DEPLOYMENT` **only** when it has a ledger row that is executed,
+  `VERIFIED`, *and* `provenance="live"`; an unmarked row defaults to `simulated`, so
+  the gate fails closed and a dry-run success can never promote. A new `provenance`
+  column on `ecp_enforcement_ledger` (default `'simulated'`, checked in
+  `('simulated','live')`) tags every row; all 7 current rows are `simulated`, so the
+  gate holds every agent at `DEPLOYMENT_READY` — **zero** are `VERIFIED_IN_DEPLOYMENT`.
+  13 property tests (`test_deployment_promotion.py`) pin the gate — simulated never
+  promotes, live-`FAILED`/`EXECUTE_ERROR` never promotes, only live-`VERIFIED` does —
+  and 8 (`test_databricks_workspace.py`, driven by a FakeSpark) pin the client's
+  shape: apply calls the UC function, observe reads back and returns the state, values
+  are bound not embedded, and a blocked path never touches the workspace. The console
+  shows each row's provenance and reserves the `VERIFIED_IN_DEPLOYMENT` label,
+  honestly held at zero.
 
 ## Next phase
 
-**Phase 7 — Observe the binding against the live workspace.** The binding is
-`DEPLOYMENT_READY`: its `apply`/`observe` client is still a simulated in-memory
-workspace, not the live Unity Catalog `execute_response_action` plus a real status
-read-back. The next step is to supply the real `WorkspaceClient`, run one agent's
-production dispatch through `workspace_dispatch.dispatch` against the live target,
-capture the workspace's own read-back as the verification signal, and promote that
-agent to `VERIFIED_IN_DEPLOYMENT` only once that binding is observed end to end.
+**Phase 8 — Execute one agent against the live workspace.** Everything up to the
+live call is now built and tested offline: the real client, the bound-parameter SQL,
+the promotion gate, the provenance-tagged ledger. The one remaining step cannot be
+done from this environment — it needs a live Databricks workspace with the
+`execute_response_action` function and response-state table deployed, and real
+credentials. Running `databricks_workspace.live_dispatch` for one agent there, on an
+approved and in-scope target, will write the first `provenance="live"` ledger row;
+if its independent read-back confirms the effect, the promotion gate flips that one
+agent — and only that one — to `VERIFIED_IN_DEPLOYMENT`.

@@ -12,11 +12,11 @@ import { supabase } from '../lib/supabase';
  *
  * IMPORTANT: coverage, authority rules, governed traces and the enforcement ledger
  * are backed by real data from the databricks-native repository — the deterministic
- * kernel, lifecycle, the fail-closed enforcement chokepoint, and the production
- * dispatch binding that verifies each action by an independent workspace read-back.
- * The capability-leases tab is still illustrative simulation. The binding is proven
- * end to end against a simulated workspace (a dry-run), so agents are at most
- * DEPLOYMENT_READY — never VERIFIED_IN_DEPLOYMENT until observed on the live workspace.
+ * kernel, lifecycle, the fail-closed enforcement chokepoint, the production dispatch
+ * binding (independent read-back verification) and its real Unity Catalog client.
+ * The capability-leases tab is still illustrative simulation. A promotion gate marks
+ * an agent VERIFIED_IN_DEPLOYMENT only from a ledger row of provenance 'live'; every
+ * row today is 'simulated', so all agents are honestly held at DEPLOYMENT_READY.
  */
 
 type CoverageMode =
@@ -24,7 +24,7 @@ type CoverageMode =
   | 'SANDBOX_ONLY' | 'SIMULATION' | 'FEDERATED_ENFORCEMENT';
 
 type Autonomy = 'A0' | 'A1' | 'A2' | 'A3' | 'A4';
-type HonestStatus = 'VERIFIED_IN_CODE' | 'ENFORCED' | 'DEPLOYMENT_READY' | 'PROPOSED' | 'SIMULATION';
+type HonestStatus = 'VERIFIED_IN_CODE' | 'ENFORCED' | 'DEPLOYMENT_READY' | 'VERIFIED_IN_DEPLOYMENT' | 'PROPOSED' | 'SIMULATION';
 type Lifecycle = 'ACTIVE' | 'RESTRICTED' | 'PAUSED' | 'QUARANTINED' | 'REVOKED';
 type Decision = 'PERMIT_WITH_CONSTRAINTS' | 'REQUIRE_APPROVAL' | 'REQUIRE_REVIEW' | 'SANDBOX_ONLY' | 'DENY';
 type EffectClass =
@@ -73,6 +73,7 @@ interface EnforcementRecord {
   outcome: string;
   executed: boolean;
   observed_state: string;
+  provenance: string;
   steps: TraceStep[];
   sort_order: number;
 }
@@ -99,6 +100,7 @@ const HONEST_META: Record<HonestStatus, { label: string; tone: string; Icon: typ
   VERIFIED_IN_CODE: { label: 'Verified in code', tone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30', Icon: FileCheck },
   ENFORCED: { label: 'Enforced · fail-closed', tone: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30', Icon: Lock },
   DEPLOYMENT_READY: { label: 'Deployment ready · binding proven', tone: 'text-sky-300 bg-sky-500/10 border-sky-500/30', Icon: Network },
+  VERIFIED_IN_DEPLOYMENT: { label: 'Verified in deployment', tone: 'text-emerald-200 bg-emerald-500/15 border-emerald-400/40', Icon: ShieldCheck },
   PROPOSED: { label: 'Proposed · review', tone: 'text-amber-300 bg-amber-500/10 border-amber-500/30', Icon: AlertTriangle },
   SIMULATION: { label: 'Simulation', tone: 'text-violet-300 bg-violet-500/10 border-violet-500/30', Icon: Eye },
 };
@@ -307,7 +309,7 @@ export default function EthicalControlPlane() {
     (async () => {
       const { data, error } = await supabase
         .from('ecp_enforcement_ledger')
-        .select('id, recorded_at, agent_key, agent_name, action_type, target, proposed_by, approved_by, kernel_decision, kernel_reason_code, outcome, executed, observed_state, steps, sort_order')
+        .select('id, recorded_at, agent_key, agent_name, action_type, target, proposed_by, approved_by, kernel_decision, kernel_reason_code, outcome, executed, observed_state, steps, provenance, sort_order')
         .order('sort_order', { ascending: true });
       if (active && !error && data) setLedger(data as EnforcementRecord[]);
     })();
@@ -368,10 +370,10 @@ export default function EthicalControlPlane() {
       <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-xl p-3">
         <AlertTriangle size={15} className="text-amber-400 shrink-0 mt-0.5" />
         <p className="text-[11px] text-amber-200/80 leading-relaxed">
-          Phase 6: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span>, <span className="font-mono text-amber-200">Governed Actions</span> and
+          Phase 7: the <span className="font-mono text-amber-200">Agent Registry</span>, <span className="font-mono text-amber-200">Coverage Matrix</span>, <span className="font-mono text-amber-200">Authority Rules</span>, <span className="font-mono text-amber-200">Governed Actions</span> and
           <span className="font-mono text-amber-200"> Evidence Ledger</span> below are driven by the real inventory, the deterministic authority engine, and the fail-closed enforcement chokepoint from the <span className="font-mono text-amber-200">databricks-native</span> repository.
-          Every governed action is forced through that chokepoint, and a production dispatch binding now performs each action against a workspace and verifies it by an independent read-back — so a command that runs but does not take effect is recorded as failed, not a false success. The binding is proven end to end against a simulated workspace (a dry-run), so those agents are <span className="font-mono text-amber-200">DEPLOYMENT_READY</span>; the capability-leases tab remains illustrative simulation. Nothing has yet run against the live workspace —
-          statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">ENFORCED</span> / <span className="font-mono">DEPLOYMENT_READY</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>, never <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span>.
+          The production dispatch binding now has a real Unity Catalog client, and a promotion gate reserves the top status: an agent only becomes <span className="font-mono text-amber-200">VERIFIED_IN_DEPLOYMENT</span> once a real action has run against the live workspace and its independent read-back confirmed the effect. Every ledger row today is a <span className="font-mono text-amber-200">simulated</span> dry-run, so the gate holds every agent at <span className="font-mono text-amber-200">DEPLOYMENT_READY</span> — zero are verified in deployment. The capability-leases tab remains illustrative simulation. Nothing has yet run against the live workspace —
+          statuses are <span className="font-mono">VERIFIED_IN_CODE</span> / <span className="font-mono">ENFORCED</span> / <span className="font-mono">DEPLOYMENT_READY</span> / <span className="font-mono">PROPOSED</span> / <span className="font-mono">SIMULATION</span>; <span className="font-mono">VERIFIED_IN_DEPLOYMENT</span> exists but is honestly held at zero.
         </p>
       </div>
 
@@ -773,8 +775,9 @@ export default function EthicalControlPlane() {
               Each attempt writes exactly one row here — including the ones that were refused. The production dispatch binding issues the
               command and then verifies it by an <span className="text-slate-200">independent read-back</span> of the target's state, so a
               row's <span className="text-slate-200">executed</span> flag is true only when the workspace was commanded, and the outcome is
-              <span className="text-slate-200"> verified</span> only when the read-back matched intent. These rows come from the dry-run against a
-              simulated workspace — the binding is <span className="text-sky-300 font-semibold">deployment ready</span>, not yet observed against the live workspace.
+              <span className="text-slate-200"> verified</span> only when the read-back matched intent. Each row is tagged with its
+              <span className="text-slate-200"> provenance</span>: <span className="font-mono text-sky-300">simulated</span> for a dry-run, <span className="font-mono text-emerald-300">live</span> only when run against the real workspace. A promotion gate lifts an agent to
+              <span className="text-emerald-200 font-semibold"> verified in deployment</span> only on a live, verified row — so with today's simulated-only ledger, that is honestly held at zero.
             </p>
           </div>
           {ledger.length === 0 && (
@@ -795,6 +798,9 @@ export default function EthicalControlPlane() {
                     <div className="text-[10px] font-mono text-slate-600 mt-0.5">{new Date(r.recorded_at).toISOString().replace('T', ' ').slice(0, 19)}Z</div>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <Badge tone={r.provenance === 'live' ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' : 'text-sky-300 border-sky-500/30 bg-sky-500/10'}>
+                      {r.provenance === 'live' ? <ShieldCheck size={11} /> : <Eye size={11} />}{r.provenance === 'live' ? 'live' : 'simulated'}
+                    </Badge>
                     <Badge tone={om.tone}><OIcon size={11} />{r.outcome}</Badge>
                     <Badge tone={r.executed ? 'text-emerald-300 border-emerald-500/30 bg-emerald-500/10' : 'text-slate-400 border-slate-500/30 bg-slate-500/10'}>
                       {r.executed ? <CheckCircle2 size={11} /> : <XCircle size={11} />}{r.executed ? 'executed' : 'no side effect'}

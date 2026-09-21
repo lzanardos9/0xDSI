@@ -64,12 +64,14 @@ def make_execute(client, action_type, target):
     return _execute
 
 
-def make_ledger_writer(sink):
+def make_ledger_writer(sink, provenance="simulated"):
     """Adapt an `append(record)`-style ledger writer into the `record` callback.
 
     `sink` may be a plain list (tests) or any object exposing `append`. The
-    returned callback appends exactly the audit dict the chokepoint produces, so
-    the ledger stays a complete, append-only account.
+    returned callback stamps each audit dict with its `provenance` -- 'simulated'
+    for a dry-run against a fake workspace, 'live' only when the command was run
+    against the real workspace -- then appends it. Provenance is what lets the
+    promotion gate refuse to call a simulated success `VERIFIED_IN_DEPLOYMENT`.
     """
     if isinstance(sink, list):
         appender = sink.append
@@ -79,17 +81,20 @@ def make_ledger_writer(sink):
         raise WorkspaceBindingError("ledger sink must be a list or expose a callable append(record)")
 
     def _record(rec):
+        rec["provenance"] = provenance
         appender(rec)
 
     return _record
 
 
-def dispatch(agent_key, proposal, context, client, ledger):
+def dispatch(agent_key, proposal, context, client, ledger, provenance="simulated"):
     """Run one governed action through the chokepoint bound to a real workspace.
 
     client: a WorkspaceClient (apply/observe). In deployment this wraps the
             Unity Catalog `execute_response_action` and a status read-back.
     ledger: an append-only sink for the audit record (list or `.append`-able).
+    provenance: 'simulated' for a dry-run, 'live' only against the real
+            workspace. Stamped onto the recorded row for the promotion gate.
 
     Returns the audit record. `rec["executed"]` is true only when the workspace
     was actually commanded, and `rec["outcome"]` is `VERIFIED` only when the
@@ -98,5 +103,5 @@ def dispatch(agent_key, proposal, context, client, ledger):
     action_type = (proposal.get("action_type") or "").strip().lower()
     target = proposal.get("target")
     execute = make_execute(client, action_type, target)
-    record = make_ledger_writer(ledger)
+    record = make_ledger_writer(ledger, provenance=provenance)
     return E.guard_and_dispatch(agent_key, proposal, context, execute, record)
