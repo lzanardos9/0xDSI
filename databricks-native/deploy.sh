@@ -12,13 +12,16 @@
 #   - SQL Statements API JSON escaping (python3 payload builder)
 #   - Databricks Asset Bundle duplicate resource keys
 #   - Deprecated legacy inference table config in model_serving_endpoints
-#   - Missing UC registered model versions referenced by serving endpoints
-#   - UC functions depending on tables that may not exist yet
 #   - Safer workspace connectivity checks
 #
 # Important:
-#   This script disables bundle-defined custom model_serving_endpoints by default.
-#   The app still uses Databricks Foundation Model endpoints through FastAPI/config.
+#   Custom model serving endpoints live in resources/optional/model_serving.yml and
+#   are NOT deployed by default. The app uses Databricks Foundation Model endpoints.
+#   UC tool functions are created only after initial_setup has created the tables.
+#
+# Optional environment:
+#   SOC_ADMIN_EMAILS     comma-separated app admins (defaults to the deploying user)
+#   SOC_ANALYST_EMAILS   comma-separated app analysts
 #
 # Usage:
 #   ./deploy.sh dev <warehouse_id>
@@ -40,19 +43,18 @@ TARGET="${1:-dev}"
 WAREHOUSE_ID="${2:-${DATABRICKS_WAREHOUSE_ID:-}}"
 ROLLBACK="${3:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────────────────────────────────────
-LLM_ENDPOINT="${DATABRICKS_LLM_ENDPOINT:-databricks-meta-llama-3-1-8b-instruct}"
+LLM_ENDPOINT="${DATABRICKS_LLM_ENDPOINT:-databricks-meta-llama-3-1-70b-instruct}"
 LLM_FALLBACK="${DATABRICKS_LLM_FALLBACK:-databricks-meta-llama-3-1-8b-instruct}"
 EMBEDDING_ENDPOINT="${DATABRICKS_EMBEDDING_ENDPOINT:-databricks-bge-large-en}"
 SECRET_SCOPE="${DATABRICKS_SECRET_SCOPE:-soc-secrets}"
 VECTOR_SEARCH_ENDPOINT="${DATABRICKS_VS_ENDPOINT:-0xdsi-vector-search}"
-
-# Keep this enabled until you have real logged MLflow model versions for each agent.
-DISABLE_BUNDLE_MODEL_SERVING="${DISABLE_BUNDLE_MODEL_SERVING:-true}"
+SOC_ADMIN_EMAILS="${SOC_ADMIN_EMAILS:-}"
+SOC_ANALYST_EMAILS="${SOC_ANALYST_EMAILS:-}"
+APP_NAME="0xdsi-agentic-soc"
 
 case "${TARGET}" in
   production)
@@ -74,7 +76,20 @@ SOC_VIEWER_GROUP="${DATABRICKS_SOC_VIEWER_GROUP:-soc_viewers}"
 
 DEPLOY_LOG="${SCRIPT_DIR}/.deploy_history"
 DEPLOY_ID="$(date +%Y%m%d_%H%M%S)_${TARGET}"
-TOTAL_STEPS=14
+TOTAL_STEPS=12
+
+bundle_vars() {
+  BUNDLE_VARS=(
+    --var="warehouse_id=${WAREHOUSE_ID}"
+    --var="llm_endpoint=${LLM_ENDPOINT}"
+    --var="llm_fallback_endpoint=${LLM_FALLBACK}"
+    --var="embedding_endpoint=${EMBEDDING_ENDPOINT}"
+    --var="secret_scope=${SECRET_SCOPE}"
+    --var="soc_admin_emails=${SOC_ADMIN_EMAILS}"
+    --var="soc_analyst_emails=${SOC_ANALYST_EMAILS}"
+  )
+}
+bundle_vars
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Colors / Logging (printf for POSIX portability)
@@ -294,26 +309,6 @@ cat <<'EOF'
     └──────────────────────────────────────────────────────────────────────┘
 EOF
       ;;
-    package)
-cat <<'EOF'
-    ┌──────────────────────────────────────────────────────────────────────┐
-    │                                                                      │
-    │    ◈ APP PACKAGE ASSEMBLY                                            │
-    │                                                                      │
-    │        ┌────────────────────────────────────────────┐                │
-    │        │  databricks-native/app/                    │                │
-    │        │                                            │                │
-    │        │  ├── dist/            (pre-built SPA)      │                │
-    │        │  ├── backend/server.py (FastAPI)           │                │
-    │        │  ├── .env.databricks  (runtime config)    │                │
-    │        │  └── requirements.txt (Python deps)       │                │
-    │        │                                            │                │
-    │        └────────────────────────────────────────────┘                │
-    │              Sealed artifact ready for Databricks Apps                │
-    │                                                                      │
-    └──────────────────────────────────────────────────────────────────────┘
-EOF
-      ;;
     validate)
 cat <<'EOF'
     ┌──────────────────────────────────────────────────────────────────────┐
@@ -500,226 +495,232 @@ run_sql_expect_ok() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Bundle YAML Patcher
+# Workspace groups referenced by the app permissions in resources/app.yml
 # ──────────────────────────────────────────────────────────────────────────────
-patch_bundle_yaml() {
-  local app_yml="${SCRIPT_DIR}/resources/app.yml"
-
-  [ -f "${app_yml}" ] || return 0
-
-  python3 - "${app_yml}" "${DISABLE_BUNDLE_MODEL_SERVING}" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-disable_model_serving = sys.argv[2].lower() == "true"
-
-text = path.read_text(encoding="utf-8")
-original = text
-
-backup = path.with_suffix(path.suffix + ".pre_oxdsi_deploy_patch.bak")
-if not backup.exists():
-    backup.write_text(original, encoding="utf-8")
-
-lines = text.splitlines(True)
-
-def remove_block(lines, top_key):
-    out = []
-    i = 0
-    changed = False
-
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-
-        if stripped == f"{top_key}:":
-            base_indent = len(line) - len(line.lstrip(" "))
-            changed = True
-            out.append(" " * base_indent + f"# {top_key}:  # disabled by deploy.sh; Foundation Model endpoints are used instead\n")
-            i += 1
-
-            while i < len(lines):
-                next_line = lines[i]
-                if next_line.strip():
-                    next_indent = len(next_line) - len(next_line.lstrip(" "))
-                    if next_indent <= base_indent:
-                        break
-                out.append("# " + next_line if not next_line.startswith("#") else next_line)
-                i += 1
-            continue
-
-        out.append(line)
-        i += 1
-
-    return out, changed
-
-if disable_model_serving:
-    lines, removed = remove_block(lines, "model_serving_endpoints")
-else:
-    removed = False
-
-# Patch duplicate endpoint keys if model serving is enabled
-if not disable_model_serving:
-    dupes = {
-        "ciso_assistant": "ciso_assistant_endpoint",
-        "sage_enrichment": "sage_enrichment_endpoint",
-        "nova_investigation": "nova_investigation_endpoint",
-        "vanguard_response": "vanguard_response_endpoint",
-        "threat_simulator": "threat_simulator_endpoint",
-        "threat_radar": "threat_radar_endpoint",
-    }
-
-    patched = []
-    inside_mse = False
-    mse_indent = None
-
-    for line in lines:
-        stripped = line.strip()
-
-        if stripped == "model_serving_endpoints:":
-            inside_mse = True
-            mse_indent = len(line) - len(line.lstrip(" "))
-            patched.append(line)
-            continue
-
-        if inside_mse:
-            indent = len(line) - len(line.lstrip(" "))
-            if stripped and indent <= mse_indent:
-                inside_mse = False
-                mse_indent = None
-
-            if inside_mse:
-                for old, new in dupes.items():
-                    prefix2 = " " * (mse_indent + 2)
-                    prefix4 = " " * (mse_indent + 4)
-                    if line.startswith(prefix2 + old + ":"):
-                        line = line.replace(prefix2 + old + ":", prefix2 + new + ":", 1)
-                        break
-                    if line.startswith(prefix4 + old + ":"):
-                        line = line.replace(prefix4 + old + ":", prefix4 + new + ":", 1)
-                        break
-
-                if "auto_capture_config:" in line:
-                    patched.append(line)
-                    continue
-
-        patched.append(line)
-
-    lines = patched
-
-new_text = "".join(lines)
-
-if new_text != original:
-    path.write_text(new_text, encoding="utf-8")
-    print("patched")
-else:
-    print("nochange")
-PY
-}
-
-restore_bundle_yaml() {
-  local app_yml="${SCRIPT_DIR}/resources/app.yml"
-  local backup="${SCRIPT_DIR}/resources/app.yml.pre_oxdsi_deploy_patch.bak"
-
-  if [ -f "${backup}" ]; then
-    cp "${backup}" "${app_yml}"
-    log_ok "Restored resources/app.yml from backup"
+ensure_group() {
+  local group="$1"
+  if databricks groups list --filter "displayName eq \"${group}\"" --output json 2>/dev/null | grep -q "\"${group}\""; then
+    log_ok "Group '${group}' exists"
+  elif databricks groups create --display-name "${group}" >/dev/null 2>&1; then
+    log_ok "Created group '${group}'"
   else
-    log_warn "No resources/app.yml backup found to restore"
+    die "Group '${group}' is missing and could not be created (workspace admin rights needed). Create it, then re-run."
   fi
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Catalog Bootstrap Tables Required by UC Functions
+# UC tool functions (agents call these). Bound to tables created by initial_setup.
 # ──────────────────────────────────────────────────────────────────────────────
-create_placeholder_tables() {
-  log_info "Creating placeholder tables required by UC functions..."
+create_uc_functions() {
+  run_sql_expect_ok "Function: lookup_ioc" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.lookup_ioc(
+  ioc_value STRING COMMENT 'The IOC value to look up',
+  ioc_type STRING DEFAULT 'auto' COMMENT 'Type: ip, domain, hash, url, or auto'
+)
+RETURNS TABLE(
+  ioc_value STRING,
+  ioc_type STRING,
+  threat_score DOUBLE,
+  threat_name STRING,
+  first_seen TIMESTAMP,
+  last_seen TIMESTAMP,
+  sources ARRAY<STRING>,
+  tags ARRAY<STRING>
+)
+COMMENT 'Look up an Indicator of Compromise in ioc_entries'
+RETURN SELECT
+  i.value AS ioc_value,
+  i.indicator_type AS ioc_type,
+  i.confidence AS threat_score,
+  i.threat_type AS threat_name,
+  i.first_seen AS first_seen,
+  i.last_seen AS last_seen,
+  array_compact(array(i.source, i.source_feed)) AS sources,
+  i.tags AS tags
+FROM ${CATALOG}.${SCHEMA}.ioc_entries i
+WHERE i.value = lookup_ioc.ioc_value
+  AND coalesce(i.active, true)
+  AND (lookup_ioc.ioc_type = 'auto' OR i.indicator_type = lookup_ioc.ioc_type)"
 
-  run_sql_expect_ok "Table: ioc_indicators" "CREATE TABLE IF NOT EXISTS ${CATALOG}.${SCHEMA}.ioc_indicators (
-    value STRING,
-    type STRING,
-    confidence DOUBLE,
-    threat_name STRING,
-    first_seen TIMESTAMP,
-    last_seen TIMESTAMP,
-    sources ARRAY<STRING>,
-    tags ARRAY<STRING>
-  )"
+  run_sql_expect_ok "Function: get_alert_context" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.get_alert_context(
+  alert_id STRING COMMENT 'The alert ID'
+)
+RETURNS TABLE(
+  alert_id STRING,
+  title STRING,
+  description STRING,
+  severity STRING,
+  status STRING,
+  source STRING,
+  rule_name STRING,
+  created_at TIMESTAMP,
+  event_ids ARRAY<STRING>,
+  risk_score INT,
+  mitre_tactic STRING,
+  mitre_technique STRING
+)
+COMMENT 'Retrieve full alert context'
+RETURN SELECT
+  a.id AS alert_id,
+  a.title,
+  a.description,
+  a.severity,
+  a.status,
+  a.source,
+  a.rule_name,
+  a.created_at,
+  a.event_ids,
+  a.risk_score,
+  a.mitre_tactic,
+  a.mitre_technique
+FROM ${CATALOG}.${SCHEMA}.alerts a
+WHERE a.id = get_alert_context.alert_id"
 
-  run_sql_expect_ok "Table: alerts" "CREATE TABLE IF NOT EXISTS ${CATALOG}.${SCHEMA}.alerts (
-    id STRING,
-    title STRING,
-    severity STRING,
-    source STRING,
-    created_at TIMESTAMP,
-    entity_id STRING,
-    entity_type STRING,
-    raw_event STRING,
-    mitre_tactic STRING,
-    mitre_technique STRING
-  )"
+  run_sql_expect_ok "Function: query_user_behavior" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.query_user_behavior(
+  user_id STRING COMMENT 'The user ID',
+  lookback_hours INT DEFAULT 24 COMMENT 'Hours of history'
+)
+RETURNS TABLE(
+  user_id STRING,
+  max_risk_score DOUBLE,
+  anomaly_count BIGINT,
+  open_anomalies BIGINT,
+  max_baseline_deviation DOUBLE,
+  anomaly_types ARRAY<STRING>,
+  last_detected_at TIMESTAMP
+)
+COMMENT 'Summarise behavioural anomalies for a user from user_behavior_anomalies'
+RETURN SELECT
+  ub.user_id,
+  CAST(max(ub.risk_score) AS DOUBLE) AS max_risk_score,
+  count(*) AS anomaly_count,
+  count_if(NOT coalesce(ub.resolved, false)) AS open_anomalies,
+  max(ub.baseline_deviation) AS max_baseline_deviation,
+  collect_set(ub.anomaly_type) AS anomaly_types,
+  max(ub.detected_at) AS last_detected_at
+FROM ${CATALOG}.${SCHEMA}.user_behavior_anomalies ub
+WHERE ub.user_id = query_user_behavior.user_id
+  AND ub.detected_at >= current_timestamp() - make_interval(0, 0, 0, 0, query_user_behavior.lookback_hours, 0, 0)
+GROUP BY ub.user_id"
 
-  run_sql_expect_ok "Table: user_behavior_analytics" "CREATE TABLE IF NOT EXISTS ${CATALOG}.${SCHEMA}.user_behavior_analytics (
-    user_id STRING,
-    risk_score DOUBLE,
-    anomaly_count INT,
-    login_count INT,
-    failed_logins INT,
-    unique_ips INT,
-    data_exfil_mb DOUBLE,
-    after_hours_activity BOOLEAN,
-    baseline_deviation DOUBLE,
-    computed_at TIMESTAMP
-  )"
+  run_sql_expect_ok "Function: search_events" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.search_events(
+  query_text STRING COMMENT 'Search query',
+  time_range_hours INT DEFAULT 24 COMMENT 'Hours back',
+  max_results INT DEFAULT 50 COMMENT 'Max results'
+)
+RETURNS TABLE(
+  event_id STRING,
+  event_time TIMESTAMP,
+  event_type STRING,
+  source STRING,
+  severity STRING,
+  source_ip STRING,
+  user_id STRING,
+  hostname STRING,
+  raw_log STRING
+)
+COMMENT 'Search normalized security events'
+RETURN SELECT
+  e.id AS event_id,
+  e.timestamp AS event_time,
+  e.event_type,
+  e.source,
+  e.severity,
+  e.source_ip,
+  e.user_id,
+  e.hostname,
+  e.raw_log
+FROM ${CATALOG}.${SCHEMA}.events e
+WHERE e.timestamp >= current_timestamp() - make_interval(0, 0, 0, 0, search_events.time_range_hours, 0, 0)
+  AND (e.raw_log LIKE CONCAT('%', search_events.query_text, '%')
+    OR e.event_type LIKE CONCAT('%', search_events.query_text, '%')
+    OR e.user_id LIKE CONCAT('%', search_events.query_text, '%')
+    OR e.hostname LIKE CONCAT('%', search_events.query_text, '%')
+    OR e.source_ip = search_events.query_text)
+ORDER BY e.timestamp DESC
+LIMIT search_events.max_results"
 
-  run_sql_expect_ok "Table: events_silver" "CREATE TABLE IF NOT EXISTS ${CATALOG}.${SCHEMA}.events_silver (
-    id STRING,
-    event_time TIMESTAMP,
-    event_type STRING,
-    source STRING,
-    severity STRING,
-    entity_id STRING,
-    message STRING
-  )"
+  run_sql_expect_ok "Function: get_asset_info" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.get_asset_info(
+  asset_identifier STRING COMMENT 'Asset hostname, IP, or ID'
+)
+RETURNS TABLE(
+  asset_id STRING,
+  hostname STRING,
+  ip_address STRING,
+  asset_type STRING,
+  criticality STRING,
+  owner STRING,
+  department STRING,
+  os STRING,
+  environment STRING,
+  last_scan TIMESTAMP
+)
+COMMENT 'Look up asset information'
+RETURN SELECT
+  a.id AS asset_id,
+  a.hostname,
+  a.ip_address,
+  a.asset_type,
+  a.criticality,
+  a.owner,
+  a.department,
+  a.os,
+  a.environment,
+  a.last_scan
+FROM ${CATALOG}.${SCHEMA}.asset_registry a
+WHERE a.hostname = get_asset_info.asset_identifier
+   OR a.ip_address = get_asset_info.asset_identifier
+   OR a.id = get_asset_info.asset_identifier"
 
-  run_sql_expect_ok "Table: asset_registry" "CREATE TABLE IF NOT EXISTS ${CATALOG}.${SCHEMA}.asset_registry (
-    id STRING,
-    hostname STRING,
-    ip_address STRING,
-    asset_type STRING,
-    criticality STRING,
-    owner STRING,
-    department STRING,
-    os STRING,
-    last_seen TIMESTAMP,
-    vulnerability_count INT
-  )"
+  run_sql_expect_ok "Function: create_case" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.create_case(
+    title STRING COMMENT 'Case title',
+    severity STRING COMMENT 'Case severity',
+    description STRING COMMENT 'Detailed case description',
+    alert_ids STRING DEFAULT '' COMMENT 'Comma-separated alert IDs',
+    assignee STRING DEFAULT '' COMMENT 'Assignee'
+  )
+  RETURNS STRING
+  COMMENT 'Allocate a case reference ID only. This function does NOT persist a case (a SQL UDF cannot write). The case must be recorded through the governed case-creation control plane; the returned ID is a proposed reference until then.'
+  RETURN SELECT CONCAT('CASE-', DATE_FORMAT(current_timestamp(), 'yyyyMMdd-HHmmss'))"
+
+  run_sql_expect_ok "Function: execute_response_action" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.execute_response_action(
+    action_type STRING COMMENT 'Action type',
+    target STRING COMMENT 'Target',
+    case_id STRING DEFAULT '' COMMENT 'Case ID',
+    reason STRING DEFAULT '' COMMENT 'Justification'
+  )
+  RETURNS TABLE(
+    action_id STRING,
+    action_type STRING,
+    target STRING,
+    status STRING,
+    executed_at TIMESTAMP,
+    requires_approval BOOLEAN
+  )
+  COMMENT 'Register a response-action REQUEST. This function does NOT perform the action (a SQL UDF cannot effect changes on hosts or accounts). Every request is returned as pending_approval with no execution timestamp; the action is only carried out after operator approval through the governed control plane.'
+  RETURN SELECT
+    CONCAT('ACT-', DATE_FORMAT(current_timestamp(), 'yyyyMMddHHmmss')) AS action_id,
+    execute_response_action.action_type AS action_type,
+    execute_response_action.target AS target,
+    'pending_approval' AS status,
+    CAST(NULL AS TIMESTAMP) AS executed_at,
+    TRUE AS requires_approval"
 }
 
 clean_local_state() {
   rm -rf "${SCRIPT_DIR}/.databricks" 2>/dev/null || true
   rm -rf "${SCRIPT_DIR}/app/dist" 2>/dev/null || true
-  rm -f "${SCRIPT_DIR}/app/.env.databricks" 2>/dev/null || true
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Rollback / Restore Flags
 # ──────────────────────────────────────────────────────────────────────────────
-if [ "${ROLLBACK}" = "--restore-yaml" ]; then
-  restore_bundle_yaml
-  exit 0
-fi
-
 if [ "${ROLLBACK}" = "--rollback" ]; then
   print_header_art
   phase_art deploy
   log_warn "Rollback mode enabled for target '${TARGET}'"
 
-  patch_result="$(patch_bundle_yaml 2>/dev/null || true)"
-  [ "${patch_result}" = "patched" ] && log_warn "Patched bundle YAML before rollback."
-
   cd "${SCRIPT_DIR}" || exit 1
-  databricks bundle destroy -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}" --auto-approve || true
+  databricks bundle destroy -t "${TARGET}" "${BUNDLE_VARS[@]}" --auto-approve || true
   clean_local_state
   log_ok "Rollback attempt complete. Unity Catalog objects are preserved unless manually dropped."
   exit 0
@@ -742,7 +743,7 @@ printf "  Embedding Endpoint:           %s\n" "${EMBEDDING_ENDPOINT}"
 printf "  Vector Search:                %s\n" "${VECTOR_SEARCH_ENDPOINT}"
 printf "  Secret Scope:                 %s\n" "${SECRET_SCOPE}"
 printf "  Admin Group:                  %s\n" "${SOC_ADMIN_GROUP}"
-printf "  Bundle Model Serving:         %s\n" "$([ "${DISABLE_BUNDLE_MODEL_SERVING}" = "true" ] && echo "disabled until real model versions exist" || echo "enabled")"
+printf "  Custom Model Serving:         opt-in (resources/optional/model_serving.yml)\n"
 printf "\n"
 
 # ══════════════════════════════════════════════════════
@@ -785,12 +786,14 @@ if ! databricks current-user me --output json >/dev/null 2>&1; then
 fi
 log_ok "Workspace API reachable"
 
-patch_result="$(patch_bundle_yaml 2>/dev/null || true)"
-if [ "${patch_result}" = "patched" ]; then
-  log_warn "Patched resources/app.yml: disabled custom model serving endpoints for this deploy."
-else
-  log_ok "Bundle YAML pre-check complete"
+have_cmd npm || die "npm not found. Node.js >= 20 is required to build the app UI."
+
+if [ -z "${SOC_ADMIN_EMAILS}" ]; then
+  SOC_ADMIN_EMAILS="$(databricks current-user me --output json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("userName",""))' 2>/dev/null || true)"
+  bundle_vars
 fi
+log_ok "App admins: ${SOC_ADMIN_EMAILS:-<none>}"
+[ -n "${SOC_ANALYST_EMAILS}" ] && log_ok "App analysts: ${SOC_ANALYST_EMAILS}"
 printf "\n"
 
 # ══════════════════════════════════════════════════════
@@ -878,210 +881,19 @@ else
   die "Schema creation failed: ${schema_result}"
 fi
 
-for volume in models checkpoints artifacts exports quarantine; do
+for volume in data landing checkpoints models artifacts exports quarantine; do
   run_sql_expect_ok "Volume: ${CATALOG}.${SCHEMA}.${volume}" "CREATE VOLUME IF NOT EXISTS ${CATALOG}.${SCHEMA}.${volume}"
 done
 
-create_placeholder_tables
+ensure_group "${SOC_ADMIN_GROUP}"
+ensure_group "${SOC_ANALYST_GROUP}"
 printf "\n"
 
 # ══════════════════════════════════════════════════════
-# STEP 5: UC Functions
-# ══════════════════════════════════════════════════════
-phase_art functions
-log_step 5 "Creating Unity Catalog Functions..."
-
-run_sql_expect_ok "Function: lookup_ioc" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.lookup_ioc(
-  ioc_value STRING COMMENT 'The IOC value to look up',
-  ioc_type STRING DEFAULT 'auto' COMMENT 'Type: ip, domain, hash, url, or auto'
-)
-RETURNS TABLE(
-  ioc_value STRING,
-  ioc_type STRING,
-  threat_score DOUBLE,
-  threat_name STRING,
-  first_seen TIMESTAMP,
-  last_seen TIMESTAMP,
-  sources ARRAY<STRING>,
-  tags ARRAY<STRING>
-)
-COMMENT 'Look up an Indicator of Compromise'
-RETURN SELECT
-  i.value AS ioc_value,
-  i.type AS ioc_type,
-  i.confidence AS threat_score,
-  i.threat_name AS threat_name,
-  i.first_seen AS first_seen,
-  i.last_seen AS last_seen,
-  i.sources AS sources,
-  i.tags AS tags
-FROM ${CATALOG}.${SCHEMA}.ioc_indicators i
-WHERE i.value = lookup_ioc.ioc_value
-  AND (lookup_ioc.ioc_type = 'auto' OR i.type = lookup_ioc.ioc_type)"
-
-run_sql_expect_ok "Function: get_alert_context" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.get_alert_context(
-  alert_id STRING COMMENT 'The alert ID'
-)
-RETURNS TABLE(
-  alert_id STRING,
-  title STRING,
-  severity STRING,
-  source STRING,
-  created_at TIMESTAMP,
-  entity_id STRING,
-  entity_type STRING,
-  raw_event STRING,
-  mitre_tactic STRING,
-  mitre_technique STRING
-)
-COMMENT 'Retrieve full alert context'
-RETURN SELECT
-  a.id AS alert_id,
-  a.title,
-  a.severity,
-  a.source,
-  a.created_at,
-  a.entity_id,
-  a.entity_type,
-  a.raw_event,
-  a.mitre_tactic,
-  a.mitre_technique
-FROM ${CATALOG}.${SCHEMA}.alerts a
-WHERE a.id = get_alert_context.alert_id"
-
-run_sql_expect_ok "Function: query_user_behavior" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.query_user_behavior(
-  user_id STRING COMMENT 'The user ID',
-  lookback_hours INT DEFAULT 24 COMMENT 'Hours of history'
-)
-RETURNS TABLE(
-  user_id STRING,
-  risk_score DOUBLE,
-  anomaly_count INT,
-  login_count INT,
-  failed_logins INT,
-  unique_ips INT,
-  data_exfil_mb DOUBLE,
-  after_hours_activity BOOLEAN,
-  baseline_deviation DOUBLE
-)
-COMMENT 'Query user behavioral analytics'
-RETURN SELECT
-  ub.user_id,
-  ub.risk_score,
-  ub.anomaly_count,
-  ub.login_count,
-  ub.failed_logins,
-  ub.unique_ips,
-  ub.data_exfil_mb,
-  ub.after_hours_activity,
-  ub.baseline_deviation
-FROM ${CATALOG}.${SCHEMA}.user_behavior_analytics ub
-WHERE ub.user_id = query_user_behavior.user_id
-ORDER BY ub.computed_at DESC
-LIMIT 1"
-
-run_sql_expect_ok "Function: search_events" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.search_events(
-  query_text STRING COMMENT 'Search query',
-  time_range_hours INT DEFAULT 24 COMMENT 'Hours back',
-  max_results INT DEFAULT 50 COMMENT 'Max results'
-)
-RETURNS TABLE(
-  event_id STRING,
-  event_time TIMESTAMP,
-  event_type STRING,
-  source STRING,
-  severity STRING,
-  entity_id STRING,
-  message STRING
-)
-COMMENT 'Search security events'
-RETURN SELECT
-  e.id AS event_id,
-  e.event_time,
-  e.event_type,
-  e.source,
-  e.severity,
-  e.entity_id,
-  e.message
-FROM ${CATALOG}.${SCHEMA}.events_silver e
-WHERE e.message LIKE CONCAT('%', search_events.query_text, '%')
-   OR e.event_type LIKE CONCAT('%', search_events.query_text, '%')
-   OR e.entity_id LIKE CONCAT('%', search_events.query_text, '%')
-ORDER BY e.event_time DESC
-LIMIT search_events.max_results"
-
-run_sql_expect_ok "Function: get_asset_info" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.get_asset_info(
-  asset_identifier STRING COMMENT 'Asset hostname, IP, or ID'
-)
-RETURNS TABLE(
-  asset_id STRING,
-  hostname STRING,
-  ip_address STRING,
-  asset_type STRING,
-  criticality STRING,
-  owner STRING,
-  department STRING,
-  os STRING,
-  last_seen TIMESTAMP,
-  vulnerabilities INT
-)
-COMMENT 'Look up asset information'
-RETURN SELECT
-  a.id AS asset_id,
-  a.hostname,
-  a.ip_address,
-  a.asset_type,
-  a.criticality,
-  a.owner,
-  a.department,
-  a.os,
-  a.last_seen,
-  a.vulnerability_count AS vulnerabilities
-FROM ${CATALOG}.${SCHEMA}.asset_registry a
-WHERE a.hostname = get_asset_info.asset_identifier
-   OR a.ip_address = get_asset_info.asset_identifier
-   OR a.id = get_asset_info.asset_identifier"
-
-run_sql_expect_ok "Function: create_case" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.create_case(
-  title STRING COMMENT 'Case title',
-  severity STRING COMMENT 'Case severity',
-  description STRING COMMENT 'Detailed case description',
-  alert_ids STRING DEFAULT '' COMMENT 'Comma-separated alert IDs',
-  assignee STRING DEFAULT '' COMMENT 'Assignee'
-)
-RETURNS STRING
-COMMENT 'Allocate a case reference ID only. This function does NOT persist a case (a SQL UDF cannot write). The case must be recorded through the governed case-creation control plane; the returned ID is a proposed reference until then.'
-RETURN SELECT CONCAT('CASE-', DATE_FORMAT(current_timestamp(), 'yyyyMMdd-HHmmss'))"
-
-run_sql_expect_ok "Function: execute_response_action" "CREATE OR REPLACE FUNCTION ${CATALOG}.${SCHEMA}.execute_response_action(
-  action_type STRING COMMENT 'Action type',
-  target STRING COMMENT 'Target',
-  case_id STRING DEFAULT '' COMMENT 'Case ID',
-  reason STRING DEFAULT '' COMMENT 'Justification'
-)
-RETURNS TABLE(
-  action_id STRING,
-  action_type STRING,
-  target STRING,
-  status STRING,
-  executed_at TIMESTAMP,
-  requires_approval BOOLEAN
-)
-COMMENT 'Register a response-action REQUEST. This function does NOT perform the action (a SQL UDF cannot effect changes on hosts or accounts). Every request is returned as pending_approval with no execution timestamp; the action is only carried out after operator approval through the governed control plane.'
-RETURN SELECT
-  CONCAT('ACT-', DATE_FORMAT(current_timestamp(), 'yyyyMMddHHmmss')) AS action_id,
-  execute_response_action.action_type AS action_type,
-  execute_response_action.target AS target,
-  'pending_approval' AS status,
-  CAST(NULL AS TIMESTAMP) AS executed_at,
-  TRUE AS requires_approval"
-printf "\n"
-
-# ══════════════════════════════════════════════════════
-# STEP 6: MLflow Experiments
+# STEP 5: MLflow Experiments
 # ══════════════════════════════════════════════════════
 phase_art experiments
-log_step 6 "Creating MLflow experiments..."
+log_step 5 "Creating MLflow experiments..."
 
 AGENT_EXPERIMENTS=(
   triage enrichment threat_hunter orchestrator sage_enrichment nova_investigation vanguard_response
@@ -1108,10 +920,10 @@ log_ok "Created/verified pipeline experiments"
 printf "\n"
 
 # ══════════════════════════════════════════════════════
-# STEP 7: Model Registry
+# STEP 6: Model Registry
 # ══════════════════════════════════════════════════════
 phase_art registry
-log_step 7 "Preparing interactive agent model namespace..."
+log_step 6 "Preparing interactive agent model namespace..."
 
 INTERACTIVE_AGENTS=(
   0xdsi_ciso_assistant 0xdsi_sage_enrichment 0xdsi_nova_investigation
@@ -1130,17 +942,13 @@ for model_name in "${INTERACTIVE_AGENTS[@]}"; do
     log_warn "Model namespace API attempted: ${full_name}"
   fi
 done
-
-if [ "${DISABLE_BUNDLE_MODEL_SERVING}" = "true" ]; then
-  log_warn "Custom model serving endpoints are disabled in bundle; Foundation Model endpoints remain active."
-fi
 printf "\n"
 
 # ══════════════════════════════════════════════════════
-# STEP 8: Vector Search
+# STEP 7: Vector Search
 # ══════════════════════════════════════════════════════
 phase_art vector
-log_step 8 "Provisioning Vector Search endpoint..."
+log_step 7 "Provisioning Vector Search endpoint..."
 
 vs_json="$(databricks api get "/api/2.0/vector-search/endpoints/${VECTOR_SEARCH_ENDPOINT}" --output json 2>/dev/null || true)"
 vs_status="$(printf "%s" "${vs_json}" | python3 -c '
@@ -1165,95 +973,45 @@ databricks secrets put-secret "${SECRET_SCOPE}" "vector_search_endpoint" --strin
 printf "\n"
 
 # ══════════════════════════════════════════════════════
-# STEP 9: Build Frontend
+# STEP 8: Build Frontend
 # ══════════════════════════════════════════════════════
 phase_art build
-log_step 9 "Building React frontend..."
+log_step 8 "Building React frontend..."
 
-cd "${PROJECT_ROOT}" || exit 1
+cd "${SCRIPT_DIR}/app" || exit 1
 
-if [ ! -d "node_modules" ] || [ ! -x "node_modules/.bin/vite" ]; then
-  log_info "Installing npm dependencies..."
-  npm ci --prefer-offline || npm install
-fi
+log_info "Installing npm dependencies..."
+npm ci --no-audit --no-fund || die "npm ci failed in app/."
 
-# Set VITE_DATABRICKS_MODE=true so the build uses the Lakehouse data client
-# and routes all API calls through the FastAPI backend to Unity Catalog.
-VITE_DATABRICKS_MODE=true \
-npm run build
+# VITE_DATABRICKS_MODE=true routes all data access through the FastAPI backend to Unity Catalog.
+VITE_DATABRICKS_MODE=true npm run build || die "Frontend build failed."
 
-# Validate frontend was built successfully
-if [ ! -f "dist/index.html" ]; then
-  die "Frontend build failed: dist/index.html not found. Cannot deploy without frontend."
-fi
+[ -f "dist/index.html" ] || die "Frontend build failed: app/dist/index.html not found."
 
-log_ok "Frontend built -> dist/ (Databricks-native mode; Unity Catalog data plane)"
+log_ok "Frontend built -> app/dist/ (uploaded by the bundle sync rules)"
 printf "\n"
 
 # ══════════════════════════════════════════════════════
-# STEP 10: Package App
-# ══════════════════════════════════════════════════════
-phase_art package
-log_step 10 "Packaging application..."
-
-APP_DIR="${SCRIPT_DIR}/app"
-
-rm -rf "${APP_DIR}/dist"
-cp -r "${PROJECT_ROOT}/dist" "${APP_DIR}/dist"
-
-# Remove package.json so Databricks Apps doesn't auto-detect Node.js and attempt an npm build
-rm -f "${APP_DIR}/package.json" "${APP_DIR}/package-lock.json"
-rm -rf "${APP_DIR}/node_modules" 2>/dev/null || true
-
-cat > "${APP_DIR}/.env.databricks" <<EOF
-UNITY_CATALOG=${CATALOG}
-UNITY_SCHEMA=${SCHEMA}
-DATABRICKS_WAREHOUSE_ID=${WAREHOUSE_ID}
-LLM_ENDPOINT=${LLM_ENDPOINT}
-LLM_FALLBACK_ENDPOINT=${LLM_FALLBACK}
-EMBEDDING_ENDPOINT=${EMBEDDING_ENDPOINT}
-VECTOR_SEARCH_ENDPOINT=${VECTOR_SEARCH_ENDPOINT}
-SECRET_SCOPE=${SECRET_SCOPE}
-DEPLOY_TARGET=${TARGET}
-DEPLOY_ID=${DEPLOY_ID}
-EOF
-
-if [ ! -f "${APP_DIR}/requirements.txt" ]; then
-  cat > "${APP_DIR}/requirements.txt" <<EOF
-fastapi>=0.104.0
-uvicorn>=0.24.0
-databricks-sdk>=0.20.0
-databricks-sql-connector>=3.0.0
-python-dotenv>=1.0.0
-EOF
-fi
-
-log_ok "Packaged app/dist + .env.databricks"
-printf "\n"
-
-# ══════════════════════════════════════════════════════
-# STEP 11: Validate Bundle
+# STEP 9: Validate Bundle
 # ══════════════════════════════════════════════════════
 phase_art validate
-log_step 11 "Validating Databricks Asset Bundle..."
+log_step 9 "Validating Databricks Asset Bundle..."
 
 cd "${SCRIPT_DIR}" || exit 1
 
-patch_bundle_yaml >/dev/null 2>&1 || true
-
-if ! databricks bundle validate -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}"; then
+if ! databricks bundle validate -t "${TARGET}" "${BUNDLE_VARS[@]}"; then
   die "Bundle validation failed. Check resources/*.yml."
 fi
 log_ok "Bundle validation passed"
 printf "\n"
 
 # ══════════════════════════════════════════════════════
-# STEP 12: Deploy Bundle
+# STEP 10: Deploy Bundle
 # ══════════════════════════════════════════════════════
 phase_art deploy
-log_step 12 "Deploying bundle..."
+log_step 10 "Deploying bundle..."
 
-databricks bundle deploy -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}"
+databricks bundle deploy -t "${TARGET}" "${BUNDLE_VARS[@]}"
 deploy_rc=$?
 
 if [ ${deploy_rc} -ne 0 ]; then
@@ -1265,48 +1023,59 @@ echo "${DEPLOY_ID}|$(date -u +%s)|${TARGET}|${CATALOG}.${SCHEMA}|SUCCESS" >> "${
 printf "\n"
 
 # ══════════════════════════════════════════════════════
-# STEP 13: Seed / Initialize
+# STEP 11: Setup / Initialize
 # ══════════════════════════════════════════════════════
 phase_art seed
-log_step 13 "Running setup and seed jobs..."
+log_step 11 "Running setup (tables, volumes, demo data) and creating tool functions..."
 
-databricks bundle run initial_setup -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}" --no-wait >/dev/null 2>&1 || {
-  log_warn "initial_setup job not found or not runnable; creating agent_configs directly."
-  run_sql_expect_ok "Table: agent_configs" "CREATE TABLE IF NOT EXISTS ${CATALOG}.${SCHEMA}.agent_configs (
-    agent_name STRING NOT NULL,
-    enabled BOOLEAN DEFAULT true,
-    schedule STRING DEFAULT '0 */5 * * * ?',
-    config_json STRING DEFAULT '{}',
-    updated_at TIMESTAMP DEFAULT current_timestamp()
-  )"
-}
+log_info "Running initial_setup and waiting for it to finish (creates every table)..."
+databricks bundle run initial_setup -t "${TARGET}" "${BUNDLE_VARS[@]}" \
+  || die "initial_setup failed. Open Workflows > '[0xDSI] Setup' in the workspace for the task error."
+log_ok "initial_setup completed"
 
-databricks bundle run bronze_silver_gold -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}" --no-wait >/dev/null 2>&1 || {
-  log_warn "DLT pipeline trigger skipped; start manually if needed."
-}
+phase_art functions
+create_uc_functions
 
-# Trigger Lakebase CDC sync for session/active lists
-databricks bundle run lakebase_sync_streaming -t "${TARGET}" --var="warehouse_id=${WAREHOUSE_ID}" --no-wait >/dev/null 2>&1 || {
-  log_warn "Lakebase CDC sync trigger skipped; will start on schedule."
-}
+databricks bundle run bronze_silver_gold -t "${TARGET}" "${BUNDLE_VARS[@]}" --no-wait >/dev/null 2>&1 \
+  || log_warn "Medallion pipeline trigger skipped; start it from Pipelines if needed."
 
-log_ok "Setup triggers completed"
-printf "\n"
+databricks bundle run lakebase_sync_streaming -t "${TARGET}" "${BUNDLE_VARS[@]}" --no-wait >/dev/null 2>&1 \
+  || log_warn "Lakebase CDC sync trigger skipped; it will start on schedule."
 
 # ══════════════════════════════════════════════════════
-# STEP 14: Health Check & Permissions
+# STEP 12: Permissions, App & Health
 # ══════════════════════════════════════════════════════
 phase_art health
-log_step 14 "Permissions and health check..."
+log_step 12 "Permissions, app start and health check..."
 
-run_sql_silent "GRANT USAGE ON CATALOG ${CATALOG} TO \`${SOC_ADMIN_GROUP}\`" >/dev/null 2>&1 || true
-run_sql_silent "GRANT USAGE ON CATALOG ${CATALOG} TO \`${SOC_ANALYST_GROUP}\`" >/dev/null 2>&1 || true
+run_sql_silent "GRANT USE CATALOG ON CATALOG ${CATALOG} TO \`${SOC_ADMIN_GROUP}\`" >/dev/null 2>&1 || true
+run_sql_silent "GRANT USE CATALOG ON CATALOG ${CATALOG} TO \`${SOC_ANALYST_GROUP}\`" >/dev/null 2>&1 || true
 run_sql_silent "GRANT ALL PRIVILEGES ON SCHEMA ${CATALOG}.${SCHEMA} TO \`${SOC_ADMIN_GROUP}\`" >/dev/null 2>&1 || true
 run_sql_silent "GRANT USE SCHEMA ON SCHEMA ${CATALOG}.${SCHEMA} TO \`${SOC_ANALYST_GROUP}\`" >/dev/null 2>&1 || true
 run_sql_silent "GRANT SELECT ON SCHEMA ${CATALOG}.${SCHEMA} TO \`${SOC_ANALYST_GROUP}\`" >/dev/null 2>&1 || true
 run_sql_silent "GRANT EXECUTE ON SCHEMA ${CATALOG}.${SCHEMA} TO \`${SOC_ANALYST_GROUP}\`" >/dev/null 2>&1 || true
 run_sql_silent "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${CATALOG}.${SCHEMA} TO \`${SOC_ANALYST_GROUP}\`" >/dev/null 2>&1 || true
-log_ok "UC permissions applied"
+log_ok "UC permissions applied to groups"
+
+APP_SP="$(databricks apps get "${APP_NAME}" --output json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("service_principal_client_id",""))' 2>/dev/null || true)"
+if [ -n "${APP_SP}" ]; then
+  for grant in \
+    "GRANT USE CATALOG ON CATALOG ${CATALOG} TO \`${APP_SP}\`" \
+    "GRANT USE SCHEMA, SELECT, MODIFY, EXECUTE, READ VOLUME, WRITE VOLUME ON SCHEMA ${CATALOG}.${SCHEMA} TO \`${APP_SP}\`"; do
+    run_sql_expect_ok "App principal: ${grant%% ON*}" "${grant}"
+  done
+  databricks permissions update warehouses "${WAREHOUSE_ID}" --json \
+    "{\"access_control_list\":[{\"service_principal_name\":\"${APP_SP}\",\"permission_level\":\"CAN_USE\"}]}" >/dev/null 2>&1 \
+    && log_ok "App principal: CAN_USE on warehouse" \
+    || log_warn "Could not grant the app CAN_USE on the warehouse; grant it in SQL Warehouses > Permissions."
+else
+  log_warn "Could not read the app service principal; grant it catalog/schema/warehouse access manually."
+fi
+
+log_info "Deploying and starting the app..."
+databricks bundle run oxdsi_soc -t "${TARGET}" "${BUNDLE_VARS[@]}" >/dev/null 2>&1 \
+  && log_ok "App deployed and started" \
+  || log_warn "App start did not complete; open Compute > Apps > ${APP_NAME} for logs."
 
 printf "\n"
 printf "  %b\n" "${BOLD}Post-Deploy Health Check:${NC}"
@@ -1341,7 +1110,7 @@ else
 fi
 
 health_total=$((health_total + 1))
-app_status="$(databricks apps get "0xdsi-agentic-soc" --output json 2>/dev/null | python3 -c '
+app_status="$(databricks apps get "${APP_NAME}" --output json 2>/dev/null | python3 -c '
 import json, sys
 try:
     d=json.load(sys.stdin)
@@ -1394,7 +1163,7 @@ printf "  Deploy ID:  %s\n" "${DEPLOY_ID}"
 printf "  Target:     %s\n" "${TARGET}"
 printf "  Catalog:    %s.%s\n" "${CATALOG}" "${SCHEMA}"
 printf "  App:        Databricks workspace > Apps > 0xdsi-agentic-soc\n"
-printf "  Serving:    Bundle custom model serving disabled; Foundation Models configured\n"
+printf "  Serving:    Foundation Models (custom endpoints are opt-in)\n"
 printf "  Lakebase:   CDC sync for session_lists + active_lists scheduled\n"
 printf "\n"
 
@@ -1406,9 +1175,6 @@ else
   printf "%b\n" "  ${YELLOW}Some components are not confirmed online. Review the [!!] warnings above"
   printf "%b\n" "  before treating this deployment as operational.${NC}"
 fi
-printf "\n"
-printf "Restore original resources/app.yml if needed:\n"
-printf "  ./deploy.sh %s %s --restore-yaml\n" "${TARGET}" "${WAREHOUSE_ID}"
 printf "\n"
 printf "Rollback:\n"
 printf "  ./deploy.sh %s %s --rollback\n" "${TARGET}" "${WAREHOUSE_ID}"

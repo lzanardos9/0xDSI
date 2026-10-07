@@ -59,10 +59,8 @@ def _detect_environment(catalog: str) -> str:
 
 
 def _resolve_checkpoint_base(environment: str, catalog: str, schema: str) -> str:
-    """Resolve checkpoint path based on environment."""
-    if environment == "production":
-        return f"/Volumes/{catalog}/{schema}/checkpoints"
-    return f"/tmp/checkpoints/{catalog}/{schema}"
+    # Serverless compute has no persistent local /tmp, so every environment uses the UC volume.
+    return f"/Volumes/{catalog}/{schema}/checkpoints"
 
 
 def _resolve_volume_base(catalog: str, schema: str) -> str:

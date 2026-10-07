@@ -180,7 +180,6 @@ class SessionListManager(BatchAgent):
                 detected_at TIMESTAMP NOT NULL
             )
             USING DELTA
-            PARTITIONED BY (date(detected_at))
             TBLPROPERTIES (
                 'delta.autoOptimize.optimizeWrite' = 'true',
                 'delta.autoOptimize.optimizeRead' = 'true'

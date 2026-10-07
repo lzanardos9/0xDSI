@@ -172,7 +172,6 @@ class ScannerOrchestrator(BatchAgent):
                 completed_at TIMESTAMP
             )
             USING DELTA
-            PARTITIONED BY (date(started_at))
         """)
 
         spark.sql(f"""
@@ -188,7 +187,6 @@ class ScannerOrchestrator(BatchAgent):
                 discovered_at TIMESTAMP
             )
             USING DELTA
-            PARTITIONED BY (date(discovered_at))
         """)
 
     def _fetch_assets_for_scanning(self) -> list:

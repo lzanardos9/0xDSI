@@ -4,6 +4,16 @@ bundle:
 workspace:
   root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
 
+# app/dist is git-ignored build output but must be uploaded for the app to serve the UI.
+sync:
+  include:
+    - app/dist/**
+  exclude:
+    - app/node_modules/**
+    - app/frontend/**
+    - app/package.json
+    - app/package-lock.json
+
 variables:
   catalog:
     default: soc_platform
@@ -20,6 +30,15 @@ variables:
   embedding_endpoint:
     default: databricks-bge-large-en
     description: "Embedding model for vector search and memory"
+  soc_admin_emails:
+    default: ""
+    description: "Comma-separated emails granted the admin role in the app"
+  soc_analyst_emails:
+    default: ""
+    description: "Comma-separated emails granted the analyst role in the app (everyone else is read-only)"
+  seed_demo_data:
+    default: "false"
+    description: "Load synthetic demo data during initial_setup. Never enable in production."
   secret_scope:
     default: soc-secrets
     description: "Databricks secret scope for API keys"
@@ -40,11 +59,13 @@ targets:
     variables:
       catalog: soc_platform_dev
       schema: agentic_soc
+      seed_demo_data: "true"
 
   staging:
     variables:
       catalog: soc_platform_staging
       schema: agentic_soc
+      seed_demo_data: "true"
 
   production:
     mode: production

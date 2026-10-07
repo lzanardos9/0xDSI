@@ -176,7 +176,6 @@ class LLMRiskProfiler(BatchAgent):
                 profiled_at TIMESTAMP NOT NULL
             )
             USING DELTA
-            PARTITIONED BY (date(profiled_at))
         """)
 
     def _fetch_usage_logs(self) -> list:

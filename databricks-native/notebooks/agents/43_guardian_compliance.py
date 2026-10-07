@@ -208,7 +208,6 @@ class ComplianceMonitor(BatchAgent):
                 checked_at TIMESTAMP NOT NULL
             )
             USING DELTA
-            PARTITIONED BY (date(checked_at))
         """)
 
     def _check_compliance_controls(self) -> list:
@@ -429,7 +428,7 @@ CREATE TABLE IF NOT EXISTS {posture_table} (
     degrading_dimensions ARRAY<STRING>
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql(f"""
@@ -455,7 +454,7 @@ CREATE TABLE IF NOT EXISTS {violations_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql(f"""

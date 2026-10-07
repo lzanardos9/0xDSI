@@ -229,7 +229,6 @@ class TriageAgent(BatchAgent):
                 triaged_at TIMESTAMP NOT NULL
             )
             USING DELTA
-            PARTITIONED BY (date(triaged_at))
             TBLPROPERTIES (
                 'delta.autoOptimize.optimizeWrite' = 'true',
                 'delta.autoOptimize.optimizeRead' = 'true'

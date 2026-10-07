@@ -7,6 +7,7 @@
 # COMMAND ----------
 
 import logging
+import re
 from typing import Optional
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
@@ -278,6 +279,13 @@ def ensure_table_exists(
     """
     full_table = _full_table_name(table, catalog, schema)
 
+    # Delta rejects non-constant defaults such as uuid(), and any DEFAULT needs the
+    # allowColumnDefaults table feature declared at creation time.
+    schema_ddl = re.sub(r"[ \t]+DEFAULT\s+uuid\(\)", "", schema_ddl, flags=re.IGNORECASE)
+    properties_clause = ""
+    if re.search(r"\bDEFAULT\b", schema_ddl, re.IGNORECASE):
+        properties_clause = "TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')"
+
     partition_clause = ""
     if partition_by:
         partition_clause = f"PARTITIONED BY ({', '.join(partition_by)})"
@@ -294,6 +302,7 @@ def ensure_table_exists(
         USING DELTA
         {partition_clause}
         {comment_clause}
+        {properties_clause}
     """
 
     spark.sql(sql)

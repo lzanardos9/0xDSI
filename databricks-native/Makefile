@@ -1,4 +1,4 @@
-.PHONY: help install build clean test gate-offline deploy-dev deploy-staging deploy-prod lint check inventory baseline phase0
+.PHONY: help install build clean test gate-offline check-warehouse deploy deploy-dev deploy-staging deploy-prod lint check inventory baseline phase0
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 0xDSI Agentic SOC Platform - Databricks Native
@@ -32,25 +32,28 @@ clean: ## Remove build artifacts
 # Deployment (Databricks Asset Bundles)
 # ─────────────────────────────────────────────────────────────────────────────
 
-deploy-dev: build ## Deploy to dev target
-	databricks bundle deploy --target dev
+WAREHOUSE_ID ?= $(DATABRICKS_WAREHOUSE_ID)
 
-deploy-staging: build ## Deploy to staging target
-	databricks bundle deploy --target staging
+check-warehouse:
+	@test -n "$(WAREHOUSE_ID)" || (echo "Set WAREHOUSE_ID=<sql warehouse id>" && exit 1)
 
-deploy-prod: build ## Deploy to production target
-	databricks bundle deploy --target production
+deploy-dev: check-warehouse build ## Deploy bundle to dev (bundle only; use deploy.sh for full setup)
+	databricks bundle deploy --target dev --var="warehouse_id=$(WAREHOUSE_ID)"
 
-deploy: ## One-command deploy (uses deploy.sh)
-	./deploy.sh production
+deploy-staging: check-warehouse build ## Deploy bundle to staging (bundle only)
+	databricks bundle deploy --target staging --var="warehouse_id=$(WAREHOUSE_ID)"
+
+deploy-prod: check-warehouse build ## Deploy bundle to production (bundle only)
+	databricks bundle deploy --target production --var="warehouse_id=$(WAREHOUSE_ID)"
+
+deploy: check-warehouse ## One-command full deploy to dev (uses deploy.sh)
+	./deploy.sh dev $(WAREHOUSE_ID)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Testing
 # ─────────────────────────────────────────────────────────────────────────────
 
-test: ## Run smoke tests
-	python tests/smoke_test_e2e_pipeline.py
-	python tests/smoke_validate_schema.py
+test: gate-offline ## Run all offline tests
 
 gate-offline: ## Run the full offline hardening gate (notebook syntax + every test file)
 	python3 tools/ci/run_offline_gate.py

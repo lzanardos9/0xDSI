@@ -393,8 +393,8 @@ def _audit_log(user: dict, operation: str, table: str, detail: str = ""):
 
     def _primary_writer(record: dict):
         execute_write(
-            f"INSERT INTO {fqn('system_audit_log')} (user_email, username, operation, table_name, detail, timestamp) "
-            f"VALUES (:email, :username, :op, :table_name, :detail, :ts)",
+            f"INSERT INTO {fqn('system_audit_log')} (id, user_email, username, operation, table_name, detail, timestamp) "
+            f"VALUES (uuid(), :email, :username, :op, :table_name, :detail, :ts)",
             {
                 "email": record["user_email"],
                 "username": record["username"],
@@ -666,6 +666,26 @@ def fqn(table: str) -> str:
     return f"`{CATALOG}`.`{SCHEMA}`.`{table}`"
 
 
+_ID_COLUMN_CACHE: dict[str, bool] = {}
+
+
+def _with_generated_id(table: str, row: dict) -> dict:
+    # Delta has no non-constant column defaults, so ids are generated here.
+    if "id" in row:
+        return row
+    if table not in _ID_COLUMN_CACHE:
+        try:
+            cols = query(f"SHOW COLUMNS IN {fqn(table)}")
+            _ID_COLUMN_CACHE[table] = any(
+                str(next(iter(c.values()), "")).lower() == "id" for c in cols
+            )
+        except Exception:
+            return row
+    if _ID_COLUMN_CACHE[table]:
+        return {"id": str(uuid.uuid4()), **row}
+    return row
+
+
 # ──────────────────────────────────────────────
 # Generic table query endpoint
 # ──────────────────────────────────────────────
@@ -928,12 +948,14 @@ async def mutate_table(table_name: str, request: Request):
         if operation == "insert":
             if isinstance(data, list):
                 for row in data:
+                    row = _with_generated_id(table_name, row)
                     for k in row.keys():
                         _validate_identifier(k)
                     cols = ", ".join(row.keys())
                     vals = ", ".join(f":{k}" for k in row.keys())
                     execute_write(f"INSERT INTO {fqn(table_name)} ({cols}) VALUES ({vals})", row)
             else:
+                data = _with_generated_id(table_name, data)
                 for k in data.keys():
                     _validate_identifier(k)
                 cols = ", ".join(data.keys())

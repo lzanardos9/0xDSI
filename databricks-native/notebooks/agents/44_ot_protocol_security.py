@@ -425,6 +425,7 @@ Keep response under 200 words. Be specific to industrial environments."""
         )
         USING DELTA
         PARTITIONED BY (finding_date, severity)
+        TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
         """)
 
     def _write_findings(self, findings: list, table_path: str):

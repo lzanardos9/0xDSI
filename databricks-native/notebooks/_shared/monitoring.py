@@ -400,7 +400,7 @@ def create_audit_table(spark: SparkSession, catalog: str, schema: str):
     full_table = f"`{catalog}`.`{schema}`.`{AUDIT_TABLE}`"
     spark.sql(f"""
         CREATE TABLE IF NOT EXISTS {full_table} (
-            event_id STRING DEFAULT uuid(),
+            event_id STRING,
             notebook_path STRING NOT NULL,
             event_type STRING NOT NULL,
             severity STRING NOT NULL DEFAULT 'info',
@@ -416,5 +416,6 @@ def create_audit_table(spark: SparkSession, catalog: str, schema: str):
         USING DELTA
         PARTITIONED BY (event_type)
         COMMENT 'Audit trail for all notebook executions'
+        TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
     """)
     logger.info(f"Ensured audit table exists: {full_table}")

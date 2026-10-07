@@ -165,7 +165,6 @@ class EnrichmentAgent(BatchAgent):
                 enriched_at TIMESTAMP NOT NULL
             )
             USING DELTA
-            PARTITIONED BY (date(enriched_at))
             TBLPROPERTIES (
                 'delta.autoOptimize.optimizeWrite' = 'true',
                 'delta.autoOptimize.optimizeRead' = 'true'

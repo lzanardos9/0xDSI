@@ -191,7 +191,6 @@ class ActiveListManager(BatchAgent):
                 changed_at TIMESTAMP NOT NULL
             )
             USING DELTA
-            PARTITIONED BY (date(changed_at))
         """)
 
     def _fetch_active_entries(self) -> list:
