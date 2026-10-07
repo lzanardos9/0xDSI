@@ -41,7 +41,7 @@ INDUSTRIES = [
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {posture_table} (
-    id STRING DEFAULT uuid(),
+    id STRING,
     industry_id STRING,
     label STRING,
     threat_count BIGINT,
@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS {posture_table} (
     top_actors STRING,
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 ) USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # COMMAND ----------

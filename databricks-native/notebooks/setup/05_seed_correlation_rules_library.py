@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS {library_table} (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 print(f"Generating {NUM_RULES} correlation rules...")

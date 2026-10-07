@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS {spine_table} (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true',
     'delta.autoOptimize.autoCompact' = 'true'
@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS {edges_table} (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true'
 )
@@ -127,7 +127,7 @@ CREATE TABLE IF NOT EXISTS {mentions_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # COMMAND ----------

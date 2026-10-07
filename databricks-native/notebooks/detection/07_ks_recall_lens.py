@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS {ks_recall_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # COMMAND ----------

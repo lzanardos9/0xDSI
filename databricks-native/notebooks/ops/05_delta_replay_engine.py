@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS {replay_packs_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql(f"""
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS {detection_evals_table} (
     evaluated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql(f"""
@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS {learning_data_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # COMMAND ----------

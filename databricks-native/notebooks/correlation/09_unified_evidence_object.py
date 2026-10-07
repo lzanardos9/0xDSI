@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS {ueo_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true',
     'delta.autoOptimize.autoCompact' = 'true'
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS {ueo_signals_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # Existing deployments predate the revision columns; add them idempotently so

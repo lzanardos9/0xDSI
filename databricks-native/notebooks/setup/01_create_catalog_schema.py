@@ -30,7 +30,10 @@ spark.sql(f"USE CATALOG `{catalog}`")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{schema}`")
 spark.sql(f"USE SCHEMA `{schema}`")
 
-print(f"Catalog and schema ready: {catalog}.{schema}")
+for volume in ["data", "landing", "checkpoints", "models", "artifacts", "exports", "quarantine"]:
+    spark.sql(f"CREATE VOLUME IF NOT EXISTS `{catalog}`.`{schema}`.`{volume}`")
+
+print(f"Catalog, schema and volumes ready: {catalog}.{schema}")
 
 # COMMAND ----------
 
@@ -41,7 +44,7 @@ print(f"Catalog and schema ready: {catalog}.{schema}")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS events (
-    id STRING DEFAULT uuid(),
+    id STRING,
     timestamp TIMESTAMP DEFAULT current_timestamp(),
     event_type STRING NOT NULL,
     source STRING,
@@ -69,13 +72,13 @@ CREATE TABLE IF NOT EXISTS events (
     _rescued_data STRING
 )
 USING DELTA
-PARTITIONED BY (event_type, DATE(timestamp))
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+PARTITIONED BY (event_type)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS alerts (
-    id STRING DEFAULT uuid(),
+    id STRING,
     title STRING NOT NULL,
     description STRING,
     severity STRING NOT NULL,
@@ -98,7 +101,8 @@ CREATE TABLE IF NOT EXISTS alerts (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (severity, DATE(created_at))
+PARTITIONED BY (severity)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # Append-only lifecycle ledger for findings (REV2-08). Each row is one immutable
@@ -120,12 +124,12 @@ CREATE TABLE IF NOT EXISTS finding_revisions (
     produced_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS cases (
-    id STRING DEFAULT uuid(),
+    id STRING,
     title STRING NOT NULL,
     description STRING,
     status STRING DEFAULT 'open',
@@ -152,6 +156,7 @@ CREATE TABLE IF NOT EXISTS cases (
 )
 USING DELTA
 PARTITIONED BY (status)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Core security tables created: events, alerts, cases")
@@ -165,7 +170,7 @@ print("Core security tables created: events, alerts, cases")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS correlation_rules (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     description STRING,
     rule_type STRING DEFAULT 'threshold',
@@ -187,6 +192,7 @@ CREATE TABLE IF NOT EXISTS correlation_rules (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -216,12 +222,12 @@ CREATE TABLE IF NOT EXISTS correlation_rules_library (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS cep_patterns (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     pattern_type STRING,
     definition STRING,
@@ -231,11 +237,12 @@ CREATE TABLE IF NOT EXISTS cep_patterns (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS cep_pattern_matches (
-    id STRING DEFAULT uuid(),
+    id STRING,
     rule_id STRING NOT NULL,
     entity_id STRING,
     pattern_name STRING,
@@ -249,12 +256,12 @@ CREATE TABLE IF NOT EXISTS cep_pattern_matches (
     context MAP<STRING, STRING>
 )
 USING DELTA
-PARTITIONED BY (DATE(matched_at))
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS negative_correlation_rules (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     description STRING,
     expected_event_type STRING NOT NULL,
@@ -264,22 +271,24 @@ CREATE TABLE IF NOT EXISTS negative_correlation_rules (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS negative_correlation_detections (
-    id STRING DEFAULT uuid(),
+    id STRING,
     rule_id STRING NOT NULL,
     detected_at TIMESTAMP DEFAULT current_timestamp(),
     context MAP<STRING, STRING>,
     severity STRING
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS detection_rules (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     detection_type STRING,
     logic STRING,
@@ -292,11 +301,12 @@ CREATE TABLE IF NOT EXISTS detection_rules (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS rule_version_history (
-    id STRING DEFAULT uuid(),
+    id STRING,
     rule_id STRING NOT NULL,
     version INT,
     changes STRING,
@@ -304,6 +314,7 @@ CREATE TABLE IF NOT EXISTS rule_version_history (
     changed_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Correlation & detection tables created")
@@ -317,7 +328,7 @@ print("Correlation & detection tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS threat_feeds (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     feed_type STRING,
     url STRING,
@@ -329,11 +340,12 @@ CREATE TABLE IF NOT EXISTS threat_feeds (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS ioc_entries (
-    id STRING DEFAULT uuid(),
+    id STRING,
     indicator_type STRING NOT NULL,
     value STRING NOT NULL,
     threat_type STRING,
@@ -350,11 +362,12 @@ CREATE TABLE IF NOT EXISTS ioc_entries (
 )
 USING DELTA
 PARTITIONED BY (indicator_type)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS threat_campaigns (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     description STRING,
     threat_actor STRING,
@@ -368,11 +381,12 @@ CREATE TABLE IF NOT EXISTS threat_campaigns (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS threat_radar_items (
-    id STRING DEFAULT uuid(),
+    id STRING,
     title STRING NOT NULL,
     category STRING,
     severity STRING,
@@ -384,11 +398,12 @@ CREATE TABLE IF NOT EXISTS threat_radar_items (
     last_updated TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS threat_radar_sources (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     source_type STRING,
     url STRING,
@@ -397,6 +412,7 @@ CREATE TABLE IF NOT EXISTS threat_radar_sources (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Threat intelligence tables created")
@@ -410,7 +426,7 @@ print("Threat intelligence tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS soc_optimization_metrics (
-    id STRING DEFAULT uuid(),
+    id STRING,
     window_hours INT,
     health_score DOUBLE,
     detection_score DOUBLE,
@@ -435,11 +451,12 @@ CREATE TABLE IF NOT EXISTS soc_optimization_metrics (
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS platform_economics_metrics (
-    id STRING DEFAULT uuid(),
+    id STRING,
     window_hours INT,
     monthly_cost DOUBLE,
     cost_per_event DOUBLE,
@@ -458,11 +475,12 @@ CREATE TABLE IF NOT EXISTS platform_economics_metrics (
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS industry_threat_posture (
-    id STRING DEFAULT uuid(),
+    id STRING,
     industry_id STRING,
     label STRING,
     threat_count BIGINT,
@@ -474,11 +492,12 @@ CREATE TABLE IF NOT EXISTS industry_threat_posture (
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS mitre_coverage_metrics (
-    id STRING DEFAULT uuid(),
+    id STRING,
     window_hours INT,
     coverage_pct DOUBLE,
     technique_count INT,
@@ -491,11 +510,12 @@ CREATE TABLE IF NOT EXISTS mitre_coverage_metrics (
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS overview_metrics (
-    id STRING DEFAULT uuid(),
+    id STRING,
     window_hours INT,
     total_events BIGINT,
     events_window BIGINT,
@@ -516,6 +536,7 @@ CREATE TABLE IF NOT EXISTS overview_metrics (
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Analytics rollup tables created: soc_optimization_metrics, platform_economics_metrics, industry_threat_posture, mitre_coverage_metrics, overview_metrics")
@@ -529,7 +550,7 @@ print("Analytics rollup tables created: soc_optimization_metrics, platform_econo
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS agent_configs (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     agent_type STRING NOT NULL,
     description STRING,
@@ -542,11 +563,12 @@ CREATE TABLE IF NOT EXISTS agent_configs (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS agent_status (
-    id STRING DEFAULT uuid(),
+    id STRING,
     agent_id STRING NOT NULL,
     status STRING DEFAULT 'idle',
     last_heartbeat TIMESTAMP DEFAULT current_timestamp(),
@@ -558,11 +580,12 @@ CREATE TABLE IF NOT EXISTS agent_status (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS soc_agent_registry (
-    id STRING DEFAULT uuid(),
+    id STRING,
     agent_key STRING,
     name STRING NOT NULL,
     agent_class STRING,
@@ -583,11 +606,12 @@ CREATE TABLE IF NOT EXISTS soc_agent_registry (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS agent_implementations (
-    id STRING DEFAULT uuid(),
+    id STRING,
     agent_id STRING NOT NULL,
     implementation_type STRING,
     code STRING,
@@ -596,6 +620,7 @@ CREATE TABLE IF NOT EXISTS agent_implementations (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Agent system tables created")
@@ -609,7 +634,7 @@ print("Agent system tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS response_actions (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     action_type STRING NOT NULL,
     target STRING,
@@ -625,6 +650,7 @@ CREATE TABLE IF NOT EXISTS response_actions (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # Bind approvals to an exact finding revision (REV2-20). Existing deployments
@@ -638,7 +664,7 @@ ALTER TABLE response_actions ADD COLUMNS IF NOT EXISTS (
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS response_approvals (
-    id STRING DEFAULT uuid(),
+    id STRING,
     action_id STRING NOT NULL,
     approver STRING,
     status STRING DEFAULT 'pending',
@@ -647,11 +673,12 @@ CREATE TABLE IF NOT EXISTS response_approvals (
     decided_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS workflows (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     description STRING,
     workflow_type STRING,
@@ -663,6 +690,7 @@ CREATE TABLE IF NOT EXISTS workflows (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Response & automation tables created")
@@ -676,7 +704,7 @@ print("Response & automation tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS user_profiles (
-    id STRING DEFAULT uuid(),
+    id STRING,
     display_name STRING,
     email STRING,
     username STRING,
@@ -688,11 +716,12 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS user_behavior_anomalies (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     anomaly_type STRING NOT NULL,
     risk_score INT DEFAULT 0,
@@ -703,12 +732,12 @@ CREATE TABLE IF NOT EXISTS user_behavior_anomalies (
     context MAP<STRING, STRING>
 )
 USING DELTA
-PARTITIONED BY (DATE(detected_at))
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS user_activity_logs (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     activity_type STRING,
     resource STRING,
@@ -719,12 +748,12 @@ CREATE TABLE IF NOT EXISTS user_activity_logs (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (DATE(timestamp))
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS psychological_profiles (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     profile_type STRING,
     risk_indicators ARRAY<STRING>,
@@ -752,11 +781,12 @@ CREATE TABLE IF NOT EXISTS psychological_profiles (
     last_analyzed_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS behavioral_indicators (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     indicator_type STRING NOT NULL,
     indicator_name STRING,
@@ -769,11 +799,12 @@ CREATE TABLE IF NOT EXISTS behavioral_indicators (
     source STRING DEFAULT 'manual'
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS bronze_communications (
-    message_id STRING DEFAULT uuid(),
+    message_id STRING,
     user_id STRING NOT NULL,
     channel_type STRING NOT NULL,
     message_body STRING,
@@ -788,11 +819,12 @@ CREATE TABLE IF NOT EXISTS bronze_communications (
 )
 USING DELTA
 PARTITIONED BY (channel_type)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS communication_baselines (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     baseline_embedding STRING,
     messages_in_baseline INT DEFAULT 0,
@@ -800,11 +832,12 @@ CREATE TABLE IF NOT EXISTS communication_baselines (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS psychological_profiles_history (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     sentiment_score_current DOUBLE,
     sentiment_volatility DOUBLE,
@@ -820,6 +853,7 @@ CREATE TABLE IF NOT EXISTS psychological_profiles_history (
 )
 USING DELTA
 PARTITIONED BY (user_id)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("User & behavior tables created")
@@ -834,7 +868,7 @@ print("Communication analysis tables created (bronze_communications, baselines, 
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS asset_registry (
-    id STRING DEFAULT uuid(),
+    id STRING,
     hostname STRING,
     ip_address STRING,
     asset_type STRING,
@@ -849,11 +883,12 @@ CREATE TABLE IF NOT EXISTS asset_registry (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS data_connectors (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     connector_type STRING,
     status STRING DEFAULT 'active',
@@ -864,11 +899,12 @@ CREATE TABLE IF NOT EXISTS data_connectors (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS vulnerability_scans (
-    id STRING DEFAULT uuid(),
+    id STRING,
     asset_id STRING,
     scanner STRING,
     cve_id STRING,
@@ -881,6 +917,7 @@ CREATE TABLE IF NOT EXISTS vulnerability_scans (
     resolved_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Infrastructure & asset tables created")
@@ -894,7 +931,7 @@ print("Infrastructure & asset tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS llm_usage_logs (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING,
     model STRING,
     prompt_tokens INT,
@@ -905,12 +942,12 @@ CREATE TABLE IF NOT EXISTS llm_usage_logs (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (DATE(timestamp))
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS llm_risk_profiles (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     risk_score DOUBLE DEFAULT 0.0,
     risk_category STRING DEFAULT 'low',
@@ -918,11 +955,12 @@ CREATE TABLE IF NOT EXISTS llm_risk_profiles (
     last_assessed TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS llm_guardrail_policies (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     policy_type STRING,
     rules ARRAY<STRING>,
@@ -931,11 +969,12 @@ CREATE TABLE IF NOT EXISTS llm_guardrail_policies (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS llm_guardrail_violations (
-    id STRING DEFAULT uuid(),
+    id STRING,
     policy_id STRING,
     user_id STRING,
     violation_type STRING,
@@ -945,11 +984,12 @@ CREATE TABLE IF NOT EXISTS llm_guardrail_violations (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS pii_redaction_rules (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     pattern STRING,
     entity_type STRING,
@@ -958,11 +998,12 @@ CREATE TABLE IF NOT EXISTS pii_redaction_rules (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS model_poisoning_monitors (
-    id STRING DEFAULT uuid(),
+    id STRING,
     model_name STRING NOT NULL,
     monitor_type STRING,
     baseline_metrics MAP<STRING, DOUBLE>,
@@ -971,11 +1012,12 @@ CREATE TABLE IF NOT EXISTS model_poisoning_monitors (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS model_poisoning_detections (
-    id STRING DEFAULT uuid(),
+    id STRING,
     monitor_id STRING NOT NULL,
     detection_type STRING,
     severity STRING,
@@ -984,6 +1026,7 @@ CREATE TABLE IF NOT EXISTS model_poisoning_detections (
     detected_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("AI/ML & LLM tables created")
@@ -997,7 +1040,7 @@ print("AI/ML & LLM tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS honeypot_deployments (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     honeypot_type STRING,
     ip_address STRING,
@@ -1009,11 +1052,12 @@ CREATE TABLE IF NOT EXISTS honeypot_deployments (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS honeytoken_deployments (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     token_type STRING,
     location STRING,
@@ -1023,11 +1067,12 @@ CREATE TABLE IF NOT EXISTS honeytoken_deployments (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS honeypot_interactions (
-    id STRING DEFAULT uuid(),
+    id STRING,
     honeypot_id STRING NOT NULL,
     source_ip STRING,
     source_port INT,
@@ -1037,7 +1082,7 @@ CREATE TABLE IF NOT EXISTS honeypot_interactions (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (DATE(timestamp))
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Honeypot & deception tables created")
@@ -1051,7 +1096,7 @@ print("Honeypot & deception tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS red_team_campaigns (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     description STRING,
     campaign_type STRING,
@@ -1064,11 +1109,12 @@ CREATE TABLE IF NOT EXISTS red_team_campaigns (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS malware_samples (
-    id STRING DEFAULT uuid(),
+    id STRING,
     sha256 STRING NOT NULL,
     file_name STRING,
     file_type STRING,
@@ -1083,6 +1129,7 @@ CREATE TABLE IF NOT EXISTS malware_samples (
     analyzed_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Red team & malware tables created")
@@ -1096,7 +1143,7 @@ print("Red team & malware tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS compliance_frameworks (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     version STRING,
     description STRING,
@@ -1105,11 +1152,12 @@ CREATE TABLE IF NOT EXISTS compliance_frameworks (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS compliance_controls (
-    id STRING DEFAULT uuid(),
+    id STRING,
     framework_id STRING NOT NULL,
     control_id STRING NOT NULL,
     title STRING,
@@ -1120,11 +1168,12 @@ CREATE TABLE IF NOT EXISTS compliance_controls (
     assessor STRING
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS unity_catalog_audit_events (
-    id STRING DEFAULT uuid(),
+    id STRING,
     event_type STRING,
     user_id STRING,
     resource_type STRING,
@@ -1135,7 +1184,7 @@ CREATE TABLE IF NOT EXISTS unity_catalog_audit_events (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (DATE(timestamp))
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Compliance & governance tables created")
@@ -1149,7 +1198,7 @@ print("Compliance & governance tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS custom_dashboards (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     description STRING,
     layout STRING,
@@ -1159,11 +1208,12 @@ CREATE TABLE IF NOT EXISTS custom_dashboards (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS dashboard_widgets (
-    id STRING DEFAULT uuid(),
+    id STRING,
     dashboard_id STRING NOT NULL,
     widget_type STRING,
     title STRING,
@@ -1172,22 +1222,24 @@ CREATE TABLE IF NOT EXISTS dashboard_widgets (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS system_settings (
-    id STRING DEFAULT uuid(),
+    id STRING,
     key STRING NOT NULL,
     value STRING,
     category STRING,
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS reports (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     report_type STRING,
     schedule STRING,
@@ -1196,11 +1248,12 @@ CREATE TABLE IF NOT EXISTS reports (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS notebook_runs (
-    id STRING DEFAULT uuid(),
+    id STRING,
     notebook_path STRING NOT NULL,
     status STRING DEFAULT 'running',
     started_at TIMESTAMP DEFAULT current_timestamp(),
@@ -1210,6 +1263,7 @@ CREATE TABLE IF NOT EXISTS notebook_runs (
     error STRING
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Dashboard & platform tables created")
@@ -1223,7 +1277,7 @@ print("Dashboard & platform tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS financial_threat_intel (
-    id STRING DEFAULT uuid(),
+    id STRING,
     threat_type STRING NOT NULL,
     target_institution STRING,
     attack_vector STRING,
@@ -1234,11 +1288,12 @@ CREATE TABLE IF NOT EXISTS financial_threat_intel (
     status STRING DEFAULT 'active'
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS financial_transactions (
-    id STRING DEFAULT uuid(),
+    id STRING,
     transaction_type STRING,
     amount DOUBLE,
     currency STRING DEFAULT 'BRL',
@@ -1250,12 +1305,12 @@ CREATE TABLE IF NOT EXISTS financial_transactions (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (DATE(timestamp))
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS insider_credential_cases (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     case_type STRING,
     risk_level STRING DEFAULT 'high',
@@ -1265,6 +1320,7 @@ CREATE TABLE IF NOT EXISTS insider_credential_cases (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Financial threat tables created")
@@ -1278,7 +1334,7 @@ print("Financial threat tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS feature_lab_features (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     feature_type STRING,
     description STRING,
@@ -1288,11 +1344,12 @@ CREATE TABLE IF NOT EXISTS feature_lab_features (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS feature_lab_creations (
-    id STRING DEFAULT uuid(),
+    id STRING,
     title STRING NOT NULL,
     prompt STRING,
     generated_html STRING,
@@ -1312,12 +1369,12 @@ CREATE TABLE IF NOT EXISTS feature_lab_creations (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS glasswing_scans (
-    id STRING DEFAULT uuid(),
+    id STRING,
     target STRING NOT NULL,
     scan_type STRING,
     status STRING DEFAULT 'running',
@@ -1327,11 +1384,12 @@ CREATE TABLE IF NOT EXISTS glasswing_scans (
     completed_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS glasswing_vulnerabilities (
-    id STRING DEFAULT uuid(),
+    id STRING,
     scan_id STRING NOT NULL,
     cve_id STRING,
     severity STRING,
@@ -1342,11 +1400,12 @@ CREATE TABLE IF NOT EXISTS glasswing_vulnerabilities (
     exploit_available BOOLEAN DEFAULT false
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS detection_confluence_signals (
-    id STRING DEFAULT uuid(),
+    id STRING,
     signal_type STRING NOT NULL,
     source STRING,
     confidence DOUBLE DEFAULT 0.5,
@@ -1355,11 +1414,12 @@ CREATE TABLE IF NOT EXISTS detection_confluence_signals (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS graph_streaming_nodes (
-    id STRING DEFAULT uuid(),
+    id STRING,
     node_type STRING NOT NULL,
     label STRING,
     properties MAP<STRING, STRING>,
@@ -1367,11 +1427,12 @@ CREATE TABLE IF NOT EXISTS graph_streaming_nodes (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS graph_streaming_edges (
-    id STRING DEFAULT uuid(),
+    id STRING,
     source_id STRING NOT NULL,
     target_id STRING NOT NULL,
     edge_type STRING,
@@ -1380,6 +1441,7 @@ CREATE TABLE IF NOT EXISTS graph_streaming_edges (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -1396,6 +1458,7 @@ CREATE TABLE IF NOT EXISTS graph_cep_detections (
 )
 USING DELTA
 PARTITIONED BY (pattern_type)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -1409,6 +1472,7 @@ CREATE TABLE IF NOT EXISTS graph_cep_baseline (
     snapshot_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Advanced analytics tables created")
@@ -1437,11 +1501,12 @@ CREATE TABLE IF NOT EXISTS streaming_queries (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS checkpoint_gc_log (
-    gc_id STRING DEFAULT uuid(),
+    gc_id STRING,
     checkpoint_path STRING NOT NULL,
     query_name STRING,
     files_deleted INT DEFAULT 0,
@@ -1451,11 +1516,12 @@ CREATE TABLE IF NOT EXISTS checkpoint_gc_log (
     executed_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS analyst_feedback (
-    feedback_id STRING DEFAULT uuid(),
+    feedback_id STRING,
     alert_id STRING,
     case_id STRING,
     analyst_id STRING NOT NULL,
@@ -1467,11 +1533,12 @@ CREATE TABLE IF NOT EXISTS analyst_feedback (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS ot_security_findings (
-    finding_id STRING DEFAULT uuid(),
+    finding_id STRING,
     protocol STRING NOT NULL,
     severity STRING DEFAULT 'medium',
     finding_type STRING,
@@ -1486,11 +1553,12 @@ CREATE TABLE IF NOT EXISTS ot_security_findings (
 )
 USING DELTA
 PARTITIONED BY (protocol)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS gold_exploit_chains (
-    chain_id STRING DEFAULT uuid(),
+    chain_id STRING,
     cve_ids ARRAY<STRING>,
     exploit_feasibility_score DOUBLE,
     attack_complexity STRING,
@@ -1502,11 +1570,12 @@ CREATE TABLE IF NOT EXISTS gold_exploit_chains (
     analyzed_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS bronze_communications (
-    comm_id STRING DEFAULT uuid(),
+    comm_id STRING,
     user_id STRING NOT NULL,
     channel STRING,
     direction STRING,
@@ -1520,11 +1589,12 @@ CREATE TABLE IF NOT EXISTS bronze_communications (
 )
 USING DELTA
 PARTITIONED BY (channel)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS communication_baselines (
-    baseline_id STRING DEFAULT uuid(),
+    baseline_id STRING,
     user_id STRING NOT NULL,
     metric_type STRING NOT NULL,
     metric_value DOUBLE,
@@ -1535,11 +1605,12 @@ CREATE TABLE IF NOT EXISTS communication_baselines (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS scan_orchestration_log (
-    scan_id STRING DEFAULT uuid(),
+    scan_id STRING,
     scan_type STRING NOT NULL,
     target STRING,
     status STRING DEFAULT 'queued',
@@ -1553,11 +1624,12 @@ CREATE TABLE IF NOT EXISTS scan_orchestration_log (
     completed_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS scan_findings (
-    finding_id STRING DEFAULT uuid(),
+    finding_id STRING,
     scan_id STRING NOT NULL,
     vulnerability_id STRING,
     severity STRING DEFAULT 'medium',
@@ -1572,6 +1644,7 @@ CREATE TABLE IF NOT EXISTS scan_findings (
 )
 USING DELTA
 PARTITIONED BY (severity)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # --- Agent 47: Autonomous Response Learner tables ---
@@ -1594,6 +1667,7 @@ CREATE TABLE IF NOT EXISTS arl_q_tables (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -1613,6 +1687,7 @@ CREATE TABLE IF NOT EXISTS arl_decisions (
 )
 USING DELTA
 PARTITIONED BY (action_name)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -1631,6 +1706,7 @@ CREATE TABLE IF NOT EXISTS arl_training_runs (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Operational and agent infrastructure tables created")
@@ -1645,7 +1721,7 @@ print("Agent 47 (Autonomous Response Learner) tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS geopolitical_events (
-    id STRING DEFAULT uuid(),
+    id STRING,
     title STRING NOT NULL,
     event_type STRING,
     region STRING,
@@ -1657,11 +1733,12 @@ CREATE TABLE IF NOT EXISTS geopolitical_events (
     event_date TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS geopolitical_risk_scores (
-    id STRING DEFAULT uuid(),
+    id STRING,
     country STRING NOT NULL,
     risk_score DOUBLE DEFAULT 0.0,
     cyber_threat_level STRING DEFAULT 'low',
@@ -1669,11 +1746,12 @@ CREATE TABLE IF NOT EXISTS geopolitical_risk_scores (
     assessed_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS chronoweave_timelines (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     description STRING,
     start_time TIMESTAMP,
@@ -1683,11 +1761,12 @@ CREATE TABLE IF NOT EXISTS chronoweave_timelines (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS chronoweave_branches (
-    id STRING DEFAULT uuid(),
+    id STRING,
     timeline_id STRING NOT NULL,
     branch_point TIMESTAMP,
     hypothesis STRING,
@@ -1696,6 +1775,7 @@ CREATE TABLE IF NOT EXISTS chronoweave_branches (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Geopolitical & temporal tables created")
@@ -1709,7 +1789,7 @@ print("Geopolitical & temporal tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS mcp_servers (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     server_type STRING,
     url STRING,
@@ -1719,11 +1799,12 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS mcp_tools (
-    id STRING DEFAULT uuid(),
+    id STRING,
     server_id STRING NOT NULL,
     name STRING NOT NULL,
     description STRING,
@@ -1733,11 +1814,12 @@ CREATE TABLE IF NOT EXISTS mcp_tools (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS swarm_battlefields (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     scenario STRING,
     status STRING DEFAULT 'active',
@@ -1747,11 +1829,12 @@ CREATE TABLE IF NOT EXISTS swarm_battlefields (
     completed_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS trend_signals (
-    id STRING DEFAULT uuid(),
+    id STRING,
     signal_type STRING NOT NULL,
     source STRING,
     value DOUBLE,
@@ -1761,6 +1844,7 @@ CREATE TABLE IF NOT EXISTS trend_signals (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("MCP & integration tables created")
@@ -1774,7 +1858,7 @@ print("MCP & integration tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS etl_ingestion_configs (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     source_type STRING,
     config MAP<STRING, STRING>,
@@ -1784,11 +1868,12 @@ CREATE TABLE IF NOT EXISTS etl_ingestion_configs (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS etl_ingestion_runs (
-    id STRING DEFAULT uuid(),
+    id STRING,
     config_id STRING NOT NULL,
     status STRING DEFAULT 'running',
     records_processed BIGINT DEFAULT 0,
@@ -1798,11 +1883,12 @@ CREATE TABLE IF NOT EXISTS etl_ingestion_runs (
     error STRING
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS session_lists (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     list_type STRING,
     entries ARRAY<STRING>,
@@ -1811,11 +1897,12 @@ CREATE TABLE IF NOT EXISTS session_lists (
     expires_at TIMESTAMP
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS active_lists (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     category STRING,
     entries ARRAY<MAP<STRING, STRING>>,
@@ -1824,11 +1911,12 @@ CREATE TABLE IF NOT EXISTS active_lists (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS pattern_discoveries (
-    id STRING DEFAULT uuid(),
+    id STRING,
     pattern_type STRING NOT NULL,
     description STRING,
     confidence DOUBLE DEFAULT 0.5,
@@ -1837,6 +1925,7 @@ CREATE TABLE IF NOT EXISTS pattern_discoveries (
     status STRING DEFAULT 'new'
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("ETL & ingestion tables created")
@@ -1850,7 +1939,7 @@ print("ETL & ingestion tables created")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS threat_escalation_rules (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     description STRING,
     conditions ARRAY<STRING>,
@@ -1861,11 +1950,12 @@ CREATE TABLE IF NOT EXISTS threat_escalation_rules (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS threat_escalation_contracts (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     domain STRING,
     schema_definition STRING,
@@ -1874,11 +1964,12 @@ CREATE TABLE IF NOT EXISTS threat_escalation_contracts (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS graph_pattern_scores (
-    id STRING DEFAULT uuid(),
+    id STRING,
     pattern_type STRING NOT NULL,
     entity_id STRING,
     score DOUBLE DEFAULT 0.0,
@@ -1886,6 +1977,7 @@ CREATE TABLE IF NOT EXISTS graph_pattern_scores (
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Threat escalation & scoring tables created")
@@ -1917,7 +2009,7 @@ CREATE TABLE IF NOT EXISTS confluence_verdicts (
     weights_snapshot STRING
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -1932,11 +2024,12 @@ CREATE TABLE IF NOT EXISTS confluence_lineage (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS confluence_lens_weights (
-    id STRING DEFAULT uuid(),
+    id STRING,
     weights_json STRING NOT NULL,
     version INT NOT NULL,
     is_active BOOLEAN DEFAULT true,
@@ -1945,6 +2038,7 @@ CREATE TABLE IF NOT EXISTS confluence_lens_weights (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -1964,7 +2058,7 @@ USING DELTA
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS vector_hunt_matches (
-    id STRING DEFAULT uuid(),
+    id STRING,
     alert_id STRING NOT NULL,
     similarity_score DOUBLE NOT NULL,
     matched_threat_pattern STRING,
@@ -1973,11 +2067,12 @@ CREATE TABLE IF NOT EXISTS vector_hunt_matches (
     processed_by_confluence BOOLEAN DEFAULT false
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS formula_priority_scores (
-    id STRING DEFAULT uuid(),
+    id STRING,
     entity_id STRING NOT NULL,
     priority_score DOUBLE NOT NULL,
     priority_reason STRING,
@@ -1985,11 +2080,12 @@ CREATE TABLE IF NOT EXISTS formula_priority_scores (
     processed_by_confluence BOOLEAN DEFAULT false
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS slm_classifications (
-    id STRING DEFAULT uuid(),
+    id STRING,
     alert_id STRING NOT NULL,
     classification STRING NOT NULL,
     confidence DOUBLE,
@@ -1998,11 +2094,12 @@ CREATE TABLE IF NOT EXISTS slm_classifications (
     processed_by_confluence BOOLEAN DEFAULT false
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS graph_anomaly_detections (
-    id STRING DEFAULT uuid(),
+    id STRING,
     source_entity STRING NOT NULL,
     anomaly_score DOUBLE NOT NULL,
     pattern_type STRING,
@@ -2011,6 +2108,7 @@ CREATE TABLE IF NOT EXISTS graph_anomaly_detections (
     processed_by_confluence BOOLEAN DEFAULT false
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -2024,12 +2122,12 @@ CREATE TABLE IF NOT EXISTS notification_log (
     sent_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS notification_routes (
-    id STRING DEFAULT uuid(),
+    id STRING,
     severity STRING NOT NULL,
     channel STRING NOT NULL,
     priority STRING DEFAULT 'P3',
@@ -2037,11 +2135,12 @@ CREATE TABLE IF NOT EXISTS notification_routes (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS analyst_oncall (
-    id STRING DEFAULT uuid(),
+    id STRING,
     email STRING NOT NULL,
     name STRING,
     is_active BOOLEAN DEFAULT true,
@@ -2050,6 +2149,7 @@ CREATE TABLE IF NOT EXISTS analyst_oncall (
     team STRING DEFAULT 'soc_tier1'
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -2064,11 +2164,12 @@ CREATE TABLE IF NOT EXISTS ticket_sync_log (
     synced_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS connector_registry (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING NOT NULL,
     connector_type STRING,
     source_system STRING,
@@ -2080,6 +2181,7 @@ CREATE TABLE IF NOT EXISTS connector_registry (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -2094,11 +2196,12 @@ CREATE TABLE IF NOT EXISTS connector_health_log (
     checked_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS connector_metrics (
-    id STRING DEFAULT uuid(),
+    id STRING,
     connector_id STRING NOT NULL,
     events_per_minute DOUBLE,
     error_rate DOUBLE DEFAULT 0.0,
@@ -2106,24 +2209,26 @@ CREATE TABLE IF NOT EXISTS connector_metrics (
     recorded_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS connector_schema_history (
-    id STRING DEFAULT uuid(),
+    id STRING,
     connector_id STRING NOT NULL,
     schema_hash STRING NOT NULL,
     schema_fields STRING,
     checked_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # ─── Edge Connector Control Plane Tables ───
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS connector_dna_registry (
-    dna_id STRING DEFAULT uuid(),
+    dna_id STRING,
     name STRING NOT NULL,
     version STRING NOT NULL,
     vendor STRING,
@@ -2145,11 +2250,12 @@ CREATE TABLE IF NOT EXISTS connector_dna_registry (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS connector_deployments (
-    deployment_id STRING DEFAULT uuid(),
+    deployment_id STRING,
     collector_id STRING NOT NULL,
     dna_name STRING NOT NULL,
     dna_version STRING NOT NULL,
@@ -2172,11 +2278,12 @@ CREATE TABLE IF NOT EXISTS connector_deployments (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS connector_telemetry (
-    telemetry_id STRING DEFAULT uuid(),
+    telemetry_id STRING,
     collector_id STRING NOT NULL,
     timestamp TIMESTAMP DEFAULT current_timestamp(),
     events_per_second DOUBLE DEFAULT 0,
@@ -2192,11 +2299,12 @@ CREATE TABLE IF NOT EXISTS connector_telemetry (
     latency_ms DOUBLE DEFAULT 0
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS connector_install_tokens (
-    token_id STRING DEFAULT uuid(),
+    token_id STRING,
     token STRING NOT NULL,
     dna_name STRING NOT NULL,
     site_name STRING,
@@ -2208,11 +2316,12 @@ CREATE TABLE IF NOT EXISTS connector_install_tokens (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS quarantine_events (
-    id STRING DEFAULT uuid(),
+    id STRING,
     event_type STRING,
     timestamp TIMESTAMP,
     source_ip STRING,
@@ -2231,6 +2340,7 @@ CREATE TABLE IF NOT EXISTS quarantine_events (
     source_connector STRING
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -2246,7 +2356,7 @@ CREATE TABLE IF NOT EXISTS ingestion_accounting (
     recorded_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -2260,6 +2370,7 @@ CREATE TABLE IF NOT EXISTS ml_model_monitoring (
     checked_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print("Production integration tables created (18 tables)")
@@ -2295,7 +2406,7 @@ CREATE TABLE IF NOT EXISTS entity_spine (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true',
     'delta.autoOptimize.autoCompact' = 'true'
@@ -2316,7 +2427,7 @@ CREATE TABLE IF NOT EXISTS entity_edges (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true'
 )
@@ -2335,7 +2446,7 @@ CREATE TABLE IF NOT EXISTS entity_mentions (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # Knowledge Store: operational memory
@@ -2365,7 +2476,7 @@ CREATE TABLE IF NOT EXISTS knowledge_store (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true',
     'delta.autoOptimize.autoCompact' = 'true'
@@ -2381,7 +2492,7 @@ CREATE TABLE IF NOT EXISTS knowledge_store_embeddings (
     embedded_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # Unified Evidence Objects (UEO): formal evidence container
@@ -2423,7 +2534,7 @@ CREATE TABLE IF NOT EXISTS unified_evidence_objects (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true',
     'delta.autoOptimize.autoCompact' = 'true'
@@ -2448,7 +2559,7 @@ CREATE TABLE IF NOT EXISTS ueo_signals (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 print("Phase 1 tables created: Entity Spine (3), Knowledge Store (2), UEO (2)")
@@ -2487,7 +2598,7 @@ CREATE TABLE IF NOT EXISTS entity_drift_scores (
     scored_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true'
 )
@@ -2548,7 +2659,7 @@ CREATE TABLE IF NOT EXISTS bytecode_analysis (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true'
 )
@@ -2577,7 +2688,7 @@ CREATE TABLE IF NOT EXISTS code_behavioral_features (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -2598,6 +2709,7 @@ CREATE TABLE IF NOT EXISTS code_behavioral_baselines (
     last_updated TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # Delta Replay Engine
@@ -2628,7 +2740,7 @@ CREATE TABLE IF NOT EXISTS replay_packs (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -2655,7 +2767,7 @@ CREATE TABLE IF NOT EXISTS detection_evaluations (
     evaluated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -2678,7 +2790,7 @@ CREATE TABLE IF NOT EXISTS learning_data (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 print("Phase 2 tables created: CET Drift (2), Bytecode (3), Delta Replay (3)")
@@ -2722,7 +2834,7 @@ CREATE TABLE IF NOT EXISTS fuse_results (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true'
 )
@@ -2755,7 +2867,7 @@ CREATE TABLE IF NOT EXISTS model_disagreements (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # KS Recall Lens output
@@ -2779,7 +2891,7 @@ CREATE TABLE IF NOT EXISTS ks_recall_signals (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 print("Phase 3 tables created: Fuse Engine (1), Model Disagreement (1), KS Recall (1)")
@@ -2805,7 +2917,7 @@ CREATE TABLE IF NOT EXISTS typed_bronze_quarantine (
 )
 USING DELTA
 PARTITIONED BY (source_type)
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -2822,6 +2934,7 @@ CREATE TABLE IF NOT EXISTS typed_bronze_metrics (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # MUSE Learning Agent
@@ -2851,7 +2964,7 @@ CREATE TABLE IF NOT EXISTS tuning_proposals (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -2872,6 +2985,7 @@ CREATE TABLE IF NOT EXISTS lens_weight_proposals (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -2894,6 +3008,7 @@ CREATE TABLE IF NOT EXISTS muse_learning_metrics (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # GUARDIAN Compliance Agent
@@ -2920,7 +3035,7 @@ CREATE TABLE IF NOT EXISTS compliance_posture (
     degrading_dimensions ARRAY<STRING>
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -2943,7 +3058,7 @@ CREATE TABLE IF NOT EXISTS compliance_violations (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -2989,7 +3104,7 @@ CREATE TABLE IF NOT EXISTS edge_collector_registry (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true'
 )
@@ -3016,7 +3131,7 @@ CREATE TABLE IF NOT EXISTS edge_collector_heartbeats (
 )
 USING DELTA
 PARTITIONED BY (collector_id)
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
@@ -3039,6 +3154,7 @@ CREATE TABLE IF NOT EXISTS edge_collector_configs (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql("""
@@ -3057,7 +3173,7 @@ CREATE TABLE IF NOT EXISTS edge_collector_incidents (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 print("Phase 4 tables created: Typed Bronze (2), MUSE (3), GUARDIAN (3), Edge Collector (4)")
@@ -3073,7 +3189,7 @@ print("Phase 4 tables created: Typed Bronze (2), MUSE (3), GUARDIAN (3), Edge Co
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS enriched_security_events (
-    id STRING DEFAULT uuid(),
+    id STRING,
     event_id STRING NOT NULL,
     timestamp TIMESTAMP NOT NULL,
     event_type STRING NOT NULL,
@@ -3102,13 +3218,13 @@ CREATE TABLE IF NOT EXISTS enriched_security_events (
     enriched_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (event_type, DATE(timestamp))
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+PARTITIONED BY (event_type)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS user_sessions (
-    id STRING DEFAULT uuid(),
+    id STRING,
     session_id STRING NOT NULL,
     user_id STRING NOT NULL,
     username STRING,
@@ -3129,13 +3245,12 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (DATE(start_time))
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS correlation_baselines (
-    id STRING DEFAULT uuid(),
+    id STRING,
     rule_id STRING NOT NULL,
     baseline_key STRING NOT NULL,
     metric_name STRING NOT NULL,
@@ -3148,12 +3263,12 @@ CREATE TABLE IF NOT EXISTS correlation_baselines (
     last_updated TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS temporal_baselines (
-    id STRING DEFAULT uuid(),
+    id STRING,
     entity_type STRING NOT NULL,
     entity_id STRING NOT NULL,
     metric_name STRING NOT NULL,
@@ -3166,12 +3281,12 @@ CREATE TABLE IF NOT EXISTS temporal_baselines (
     last_updated TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS threat_intel_matches (
-    id STRING DEFAULT uuid(),
+    id STRING,
     event_id STRING NOT NULL,
     ioc_id STRING NOT NULL,
     ioc_type STRING NOT NULL,
@@ -3182,12 +3297,12 @@ CREATE TABLE IF NOT EXISTS threat_intel_matches (
     matched_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS trend_graph_nodes (
-    id STRING DEFAULT uuid(),
+    id STRING,
     node_type STRING NOT NULL,
     node_id STRING NOT NULL,
     label STRING,
@@ -3198,12 +3313,12 @@ CREATE TABLE IF NOT EXISTS trend_graph_nodes (
     event_count BIGINT DEFAULT 0
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS trend_graph_edges (
-    id STRING DEFAULT uuid(),
+    id STRING,
     source_node_id STRING NOT NULL,
     target_node_id STRING NOT NULL,
     edge_type STRING NOT NULL,
@@ -3214,12 +3329,12 @@ CREATE TABLE IF NOT EXISTS trend_graph_edges (
     event_count BIGINT DEFAULT 0
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS trend_runtime_metrics (
-    id STRING DEFAULT uuid(),
+    id STRING,
     metric_name STRING NOT NULL,
     metric_value DOUBLE NOT NULL,
     dimension STRING,
@@ -3227,13 +3342,12 @@ CREATE TABLE IF NOT EXISTS trend_runtime_metrics (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-PARTITIONED BY (DATE(timestamp))
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS investigations (
-    id STRING DEFAULT uuid(),
+    id STRING,
     case_id STRING,
     alert_id STRING,
     title STRING NOT NULL,
@@ -3250,12 +3364,12 @@ CREATE TABLE IF NOT EXISTS investigations (
     closed_at TIMESTAMP
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS correlation_matches (
-    id STRING DEFAULT uuid(),
+    id STRING,
     rule_id STRING NOT NULL,
     rule_name STRING,
     matched_events ARRAY<STRING>,
@@ -3269,13 +3383,12 @@ CREATE TABLE IF NOT EXISTS correlation_matches (
     alert_id STRING
 )
 USING DELTA
-PARTITIONED BY (DATE(matched_at))
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS user_profiles (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     username STRING,
     email STRING,
@@ -3296,12 +3409,12 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS health_alerts (
-    id STRING DEFAULT uuid(),
+    id STRING,
     component STRING NOT NULL,
     alert_type STRING NOT NULL,
     severity STRING DEFAULT 'warning',
@@ -3313,12 +3426,12 @@ CREATE TABLE IF NOT EXISTS health_alerts (
     resolved_at TIMESTAMP
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS code_runtime_events (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_id STRING NOT NULL,
     repo_name STRING,
     file_path STRING,
@@ -3330,7 +3443,7 @@ CREATE TABLE IF NOT EXISTS code_runtime_events (
     timestamp TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 print("Phase 5 tables created: enriched_security_events, user_sessions, correlation_baselines,")
@@ -3346,7 +3459,7 @@ print("  investigations, correlation_matches, user_profiles, health_alerts, code
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS system_audit_log (
-    id STRING DEFAULT uuid(),
+    id STRING,
     user_email STRING NOT NULL,
     username STRING NOT NULL,
     operation STRING NOT NULL,
@@ -3354,7 +3467,7 @@ CREATE TABLE IF NOT EXISTS system_audit_log (
     detail STRING,
     timestamp TIMESTAMP DEFAULT current_timestamp(),
     ts STRING
-) TBLPROPERTIES (
+) TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.autoOptimize.optimizeWrite' = 'true',
     'delta.autoOptimize.autoCompact' = 'true'
 )
@@ -3365,7 +3478,7 @@ print("Created: system_audit_log")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS agent_triage_results (
-    id STRING DEFAULT uuid(),
+    id STRING,
     alert_id STRING NOT NULL,
     agent_name STRING DEFAULT 'triage',
     severity_assessed STRING,
@@ -3380,7 +3493,7 @@ CREATE TABLE IF NOT EXISTS agent_triage_results (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.autoOptimize.optimizeWrite' = 'true',
     'delta.autoOptimize.autoCompact' = 'true'
 )
@@ -3391,7 +3504,7 @@ print("Created: agent_triage_results")
 
 spark.sql("""
 CREATE TABLE IF NOT EXISTS pipeline_health (
-    id STRING DEFAULT uuid(),
+    id STRING,
     pipeline_name STRING NOT NULL,
     last_success_at TIMESTAMP,
     last_failure_at TIMESTAMP,
@@ -3402,7 +3515,7 @@ CREATE TABLE IF NOT EXISTS pipeline_health (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.autoOptimize.optimizeWrite' = 'true',
     'delta.autoOptimize.autoCompact' = 'true'
 )

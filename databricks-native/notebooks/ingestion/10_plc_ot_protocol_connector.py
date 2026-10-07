@@ -507,7 +507,7 @@ CREATE TABLE IF NOT EXISTS {silver_table} (
 )
 USING DELTA
 PARTITIONED BY (event_date, protocol)
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.autoOptimize.optimizeWrite' = 'true',
     'quality' = 'silver'
 )

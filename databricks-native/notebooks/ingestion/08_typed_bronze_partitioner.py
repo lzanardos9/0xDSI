@@ -253,7 +253,7 @@ CREATE TABLE IF NOT EXISTS {quarantine_table} (
 )
 USING DELTA
 PARTITIONED BY (source_type)
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql(f"""
@@ -270,6 +270,7 @@ CREATE TABLE IF NOT EXISTS {metrics_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 print(f"Typed Bronze tables ready: {len(TYPED_SCHEMAS)} source types + quarantine + metrics")

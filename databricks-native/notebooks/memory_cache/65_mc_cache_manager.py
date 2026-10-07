@@ -128,7 +128,7 @@ class CacheLifecycleManager:
             )
             USING DELTA
             PARTITIONED BY (entity_id)
-            TBLPROPERTIES (
+            TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
                 'delta.autoOptimize.optimizeWrite' = 'true',
                 'delta.autoOptimize.autoCompact' = 'true'
             )

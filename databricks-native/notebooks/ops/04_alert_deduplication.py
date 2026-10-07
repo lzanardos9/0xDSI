@@ -104,7 +104,9 @@ with mon.time("ensure_schema"):
         if "fingerprint" not in cols:
             spark.sql(f"ALTER TABLE {alerts_table} ADD COLUMN fingerprint STRING")
         if "duplicate_count" not in cols:
-            spark.sql(f"ALTER TABLE {alerts_table} ADD COLUMN duplicate_count INT DEFAULT 1")
+            # Delta cannot add a column with a DEFAULT in one step.
+            spark.sql(f"ALTER TABLE {alerts_table} ADD COLUMN duplicate_count INT")
+            spark.sql(f"ALTER TABLE {alerts_table} ALTER COLUMN duplicate_count SET DEFAULT 1")
     except Exception as e:
         mon.log_warning(f"Schema update failed: {str(e)[:200]}")
 

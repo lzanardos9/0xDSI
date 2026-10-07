@@ -625,6 +625,70 @@ resources:
               lookback_days: "30"
 
     # ─────────────────────────────────────────────────────
+    # OPS - PLATFORM SELF-MONITORING
+    # ─────────────────────────────────────────────────────
+    ops_health_check:
+      name: "[0xDSI] Ops - Agent Health Check and Circuit Breaker"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+      tasks:
+        - task_key: health_check
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ops/02_health_check.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              staleness_minutes: "30"
+              circuit_breaker_threshold: "3"
+
+    ops_sla_alerting:
+      name: "[0xDSI] Ops - SLA Breach Alerting"
+      schedule:
+        quartz_cron_expression: "0 */15 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+      tasks:
+        - task_key: sla_alerting
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ops/03_sla_alerting.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+
+    # Report-only: the GC deletes any checkpoint file older than the retention
+    # window, which can break streams that run less often than that. Keep dry_run
+    # "true" unless every registered checkpoint is known to be safe to prune.
+    ops_checkpoint_gc:
+      name: "[0xDSI] Ops - Checkpoint GC (report only)"
+      schedule:
+        quartz_cron_expression: "0 30 3 * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+      tasks:
+        - task_key: checkpoint_gc
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/ops/01_checkpoint_gc.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              retention_days: "7"
+              dry_run: "true"
+
+    # ─────────────────────────────────────────────────────
     # SETUP (Run Once)
     # ─────────────────────────────────────────────────────
     initial_setup:
@@ -654,6 +718,7 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+              seed_demo_data: ${var.seed_demo_data}
         - task_key: register_model_serving
           depends_on:
             - task_key: create_tables

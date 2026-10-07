@@ -481,7 +481,7 @@ spark.sql(f"""
         velocity_multiplier DOUBLE DEFAULT 1.0
     )
     USING DELTA
-    TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+    TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 with mon.time("velocity_calculation"):

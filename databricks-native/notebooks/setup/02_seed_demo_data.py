@@ -12,9 +12,13 @@
 
 dbutils.widgets.text("catalog", "soc_platform", "Catalog")
 dbutils.widgets.text("schema", "agentic_soc", "Schema")
+dbutils.widgets.text("seed_demo_data", "false", "Seed demo data (true/false)")
 
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
+
+if dbutils.widgets.get("seed_demo_data").strip().lower() != "true":
+    dbutils.notebook.exit(f"Demo seeding disabled for {catalog}.{schema} (seed_demo_data != true)")
 
 spark.sql(f"USE CATALOG `{catalog}`")
 spark.sql(f"USE SCHEMA `{schema}`")

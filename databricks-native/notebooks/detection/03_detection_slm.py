@@ -130,7 +130,7 @@ spark.sql(f"""
         calibrated_confidence DOUBLE
     )
     USING DELTA
-    TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+    TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # Load calibration baselines

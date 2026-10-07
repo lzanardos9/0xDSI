@@ -39,7 +39,7 @@ import json
 ensure_table_exists(
     spark, "quarantined_events",
     schema_ddl="""
-        id STRING DEFAULT uuid(),
+        id STRING,
         original_data STRING,
         quarantine_reason STRING,
         source STRING,

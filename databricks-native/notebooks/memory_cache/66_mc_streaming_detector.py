@@ -75,7 +75,7 @@ class StreamingStateStore:
                 updated_at TIMESTAMP NOT NULL
             )
             USING DELTA
-            TBLPROPERTIES (
+            TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
                 'delta.autoOptimize.optimizeWrite' = 'true',
                 'delta.autoOptimize.autoCompact' = 'true',
                 'delta.targetFileSize' = '64mb'
@@ -98,7 +98,7 @@ class StreamingStateStore:
             )
             USING DELTA
             PARTITIONED BY (anomaly_type)
-            TBLPROPERTIES (
+            TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
                 'delta.autoOptimize.optimizeWrite' = 'true'
             )
         """)

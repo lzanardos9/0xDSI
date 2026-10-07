@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS {registry_table} (
     updated_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES (
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 
     'delta.enableChangeDataFeed' = 'true',
     'delta.autoOptimize.optimizeWrite' = 'true'
 )
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS {heartbeats_table} (
 )
 USING DELTA
 PARTITIONED BY (collector_id)
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 spark.sql(f"""
@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS {config_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql(f"""
@@ -181,7 +182,7 @@ CREATE TABLE IF NOT EXISTS {incidents_table} (
     created_at TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
-TBLPROPERTIES ('delta.autoOptimize.optimizeWrite' = 'true')
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported', 'delta.autoOptimize.optimizeWrite' = 'true')
 """)
 
 # COMMAND ----------

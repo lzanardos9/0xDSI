@@ -68,7 +68,7 @@ calc_table = cfg.get_table_path("event_priority_calculations")
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {formulas_table} (
-    id STRING DEFAULT uuid(),
+    id STRING,
     name STRING,
     description STRING,
     formula_version STRING DEFAULT '1.0',
@@ -82,11 +82,12 @@ CREATE TABLE IF NOT EXISTS {formulas_table} (
     created_at TIMESTAMP DEFAULT current_timestamp(),
     updated_at TIMESTAMP DEFAULT current_timestamp()
 ) USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {intel_table} (
-    id STRING DEFAULT uuid(),
+    id STRING,
     source_name STRING,
     source_type STRING,
     threat_severity INT DEFAULT 5,
@@ -97,11 +98,12 @@ CREATE TABLE IF NOT EXISTS {intel_table} (
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT current_timestamp()
 ) USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {calc_table} (
-    id STRING DEFAULT uuid(),
+    id STRING,
     event_id STRING NOT NULL,
     formula_id STRING,
     initial_severity STRING,
@@ -118,6 +120,7 @@ CREATE TABLE IF NOT EXISTS {calc_table} (
     escalation_reason STRING,
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 ) USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # Seed the default formula if none is active (matches the app migration default).
@@ -127,10 +130,11 @@ active_count = spark.sql(
 if active_count == 0:
     spark.sql(f"""
         INSERT INTO {formulas_table}
-            (name, description, formula_version, is_active,
+            (id, name, description, formula_version, is_active,
              severity_weight, mcr_weight, threat_weight_multiplier, asset_weight,
              formula_expression, created_by)
         VALUES (
+            uuid(),
             'Standard ArcSight-Style Formula',
             'Priority = Severity * MCR * ThreatWeight * AssetCriticality',
             '1.0', true, 1.0, 1.0, 0.03, 1.0,

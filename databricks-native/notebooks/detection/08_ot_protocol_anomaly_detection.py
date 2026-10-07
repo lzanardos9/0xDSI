@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS {allowlist_table} (
     last_updated TIMESTAMP DEFAULT current_timestamp()
 )
 USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # Seed defaults if empty
@@ -142,6 +143,7 @@ CREATE TABLE IF NOT EXISTS {detections_table} (
 )
 USING DELTA
 PARTITIONED BY (detection_date, severity)
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # COMMAND ----------

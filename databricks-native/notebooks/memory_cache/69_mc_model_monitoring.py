@@ -71,6 +71,7 @@ def create_monitoring_tables(catalog: str = "security_catalog", schema: str = "m
             acknowledged BOOLEAN DEFAULT FALSE
         )
         USING DELTA
+        TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
     """)
 
     print("Monitoring tables created.")

@@ -46,7 +46,7 @@ mon.log_event("config_loaded", {"lookback_hours": lookback_hours})
 
 spark.sql(f"""
 CREATE TABLE IF NOT EXISTS {metrics_table} (
-    id STRING DEFAULT uuid(),
+    id STRING,
     window_hours INT,
     health_score DOUBLE,
     detection_score DOUBLE,
@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS {metrics_table} (
     cost_tiers STRING,
     calculated_at TIMESTAMP DEFAULT current_timestamp()
 ) USING DELTA
+TBLPROPERTIES ('delta.feature.allowColumnDefaults' = 'supported')
 """)
 
 # COMMAND ----------
