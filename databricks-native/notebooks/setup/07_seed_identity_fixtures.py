@@ -54,3 +54,15 @@ with open(f"{events_dir}/demo_events.jsonl", "w") as fh:
     for e in EVENTS:
         fh.write(json.dumps(e) + "\n")
 print(f"identity events: {len(EVENTS)} -> {events_dir}/demo_events.jsonl")
+
+# COMMAND ----------
+
+from identity_access_fixtures import EDGES, GROUPS, RESOURCES
+
+access_dir = f"/Volumes/{catalog}/{schema}/landing/identity_access"
+os.makedirs(access_dir, exist_ok=True)
+for name, rows in (("resources", RESOURCES), ("groups", GROUPS), ("edges", EDGES)):
+    with open(f"{access_dir}/{name}.jsonl", "w") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    print(f"identity access {name}: {len(rows)} -> {access_dir}/{name}.jsonl")

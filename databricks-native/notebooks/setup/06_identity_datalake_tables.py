@@ -180,6 +180,114 @@ DDL = {
         first_seen TIMESTAMP,
         last_seen TIMESTAMP
     """,
+    "identity_resource": """
+        resource_id STRING NOT NULL,
+        name STRING NOT NULL,
+        crown_jewel BOOLEAN,
+        tier STRING,
+        owner STRING,
+        description STRING,
+        access_version STRING,
+        updated_at TIMESTAMP
+    """,
+    "identity_group": """
+        group_key STRING NOT NULL,
+        provider STRING,
+        tenant STRING,
+        object_id STRING,
+        name STRING NOT NULL,
+        owner STRING,
+        owner_status STRING,
+        owner_canonical_id STRING,
+        purpose STRING,
+        department STRING,
+        privileged BOOLEAN,
+        direct_member_count INT,
+        effective_member_count INT,
+        nesting_depth INT,
+        parent_groups ARRAY<STRING>,
+        child_groups ARRAY<STRING>,
+        grants STRING,
+        can_take_over ARRAY<STRING>,
+        access_version STRING,
+        updated_at TIMESTAMP
+    """,
+    "identity_group_member": """
+        membership_id STRING NOT NULL,
+        group_key STRING NOT NULL,
+        account_key STRING NOT NULL,
+        canonical_id STRING,
+        display_name STRING,
+        username STRING,
+        principal_type STRING,
+        persona_type STRING,
+        normalized_state STRING,
+        department STRING,
+        direct BOOLEAN,
+        via ARRAY<STRING>,
+        access_version STRING
+    """,
+    "identity_access_edge": """
+        edge_id STRING NOT NULL,
+        source_id STRING NOT NULL,
+        source_kind STRING NOT NULL,
+        edge_type STRING NOT NULL,
+        target_id STRING NOT NULL,
+        target_kind STRING NOT NULL,
+        permission STRING,
+        access_version STRING,
+        updated_at TIMESTAMP
+    """,
+    "identity_attack_path": """
+        path_id STRING NOT NULL,
+        canonical_id STRING NOT NULL,
+        resource_id STRING NOT NULL,
+        hops INT,
+        via_takeover BOOLEAN,
+        permission STRING,
+        steps STRING,
+        status STRING NOT NULL,
+        first_seen TIMESTAMP,
+        last_seen TIMESTAMP,
+        access_version STRING
+    """,
+    "identity_group_finding": """
+        finding_id STRING NOT NULL,
+        group_key STRING NOT NULL,
+        finding_type STRING NOT NULL,
+        severity STRING NOT NULL,
+        detail STRING,
+        evidence ARRAY<STRING>,
+        status STRING NOT NULL,
+        first_seen TIMESTAMP,
+        last_seen TIMESTAMP
+    """,
+    "identity_risk_score": """
+        canonical_id STRING NOT NULL,
+        display_name STRING,
+        principal_type STRING,
+        score INT NOT NULL,
+        band STRING NOT NULL,
+        exposure INT,
+        behaviour INT,
+        hygiene INT,
+        previous_score INT,
+        delta INT,
+        factors STRING,
+        risk_version STRING,
+        weights_version STRING,
+        access_version STRING,
+        scored_at TIMESTAMP
+    """,
+    "identity_risk_history": """
+        history_id STRING NOT NULL,
+        canonical_id STRING NOT NULL,
+        score INT NOT NULL,
+        band STRING NOT NULL,
+        risk_version STRING,
+        weights_version STRING,
+        scored_at TIMESTAMP NOT NULL
+    """,
 }
 
 for name, cols in DDL.items():
@@ -188,5 +296,8 @@ for name, cols in DDL.items():
 
 dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity")
 dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity_events")
+dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity_access")
 print(f"Identity landing path: /Volumes/{catalog}/{schema}/landing/identity/<provider>/")
 print(f"Identity event landing path: /Volumes/{catalog}/{schema}/landing/identity_events/*.jsonl")
+print(f"Identity access landing path: /Volumes/{catalog}/{schema}/landing/identity_access/"
+      "{resources,groups,edges}.jsonl [+ risk_weights.json]")
