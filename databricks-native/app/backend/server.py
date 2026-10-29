@@ -33,6 +33,7 @@ from databricks.sdk import WorkspaceClient
 
 from backend.audit import AuditPersistenceError, build_audit_record, persist_audit
 from backend.identity import build_identity_router
+from backend import user_auth
 from backend.connector_health import (
     derive_health as derive_connector_health,
     heartbeat_age_seconds,
@@ -422,20 +423,25 @@ def _audit_log(user: dict, operation: str, table: str, detail: str = ""):
         )
 
 
+def _connect(**auth):
+    w = WorkspaceClient()
+    return databricks_sql.connect(
+        server_hostname=w.config.host.replace("https://", ""),
+        http_path=f"/sql/1.0/warehouses/{WAREHOUSE_ID}",
+        **(auth or {"credentials_provider": lambda: w.config.authenticate}),
+    )
+
+
 def get_connection():
+    """App-identity connection: writes, audit records and non-request work."""
     global _connection
     if _connection is None:
-        w = WorkspaceClient()
-        _connection = databricks_sql.connect(
-            server_hostname=w.config.host.replace("https://", ""),
-            http_path=f"/sql/1.0/warehouses/{WAREHOUSE_ID}",
-            credentials_provider=lambda: w.config.authenticate,
-        )
+        _connection = _connect()
     return _connection
 
 
 def query(sql: str, params: Optional[dict] = None) -> list[dict]:
-    conn = get_connection()
+    conn = user_auth.user_connection(lambda token: _connect(access_token=token)) or get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(sql, params)
@@ -491,6 +497,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-Client-Info"],
 )
+
+user_auth.install(app)
 
 
 @app.middleware("http")
@@ -659,7 +667,8 @@ async def auth_session(request: Request):
             "email": user["email"],
             "groups": user["groups"],
             "is_admin": user["is_admin"],
-        }
+        },
+        "data_access": user_auth.DATA_ACCESS_MODE,
     }
 
 

@@ -7,7 +7,8 @@ This tracks the identity blueprint phase by phase. Each phase has a menu page un
 | Phase | Scope | Menu pages | Status |
 |-------|-------|------------|--------|
 | Pre-req | Human approval for every response action | — | **Done.** Auto-approve is opt-in and refused in production |
-| Pre-req | On-behalf-of user auth; Lakebase leases and outbox for actions | — | Open |
+| Pre-req | On-behalf-of user auth | — | **Done.** App reads run with the signed-in user's Unity Catalog permissions (`sql` user scope); writes stay on the app identity behind role checks and a fail-closed audit record of the verified user |
+| Pre-req | Lakebase leases and outbox for actions | — | Open (needed before Phase 4) |
 | 0 | Canonical identity spine: deterministic resolution, personas, NHI/agents, steward review, source health | Identity Overview, Identity Explorer, Resolution Review, Non-Human & Agents | **Done** (offline-verified; awaiting real snapshots) |
 | 1 | Entitlements, sign-in and HR lifecycle events on the spine | Identity Timeline | Not started |
 | 2 | Explainable risk, access graph, group context | Identity Risk, Access Graph & Paths, Group Context | Not started |

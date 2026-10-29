@@ -23,3 +23,5 @@ env:
     value: databricks-bge-large-en
   - name: DATABRICKS_APP_DOMAIN
     value: ""
+  - name: SOC_DATA_ACCESS_MODE
+    value: user

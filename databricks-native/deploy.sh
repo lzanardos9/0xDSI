@@ -1057,6 +1057,13 @@ run_sql_silent "GRANT EXECUTE ON SCHEMA ${CATALOG}.${SCHEMA} TO \`${SOC_ANALYST_
 run_sql_silent "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${CATALOG}.${SCHEMA} TO \`${SOC_ANALYST_GROUP}\`" >/dev/null 2>&1 || true
 log_ok "UC permissions applied to groups"
 
+for grp in "${SOC_ADMIN_GROUP}" "${SOC_ANALYST_GROUP}"; do
+  databricks permissions update warehouses "${WAREHOUSE_ID}" --json \
+    "{\"access_control_list\":[{\"group_name\":\"${grp}\",\"permission_level\":\"CAN_USE\"}]}" >/dev/null 2>&1 \
+    && log_ok "Group ${grp}: CAN_USE on warehouse (needed because app reads run as the signed-in user)" \
+    || log_warn "Could not grant ${grp} CAN_USE on the warehouse; grant it in SQL Warehouses > Permissions."
+done
+
 APP_SP="$(databricks apps get "${APP_NAME}" --output json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("service_principal_client_id",""))' 2>/dev/null || true)"
 if [ -n "${APP_SP}" ]; then
   for grant in \

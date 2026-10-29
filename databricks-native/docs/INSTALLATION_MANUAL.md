@@ -262,6 +262,8 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | `[!!]` on warehouse `CAN_USE` grant | You lack `CAN_MANAGE` on the warehouse | Grant the app's service principal `CAN_USE` in SQL Warehouses → Permissions |
 | App page blank | UI build missing from upload | Re-run installer (it rebuilds `app/dist`) |
 | App: 403 on actions | Your email not in admin/analyst list | Re-run with `SOC_ADMIN_EMAILS` / `SOC_ANALYST_EMAILS` set |
+| App: 401 "User authorization is required" | The app's `sql` user scope is not enabled, so no user token is forwarded | Redeploy the bundle (it declares `user_api_scopes: [sql]`), or add the scope under Apps → app → Authorization; users accept the consent prompt on next visit. Temporary fallback: `--var="data_access_mode=app"` |
+| App pages show permission errors for one user | Reads now run as that user | Grant their group `USE CATALOG`/`USE SCHEMA`/`SELECT` and warehouse `CAN_USE` (installer does this for `soc_admins`/`soc_analysts`) |
 | `/ready` returns 503 | Warehouse starting or slow | Wait; this is intentional |
 | GraphFrames job fails | Runtime/library mismatch | Validate `graphframes_maven` against DBR 15.4 |
 | A stream reprocesses everything | Checkpoint reset | Checkpoints now live in the `checkpoints` volume in every environment; don't delete it |
@@ -303,7 +305,7 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | F1 (rest) | Seed uses overwrite on live tables (dev/staging) | Make seeding append-only/idempotent |
 | ID-1 | Some Spark DataFrame appends may omit `id` on tables that used to default it | Audit `saveAsTable` writers; add `uuid()` ids where missing (rows still write, `id` is null) |
 | F9 / REV2-24 | Deployment-integrity manifest of shipped artifacts | Clean build + SHA/config fingerprint |
-| ID-OBO | App reads and writes as its own service principal | On-behalf-of user auth so data access and steward decisions are tied to the signed-in person |
+| ID-OBO | App read every table as its own service principal | App reads run with the signed-in user's Unity Catalog permissions (`user_api_scopes: [sql]`, `data_access_mode=user` default); token used per request only, never cached. Writes stay on the app identity behind role checks + fail-closed audit. Installer grants both groups `CAN_USE` on the warehouse |
 | ID-1..5 | Identity phases 1–5 (timeline, risk, access graph, what-if, remediation, federation, groups, answers) | See `docs/IDENTITY_DATALAKE_PLAN.md`; pages exist in the menu as "not connected" |
 
 ### 10.3 Needs real infrastructure to prove

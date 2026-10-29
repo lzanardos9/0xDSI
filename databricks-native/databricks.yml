@@ -36,6 +36,9 @@ variables:
   soc_analyst_emails:
     default: ""
     description: "Comma-separated emails granted the analyst role in the app (everyone else is read-only)"
+  data_access_mode:
+    default: "user"
+    description: "'user': app reads run with the signed-in user's Unity Catalog permissions (needs the 'sql' user scope). 'app': all reads use the app service principal"
   seed_demo_data:
     default: "false"
     description: "Load synthetic demo data during initial_setup. Never enable in production."

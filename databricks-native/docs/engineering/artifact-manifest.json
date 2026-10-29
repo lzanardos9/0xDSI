@@ -2,12 +2,12 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 596,
-  "total_bytes": 11312206,
+  "total_files": 598,
+  "total_bytes": 11321718,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
-      "backend_service": 5,
+      "backend_service": 6,
       "build_config": 12,
       "databricks_notebook": 140,
       "deployment_config": 6,
@@ -17,7 +17,7 @@
       "other": 3,
       "shared_library": 39,
       "stylesheet": 1,
-      "test": 52,
+      "test": 53,
       "test_script": 1,
       "tooling": 5
     },
@@ -30,8 +30,8 @@
       "production": 3,
       "setup": 7,
       "shared_library": 38,
-      "test": 53,
-      "unreviewed": 444
+      "test": 54,
+      "unreviewed": 445
     },
     "by_runtime": {
       "browser": 308,
@@ -39,13 +39,13 @@
       "databricks-bundle": 6,
       "databricks-spark": 140,
       "n/a": 28,
-      "python": 52,
+      "python": 53,
       "python (databricks runtime)": 39,
-      "python-fastapi": 5,
+      "python-fastapi": 6,
       "shell": 1
     },
     "reviewed": 4,
-    "unreviewed": 444
+    "unreviewed": 445
   },
   "artifacts": [
     {
@@ -90,8 +90,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "3e3b79c52de522fe6a88ccf7675f97ea4359b2fe0bbdc5aee3f478b38eb9e5d3",
-      "bytes": 539
+      "sha256": "ebf9700735e92b8ee7861478d7e8ce3d7052e4fac03c436d65284e03cb29e786",
+      "bytes": 586
     },
     {
       "path": "app/backend/audit.py",
@@ -135,10 +135,19 @@
       "runtime": "python-fastapi",
       "shipping_status": "production",
       "review": "curated",
-      "sha256": "0c9cb35e35fa87ba7dd0f6299f54bb3f715089ab07b01fcfad2d2eaaad578c9b",
-      "bytes": 175446,
+      "sha256": "fa9f4a16786c1df269bea6b2dfb0de48c346236678bd3ff4a91a5e7285258a09",
+      "bytes": 175747,
       "capability": "data-api-gateway",
       "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
+    },
+    {
+      "path": "app/backend/user_auth.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4ec6494439d3de64e7489d65adb1c46b4dfbd548a335bdb4a0ac1c1e436740a8",
+      "bytes": 2545
     },
     {
       "path": "app/frontend/.env.production",
@@ -3100,8 +3109,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "cec14e30cc1667d7ff9449169a4ee97800c49d587c2ac0332ada727c1ec57505",
-      "bytes": 2463
+      "sha256": "22a4c132aa0dff725731b6053cb3407939a8611c8ec14c5efd4309d3649a697d",
+      "bytes": 2673
     },
     {
       "path": "deploy.sh",
@@ -3109,8 +3118,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "cadeb183ffdedd40c6a731dbe280958408220b1f06cbfa42abf76362808944f9",
-      "bytes": 66552
+      "sha256": "c1d123c7aceb02552b01cb83babd4bd3ec2387f10f7955dff2cd791d06c754fc",
+      "bytes": 67015
     },
     {
       "path": "docs/COVERAGE_MATRIX.md",
@@ -3127,8 +3136,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "2fc6a31fde315b6feba4f40a230bb5da46d10848f43c949408254329363e920f",
-      "bytes": 4183
+      "sha256": "4223a9e0a6fa1827281986e25ad3ae47bdfa6e955fcefe5935af8201196f7008",
+      "bytes": 4427
     },
     {
       "path": "docs/INSTALLATION_MANUAL.md",
@@ -3136,8 +3145,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "0ae6f2a177fb16718995e322554ad35619fa1f25b2e81f554917e46de962824c",
-      "bytes": 20586
+      "sha256": "f0dfe7e5787aaca72b2fec486feac561c42046deb8d13382e2f82a4940a22ef8",
+      "bytes": 21340
     },
     {
       "path": "docs/competitive/0xDSI-vs-Securonix.md",
@@ -4868,8 +4877,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "dab9130ab78d411c73aac1d32f39f223fc577b54b1b86bc682a7662f754c2c1d",
-      "bytes": 1165
+      "sha256": "b8840fb3664f8f79610e1a6bea49dccb7c6d82497244f30531ed7e5adf4c120a",
+      "bytes": 1284
     },
     {
       "path": "resources/jobs.yml",
@@ -5347,6 +5356,15 @@
       "review": "auto",
       "sha256": "e9d2c5fd45cc6cee843a5821faca0eaddc4ef9b4c3b0d2e2e30be227cf37279d",
       "bytes": 4256
+    },
+    {
+      "path": "tests/security/test_user_auth.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "ea0ab459cfe30acfd2701fdb7ddae658ef6c08d4e9e551364ea083347e3522de",
+      "bytes": 4829
     },
     {
       "path": "tests/smoke_test_app.sh",
