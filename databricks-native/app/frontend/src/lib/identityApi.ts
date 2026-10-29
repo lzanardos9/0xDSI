@@ -147,6 +147,58 @@ export interface NonHuman {
   credential_expired: boolean;
 }
 
+export type EventCategory = 'lifecycle' | 'account' | 'access' | 'sign_in' | 'mfa' | 'credential';
+export type Severity = 'high' | 'medium' | 'low';
+
+export interface TimelineIdentity {
+  canonical_id: string;
+  display_name: string | null;
+  principal_type: PrincipalType;
+  events: number;
+  last_event_at: string | null;
+  open_findings: number;
+  high_findings: number;
+}
+
+export interface TimelineStats {
+  events: number | null;
+  unlinked: number | null;
+  timeline_version: string | null;
+  ingested_at: string | null;
+}
+
+export interface TimelineEvent {
+  event_id: string;
+  provider: string;
+  tenant: string | null;
+  account_key: string | null;
+  event_type: string;
+  category: EventCategory;
+  occurred_at: string;
+  actor: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface TimelineFinding {
+  finding_id: string;
+  finding_type: string;
+  severity: Severity;
+  canonical_id?: string;
+  display_name?: string | null;
+  evidence_event_ids: string[];
+  detail: string | null;
+  occurred_at: string | null;
+  status: 'open' | 'resolved';
+  first_seen: string | null;
+  last_seen: string | null;
+}
+
+export interface IdentityTimelineData {
+  identity: { canonical_id: string; display_name: string | null; principal_type: PrincipalType; providers: string[]; normalized_states: string[] };
+  events: TimelineEvent[];
+  findings: TimelineFinding[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -187,4 +239,12 @@ export const identityApi = {
     }),
   nhi: () => request<{ nhis: NonHuman[] }>('/nhi'),
   runResolver: () => request<{ triggered: boolean; run_id?: number }>('/run-resolver', { method: 'POST' }),
+  timelineIdentities: (search: string) => {
+    const q = new URLSearchParams({ limit: '100' });
+    if (search) q.set('search', search);
+    return request<{ identities: TimelineIdentity[]; stats: TimelineStats | null }>(`/timeline/identities?${q}`);
+  },
+  timelineFindings: () => request<{ findings: TimelineFinding[] }>('/timeline/findings?status=open&limit=200'),
+  identityTimeline: (id: string) =>
+    request<IdentityTimelineData>(`/identities/${encodeURIComponent(id)}/timeline`),
 };

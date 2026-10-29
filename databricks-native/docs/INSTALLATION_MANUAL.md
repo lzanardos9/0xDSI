@@ -45,7 +45,7 @@
 | Volumes | `data, landing, checkpoints, models, artifacts, exports, quarantine` |
 | Tables | ~260 definitions; core ones created by `notebooks/setup/01_create_catalog_schema.py` |
 | UC tool functions | `lookup_ioc`, `get_alert_context`, `query_user_behavior`, `search_events`, `get_asset_info`, `create_case`, `execute_response_action` |
-| Jobs | 106 (`resources/jobs.yml`, including the Identity 01 canonical identity spine), ~10 continuous, plus 3 ops jobs (health check, SLA alerting, checkpoint GC report) |
+| Jobs | 106 (`resources/jobs.yml`, including the Identity 01 job: canonical identity spine followed by the identity timeline), ~10 continuous, plus 3 ops jobs (health check, SLA alerting, checkpoint GC report) |
 | Pipelines | `bronze_silver_gold`, `attack_universe_realtime` (serverless) |
 | App | `0xdsi-agentic-soc` |
 | Groups | `soc_admins`, `soc_analysts` (created if missing) |
@@ -293,6 +293,7 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | — | Non-production stream checkpoints in temporary storage (lost on serverless) | All environments use the `checkpoints` volume |
 | H1 | Response engine auto-approved high-confidence actions (status `queued`) by default outside production | `enable_auto_approve` defaults to `false`; `true` is an explicit opt-in and is refused in production. Every action otherwise goes through `response_approvals` |
 | ID-P0 | No identity foundation | Phase 0 shipped: identity tables (`setup/06`), synthetic fixtures (`setup/07`, demo only), resolver job `Identity 01`, `/api/identity` routes (analyst role, audited steward writes), and the **Identity** menu. See `docs/IDENTITY_DATALAKE_PLAN.md` |
+| ID-P1 | No lifecycle or sign-in history per identity | Phase 1 shipped on sample data: event and finding tables (`setup/06`), sample events (`setup/07`, demo only), `build_timeline` task in the Identity 01 job, timeline routes and the **Identity Timeline** page. Needs real HR, sign-in, MFA and access event feeds in `landing/identity_events/` to go live |
 
 ### 10.2 Remaining in-repo work
 

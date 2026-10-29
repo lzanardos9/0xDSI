@@ -93,3 +93,48 @@ ACCOUNTS = [
          display_name="Baggage Triage Agent", runtime_host="aks-ops-east-07", registration_source="discovered",
          raw_state="true"),
 ]
+
+
+def _person(eid, worker, first, last, dept, *, duo=True, admin=False, ent_state="true", ad_state="enabled",
+            persona="standard", manager=None):
+    user = f"{first[0]}{last}".lower()
+    email = f"{first}.{last}@aa.example".lower()
+    name = f"{first} {last}"
+    rows = [
+        _acc("active_directory", f"ad-{eid.lower()}", username=user, upn=email, email=email, employee_id=eid,
+             display_name=name, department=dept, manager=manager, persona_type=persona, raw_state=ad_state),
+        _acc("entra_id", f"ent-{eid.lower()}", username=f"{first}.{last}".lower(), upn=email, email=email,
+             employee_id=eid, display_name=name, department=dept, persona_type=persona, raw_state=ent_state),
+        _acc("saviynt", f"sav-{eid.lower()}", username=user, authoritative_person_id=worker, employee_id=eid,
+             display_name=name, persona_type=persona, raw_state="active" if ad_state == "enabled" else "inactive"),
+    ]
+    if duo:
+        rows.append(_acc("duo", f"duo-{eid.lower()}", username=user, email=email, employee_id=eid,
+                         display_name=name, raw_state="active"))
+    if admin:
+        rows.append(_acc("active_directory", f"ad-adm-{eid.lower()}", username=f"adm-{user}", upn=f"adm-{user}@aa.example",
+                         employee_id=eid, display_name=f"{name} (Admin)", persona_type="privileged", department=dept,
+                         raw_state="enabled"))
+    return rows
+
+
+# Named sample people used by the Identity Timeline (synthetic, not real AA records)
+PEOPLE = {
+    "luiz.zanardo": ("E7001", "W-7001", "Luiz", "Zanardo", "Identity Engineering", {"admin": True}),
+    "keith.murry": ("E7002", "W-7002", "Keith", "Murry", "Finance", {}),
+    "abhijit.tilak": ("E7003", "W-7003", "Abhijit", "Tilak", "Cloud Platform", {"admin": True}),
+    "brian.mcdonald": ("E7004", "W-7004", "Brian", "McDonald", "Airport Operations", {"ad_state": "disabled"}),
+    "blessy.baby": ("E7005", "W-7005", "Blessy", "Baby", "Data Science", {}),
+    "rudi.himawan": ("E7006", "W-7006", "Rudi", "Himawan", "Network Engineering", {}),
+    "todd.trncak": ("E7007", "W-7007", "Todd", "Trncak", "Security Operations", {"admin": True}),
+    "priya.raman": ("E7008", "W-7008", "Priya", "Raman", "Crew Scheduling", {}),
+    "marcus.bell": ("E7009", "W-7009", "Marcus", "Bell", "Loyalty Engineering", {"admin": True}),
+}
+
+for _eid, _worker, _first, _last, _dept, _opts in PEOPLE.values():
+    ACCOUNTS.extend(_person(_eid, _worker, _first, _last, _dept, **_opts))
+
+ACCOUNTS.append(_acc("active_directory", "ad-svc-bagrec", principal_type="workload", username="svc-bag-reconcile",
+                     display_name="Baggage Reconciliation Service", owner="brian.mcdonald@aa.example",
+                     grc_application_id="APP-0117", credential_fingerprint="sha256:c03a...19f2",
+                     credential_expires_at="2027-01-31T00:00:00Z", raw_state="enabled"))

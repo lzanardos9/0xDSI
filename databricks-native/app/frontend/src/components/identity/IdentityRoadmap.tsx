@@ -1,12 +1,7 @@
-import { Clock, Gauge, Share2, FlaskConical, Wrench, Globe2, UsersRound, MessageSquareText, Construction } from 'lucide-react';
+import { Gauge, Share2, FlaskConical, Wrench, Globe2, UsersRound, MessageSquareText, Construction } from 'lucide-react';
 import { Card, PageHeader, Tag } from './identityUi';
 
 export const ROADMAP_PAGES = {
-  id_timeline: {
-    title: 'Identity Timeline', icon: Clock, phase: 'Phase 1',
-    what: 'A single chronological story per identity: joiner, mover, leaver, sign-ins, MFA changes, privilege grants and alerts across every directory.',
-    needs: ['Entitlement and sign-in event feeds per provider', 'HR joiner/mover/leaver events', 'Event-to-identity linking on the canonical spine'],
-  },
   id_risk: {
     title: 'Identity Risk', icon: Gauge, phase: 'Phase 2',
     what: 'An explainable risk score per identity built from exposure, behaviour and hygiene signals, with every contributing factor shown.',

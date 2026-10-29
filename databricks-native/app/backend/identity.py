@@ -1,5 +1,5 @@
 """
-Identity Datalake API (Phase 0): read-only identity views plus steward
+Identity Datalake API (Phases 0-1): read-only identity and timeline views plus steward
 match decisions. Every route requires analyst role (identity data is
 sensitive) and the steward write is audited before it is recorded. The
 resolver applies steward decisions on its next run; this API never edits the
@@ -16,9 +16,13 @@ IDENTITY_TABLES = (
     "identity_canonical", "identity_persona", "identity_provider_xref", "identity_xref_history",
     "identity_resolution_decision", "identity_steward_decision", "identity_resolution_impact",
     "identity_findings", "identity_relation", "identity_source_health",
+    "identity_event", "identity_timeline_finding",
 )
 PRINCIPAL_TYPES = {"person", "workload", "agent"}
 VERDICTS = {"accept", "reject"}
+EVENT_CATEGORIES = {"lifecycle", "account", "access", "sign_in", "mfa", "credential"}
+SEVERITIES = {"high", "medium", "low"}
+FINDING_STATUSES = {"open", "resolved"}
 MAX_PAGE = 200
 
 
@@ -31,9 +35,9 @@ def _page(limit: int, offset: int) -> tuple:
 ARRAY_COLUMNS = ("providers", "personas", "normalized_states")
 
 
-def _lists(rows: list) -> list:
+def _lists(rows: list, columns: tuple = ARRAY_COLUMNS) -> list:
     for row in rows:
-        for col in ARRAY_COLUMNS:
+        for col in columns:
             v = row.get(col)
             if v is None:
                 row[col] = []
@@ -232,6 +236,100 @@ def build_identity_router(
             LIMIT {limit} OFFSET {offset}
         """)
         return {"nhis": rows}
+
+    @router.get("/timeline/identities")
+    async def timeline_identities(request: Request, search: str = "", limit: int = 50, offset: int = 0):
+        _analyst(request)
+        limit, offset = _page(limit, offset)
+        where, params = ["e.canonical_id IS NOT NULL"], {}
+        if search.strip():
+            where.append(f"""(lower(c.display_name) LIKE :q OR EXISTS (
+                SELECT 1 FROM {fqn('identity_provider_xref')} x WHERE x.canonical_id = c.canonical_id AND (
+                  lower(x.username) LIKE :q OR lower(x.email) LIKE :q OR lower(x.employee_id) LIKE :q)))""")
+            params["q"] = f"%{search.strip().lower()[:100]}%"
+        rows = query(f"""
+            SELECT c.canonical_id, c.display_name, c.principal_type, COUNT(e.event_id) AS events,
+                   MAX(e.occurred_at) AS last_event_at,
+                   (SELECT COUNT(*) FROM {fqn('identity_timeline_finding')} f
+                     WHERE f.canonical_id = c.canonical_id AND f.status = 'open') AS open_findings,
+                   (SELECT COUNT(*) FROM {fqn('identity_timeline_finding')} f
+                     WHERE f.canonical_id = c.canonical_id AND f.status = 'open' AND f.severity = 'high') AS high_findings
+            FROM {fqn('identity_event')} e JOIN {fqn('identity_canonical')} c ON c.canonical_id = e.canonical_id
+            WHERE {' AND '.join(where)}
+            GROUP BY c.canonical_id, c.display_name, c.principal_type
+            ORDER BY high_findings DESC, open_findings DESC, last_event_at DESC
+            LIMIT {limit} OFFSET {offset}
+        """, params)
+        stats = query(f"""
+            SELECT COUNT(*) AS events,
+                   SUM(CASE WHEN link_status = 'unlinked' THEN 1 ELSE 0 END) AS unlinked,
+                   MAX(timeline_version) AS timeline_version, MAX(ingested_at) AS ingested_at
+            FROM {fqn('identity_event')}
+        """)
+        return {"identities": rows, "stats": stats[0] if stats else None}
+
+    @router.get("/timeline/findings")
+    async def timeline_findings(request: Request, severity: str = "", finding_type: str = "",
+                                status: str = "open", limit: int = 100, offset: int = 0):
+        _analyst(request)
+        limit, offset = _page(limit, offset)
+        where, params = ["1=1"], {}
+        if status:
+            if status not in FINDING_STATUSES:
+                raise HTTPException(status_code=400, detail="Unknown status")
+            where.append("f.status = :status")
+            params["status"] = status
+        if severity:
+            if severity not in SEVERITIES:
+                raise HTTPException(status_code=400, detail="Unknown severity")
+            where.append("f.severity = :sev")
+            params["sev"] = severity
+        if finding_type:
+            where.append("f.finding_type = :ftype")
+            params["ftype"] = finding_type[:64]
+        rows = query(f"""
+            SELECT f.finding_id, f.finding_type, f.severity, f.canonical_id, c.display_name, f.evidence_event_ids,
+                   f.detail, f.occurred_at, f.status, f.first_seen, f.last_seen
+            FROM {fqn('identity_timeline_finding')} f
+            LEFT JOIN {fqn('identity_canonical')} c ON c.canonical_id = f.canonical_id
+            WHERE {' AND '.join(where)}
+            ORDER BY CASE f.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, f.occurred_at DESC
+            LIMIT {limit} OFFSET {offset}
+        """, params)
+        return {"findings": _lists(rows, ("evidence_event_ids",))}
+
+    @router.get("/identities/{canonical_id}/timeline")
+    async def identity_timeline(canonical_id: str, request: Request, category: str = "", limit: int = 200):
+        _analyst(request)
+        limit, _ = _page(limit, 0)
+        p = {"cid": canonical_id}
+        ident = _lists(query(f"""SELECT canonical_id, display_name, principal_type, providers, normalized_states
+                                 FROM {fqn('identity_canonical')} WHERE canonical_id = :cid""", p))
+        if not ident:
+            raise HTTPException(status_code=404, detail="Identity not found")
+        where = "canonical_id = :cid"
+        if category:
+            if category not in EVENT_CATEGORIES:
+                raise HTTPException(status_code=400, detail="Unknown category")
+            where += " AND category = :cat"
+            p["cat"] = category
+        events = query(f"""
+            SELECT event_id, provider, tenant, account_key, event_type, category, occurred_at, actor, detail
+            FROM {fqn('identity_event')} WHERE {where}
+            ORDER BY occurred_at DESC, event_id LIMIT {limit}
+        """, p)
+        for e in events:
+            try:
+                e["detail"] = json.loads(e.get("detail") or "{}")
+            except ValueError:
+                e["detail"] = {}
+        findings = _lists(query(f"""
+            SELECT finding_id, finding_type, severity, evidence_event_ids, detail, occurred_at, status, first_seen, last_seen
+            FROM {fqn('identity_timeline_finding')} WHERE canonical_id = :cid
+            ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END,
+                     CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, occurred_at DESC
+        """, {"cid": canonical_id}), ("evidence_event_ids",))
+        return {"identity": ident[0], "events": events, "findings": findings}
 
     @router.post("/run-resolver")
     async def run_resolver(request: Request):
