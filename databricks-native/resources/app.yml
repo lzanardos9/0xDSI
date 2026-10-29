@@ -4,6 +4,8 @@ resources:
       name: "0xdsi-agentic-soc"
       description: "0xDSI Agentic SOC Platform - Real-time security operations center"
       source_code_path: ../app
+      user_api_scopes:
+        - sql
       config:
         command:
           - python
@@ -31,6 +33,8 @@ resources:
             value: ${var.soc_admin_emails}
           - name: SOC_ANALYST_EMAILS
             value: ${var.soc_analyst_emails}
+          - name: SOC_DATA_ACCESS_MODE
+            value: ${var.data_access_mode}
       permissions:
         - level: CAN_MANAGE
           group_name: "soc_admins"
