@@ -27,14 +27,13 @@ from pyspark.sql.types import (
 dbutils.widgets.text("auto_respond_threshold", "0.9", "Auto-respond confidence threshold")
 threshold = float(dbutils.widgets.get("auto_respond_threshold"))
 
-# Auto-approval must never happen on confidence alone in production; a human
-# approves every action. 'auto' resolves to off in production, on elsewhere.
-dbutils.widgets.text("enable_auto_approve", "auto", "Auto-approve responses: 'true'/'false', or 'auto' (off in production)")
+# Every action needs a human approval by default. Auto-approval is an explicit
+# opt-in for non-production demos only and is refused in production.
+dbutils.widgets.text("enable_auto_approve", "false", "Auto-approve responses: 'true' to opt in (never in production)")
 _auto_approve_raw = dbutils.widgets.get("enable_auto_approve").strip().lower()
-if _auto_approve_raw in ("true", "false"):
-    enable_auto_approve = _auto_approve_raw == "true"
-else:
-    enable_auto_approve = cfg.environment != "production"
+enable_auto_approve = _auto_approve_raw == "true" and cfg.environment != "production"
+if _auto_approve_raw == "true" and not enable_auto_approve:
+    print("enable_auto_approve=true ignored: auto-approval is not allowed in production")
 
 require_tables("alerts", "response_actions", "response_approvals")
 
