@@ -138,3 +138,18 @@ ACCOUNTS.append(_acc("active_directory", "ad-svc-bagrec", principal_type="worklo
                      display_name="Baggage Reconciliation Service", owner="brian.mcdonald@aa.example",
                      grc_application_id="APP-0117", credential_fingerprint="sha256:c03a...19f2",
                      credential_expires_at="2027-01-31T00:00:00Z", raw_state="enabled"))
+
+
+def _guest(object_id, first, last, domain, sponsor, last_seen=SNAPSHOT_AT):
+    email = f"{first}.{last}@{domain}".lower()
+    return _acc("entra_id", object_id, username=f"{email.replace('@', '_')}#EXT#", email=email,
+                display_name=f"{first} {last}", persona_type="guest", owner=sponsor, raw_state="true", last_seen=last_seen)
+
+
+# Partner guests in our Entra tenant, used by Federation Posture (owner = sponsor)
+ACCOUNTS.extend([
+    _guest("ent-guest-ba-01", "Sarah", "Okafor", "ba.example", "keith.murry@aa.example"),
+    _guest("ent-guest-dl-01", "Tom", "Ellis", "deloitte.example", "brian.mcdonald@aa.example"),
+    _guest("ent-guest-sky-01", "Nina", "Park", "skyserve.example", "", last_seen="2026-03-15T09:00:00Z"),
+    _guest("ent-guest-envoy-01", "Carlos", "Mendes", "envoy.example", "abhijit.tilak@aa.example"),
+])

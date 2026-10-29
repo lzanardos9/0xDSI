@@ -60,7 +60,7 @@ GROUPS = [
      "members": [_r(AD, "ad-e7002"), _r(AD, "ad-e7004")]},
     {**_r(ENTRA, "grp-cloud-owners"), "name": "Cloud-Subscription-Owners", "privileged": True,
      "owner": "abhijit.tilak@aa.example", "purpose": "Owner role on production subscriptions", "department": "Cloud Platform",
-     "members": [_r(ENTRA, "ent-e7003"), _r(ENTRA, "sp-crew-sched")]},
+     "members": [_r(ENTRA, "ent-e7003"), _r(ENTRA, "sp-crew-sched"), _r(ENTRA, "ent-guest-envoy-01")]},
     {**_r(ENTRA, "grp-crew-planners"), "name": "Crew-Planners", "privileged": False, "owner": "priya.raman@aa.example",
      "purpose": "Crew planning tools", "department": "Crew Scheduling",
      "members": [_r(ENTRA, "ent-e7008")]},

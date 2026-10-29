@@ -1,7 +1,7 @@
 """
-Identity Datalake API (Phases 0-2): read-only identity, timeline, risk, access and group views plus steward
-match decisions. Every route requires analyst role (identity data is
-sensitive) and the steward write is audited before it is recorded. The
+Identity Datalake API (Phases 0-3): read-only identity, timeline, risk, access, group, what-if and federation
+views plus steward match decisions and what-if scenario requests. Every route requires analyst role (identity data is
+sensitive) and every write is audited before it is recorded. The
 resolver applies steward decisions on its next run; this API never edits the
 canonical tables directly.
 """
@@ -19,6 +19,8 @@ IDENTITY_TABLES = (
     "identity_event", "identity_timeline_finding",
     "identity_resource", "identity_group", "identity_group_member", "identity_access_edge",
     "identity_attack_path", "identity_group_finding", "identity_risk_score", "identity_risk_history",
+    "identity_whatif_scenario", "identity_whatif_result", "identity_federation_trust", "identity_federation_guest",
+    "identity_federation_finding", "identity_federation_change",
 )
 PRINCIPAL_TYPES = {"person", "workload", "agent"}
 VERDICTS = {"accept", "reject"}
@@ -344,5 +346,9 @@ def build_identity_router(
 
     from backend.identity_access import add_access_routes
     add_access_routes(router, query, fqn, _analyst)
+    from backend.identity_whatif import add_whatif_routes
+    add_whatif_routes(router, query, execute_write, fqn, _analyst, audit, trigger_job)
+    from backend.identity_federation import add_federation_routes
+    add_federation_routes(router, query, fqn, _analyst)
 
     return router

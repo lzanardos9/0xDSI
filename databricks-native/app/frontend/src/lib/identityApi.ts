@@ -321,6 +321,214 @@ export interface GroupDetail {
   findings: GroupFinding[];
 }
 
+export type ChangeType = 'remove_membership' | 'revoke_grant' | 'remove_takeover' | 'disable_account' | 'delete_group';
+
+export interface ScenarioChange {
+  type: ChangeType;
+  group?: string;
+  member?: string;
+  source?: string;
+  resource_id?: string;
+  permission?: string;
+  target?: string;
+  account?: string;
+  description?: string;
+  reason?: string;
+}
+
+export interface WhatIfSummary {
+  changes_applied: number;
+  changes_rejected: number;
+  paths_before: number;
+  paths_after: number;
+  paths_removed: number;
+  paths_added: number;
+  identities_affected: number;
+  risk_points_removed: number;
+  risk_points_added: number;
+  critical_before: number;
+  critical_after: number;
+  group_findings_resolved: number;
+  group_findings_added: number;
+  memberships_lost: number;
+  lockouts: number;
+}
+
+export interface WhatIfScenario {
+  scenario_id: string;
+  name: string;
+  description: string | null;
+  changes: ScenarioChange[] | null;
+  source: 'sample' | 'analyst' | string;
+  status: 'pending' | 'done' | 'failed' | string;
+  error: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  evaluated_at: string | null;
+  summary?: WhatIfSummary | null;
+  access_version?: string | null;
+}
+
+export interface WhatIfPath {
+  canonical_id: string;
+  display_name: string;
+  resource_id: string;
+  resource: string;
+  permission: string;
+  hops: number;
+  via_takeover: boolean;
+  steps: string[];
+  previous_steps?: string[];
+}
+
+export interface WhatIfScoreChange {
+  canonical_id: string;
+  display_name: string;
+  principal_type: string;
+  score_before: number;
+  score_after: number;
+  delta: number;
+  band_before: RiskBand;
+  band_after: RiskBand;
+  factors_cleared: string[];
+  factors_added: string[];
+  factors_changed: { before: string; after: string; points_before: number; points_after: number }[];
+}
+
+export interface WhatIfResult {
+  version: string;
+  applied: ScenarioChange[];
+  rejected: ScenarioChange[];
+  summary: WhatIfSummary;
+  paths_removed: WhatIfPath[];
+  paths_added: WhatIfPath[];
+  paths_rerouted: WhatIfPath[];
+  score_changes: WhatIfScoreChange[];
+  memberships_lost: {
+    canonical_id: string;
+    display_name: string;
+    account_key: string;
+    username: string | null;
+    group: string;
+    privileged: boolean;
+    direct: boolean;
+  }[];
+  group_findings_resolved: { finding_type: string; severity: string; group: string; detail: string }[];
+  group_findings_added: { finding_type: string; severity: string; group: string; detail: string }[];
+  lockouts: { resource_id: string; resource: string; people_before: number }[];
+}
+
+export interface WhatIfOptions {
+  groups: { group_key: string; name: string; privileged: boolean; effective_member_count: number }[];
+  memberships: { group: string; group_name: string; member: string; member_name: string | null; member_kind: 'account' | 'group' }[];
+  grants: { source: string; source_name: string; resource_id: string; resource: string; permission: string | null }[];
+  takeovers: { source: string; source_name: string; target: string; target_name: string; permission: string | null }[];
+  accounts: { account: string; username: string | null; display_name: string | null }[];
+}
+
+export type FedSeverity = 'high' | 'medium' | 'low';
+
+export interface FederationTrust {
+  trust_id: string;
+  kind: 'cross_tenant' | 'idp_federation' | 'ad_trust';
+  provider: string | null;
+  tenant: string | null;
+  partner_name: string;
+  partner_tenant: string | null;
+  partner_domains: string[];
+  owner: string;
+  owner_status: string;
+  description: string;
+  settings: Record<string, unknown>;
+  rules_total: number;
+  rules_passed: number;
+  worst_severity: FedSeverity | null;
+  guests: number;
+  active_guests: number;
+  updated_at: string | null;
+  open_findings?: number;
+}
+
+export interface FederationGuest {
+  account_key: string;
+  canonical_id: string;
+  display_name: string | null;
+  username: string | null;
+  email: string;
+  home_tenant: string | null;
+  trust_id: string | null;
+  partner_name: string | null;
+  sponsor: string;
+  sponsor_status: string;
+  normalized_state: string;
+  last_seen: string | null;
+  days_inactive: number | null;
+  groups: string[];
+  privileged_groups: string[];
+}
+
+export interface FederationFinding {
+  finding_id: string;
+  scope: 'trust' | 'guest';
+  trust_id: string | null;
+  partner_name?: string | null;
+  account_key: string | null;
+  guest_name?: string | null;
+  finding_type: string;
+  severity: FedSeverity;
+  title: string;
+  detail: string;
+  setting: string | null;
+  expected: string | null;
+  actual: string | null;
+  changed_by: string | null;
+  changed_at: string | null;
+  status: 'open' | 'resolved';
+  first_seen: string | null;
+  last_seen: string | null;
+  resolved_at: string | null;
+}
+
+export interface FederationChange {
+  change_id: string;
+  trust_id?: string;
+  setting: string;
+  before_value: string | null;
+  after_value: string | null;
+  changed_at: string | null;
+  changed_by: string | null;
+}
+
+export interface FederationOverview {
+  trusts: FederationTrust[];
+  guests: FederationGuest[];
+  recent_changes: FederationChange[];
+  summary: {
+    trusts: number;
+    guests: number;
+    active_guests: number;
+    open_by_severity: Partial<Record<FedSeverity, number>>;
+    rules_total: number;
+    rules_passed: number;
+    posture_score: number | null;
+    updated_at: string | null;
+  };
+}
+
+export interface TrustDetail {
+  trust: FederationTrust;
+  findings: FederationFinding[];
+  changes: FederationChange[];
+  guests: FederationGuest[];
+}
+
+interface RunAck {
+  scenario_id: string;
+  triggered: boolean;
+  run_id?: number | null;
+  reason?: string | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -399,4 +607,21 @@ export const identityApi = {
     return request<{ groups: GroupSummary[] }>(`/groups?${q}`);
   },
   groupDetail: (key: string) => request<GroupDetail>(`/groups/${encodeURIComponent(key)}`),
+  whatifScenarios: () =>
+    request<{ scenarios: WhatIfScenario[]; current_access_version: string | null }>('/whatif/scenarios'),
+  whatifDetail: (id: string) =>
+    request<{ scenario: WhatIfScenario; result: WhatIfResult | null }>(`/whatif/scenarios/${encodeURIComponent(id)}`),
+  whatifOptions: () => request<WhatIfOptions>('/whatif/options'),
+  createScenario: (body: { name: string; description: string; changes: ScenarioChange[] }) =>
+    request<RunAck>('/whatif/scenarios', { method: 'POST', body: JSON.stringify(body) }),
+  evaluateScenario: (id: string) =>
+    request<RunAck>(`/whatif/scenarios/${encodeURIComponent(id)}/evaluate`, { method: 'POST' }),
+  federation: () => request<FederationOverview>('/federation'),
+  trustDetail: (id: string) => request<TrustDetail>(`/federation/trusts/${encodeURIComponent(id)}`),
+  federationFindings: (p: { severity?: string; scope?: string }) => {
+    const q = new URLSearchParams({ status: 'open' });
+    if (p.severity) q.set('severity', p.severity);
+    if (p.scope) q.set('scope', p.scope);
+    return request<{ findings: FederationFinding[] }>(`/federation/findings?${q}`);
+  },
 };

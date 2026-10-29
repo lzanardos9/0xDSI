@@ -12,7 +12,7 @@ This tracks the identity blueprint phase by phase. Each phase has a menu page un
 | 0 | Canonical identity spine: deterministic resolution, personas, NHI/agents, steward review, source health | Identity Overview, Identity Explorer, Resolution Review, Non-Human & Agents | **Done** (offline-verified; awaiting real snapshots) |
 | 1 | Entitlements, sign-in and HR lifecycle events on the spine | Identity Timeline | **Live on sample data** (offline-verified; awaiting real HR, sign-in, MFA and access event feeds) |
 | 2 | Explainable risk, access graph, group context | Identity Risk, Access Graph & Paths, Group Context | **Live on sample data** (offline-verified; awaiting real group, entitlement and crown-jewel feeds and AA-agreed weights) |
-| 3 | What-if simulation, federation posture | What-If Simulator, Federation Posture | Not started |
+| 3 | What-if simulation, federation posture | What-If Simulator, Federation Posture | **Live on sample data** (offline-verified; awaiting real trust/federation exports, directory audit log and AA baseline) |
 | 4 | Approved, reversible remediation | Identity Remediation | Not started (needs OBO + outbox) |
 | 5 | Governed natural-language answers | Identity Answers | Not started |
 
@@ -116,6 +116,34 @@ Real feeds, in `/Volumes/<catalog>/<schema>/landing/identity_access/`:
 - Optional `risk_weights.json` with any keys from `DEFAULT_WEIGHTS` and a `version`.
 
 Rows that do not resolve are counted as quarantined and skipped, never guessed.
+
+## Phase 3 — What-If Simulator, Federation Posture
+
+| Piece | Location |
+|-------|----------|
+| Simulation engine (pure Python, read-only, works on copies of the access model) | `notebooks/_shared/identity_whatif.py` |
+| Federation baseline checks, drift detection and guest checks | `notebooks/_shared/identity_federation.py` |
+| Tables `identity_whatif_scenario`, `identity_whatif_result`, `identity_federation_trust`, `identity_federation_guest`, `identity_federation_finding`, `identity_federation_change` (CDF on) | `notebooks/setup/06_identity_datalake_tables.py` |
+| Sample scenarios, trusts, change log and four partner guests (demo only) | `_shared/identity_whatif_fixtures.py`, `_shared/identity_federation_fixtures.py`, `identity_fixtures.py`, written by `setup/07` |
+| Job tasks `federation_posture` and `evaluate_whatif` (both after `score_access_risk` in Identity 01) | `notebooks/identity/05_identity_federation.py`, `04_identity_whatif.py` |
+| On-demand job `[0xDSI] Identity 02 - What-If Simulator` (parameter `scenario_id`), triggered by the app when an analyst saves or re-runs a scenario | `resources/jobs.yml` |
+| API `/whatif/scenarios` (list, detail, create, evaluate), `/whatif/options`, `/federation`, `/federation/trusts/{id}`, `/federation/findings` (analyst role; scenario creation audited) | `app/backend/identity_whatif.py`, `identity_federation.py` |
+| UI | `WhatIfSimulator.tsx`, `WhatIfBuilder.tsx`, `WhatIfResult.tsx`, `FederationPosture.tsx`, `FederationTrustDetail.tsx` |
+| Tests (10 + 10 property tests) | `tests/property/test_identity_whatif.py`, `test_identity_federation.py` |
+
+Rules:
+- **What-if** changes: remove a membership, revoke a grant, remove a takeover edge, disable an account, delete a group (max 20 per scenario). Nothing touches a directory; the simulation reruns paths, group findings and risk scores on a copy and reports paths removed, added and rerouted, score changes per identity with the factors cleared, memberships lost, and **lockouts** (a crown jewel no person can reach any more). A change that matches nothing is rejected with a reason, never silently ignored. Results are keyed to the access-model version so stale results are visible.
+- **Federation baseline** (10 rules, overridable by `baseline.json`): cross-tenant trusts must scope apps, not trust partner MFA, not auto-redeem and be reviewed within a year; IdP federations need a strong signing algorithm, a certificate valid for 30+ days and must not accept external MFA; AD trusts need SID filtering, selective authentication and not be bidirectional. A missing setting fails the check. Every trust needs a current owner.
+- **Drift**: each run compares settings with the previous run and records who changed what (from `changes.jsonl` when supplied).
+- **Guests** are matched to a trust by email domain and flagged when privileged, without a sponsor, with a departed sponsor, inactive for 90+ days or from a domain no trust covers.
+
+Sample results: posture 48% (10 of 21 checks), 19 open findings (8 high). Deloitte trust allows all apps, trusts partner MFA, is 20 months unreviewed and its owner Brian McDonald has left; the cargo forest trust had SID filtering turned off by Rudi Himawan; the partner SSO uses SHA-1 with no owner; Carlos Mendes (Envoy guest) reaches cloud owners. What-if: un-nesting NOC-OnCall takes Rudi from 40 to 0; removing Keith from the vendor role clears his segregation-of-duties conflict (80 to 60); deleting Domain Admins locks everyone out of the domain controllers.
+
+Real feeds, in `/Volumes/<catalog>/<schema>/landing/identity_federation/`:
+- `trusts.jsonl`: `trust_id`, `kind` (`cross_tenant`, `idp_federation`, `ad_trust`), `provider`, `tenant`, `partner_name`, `partner_tenant`, `partner_domains`, `owner` (email), `description`, `settings` (object using the setting names above).
+- Optional `changes.jsonl`: `trust_id`, `setting`, `before`, `after`, `changed_at`, `changed_by`.
+- Optional `baseline.json`: a list of rules with `rule_id`, `kind`, `setting`, `op` (`eq`, `not_eq`, `in`, `max_age_days`, `min_days_ahead`), `value`, `severity`, `label`.
+- Analysts create what-if scenarios in the app; `landing/identity_whatif/scenarios.jsonl` only seeds samples.
 
 ## Inputs only AA can provide
 1. Read-only exports or connector access for AD, Entra ID, PingDirectory, Saviynt, Duo and key app-local stores.

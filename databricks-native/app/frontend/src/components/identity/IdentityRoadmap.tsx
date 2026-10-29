@@ -1,21 +1,11 @@
-import { FlaskConical, Wrench, Globe2, MessageSquareText, Construction } from 'lucide-react';
+import { Wrench, MessageSquareText, Construction } from 'lucide-react';
 import { Card, PageHeader, Tag } from './identityUi';
 
 export const ROADMAP_PAGES = {
-  id_whatif: {
-    title: 'What-If Simulator', icon: FlaskConical, phase: 'Phase 3',
-    what: 'Preview the effect of removing a group, disabling an account or revoking a role before anyone touches production.',
-    needs: ['Access graph (Phase 2)', 'Read-only simulation against a snapshot of the graph'],
-  },
   id_remediation: {
     title: 'Identity Remediation', icon: Wrench, phase: 'Phase 4',
     what: 'Approved, reversible fixes (disable, remove from group, rotate credential) with two-person approval and full audit.',
     needs: ['Per-user sign-in for actions instead of the shared app identity', 'Approval workflow with leases and an outbox', 'Write access agreements per provider'],
-  },
-  id_federation: {
-    title: 'Federation Posture', icon: Globe2, phase: 'Phase 3',
-    what: 'Trust relationships between tenants and identity providers, guest access, and configuration drift against the agreed baseline.',
-    needs: ['Federation and cross-tenant settings exports', 'Baseline policy from the identity team'],
   },
   id_answers: {
     title: 'Identity Answers', icon: MessageSquareText, phase: 'Phase 5',
