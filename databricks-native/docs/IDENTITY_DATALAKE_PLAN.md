@@ -11,7 +11,7 @@ This tracks the identity blueprint phase by phase. Each phase has a menu page un
 | Pre-req | Lakebase leases and outbox for actions | — | Open (needed before Phase 4) |
 | 0 | Canonical identity spine: deterministic resolution, personas, NHI/agents, steward review, source health | Identity Overview, Identity Explorer, Resolution Review, Non-Human & Agents | **Done** (offline-verified; awaiting real snapshots) |
 | 1 | Entitlements, sign-in and HR lifecycle events on the spine | Identity Timeline | **Live on sample data** (offline-verified; awaiting real HR, sign-in, MFA and access event feeds) |
-| 2 | Explainable risk, access graph, group context | Identity Risk, Access Graph & Paths, Group Context | Not started |
+| 2 | Explainable risk, access graph, group context | Identity Risk, Access Graph & Paths, Group Context | **Live on sample data** (offline-verified; awaiting real group, entitlement and crown-jewel feeds and AA-agreed weights) |
 | 3 | What-if simulation, federation posture | What-If Simulator, Federation Posture | Not started |
 | 4 | Approved, reversible remediation | Identity Remediation | Not started (needs OBO + outbox) |
 | 5 | Governed natural-language answers | Identity Answers | Not started |
@@ -78,10 +78,49 @@ Sample people and what each one shows:
 
 Real feeds: drop `*.jsonl` files into `/Volumes/<catalog>/<schema>/landing/identity_events/`, one event per line with `provider`, `tenant`, `object_id` (or `employee_id` for HR), `event_type`, `occurred_at`, optional `actor` and `detail`. Keep this folder outside `landing/identity/`, because every subfolder there is treated as a directory snapshot.
 
+## Phase 2 — Identity Risk, Access Graph, Group Context
+
+| Piece | Location |
+|-------|----------|
+| Access model, attack paths, group context and risk scoring (pure Python, same code in job and tests) | `notebooks/_shared/identity_access.py` |
+| Tables `identity_resource`, `identity_group`, `identity_group_member`, `identity_access_edge`, `identity_attack_path`, `identity_group_finding`, `identity_risk_score`, `identity_risk_history` (CDF on) | `notebooks/setup/06_identity_datalake_tables.py` |
+| Sample resources, groups and edges (demo only) | `notebooks/_shared/identity_access_fixtures.py`, written by `setup/07` |
+| Job task `score_access_risk` (runs after `build_timeline` in the Identity 01 job) | `notebooks/identity/03_identity_access_risk.py` |
+| API `/api/identity/risk`, `/risk/{id}`, `/graph/resources`, `/graph/paths`, `/groups`, `/groups/{key}` (analyst role, read-only) | `app/backend/identity_access.py` |
+| UI | `IdentityRisk.tsx`, `AccessGraph.tsx`, `GroupContext.tsx` in `app/frontend/src/components/identity/` |
+| Tests (13 property tests) | `tests/property/test_identity_access.py` |
+
+Rules:
+- **Attack paths** are the shortest route (breadth-first) from each identity's active accounts to each crown-jewel resource, through group membership, nesting, grants and `can_take_over` edges (for example a helpdesk group that can reset an admin's password). Disabled, deleted and suspended accounts are never traversed. Nesting cycles terminate.
+- **Risk score** (0-100) = exposure + behaviour + hygiene, each capped. Every point is a named factor with evidence: crown-jewel access, takeover path, privileged access through a standard account, standing privilege, segregation-of-duties conflict, open timeline findings, open resolver findings, no MFA enrolment and disabled accounts left in groups. Bands: 70+ critical, 40+ high, 20+ medium. Weights live in `DEFAULT_WEIGHTS` and can be overridden by `landing/identity_access/risk_weights.json`; the weights version is stored with each score. Score changes are appended to `identity_risk_history` for drift.
+- **Group findings**: hidden privilege through nesting, departed owner, no owner, direct members outside the group's department, inactive members. Findings that stop reproducing are marked resolved.
+
+Sample results:
+
+| Identity | Score | Why |
+|----------|-------|-----|
+| Keith Murry | 80 critical | Can both approve payments and create vendors in SAP Finance (segregation-of-duties conflict); still in Airport-Ramp-Ops after moving to Finance |
+| Abhijit Tilak | 70 critical | Admin account in Tier0-Operations (Domain Controllers) and his own Entra account owns Azure production, plus the MFA-reset finding |
+| Brian McDonald | 65 high | Leaver findings; disabled AD account still in Airport-Ramp-Ops, which he still owns |
+| Rudi Himawan | 40 high | Standard account in NOC-OnCall, which is nested in Tier0-Operations and so reaches Domain Controllers |
+| Luiz Zanardo | 30 medium | Domain Admins through his admin account, plus the no-ticket finding |
+| Blessy Baby | 20 medium | In Helpdesk-Tier1, which can reset Marcus Bell's admin password and so reach the loyalty database (takeover path) |
+| Priya Raman | 0 low | Clean baseline |
+
+Group findings on the sample: Airport-Ramp-Ops (owner departed, Keith outside purpose, Brian's disabled account still a member), NOC-OnCall (hidden privilege), Helpdesk-Tier1 (no owner, Blessy outside purpose).
+
+Real feeds, in `/Volumes/<catalog>/<schema>/landing/identity_access/`:
+- `resources.jsonl`: `resource_id`, `name`, `crown_jewel`, optional `tier`, `owner`, `description`.
+- `groups.jsonl`: `provider`, `tenant`, `object_id`, `name`, optional `owner` (email), `purpose`, `department`, `privileged`, and `members` (account refs `{provider, tenant, object_id}` or `provider:tenant:object_id` strings; a member that matches a group becomes nesting).
+- `edges.jsonl`: `source` (account or group ref), `edge_type` (`grants` or `can_take_over`), `target` (resource ID or account/group ref), optional `permission`.
+- Optional `risk_weights.json` with any keys from `DEFAULT_WEIGHTS` and a `version`.
+
+Rows that do not resolve are counted as quarantined and skipped, never guessed.
+
 ## Inputs only AA can provide
 1. Read-only exports or connector access for AD, Entra ID, PingDirectory, Saviynt, Duo and key app-local stores.
 2. The authoritative person key (HR worker ID) and the employee-ID reuse policy.
 3. The state vocabulary per provider, especially custom states such as Ping `pending_review`.
 4. The GRC application register, so non-human identities can be linked to applications, and an owner of record for each.
 5. The list of identity stewards (analyst role) who decide review items.
-6. Crown-jewel systems and the risk-factor weights (needed for Phase 2).
+6. Crown-jewel systems, segregation-of-duties rules and the risk-factor weights (sample values are in place for Phase 2).

@@ -1,5 +1,5 @@
 """
-Identity Datalake API (Phases 0-1): read-only identity and timeline views plus steward
+Identity Datalake API (Phases 0-2): read-only identity, timeline, risk, access and group views plus steward
 match decisions. Every route requires analyst role (identity data is
 sensitive) and the steward write is audited before it is recorded. The
 resolver applies steward decisions on its next run; this API never edits the
@@ -17,6 +17,8 @@ IDENTITY_TABLES = (
     "identity_resolution_decision", "identity_steward_decision", "identity_resolution_impact",
     "identity_findings", "identity_relation", "identity_source_health",
     "identity_event", "identity_timeline_finding",
+    "identity_resource", "identity_group", "identity_group_member", "identity_access_edge",
+    "identity_attack_path", "identity_group_finding", "identity_risk_score", "identity_risk_history",
 )
 PRINCIPAL_TYPES = {"person", "workload", "agent"}
 VERDICTS = {"accept", "reject"}
@@ -339,5 +341,8 @@ def build_identity_router(
         if not result.get("triggered"):
             raise HTTPException(status_code=503, detail=result.get("reason", "Resolver job could not be started"))
         return result
+
+    from backend.identity_access import add_access_routes
+    add_access_routes(router, query, fqn, _analyst)
 
     return router

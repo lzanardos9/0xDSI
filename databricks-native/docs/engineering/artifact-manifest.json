@@ -2,22 +2,22 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 603,
-  "total_bytes": 11383036,
+  "total_files": 612,
+  "total_bytes": 11487566,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
-      "backend_service": 6,
+      "backend_service": 7,
       "build_config": 12,
-      "databricks_notebook": 141,
+      "databricks_notebook": 142,
       "deployment_config": 6,
       "documentation": 15,
       "frontend_entry": 1,
-      "frontend_module": 307,
+      "frontend_module": 311,
       "other": 3,
-      "shared_library": 41,
+      "shared_library": 43,
       "stylesheet": 1,
-      "test": 54,
+      "test": 55,
       "test_script": 1,
       "tooling": 5
     },
@@ -29,23 +29,23 @@
       "experimental": 1,
       "production": 3,
       "setup": 7,
-      "shared_library": 40,
-      "test": 55,
-      "unreviewed": 447
+      "shared_library": 42,
+      "test": 56,
+      "unreviewed": 453
     },
     "by_runtime": {
-      "browser": 309,
+      "browser": 313,
       "build-tooling": 17,
       "databricks-bundle": 6,
-      "databricks-spark": 141,
+      "databricks-spark": 142,
       "n/a": 28,
-      "python": 54,
-      "python (databricks runtime)": 41,
-      "python-fastapi": 6,
+      "python": 55,
+      "python (databricks runtime)": 43,
+      "python-fastapi": 7,
       "shell": 1
     },
     "reviewed": 4,
-    "unreviewed": 447
+    "unreviewed": 453
   },
   "artifacts": [
     {
@@ -117,8 +117,17 @@
       "runtime": "python-fastapi",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "88c33975eae6ccc45e5a4ecf743849dacfc33d8801f4da419e5e9ad2b23ad248",
-      "bytes": 18683
+      "sha256": "99d73c0fd1abd9f5130c6ef5170c7db847087b89ad7c7f7277b93c648099f0fe",
+      "bytes": 19009
+    },
+    {
+      "path": "app/backend/identity_access.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "0fff664c0c7ce0a9687c3494b5b247e29bd7f3f25c44680e00e30fb48f27439e",
+      "bytes": 9609
     },
     {
       "path": "app/backend/readiness.py",
@@ -544,8 +553,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "aab8f8cf7b0f8fa97d36c3e436ab822bd3c673bdaead48617ae2a5b12324e486",
-      "bytes": 67624
+      "sha256": "c22488a89de922ba0cf79ae76efe6b8aba5361be04b012fd347d2612cdcd44bd",
+      "bytes": 67996
     },
     {
       "path": "app/frontend/src/components/DashboardOld.tsx",
@@ -2060,6 +2069,24 @@
       "bytes": 6292
     },
     {
+      "path": "app/frontend/src/components/identity/AccessGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6d5a47fddd4b93b4fd246d497dc21f0d3de3c6a0c75590a1cfba4eb2c5ddd623",
+      "bytes": 7982
+    },
+    {
+      "path": "app/frontend/src/components/identity/GroupContext.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "57161b0049a791ea1c04e2222c26140d653e0952cef85c157b60055c16734a8a",
+      "bytes": 13653
+    },
+    {
       "path": "app/frontend/src/components/identity/IdentityExplorer.tsx",
       "artifact_type": "frontend_module",
       "runtime": "browser",
@@ -2078,13 +2105,22 @@
       "bytes": 10065
     },
     {
+      "path": "app/frontend/src/components/identity/IdentityRisk.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d41b2ebe4e53f659ede00a2ba02baa8b1daecd49c14722559c6529abef983899",
+      "bytes": 14239
+    },
+    {
       "path": "app/frontend/src/components/identity/IdentityRoadmap.tsx",
       "artifact_type": "frontend_module",
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "57849e84f3132a557fd246ed423a674739fce324d293dea994cd16cb61446dbd",
-      "bytes": 4383
+      "sha256": "4c4f1a4af1f07af2e604a631725c743b86fac1b6692204232029875bab3e8041",
+      "bytes": 3316
     },
     {
       "path": "app/frontend/src/components/identity/IdentityTimeline.tsx",
@@ -2112,6 +2148,15 @@
       "review": "auto",
       "sha256": "7780f2a7ca601a66de41394509137ec26b6e8499ec62d2d9245c4845af5ceed5",
       "bytes": 9068
+    },
+    {
+      "path": "app/frontend/src/components/identity/identityRiskUi.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "52fbbc09e65a7bc7c3227a9909d4241b0cf5b5419245a90287e56e989ae1daf1",
+      "bytes": 2808
     },
     {
       "path": "app/frontend/src/components/identity/identityUi.tsx",
@@ -2614,8 +2659,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "88e267c1d9587ee2ffe4c674f40d95072cdedf24cca40b82950d2cb28a99013e",
-      "bytes": 7763
+      "sha256": "b980f3587fcdcf9cdf1875701b35fb0280599fca686710850c7be99b5e10455b",
+      "bytes": 12149
     },
     {
       "path": "app/frontend/src/lib/lakehouse.ts",
@@ -3145,8 +3190,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "030f0c64507985f6fdbca1ccdc159996c808f2bf1fcfc4486422630a3f65fcf0",
-      "bytes": 7135
+      "sha256": "1a1bba88f25c5d62a2ca35640bb8a936aa9c01025facb5bfa27b680389faf71a",
+      "bytes": 11503
     },
     {
       "path": "docs/INSTALLATION_MANUAL.md",
@@ -3154,8 +3199,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "876a71a28eec8b35c5412063e7ab6c98efd483072c73a6d9c8715bae19fdd1b8",
-      "bytes": 21738
+      "sha256": "f2596e022c677b84b5c70ef8d63158ea87c00051238c36ce4ce318a376310b8b",
+      "bytes": 22320
     },
     {
       "path": "docs/competitive/0xDSI-vs-Securonix.md",
@@ -3419,6 +3464,24 @@
       "review": "auto",
       "sha256": "40d83e11dc7eeb5393abdccf762a666471d73cdb072f005f5d47a8f370ec6ea7",
       "bytes": 3453
+    },
+    {
+      "path": "notebooks/_shared/identity_access.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "86b0bc5873892d6770d7c9cfea82335a8f0b50ae2b862a11600ea08e04dc4912",
+      "bytes": 22508
+    },
+    {
+      "path": "notebooks/_shared/identity_access_fixtures.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "eed00f3055103990929fab8769fc563824f466a9f5d67a172858d29a5b36c862",
+      "bytes": 6351
     },
     {
       "path": "notebooks/_shared/identity_event_fixtures.py",
@@ -4431,6 +4494,15 @@
       "bytes": 4418
     },
     {
+      "path": "notebooks/identity/03_identity_access_risk.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "801d074ca10da000f0f6cb09f42d98dd3c3e3d3ff80cd52fad71688c63c1bac2",
+      "bytes": 7204
+    },
+    {
       "path": "notebooks/ingestion/01_raw_event_ingestion.py",
       "artifact_type": "databricks_notebook",
       "runtime": "databricks-spark",
@@ -4877,8 +4949,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "setup",
       "review": "auto",
-      "sha256": "d9e523d1a4eba0ee80f4444de8b36daf7d7318857b429ef383cf8dfcb5ea4517",
-      "bytes": 6160
+      "sha256": "ad12ff7bb227c4f362a2eb24834fe49d1c9fbe4927644c6bded07694ad317057",
+      "bytes": 9481
     },
     {
       "path": "notebooks/setup/07_seed_identity_fixtures.py",
@@ -4886,8 +4958,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "setup",
       "review": "auto",
-      "sha256": "23c59bd0af9cf05f8a19b51b548fe8c77a27ddc4007fb33113aaf073479c6483",
-      "bytes": 2247
+      "sha256": "9df6774210f670855cc0839f2ad95ddd822616f1a796364e460c69456f7a3d62",
+      "bytes": 2725
     },
     {
       "path": "notebooks/setup/0xDSI_Operation_Borrowed_Trust_DEMO_SCRIPT.md",
@@ -4922,8 +4994,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "989af9df2f8ca9783d41ecdcad246e330b7fec0d34af11a72550e69198bf2c0d",
-      "bytes": 107953
+      "sha256": "289cefc559762c897c52bcdf1715feb9c384299e5a81eae48e47dcbe461fb465",
+      "bytes": 108338
     },
     {
       "path": "resources/optional/model_serving.yml",
@@ -5248,6 +5320,15 @@
       "review": "auto",
       "sha256": "0288dcf5c722850c6833af1a801c4a5e6dd0931a4f48cc32481b3a21ce0964f3",
       "bytes": 4395
+    },
+    {
+      "path": "tests/property/test_identity_access.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "5ea877fdffb212333b20d9368471b40025184f40403b999456038d98cee40d7e",
+      "bytes": 7025
     },
     {
       "path": "tests/property/test_identity_resolution.py",

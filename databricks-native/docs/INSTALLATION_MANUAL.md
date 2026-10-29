@@ -45,7 +45,7 @@
 | Volumes | `data, landing, checkpoints, models, artifacts, exports, quarantine` |
 | Tables | ~260 definitions; core ones created by `notebooks/setup/01_create_catalog_schema.py` |
 | UC tool functions | `lookup_ioc`, `get_alert_context`, `query_user_behavior`, `search_events`, `get_asset_info`, `create_case`, `execute_response_action` |
-| Jobs | 106 (`resources/jobs.yml`, including the Identity 01 job: canonical identity spine followed by the identity timeline), ~10 continuous, plus 3 ops jobs (health check, SLA alerting, checkpoint GC report) |
+| Jobs | 106 (`resources/jobs.yml`, including the Identity 01 job: canonical identity spine, then the identity timeline, then access-graph and risk scoring (`score_access_risk`)), ~10 continuous, plus 3 ops jobs (health check, SLA alerting, checkpoint GC report) |
 | Pipelines | `bronze_silver_gold`, `attack_universe_realtime` (serverless) |
 | App | `0xdsi-agentic-soc` |
 | Groups | `soc_admins`, `soc_analysts` (created if missing) |
@@ -294,6 +294,7 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | H1 | Response engine auto-approved high-confidence actions (status `queued`) by default outside production | `enable_auto_approve` defaults to `false`; `true` is an explicit opt-in and is refused in production. Every action otherwise goes through `response_approvals` |
 | ID-P0 | No identity foundation | Phase 0 shipped: identity tables (`setup/06`), synthetic fixtures (`setup/07`, demo only), resolver job `Identity 01`, `/api/identity` routes (analyst role, audited steward writes), and the **Identity** menu. See `docs/IDENTITY_DATALAKE_PLAN.md` |
 | ID-P1 | No lifecycle or sign-in history per identity | Phase 1 shipped on sample data: event and finding tables (`setup/06`), sample events (`setup/07`, demo only), `build_timeline` task in the Identity 01 job, timeline routes and the **Identity Timeline** page. Needs real HR, sign-in, MFA and access event feeds in `landing/identity_events/` to go live |
+| ID-P2 | No explainable identity risk, crown-jewel paths or group ownership view | Phase 2 shipped on sample data: eight access and risk tables (`setup/06`), sample resources, groups and edges (`setup/07`, demo only), `score_access_risk` task in the Identity 01 job, risk/graph/group routes and the **Identity Risk**, **Access Graph & Paths** and **Group Context** pages. Needs real resource, group-membership and entitlement feeds in `landing/identity_access/`, the crown-jewel list, segregation-of-duties rules and agreed weights (`risk_weights.json`) to go live |
 
 ### 10.2 Remaining in-repo work
 
@@ -307,7 +308,7 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | ID-1 | Some Spark DataFrame appends may omit `id` on tables that used to default it | Audit `saveAsTable` writers; add `uuid()` ids where missing (rows still write, `id` is null) |
 | F9 / REV2-24 | Deployment-integrity manifest of shipped artifacts | Clean build + SHA/config fingerprint |
 | ID-OBO | App read every table as its own service principal | App reads run with the signed-in user's Unity Catalog permissions (`user_api_scopes: [sql]`, `data_access_mode=user` default); token used per request only, never cached. Writes stay on the app identity behind role checks + fail-closed audit. Installer grants both groups `CAN_USE` on the warehouse |
-| ID-1..5 | Identity phases 1–5 (timeline, risk, access graph, what-if, remediation, federation, groups, answers) | See `docs/IDENTITY_DATALAKE_PLAN.md`; pages exist in the menu as "not connected" |
+| ID-3..5 | Identity phases 3–5 (what-if, federation, remediation, answers) | See `docs/IDENTITY_DATALAKE_PLAN.md`; pages exist in the menu as "not connected" |
 
 ### 10.3 Needs real infrastructure to prove
 

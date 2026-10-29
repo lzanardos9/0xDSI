@@ -1,17 +1,7 @@
-import { Gauge, Share2, FlaskConical, Wrench, Globe2, UsersRound, MessageSquareText, Construction } from 'lucide-react';
+import { FlaskConical, Wrench, Globe2, MessageSquareText, Construction } from 'lucide-react';
 import { Card, PageHeader, Tag } from './identityUi';
 
 export const ROADMAP_PAGES = {
-  id_risk: {
-    title: 'Identity Risk', icon: Gauge, phase: 'Phase 2',
-    what: 'An explainable risk score per identity built from exposure, behaviour and hygiene signals, with every contributing factor shown.',
-    needs: ['Phase 1 entitlements and events', 'Agreed risk factors and weights from the identity team', 'Score history for trend and drift'],
-  },
-  id_graph: {
-    title: 'Access Graph & Attack Paths', icon: Share2, phase: 'Phase 2',
-    what: 'Who can reach which crown-jewel systems, through which groups, roles and delegations, and the shortest paths an attacker could use.',
-    needs: ['Group, role and delegation edges from AD, Entra and Saviynt', 'Crown-jewel application list', 'Graph traversal job on the relation table'],
-  },
   id_whatif: {
     title: 'What-If Simulator', icon: FlaskConical, phase: 'Phase 3',
     what: 'Preview the effect of removing a group, disabling an account or revoking a role before anyone touches production.',
@@ -26,11 +16,6 @@ export const ROADMAP_PAGES = {
     title: 'Federation Posture', icon: Globe2, phase: 'Phase 3',
     what: 'Trust relationships between tenants and identity providers, guest access, and configuration drift against the agreed baseline.',
     needs: ['Federation and cross-tenant settings exports', 'Baseline policy from the identity team'],
-  },
-  id_groups: {
-    title: 'Group Context', icon: UsersRound, phase: 'Phase 2',
-    what: 'What each group grants, who owns it, how it is nested and whether its members still match its purpose.',
-    needs: ['Group membership and nesting feeds', 'Group owner and purpose metadata'],
   },
   id_answers: {
     title: 'Identity Answers', icon: MessageSquareText, phase: 'Phase 5',

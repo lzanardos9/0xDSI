@@ -199,6 +199,128 @@ export interface IdentityTimelineData {
   findings: TimelineFinding[];
 }
 
+export type RiskBand = 'critical' | 'high' | 'medium' | 'low';
+
+export interface RiskFactor {
+  factor: string;
+  category: 'exposure' | 'behaviour' | 'hygiene';
+  points: number;
+  label: string;
+  evidence: string[];
+}
+
+export interface RiskScore {
+  canonical_id: string;
+  display_name: string | null;
+  principal_type: PrincipalType;
+  score: number;
+  band: RiskBand;
+  exposure: number;
+  behaviour: number;
+  hygiene: number;
+  previous_score: number | null;
+  delta: number | null;
+  factors: RiskFactor[];
+  weights_version: string;
+  scored_at: string;
+}
+
+export interface PathStep {
+  kind: 'account' | 'group' | 'resource';
+  id: string;
+  label: string;
+  edge: string | null;
+  permission?: string | null;
+  persona_type?: string;
+}
+
+export interface AttackPath {
+  path_id: string;
+  canonical_id?: string;
+  display_name?: string | null;
+  principal_type?: PrincipalType;
+  resource_id: string;
+  resource_name: string | null;
+  hops: number;
+  via_takeover: boolean;
+  permission: string | null;
+  steps: PathStep[];
+  score?: number | null;
+  band?: RiskBand | null;
+}
+
+export interface RiskDetail {
+  score: RiskScore;
+  history: { score: number; band: RiskBand; weights_version: string; scored_at: string }[];
+  paths: AttackPath[];
+}
+
+export interface AccessResource {
+  resource_id: string;
+  name: string;
+  crown_jewel: boolean;
+  tier: string | null;
+  owner: string | null;
+  description: string | null;
+  identities: number;
+  via_takeover: number;
+  min_hops: number | null;
+}
+
+export interface GroupSummary {
+  group_key: string;
+  provider: string;
+  name: string;
+  owner: string | null;
+  owner_status: 'none' | 'team' | 'unresolved' | 'departed' | 'active';
+  purpose: string | null;
+  department: string | null;
+  privileged: boolean;
+  direct_member_count: number;
+  effective_member_count: number;
+  nesting_depth: number;
+  parent_groups: string[];
+  child_groups: string[];
+  can_take_over: string[];
+  open_findings: number;
+  worst_severity: Severity | null;
+}
+
+export interface GroupMember {
+  account_key: string;
+  canonical_id: string | null;
+  display_name: string | null;
+  username: string | null;
+  principal_type: PrincipalType | null;
+  persona_type: string | null;
+  normalized_state: string;
+  department: string | null;
+  direct: boolean;
+  via: string[];
+}
+
+export interface GroupFinding {
+  finding_id: string;
+  finding_type: string;
+  severity: Severity;
+  detail: string;
+  evidence: string[];
+  status: 'open' | 'resolved';
+  first_seen: string | null;
+  last_seen: string | null;
+}
+
+export interface GroupDetail {
+  group: Omit<GroupSummary, 'open_findings' | 'worst_severity'> & {
+    tenant: string;
+    object_id: string;
+    owner_canonical_id: string | null;
+    grants: { resource_id: string; resource: string; crown_jewel: boolean; permission: string | null }[];
+  };
+  members: GroupMember[];
+  findings: GroupFinding[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -247,4 +369,34 @@ export const identityApi = {
   timelineFindings: () => request<{ findings: TimelineFinding[] }>('/timeline/findings?status=open&limit=200'),
   identityTimeline: (id: string) =>
     request<IdentityTimelineData>(`/identities/${encodeURIComponent(id)}/timeline`),
+  risk: (p: { band?: string; search?: string }) => {
+    const q = new URLSearchParams({ limit: '200' });
+    if (p.band) q.set('band', p.band);
+    if (p.search) q.set('search', p.search);
+    return request<{
+      scores: RiskScore[];
+      total: number;
+      bands: Partial<Record<RiskBand, number>>;
+      meta: { scored_at: string | null; weights_version: string | null; access_version: string | null } | null;
+    }>(`/risk?${q}`);
+  },
+  riskDetail: (id: string) => request<RiskDetail>(`/risk/${encodeURIComponent(id)}`),
+  graphResources: () =>
+    request<{ resources: AccessResource[]; meta: { edges: number; access_version: string | null; updated_at: string | null } | null }>(
+      '/graph/resources',
+    ),
+  graphPaths: (p: { resource_id?: string; takeover_only?: boolean }) => {
+    const q = new URLSearchParams({ limit: '200' });
+    if (p.resource_id) q.set('resource_id', p.resource_id);
+    if (p.takeover_only) q.set('takeover_only', 'true');
+    return request<{ paths: AttackPath[] }>(`/graph/paths?${q}`);
+  },
+  groups: (p: { search?: string; findings_only?: boolean; privileged_only?: boolean }) => {
+    const q = new URLSearchParams();
+    if (p.search) q.set('search', p.search);
+    if (p.findings_only) q.set('findings_only', 'true');
+    if (p.privileged_only) q.set('privileged_only', 'true');
+    return request<{ groups: GroupSummary[] }>(`/groups?${q}`);
+  },
+  groupDetail: (key: string) => request<GroupDetail>(`/groups/${encodeURIComponent(key)}`),
 };
