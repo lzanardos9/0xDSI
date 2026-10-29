@@ -66,3 +66,18 @@ for name, rows in (("resources", RESOURCES), ("groups", GROUPS), ("edges", EDGES
         for r in rows:
             fh.write(json.dumps(r) + "\n")
     print(f"identity access {name}: {len(rows)} -> {access_dir}/{name}.jsonl")
+
+# COMMAND ----------
+
+from identity_federation_fixtures import CHANGES, TRUSTS
+from identity_whatif_fixtures import SCENARIOS
+
+for sub, files in (("identity_federation", (("trusts", TRUSTS), ("changes", CHANGES))),
+                   ("identity_whatif", (("scenarios", SCENARIOS),))):
+    folder = f"/Volumes/{catalog}/{schema}/landing/{sub}"
+    os.makedirs(folder, exist_ok=True)
+    for name, rows in files:
+        with open(f"{folder}/{name}.jsonl", "w") as fh:
+            for r in rows:
+                fh.write(json.dumps(r) + "\n")
+        print(f"{sub} {name}: {len(rows)} -> {folder}/{name}.jsonl")

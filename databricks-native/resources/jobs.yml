@@ -1951,6 +1951,47 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
               access_subdir: "identity_access"
+        - task_key: federation_posture
+          depends_on:
+            - task_key: score_access_risk
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/identity/05_identity_federation.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              access_subdir: "identity_access"
+              federation_subdir: "identity_federation"
+        - task_key: evaluate_whatif
+          depends_on:
+            - task_key: score_access_risk
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/identity/04_identity_whatif.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              access_subdir: "identity_access"
+              whatif_subdir: "identity_whatif"
+              scenario_id: ""
+
+    identity_whatif:
+      name: "[0xDSI] Identity 02 - What-If Simulator"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+      tasks:
+        - task_key: evaluate_whatif
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/identity/04_identity_whatif.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              access_subdir: "identity_access"
+              whatif_subdir: "identity_whatif"
+              scenario_id: ""
 
     knowledge_store:
       name: "[0xDSI] Agent 42 - Knowledge Store Ingestion"

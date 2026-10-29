@@ -288,6 +288,98 @@ DDL = {
         weights_version STRING,
         scored_at TIMESTAMP NOT NULL
     """,
+    # Phase 3: what-if simulator. Scenarios are requests; results are read-only diffs.
+    "identity_whatif_scenario": """
+        scenario_id STRING NOT NULL,
+        name STRING NOT NULL,
+        description STRING,
+        changes STRING NOT NULL,
+        scenario_hash STRING,
+        source STRING,
+        status STRING NOT NULL,
+        error STRING,
+        created_by STRING,
+        created_at TIMESTAMP,
+        evaluated_at TIMESTAMP
+    """,
+    "identity_whatif_result": """
+        result_id STRING NOT NULL,
+        scenario_id STRING NOT NULL,
+        access_version STRING,
+        whatif_version STRING,
+        summary STRING,
+        result STRING,
+        evaluated_at TIMESTAMP NOT NULL
+    """,
+    # Phase 3: federation posture
+    "identity_federation_trust": """
+        trust_id STRING NOT NULL,
+        kind STRING NOT NULL,
+        provider STRING,
+        tenant STRING,
+        partner_name STRING,
+        partner_tenant STRING,
+        partner_domains STRING,
+        owner STRING,
+        owner_status STRING,
+        description STRING,
+        settings STRING,
+        rules_total INT,
+        rules_passed INT,
+        worst_severity STRING,
+        guests INT,
+        active_guests INT,
+        federation_version STRING,
+        updated_at TIMESTAMP
+    """,
+    "identity_federation_guest": """
+        account_key STRING NOT NULL,
+        canonical_id STRING,
+        display_name STRING,
+        username STRING,
+        email STRING,
+        home_tenant STRING,
+        trust_id STRING,
+        partner_name STRING,
+        sponsor STRING,
+        sponsor_status STRING,
+        normalized_state STRING,
+        last_seen STRING,
+        days_inactive INT,
+        groups STRING,
+        privileged_groups STRING,
+        updated_at TIMESTAMP
+    """,
+    "identity_federation_finding": """
+        finding_id STRING NOT NULL,
+        scope STRING NOT NULL,
+        trust_id STRING,
+        account_key STRING,
+        canonical_id STRING,
+        finding_type STRING NOT NULL,
+        severity STRING NOT NULL,
+        title STRING,
+        detail STRING,
+        setting STRING,
+        expected STRING,
+        actual STRING,
+        changed_by STRING,
+        changed_at STRING,
+        status STRING NOT NULL,
+        first_seen TIMESTAMP,
+        last_seen TIMESTAMP,
+        resolved_at TIMESTAMP
+    """,
+    "identity_federation_change": """
+        change_id STRING NOT NULL,
+        trust_id STRING NOT NULL,
+        setting STRING NOT NULL,
+        before_value STRING,
+        after_value STRING,
+        changed_at STRING,
+        changed_by STRING,
+        recorded_at TIMESTAMP
+    """,
 }
 
 for name, cols in DDL.items():
@@ -297,7 +389,11 @@ for name, cols in DDL.items():
 dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity")
 dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity_events")
 dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity_access")
+dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity_federation")
+dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity_whatif")
 print(f"Identity landing path: /Volumes/{catalog}/{schema}/landing/identity/<provider>/")
 print(f"Identity event landing path: /Volumes/{catalog}/{schema}/landing/identity_events/*.jsonl")
 print(f"Identity access landing path: /Volumes/{catalog}/{schema}/landing/identity_access/"
       "{resources,groups,edges}.jsonl [+ risk_weights.json]")
+print(f"Identity federation landing path: /Volumes/{catalog}/{schema}/landing/identity_federation/"
+      "trusts.jsonl [+ changes.jsonl, baseline.json]")
