@@ -32,6 +32,7 @@ from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
 from backend.audit import AuditPersistenceError, build_audit_record, persist_audit
+from backend.identity import build_identity_router
 from backend.connector_health import (
     derive_health as derive_connector_health,
     heartbeat_age_seconds,
@@ -3998,6 +3999,17 @@ def _safe_static_file(root: Path, full_path: str) -> Optional[Path]:
     if candidate.is_file():
         return candidate
     return None
+
+
+def _require_identity_reader(user: dict):
+    _require_authenticated(user)
+    _require_analyst(user)
+
+
+app.include_router(build_identity_router(
+    query=query, execute_write=execute_write, fqn=fqn, get_user=_get_user_from_request,
+    require_analyst=_require_identity_reader, audit=_audit_log, trigger_job=trigger_job,
+))
 
 
 if DIST_DIR.exists() and (DIST_DIR / "index.html").exists():
