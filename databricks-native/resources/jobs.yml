@@ -737,6 +737,25 @@ resources:
             base_parameters:
               catalog: ${var.catalog}
               schema: ${var.schema}
+        - task_key: create_identity_tables
+          depends_on:
+            - task_key: create_tables
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/setup/06_identity_datalake_tables.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+        - task_key: seed_identity_fixtures
+          depends_on:
+            - task_key: create_identity_tables
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/setup/07_seed_identity_fixtures.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              seed_demo_data: ${var.seed_demo_data}
 
     # ─────────────────────────────────────────────────────
     # ENRICHMENT & INVESTIGATION AGENTS
@@ -1893,6 +1912,25 @@ resources:
               schema: ${var.schema}
               lookback_minutes: "10"
               compute_centrality: "true"
+
+    identity_spine:
+      name: "[0xDSI] Identity 01 - Canonical Identity Spine"
+      schedule:
+        quartz_cron_expression: "0 15 * * * ?"
+        timezone_id: "UTC"
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+      tasks:
+        - task_key: resolve_identities
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/identity/01_identity_spine.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              landing_subdir: "identity"
 
     knowledge_store:
       name: "[0xDSI] Agent 42 - Knowledge Store Ingestion"
