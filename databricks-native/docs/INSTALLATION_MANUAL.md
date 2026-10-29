@@ -13,7 +13,7 @@
 | Python notebooks | 174 compile cleanly (offline gate). |
 | Offline tests | 42 of 42 pass. |
 | App screens (frontend) | Built inside `app/` by the installer; uploaded via bundle `sync.include`. |
-| Bundle definition | 105 jobs + 2 serverless pipelines + 1 app; every referenced notebook exists. Custom model serving is opt-in. |
+| Bundle definition | 106 jobs + 2 serverless pipelines + 1 app; every referenced notebook exists. Custom model serving is opt-in. |
 | One-command installer | `./deploy.sh dev <WAREHOUSE_ID>` is the supported path. It builds, deploys, runs setup **and waits for it**, creates the agent tool functions, grants the app, and starts it. |
 | Table setup (`setup/01`) | Rewritten to valid Delta DDL: no non-constant defaults, no expression partitions, column-defaults feature enabled wherever `DEFAULT` is used. Creates all volumes. |
 | First real detection | Section 6 — five SQL/CLI steps after install. |
@@ -45,7 +45,7 @@
 | Volumes | `data, landing, checkpoints, models, artifacts, exports, quarantine` |
 | Tables | ~260 definitions; core ones created by `notebooks/setup/01_create_catalog_schema.py` |
 | UC tool functions | `lookup_ioc`, `get_alert_context`, `query_user_behavior`, `search_events`, `get_asset_info`, `create_case`, `execute_response_action` |
-| Jobs | 105 (`resources/jobs.yml`), ~10 continuous, plus 3 ops jobs (health check, SLA alerting, checkpoint GC report) |
+| Jobs | 106 (`resources/jobs.yml`, including the Identity 01 canonical identity spine), ~10 continuous, plus 3 ops jobs (health check, SLA alerting, checkpoint GC report) |
 | Pipelines | `bronze_silver_gold`, `attack_universe_realtime` (serverless) |
 | App | `0xdsi-agentic-soc` |
 | Groups | `soc_admins`, `soc_analysts` (created if missing) |
@@ -246,7 +246,7 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 ./deploy.sh production <WAREHOUSE_ID>
 ```
 - **Demo data:** loaded only where `seed_demo_data` is `"true"` (dev and staging). Production defaults to `"false"`; the seed notebook exits immediately. The seed **overwrites** tables such as `events`, `alerts`, `cases` — never enable it on a catalog holding real data.
-- **Cost:** outside dev, all 105 jobs and both pipelines run on their schedules immediately, including ~10 continuous streams and 2 continuous serverless pipelines. Pause what you don't need.
+- **Cost:** outside dev, all 106 jobs and both pipelines run on their schedules immediately, including ~10 continuous streams and 2 continuous serverless pipelines. Pause what you don't need.
 - **Roles:** set `SOC_ADMIN_EMAILS` / `SOC_ANALYST_EMAILS` for each run; they are written into the app's configuration.
 - **Custom model serving (optional):** after real agent models are registered in UC, add `resources/optional/model_serving.yml` to `include:` in `databricks.yml` and redeploy.
 
@@ -289,6 +289,8 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | F6/F7 | Unused `.env.databricks`; installer deleted `package.json` | Both removed |
 | F8 | Installer used 8B, bundle 70B | One default (70B) passed to the bundle |
 | — | Non-production stream checkpoints in temporary storage (lost on serverless) | All environments use the `checkpoints` volume |
+| H1 | Response engine auto-approved high-confidence actions (status `queued`) by default outside production | `enable_auto_approve` defaults to `false`; `true` is an explicit opt-in and is refused in production. Every action otherwise goes through `response_approvals` |
+| ID-P0 | No identity foundation | Phase 0 shipped: identity tables (`setup/06`), synthetic fixtures (`setup/07`, demo only), resolver job `Identity 01`, `/api/identity` routes (analyst role, audited steward writes), and the **Identity** menu. See `docs/IDENTITY_DATALAKE_PLAN.md` |
 
 ### 10.2 Remaining in-repo work
 
@@ -301,6 +303,8 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | F1 (rest) | Seed uses overwrite on live tables (dev/staging) | Make seeding append-only/idempotent |
 | ID-1 | Some Spark DataFrame appends may omit `id` on tables that used to default it | Audit `saveAsTable` writers; add `uuid()` ids where missing (rows still write, `id` is null) |
 | F9 / REV2-24 | Deployment-integrity manifest of shipped artifacts | Clean build + SHA/config fingerprint |
+| ID-OBO | App reads and writes as its own service principal | On-behalf-of user auth so data access and steward decisions are tied to the signed-in person |
+| ID-1..5 | Identity phases 1–5 (timeline, risk, access graph, what-if, remediation, federation, groups, answers) | See `docs/IDENTITY_DATALAKE_PLAN.md`; pages exist in the menu as "not connected" |
 
 ### 10.3 Needs real infrastructure to prove
 
@@ -310,6 +314,7 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | REV2-12/13/15 | Real ML training (Ray SLM, MC-RNN) and trained-model → serving | Ray/GPU cluster, labelled data |
 | REV2-23 | True Lakebase (Postgres) and Zerobus topology | Provisioned Lakebase + Zerobus |
 | REV2-02/03/06 | Calibration base rates, detector independence | Labelled outcomes from live operation |
+| ID-LIVE | Real identity snapshots from AD, Entra ID, PingDirectory, Saviynt, Duo and app-local sources | Read-only exports or connectors per provider, dropped in `/Volumes/<catalog>/<schema>/landing/identity/<provider>/` |
 | REV2-04/07/09/10/20/21/25/26/27/29 | Proven offline; final proof on live streams, warehouse, response targets | Live workspace + controlled response targets |
 
 ### 10.4 Definition of "100% done"
@@ -335,4 +340,4 @@ databricks bundle run <job_key> -t dev --var="warehouse_id=<WAREHOUSE_ID>"
 ```
 
 ## Appendix B — Related documents
-`README.md`, `ARCHITECTURE_DEEP_DIVE.md`, `docs/COVERAGE_MATRIX.md`, `docs/engineering/audit-remediation-status.md`, `docs/engineering/compute-compatibility.md`, `notebooks/memory_cache/MEMORY_CACHING_GUIDE.md`.
+`README.md`, `ARCHITECTURE_DEEP_DIVE.md`, `docs/IDENTITY_DATALAKE_PLAN.md`, `docs/COVERAGE_MATRIX.md`, `docs/engineering/audit-remediation-status.md`, `docs/engineering/compute-compatibility.md`, `notebooks/memory_cache/MEMORY_CACHING_GUIDE.md`.

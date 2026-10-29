@@ -2,8 +2,8 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 595,
-  "total_bytes": 11306744,
+  "total_files": 596,
+  "total_bytes": 11312206,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
@@ -11,7 +11,7 @@
       "build_config": 12,
       "databricks_notebook": 140,
       "deployment_config": 6,
-      "documentation": 14,
+      "documentation": 15,
       "frontend_entry": 1,
       "frontend_module": 306,
       "other": 3,
@@ -25,7 +25,7 @@
       "asset": 10,
       "build_config": 19,
       "deployment": 6,
-      "documentation": 14,
+      "documentation": 15,
       "experimental": 1,
       "production": 3,
       "setup": 7,
@@ -38,7 +38,7 @@
       "build-tooling": 17,
       "databricks-bundle": 6,
       "databricks-spark": 140,
-      "n/a": 27,
+      "n/a": 28,
       "python": 52,
       "python (databricks runtime)": 39,
       "python-fastapi": 5,
@@ -2101,8 +2101,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "f56ecf766f37fc4313dbd0933c1e2c2e7aeb22f72c2a3fac54a5d4dc3b74d152",
-      "bytes": 4744
+      "sha256": "fed29773f1235135161dc591d9e65be7f02ad36fe8a63775c655a0d0a550b6a8",
+      "bytes": 4735
     },
     {
       "path": "app/frontend/src/components/industry-threats/AirlineThreats.tsx",
@@ -3122,13 +3122,22 @@
       "bytes": 17195
     },
     {
+      "path": "docs/IDENTITY_DATALAKE_PLAN.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "2fc6a31fde315b6feba4f40a230bb5da46d10848f43c949408254329363e920f",
+      "bytes": 4183
+    },
+    {
       "path": "docs/INSTALLATION_MANUAL.md",
       "artifact_type": "documentation",
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "ca3cb95be3b22f65e78ccf760e73a3f9410b7f85169e50b0c65156cbeabc795c",
-      "bytes": 19361
+      "sha256": "0ae6f2a177fb16718995e322554ad35619fa1f25b2e81f554917e46de962824c",
+      "bytes": 20586
     },
     {
       "path": "docs/competitive/0xDSI-vs-Securonix.md",
@@ -4733,8 +4742,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "ffba6a09aac2af73bee2d7ad2fd7eee8dcf7111d3061bf91b498aea2de0ff57c",
-      "bytes": 8444
+      "sha256": "40c739c331cf5fcefb434f4eb9efe39369b4fc96f1892b45cd57cef3063b4510",
+      "bytes": 8507
     },
     {
       "path": "notebooks/response/02_case_management.py",
