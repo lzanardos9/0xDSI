@@ -6,7 +6,8 @@
 # MAGIC the identity landing path so the resolver has something to resolve before
 # MAGIC real connectors are configured. Runs only when `seed_demo_data` is true.
 # MAGIC Real feeds land in the same layout: `<provider>/accounts.jsonl` plus
-# MAGIC `<provider>/manifest.json`.
+# MAGIC `<provider>/manifest.json`. Sample lifecycle, sign-in, MFA and access
+# MAGIC events land in `landing/identity_events/` for the Identity Timeline.
 
 # COMMAND ----------
 
@@ -42,3 +43,14 @@ for provider, meta in SOURCES.items():
         json.dump({"provider": provider, "snapshot_at": SNAPSHOT_AT,
                    "snapshot_complete": meta["snapshot_complete"], "record_count": len(rows)}, fh)
     print(f"{provider}: {len(rows)} accounts -> {folder}")
+
+# COMMAND ----------
+
+from identity_event_fixtures import EVENTS
+
+events_dir = f"/Volumes/{catalog}/{schema}/landing/identity_events"
+os.makedirs(events_dir, exist_ok=True)
+with open(f"{events_dir}/demo_events.jsonl", "w") as fh:
+    for e in EVENTS:
+        fh.write(json.dumps(e) + "\n")
+print(f"identity events: {len(EVENTS)} -> {events_dir}/demo_events.jsonl")

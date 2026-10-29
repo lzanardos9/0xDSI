@@ -1931,6 +1931,16 @@ resources:
               catalog: ${var.catalog}
               schema: ${var.schema}
               landing_subdir: "identity"
+        - task_key: build_timeline
+          depends_on:
+            - task_key: resolve_identities
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/identity/02_identity_timeline.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              events_subdir: "identity_events"
 
     knowledge_store:
       name: "[0xDSI] Agent 42 - Knowledge Store Ingestion"

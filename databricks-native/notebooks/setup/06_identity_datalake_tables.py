@@ -150,6 +150,36 @@ DDL = {
         last_run_at TIMESTAMP,
         last_success_at TIMESTAMP
     """,
+    "identity_event": """
+        event_id STRING NOT NULL,
+        source_event_id STRING,
+        canonical_id STRING,
+        persona_id STRING,
+        account_key STRING,
+        employee_id STRING,
+        provider STRING NOT NULL,
+        tenant STRING,
+        event_type STRING NOT NULL,
+        category STRING NOT NULL,
+        occurred_at TIMESTAMP NOT NULL,
+        actor STRING,
+        detail STRING,
+        link_status STRING NOT NULL,
+        timeline_version STRING,
+        ingested_at TIMESTAMP
+    """,
+    "identity_timeline_finding": """
+        finding_id STRING NOT NULL,
+        finding_type STRING NOT NULL,
+        severity STRING NOT NULL,
+        canonical_id STRING NOT NULL,
+        evidence_event_ids ARRAY<STRING>,
+        detail STRING,
+        occurred_at TIMESTAMP,
+        status STRING NOT NULL,
+        first_seen TIMESTAMP,
+        last_seen TIMESTAMP
+    """,
 }
 
 for name, cols in DDL.items():
@@ -157,4 +187,6 @@ for name, cols in DDL.items():
     print(f"Ready: {name}")
 
 dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity")
+dbutils.fs.mkdirs(f"/Volumes/{catalog}/{schema}/landing/identity_events")
 print(f"Identity landing path: /Volumes/{catalog}/{schema}/landing/identity/<provider>/")
+print(f"Identity event landing path: /Volumes/{catalog}/{schema}/landing/identity_events/*.jsonl")
