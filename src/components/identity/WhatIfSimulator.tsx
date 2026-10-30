@@ -50,7 +50,7 @@ function ScenarioDetail({ id, onChanged }: { id: string; onChanged: () => void }
   if (error && !data) return <ErrorBanner message={error} onRetry={load} />;
   if (!data) return <Card><Loading label="Loading scenario" /></Card>;
   const s = data.scenario;
-  const changes = data.result ? [...data.result.applied, ...data.result.rejected] : [];
+  const changes = data.result ? [...(data.result.applied ?? []), ...(data.result.rejected ?? [])] : [];
 
   return (
     <div className="space-y-4">

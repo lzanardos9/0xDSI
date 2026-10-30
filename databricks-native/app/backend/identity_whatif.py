@@ -91,7 +91,10 @@ def add_whatif_routes(router: APIRouter, query: Callable, execute_write: Callabl
             raise HTTPException(status_code=404, detail="Scenario not found")
         res = query(f"""SELECT result, access_version, evaluated_at FROM {fqn('identity_whatif_result')}
                         WHERE scenario_id = :sid ORDER BY evaluated_at DESC LIMIT 1""", {"sid": scenario_id})
-        return {"scenario": _parse(found[0], "changes"), "result": _parse(res[0], "result") if res else None}
+        result = _parse(res[0], "result")["result"] if res else None
+        if isinstance(result, dict):
+            result = {**result, "access_version": res[0]["access_version"], "evaluated_at": res[0]["evaluated_at"]}
+        return {"scenario": _parse(found[0], "changes"), "result": result if isinstance(result, dict) else None}
 
     @router.get("/whatif/options")
     async def scenario_options(request: Request):
