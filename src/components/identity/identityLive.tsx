@@ -5,8 +5,9 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { identityApi, type AttackPath, type LiveEvent, type LiveFeed } from '../../lib/identityApi';
+import { liveTone, type LiveTone } from './identityLiveRules';
 
-export type LiveTone = 'info' | 'notice' | 'warn' | 'alert';
+export type { LiveTone };
 
 export const TONE_COLOR: Record<LiveTone, string> = {
   info: '#2dd4bf',
@@ -26,6 +27,10 @@ export interface LiveView {
 const str = (v: unknown) => (typeof v === 'string' || typeof v === 'number' ? String(v) : '');
 
 export function describeLiveEvent(e: LiveEvent): LiveView {
+  return { ...describe(e), tone: liveTone(e) };
+}
+
+function describe(e: LiveEvent): LiveView {
   const d = e.detail || {};
   const who = e.display_name || e.username || 'Unlinked account';
   const app = str(d.application) || str(d.resource);

@@ -237,6 +237,27 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 ### 7.3 Notifications, ticketing, response targets
 `slack_webhook_url`, `teams_webhook_url`, `pagerduty_api_key`, `servicenow_*`, `jira_*`, `crowdstrike_client_id/secret`. Response actions always need approval by a second person and are bound to a confirmed finding revision.
 
+### 7.4 Identity live feed: chain-of-custody signing key
+Every live identity event opened in **Identity → Access Graph** (or the Overview ticker) shows its raw `identity_event` row with a SHA-256 digest of the canonical record (keys sorted, compact JSON, UTF-8). Without a key the app only hashes; with a key it also signs each seal with HMAC-SHA256 over `event_id`, digest and seal time, and **Verify integrity** re-reads the stored row server-side. Each view and verification is written to the audit log (`identity_event_view`, `identity_event_verify`).
+
+```bash
+openssl rand -hex 32 | databricks secrets put-secret soc-secrets identity_custody_key
+```
+
+Then bind it to the app in `resources/app.yml` (key must be at least 32 characters):
+
+```yaml
+      resources:
+        - name: identity-custody-key
+          secret: { scope: soc-secrets, key: identity_custody_key, permission: READ }
+      config:
+        env:
+          - name: IDENTITY_CUSTODY_KEY
+            valueFrom: identity-custody-key
+```
+
+Rotating the key changes the key id shown on new seals; earlier exported seals can only be checked with the key that made them, so keep retired keys in the scope under a dated name.
+
 ---
 
 ## 8. Step 6 — Staging and production

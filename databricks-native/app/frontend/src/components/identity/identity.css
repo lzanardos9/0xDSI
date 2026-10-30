@@ -152,10 +152,12 @@
 @keyframes idRadar { to { transform: rotate(360deg); } }
 .id-bar-in { animation: idBar 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: bottom; }
 @keyframes idBar { from { transform: scaleY(0); } }
+.id-drawer-in { animation: idDrawer 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes idDrawer { from { transform: translateX(32px); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   .identity-page > *, .id-graph-edge-draw, .id-graph-flow, .id-graph-node-in, .id-pulse-ring, .id-skeleton,
-  .id-live-comet, .id-live-ripple, .id-live-float, .id-live-new::after, .id-live-enter, .id-num-bump, .id-radar, .id-bar-in { animation: none !important; }
+  .id-live-comet, .id-live-ripple, .id-live-float, .id-live-new::after, .id-live-enter, .id-num-bump, .id-radar, .id-bar-in, .id-drawer-in { animation: none !important; }
   .id-live-comet, .id-live-ripple, .id-live-float { opacity: 0; }
   .id-graph-edge-draw { stroke-dashoffset: 0; }
 }

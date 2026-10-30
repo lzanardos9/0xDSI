@@ -3,6 +3,7 @@ import type {
   GroupSummary, IdentityDetail, IdentitySummary, IdentityTimelineData, NonHuman, Overview, RemediationAck, RemediationDetail,
   RemediationList, RemediationStage, ReviewItem, RiskBand, RiskDetail, RiskScore, ScenarioChange, StewardDecision,
   TimelineFinding, TimelineIdentity, TimelineStats, TrustDetail, WhatIfOptions, WhatIfResult, WhatIfScenario, LiveFeed,
+  LiveWindow, LiveHistogram, LiveEventDetail, CustodyVerification,
 } from './identityTypes';
 import { parse, type AnswerCatalog } from './identityAnswerParser';
 import { simulate, validateChanges, type SimInputs } from './identityWhatIfEngine';
@@ -142,7 +143,14 @@ export const identityApi = {
     const d = await load();
     return liveDemo(d).grow(structuredClone(d.overview));
   },
-  liveEvents: async (): Promise<LiveFeed> => liveDemo(await load()).feed(),
+  liveEvents: async (range: { since?: string; until?: string } = {}): Promise<LiveFeed> => {
+    const demo = liveDemo(await load());
+    return range.since || range.until ? demo.range(range.since, range.until) : demo.feed();
+  },
+  liveHistogram: async (window: LiveWindow): Promise<LiveHistogram> => liveDemo(await load()).histogram(window),
+  liveEvent: async (id: string): Promise<LiveEventDetail> => liveDemo(await load()).detail(id),
+  verifyLiveEvent: async (id: string, seal: { digest: string; signature: string | null; signed_at: string }): Promise<CustodyVerification> =>
+    liveDemo(await load()).verify(id, seal),
   identities: async (p: { search?: string; principal_type?: string; conflicts_only?: boolean; limit?: number; offset?: number }) => {
     const d = await load();
     const q = (p.search || '').trim().toLowerCase();

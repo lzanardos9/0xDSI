@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Fingerprint, Users, Cpu, Bot, AlertTriangle, GitMerge, RefreshCw, Database, CheckCircle2, CircleDashed, XCircle, Activity, Radio, ArrowRight } from 'lucide-react';
-import { identityApi, Overview } from '../../lib/identityApi';
+import { identityApi, Overview, type AttackPath, type LiveEvent } from '../../lib/identityApi';
 import { Card, PageHeader, Loading, ErrorBanner, Empty, Tag, fmtTime, providerLabel, FINDING_LABEL } from './identityUi';
 import { AnimatedNumber, useLiveFeed, useNow } from './identityLive';
 import { LiveBadge, LiveEventRow } from './LiveFeed';
+import LiveEventDrawer from './LiveEventDrawer';
 
 const REFRESH_MS = 12000;
 
@@ -38,6 +39,13 @@ export default function IdentityOverview({ onNavigate }: Props) {
   }, []);
 
   const live = useLiveFeed();
+  const [opened, setOpened] = useState<LiveEvent | null>(null);
+  const [paths, setPaths] = useState<AttackPath[] | null>(null);
+  const openEvent = useCallback((e: LiveEvent) => {
+    setOpened(e);
+    if (paths === null) identityApi.graphPaths({ resource_id: '', takeover_only: false }).then((d) => setPaths(d.paths)).catch(() => setPaths([]));
+  }, [paths]);
+  const closeEvent = useCallback(() => setOpened(null), []);
   const now = useNow(4000);
 
   const runResolver = async () => {
@@ -58,6 +66,7 @@ export default function IdentityOverview({ onNavigate }: Props) {
 
   return (
     <div className="identity-page">
+      <LiveEventDrawer event={opened} paths={paths ?? []} onClose={closeEvent} onOpen={openEvent} />
       <div className="max-w-7xl mx-auto">
         <PageHeader
           icon={Fingerprint}
@@ -141,7 +150,7 @@ export default function IdentityOverview({ onNavigate }: Props) {
                   ) : live.events.length === 0 ? (
                     <div className="px-3 py-8 text-center text-xs text-slate-500">No identity activity yet.</div>
                   ) : live.events.slice(0, 4).map((e) => (
-                    <LiveEventRow key={e.event_id} e={e} now={now} isNew={live.freshIds.has(e.event_id)} compact />
+                    <LiveEventRow key={e.event_id} e={e} now={now} isNew={live.freshIds.has(e.event_id)} compact onSelect={() => openEvent(e)} />
                   ))}
                 </div>
               </Card>

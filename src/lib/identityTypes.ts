@@ -437,6 +437,57 @@ export interface LiveFeed {
   as_of: string | null;
   mode: 'demo' | 'live';
   poll_ms: number;
+  truncated?: boolean;
+}
+
+export type LiveWindow = '10m' | '1h' | '24h';
+
+export interface LiveBucket {
+  start: string;
+  end: string;
+  total: number;
+  risky: number;
+}
+
+export interface LiveHistogram {
+  window: LiveWindow;
+  since: string;
+  until: string;
+  buckets: LiveBucket[];
+}
+
+export interface CustodyStep {
+  step: 'received' | 'ingested' | 'linked' | 'sealed' | 'accessed';
+  at: string | null;
+  by: string | null;
+  detail: string;
+}
+
+export interface CustodySeal {
+  algorithm: 'HMAC-SHA256' | null;
+  digest_algorithm: 'SHA-256';
+  canonicalization: string;
+  digest: string;
+  signature: string | null;
+  key_id: string | null;
+  signed_at: string;
+  signer: string | null;
+  trail: CustodyStep[];
+}
+
+export interface LiveEventDetail {
+  event: LiveEvent;
+  raw: Record<string, unknown>;
+  custody: CustodySeal;
+  related: LiveEvent[];
+}
+
+export interface CustodyVerification {
+  record_matches: boolean;
+  signature_valid: boolean | null;
+  stored_digest: string;
+  checked_at: string;
+  checked_by: string;
 }
 
 export interface WhatIfOptions {

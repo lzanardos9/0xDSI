@@ -1,11 +1,18 @@
 // Slow, deterministic stream of sample identity activity for the preview. The Databricks app reads identity_event instead.
-import type { AttackPath, LiveEvent, LiveFeed, Overview } from './identityTypes';
+import type { AttackPath, CustodyVerification, LiveBucket, LiveEvent, LiveEventDetail, LiveFeed, LiveHistogram, LiveWindow, Overview } from './identityTypes';
 import type { SimXref } from './identityWhatIfEngine';
+import { CANONICALIZATION, constantTimeEqual, hmacHex, keyId, recordDigest, sealMessage } from '../components/identity/identityCustody';
+import { needsLook } from '../components/identity/identityLiveRules';
 
 const SLOT_MS = 9000;
 const BACKLOG = 7;
 const FEED_SIZE = 25;
 const POLL_MS = 2500;
+const RANGE_LIMIT = 300;
+const BUCKETS = 24;
+const WINDOW_MS: Record<LiveWindow, number> = { '10m': 600000, '1h': 3600000, '24h': 86400000 };
+const DEMO_KEY = 'preview-demo-custody-key-not-a-secret-0001';
+const TENANT: Record<string, string> = { entra_id: 'aa.onmicrosoft.com', active_directory: 'corp.aa.com', okta: 'aa.okta.com' };
 
 const COUNTRIES = ['US', 'US', 'US', 'US', 'BR', 'GB', 'IN', 'RO', 'NG', 'SG'];
 const APPS = ['Microsoft 365', 'Crew Portal', 'AAdvantage Admin', 'Workday', 'ServiceNow', 'Okta Dashboard'];
@@ -24,6 +31,10 @@ function rng(seed: number) {
 
 export interface LiveDemo {
   feed: () => LiveFeed;
+  range: (since?: string, until?: string) => LiveFeed;
+  histogram: (window: LiveWindow) => LiveHistogram;
+  detail: (id: string) => Promise<LiveEventDetail>;
+  verify: (id: string, seal: { digest: string; signature: string | null; signed_at: string }) => Promise<CustodyVerification>;
   grow: (o: Overview) => Overview;
 }
 
@@ -40,14 +51,14 @@ export function createLiveDemo(paths: AttackPath[], xrefs: SimXref[], groupNames
   };
 
   const countUntil = (now: number) => {
-    let k = Math.max(0, Math.floor((now - startedAt) / SLOT_MS) + BACKLOG - 1);
-    while (k > 0 && at(k - 1) > now) k--;
+    let k = Math.floor((now - startedAt) / SLOT_MS) + BACKLOG - 1;
+    while (at(k - 1) > now) k--;
     while (at(k) <= now) k++;
     return k;
   };
 
-  const make = (k: number): LiveEvent => {
-    const r = rng(k * 2654435761 + 97);
+  const make = (k: number, seed = k): LiveEvent => {
+    const r = rng(seed * 2654435761 + 97);
     const pick = <T,>(xs: T[]) => xs[Math.floor(r() * xs.length)];
     const base = { event_id: `live-${startedAt}-${k}`, occurred_at: new Date(at(k)).toISOString(), actor: null as string | null };
     const who = (x: SimXref) => ({ canonical_id: x.canonical_id, display_name: x.display_name, principal_type: x.principal_type as LiveEvent['principal_type'],
@@ -57,7 +68,7 @@ export function createLiveDemo(paths: AttackPath[], xrefs: SimXref[], groupNames
     if (roll < 0.52 && paths.length) {
       const p = pick(paths);
       const acct = byKey.get(p.steps[0]?.id ?? '');
-      if (!acct) return make(k + 100000);
+      if (!acct) return make(k, seed + 100000);
       const ident = who(acct);
       const onPath = { resource_id: p.resource_id, resource: p.resource_name, path_id: p.path_id };
       const take = p.steps.findIndex((s) => s.edge === 'can_take_over');
@@ -106,12 +117,103 @@ export function createLiveDemo(paths: AttackPath[], xrefs: SimXref[], groupNames
     return cache.get(k)!;
   };
 
+  const slotOf = (id: string) => {
+    const prefix = `live-${startedAt}-`;
+    if (!id.startsWith(prefix)) return null;
+    const k = Number(id.slice(prefix.length));
+    return Number.isInteger(k) && k < countUntil(Date.now()) ? k : null;
+  };
+
+  const raw = (k: number): Record<string, unknown> => {
+    const e = event(k);
+    const occurred = new Date(e.occurred_at).getTime();
+    return {
+      event_id: e.event_id, source_event_id: `${e.provider}-${(k * 2654435761 >>> 0).toString(16)}`, canonical_id: e.canonical_id,
+      persona_id: null, account_key: e.account_key, employee_id: null, provider: e.provider, tenant: TENANT[e.provider] ?? null,
+      event_type: e.event_type, category: e.category, occurred_at: e.occurred_at, actor: e.actor, detail: JSON.stringify(e.detail),
+      link_status: e.canonical_id ? 'linked' : 'unlinked', timeline_version: 'tl-preview', ingested_at: new Date(occurred + 1400).toISOString(),
+    };
+  };
+
+  const between = (lo: number, hi: number) => {
+    const out: LiveEvent[] = [];
+    for (let k = countUntil(hi) - 1; k >= countUntil(lo); k--) out.push(event(k));
+    return out;
+  };
+
+  const feedOf = (events: LiveEvent[], truncated = false): LiveFeed => ({
+    events: structuredClone(events), events_24h: baseEvents + countUntil(Date.now()), as_of: new Date().toISOString(),
+    mode: 'demo', poll_ms: POLL_MS, truncated,
+  });
+
   return {
     feed: () => {
       const n = countUntil(Date.now());
       const events: LiveEvent[] = [];
-      for (let k = n - 1; k >= Math.max(0, n - FEED_SIZE); k--) events.push(structuredClone(event(k)));
-      return { events, events_24h: baseEvents + n, as_of: new Date().toISOString(), mode: 'demo', poll_ms: POLL_MS };
+      for (let k = n - 1; k >= n - FEED_SIZE; k--) events.push(event(k));
+      return feedOf(events);
+    },
+    range: (since, until) => {
+      const now = Date.now();
+      const lo = since ? new Date(since).getTime() : now - WINDOW_MS['24h'];
+      const hi = Math.min(now, until ? new Date(until).getTime() : now);
+      if (Number.isNaN(lo) || Number.isNaN(hi)) throw new Error('Pick a valid time range');
+      if (hi <= lo) return feedOf([]);
+      const events = between(lo, hi);
+      return feedOf(events.slice(0, RANGE_LIMIT), events.length > RANGE_LIMIT);
+    },
+    histogram: (window) => {
+      const span = WINDOW_MS[window];
+      if (!span) throw new Error('Unknown time window');
+      const top = Date.now();
+      const size = span / BUCKETS;
+      const buckets: LiveBucket[] = Array.from({ length: BUCKETS }, (_, i) => ({
+        start: new Date(top - span + i * size).toISOString(), end: new Date(top - span + (i + 1) * size).toISOString(), total: 0, risky: 0,
+      }));
+      for (const e of between(top - span, top)) {
+        const b = BUCKETS - 1 - Math.floor((top - new Date(e.occurred_at).getTime()) / size);
+        if (b < 0 || b >= BUCKETS) continue;
+        buckets[b].total += 1;
+        if (needsLook(e)) buckets[b].risky += 1;
+      }
+      return { window, since: new Date(top - span).toISOString(), until: new Date(top).toISOString(), buckets };
+    },
+    detail: async (id) => {
+      const k = slotOf(id);
+      if (k === null) throw new Error('Event not found');
+      const e = event(k);
+      const record = raw(k);
+      const signed_at = new Date().toISOString();
+      const digest = await recordDigest(record);
+      const signature = await hmacHex(DEMO_KEY, sealMessage(e.event_id, digest, signed_at));
+      const kid = await keyId(DEMO_KEY);
+      const related = e.canonical_id
+        ? between(Date.now() - WINDOW_MS['1h'], Date.now()).filter((x) => x.canonical_id === e.canonical_id && x.event_id !== e.event_id).slice(0, 8)
+        : [];
+      return structuredClone({
+        event: e, raw: record, related,
+        custody: {
+          algorithm: 'HMAC-SHA256' as const, digest_algorithm: 'SHA-256' as const, canonicalization: CANONICALIZATION, digest, signature,
+          key_id: kid, signed_at, signer: 'Preview demo key (not secret)',
+          trail: [
+            { step: 'received' as const, at: e.occurred_at, by: e.provider, detail: `Source event ${record.source_event_id} from tenant ${record.tenant ?? 'unknown'}` },
+            { step: 'ingested' as const, at: String(record.ingested_at), by: 'Identity 01 job', detail: 'Landed in the identity_event Delta table' },
+            { step: 'linked' as const, at: String(record.ingested_at), by: 'Identity resolver', detail: `Link status ${record.link_status}, timeline tl-preview` },
+            { step: 'sealed' as const, at: signed_at, by: kid, detail: 'Digest and signature computed from the stored row' },
+            { step: 'accessed' as const, at: signed_at, by: 'You (preview)', detail: 'View recorded in the audit log' },
+          ],
+        },
+      });
+    },
+    verify: async (id, seal) => {
+      const k = slotOf(id);
+      if (k === null) throw new Error('Event not found');
+      const stored = await recordDigest(raw(k));
+      const expected = await hmacHex(DEMO_KEY, sealMessage(id, seal.digest, seal.signed_at));
+      return {
+        record_matches: stored === seal.digest, signature_valid: !!seal.signature && constantTimeEqual(expected, seal.signature),
+        stored_digest: stored, checked_at: new Date().toISOString(), checked_by: 'Preview verifier',
+      };
     },
     grow: (o) => {
       const n = countUntil(Date.now());

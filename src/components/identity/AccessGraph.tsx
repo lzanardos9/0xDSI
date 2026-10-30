@@ -8,6 +8,7 @@ import { BandPill, PathChain } from './identityRiskUi';
 import AccessGraphCanvas, { GraphLegend, type GraphPulse } from './AccessGraphCanvas';
 import LiveFeed, { LiveBadge } from './LiveFeed';
 import { AnimatedNumber, TONE_COLOR, describeLiveEvent, liveTargets, useLiveFeed } from './identityLive';
+import LiveEventDrawer from './LiveEventDrawer';
 
 const TIER_TONE: Record<string, string> = {
   tier0: 'text-red-200 bg-red-500/15 border-red-500/40',
@@ -101,6 +102,7 @@ export default function AccessGraph() {
   const [expanded, setExpanded] = useState(false);
   const [side, setSide] = useState<'live' | 'routes'>('live');
   const [pulse, setPulse] = useState<GraphPulse | null>(null);
+  const [opened, setOpened] = useState<LiveEvent | null>(null);
   const live = useLiveFeed();
   const pulsedId = useRef<string | null>(null);
 
@@ -158,13 +160,22 @@ export default function AccessGraph() {
 
   const isMapped = useCallback((e: LiveEvent) => liveTargets(e, paths).paths.length > 0, [paths]);
   const hoverEvent = useCallback((e: LiveEvent | null) => setHovered(e ? liveTargets(e, paths).paths[0] ?? null : null), [paths]);
-  const selectEvent = useCallback((e: LiveEvent) => {
+  const traceEvent = useCallback((e: LiveEvent) => {
     const t = liveTargets(e, paths);
     if (!t.paths.length) return;
     setSelected(t.paths[0]);
     const v = describeLiveEvent(e);
     setPulse({ id: `${e.event_id}-${Date.now()}`, paths: t.paths, nodes: t.nodes, color: TONE_COLOR[v.tone], label: v.short });
   }, [paths]);
+  const selectEvent = useCallback((e: LiveEvent) => {
+    traceEvent(e);
+    setOpened(e);
+  }, [traceEvent]);
+  const closeEvent = useCallback(() => setOpened(null), []);
+  const showOnMap = useCallback((e: LiveEvent) => {
+    setOpened(null);
+    traceEvent(e);
+  }, [traceEvent]);
 
   const jewels = resources.filter((r) => r.crown_jewel);
   const others = resources.filter((r) => !r.crown_jewel);
@@ -228,6 +239,7 @@ export default function AccessGraph() {
 
   return (
     <div className="identity-page">
+      <LiveEventDrawer event={opened} paths={paths} onClose={closeEvent} onOpen={selectEvent} onShowOnMap={showOnMap} />
       <PageHeader
         icon={Share2}
         title="Access Graph & Attack Paths"
