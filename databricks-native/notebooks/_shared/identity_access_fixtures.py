@@ -67,6 +67,9 @@ GROUPS = [
     {**_r(ENTRA, "grp-ds-users"), "name": "DataScience-Users", "privileged": False, "owner": "team-data-science",
      "purpose": "Data science workspace access", "department": "Data Science",
      "members": [_r(ENTRA, "ent-e7005")]},
+    {**_r(ENTRA, "grp-pricing-ml"), "name": "Pricing-Model-Training", "privileged": False, "owner": "",
+     "purpose": "Temporary: fare model training data", "department": "Revenue Management",
+     "members": [_r(ENTRA, "sp-agent-pricing")]},
     {**_r(SAV, "role-fi-approver"), "name": "SAP-FI-Payments-Approver", "privileged": True,
      "owner": "team-finance-controls", "purpose": "Release payment runs", "department": "Finance",
      "members": [_r(SAV, "sav-e7002")]},
@@ -92,6 +95,7 @@ EDGES = [
     _grant(_r(SAV, "role-fi-vendor"), "res-sap-fi", "create_vendor"),
     _grant(_r(AD, "ad-svc-ftp"), "res-sap-fi", "read"),
     _grant(_r(ENTRA, "sp-agent-bag"), "res-flight-ops", "write"),
+    _grant(_r(ENTRA, "grp-pricing-ml"), "res-loyalty-db", "export"),
     {"source": _r(AD, "grp-helpdesk-t1"), "edge_type": "can_take_over", "target": _r(AD, "ad-adm-e7009"),
      "permission": "reset_password"},
 ]

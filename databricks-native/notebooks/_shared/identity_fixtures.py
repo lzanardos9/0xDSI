@@ -92,6 +92,9 @@ ACCOUNTS = [
     _acc("entra_id", "sp-agent-bag", principal_type="agent", username="agent-baggage-triage",
          display_name="Baggage Triage Agent", runtime_host="aks-ops-east-07", registration_source="discovered",
          raw_state="true"),
+    _acc("entra_id", "sp-agent-pricing", principal_type="agent", username="agent-fare-pricing-copilot",
+         display_name="Fare Pricing Copilot", runtime_host="gpu-ds-west-02", registration_source="discovered",
+         credential_fingerprint="sha256:c0p1...7e44", credential_expires_at="2027-06-30T00:00:00Z", raw_state="true"),
 ]
 
 

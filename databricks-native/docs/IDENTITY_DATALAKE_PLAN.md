@@ -2,6 +2,8 @@
 
 This tracks the identity blueprint phase by phase. Each phase has a menu page under **Identity** in the app. A page shows "Not connected yet" until its phase is delivered, rather than sample numbers.
 
+For a guided walkthrough of every page on the sample data, see `docs/IDENTITY_DEMO_NARRATIVE.md`.
+
 ## Status
 
 | Phase | Scope | Menu pages | Status |
