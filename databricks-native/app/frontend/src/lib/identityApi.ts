@@ -418,6 +418,29 @@ export interface WhatIfResult {
   lockouts: { resource_id: string; resource: string; people_before: number }[];
 }
 
+export interface LiveEvent {
+  event_id: string;
+  occurred_at: string;
+  event_type: string;
+  category: string;
+  provider: string;
+  canonical_id: string | null;
+  display_name: string | null;
+  principal_type: PrincipalType | null;
+  account_key: string | null;
+  username: string | null;
+  actor: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface LiveFeed {
+  events: LiveEvent[];
+  events_24h: number;
+  as_of: string | null;
+  mode: 'demo' | 'live';
+  poll_ms: number;
+}
+
 export interface WhatIfOptions {
   groups: { group_key: string; name: string; privileged: boolean; effective_member_count: number }[];
   memberships: { group: string; group_name: string; member: string; member_name: string | null; member_kind: 'account' | 'group' }[];
@@ -758,6 +781,7 @@ export const identityApi = {
   whatifDetail: (id: string) =>
     request<{ scenario: WhatIfScenario; result: WhatIfResult | null }>(`/whatif/scenarios/${encodeURIComponent(id)}`),
   whatifOptions: () => request<WhatIfOptions>('/whatif/options'),
+  liveEvents: () => request<LiveFeed>('/live'),
   createScenario: (body: { name: string; description: string; changes: ScenarioChange[] }) =>
     request<RunAck>('/whatif/scenarios', { method: 'POST', body: JSON.stringify(body) }),
   evaluateScenario: (id: string) =>

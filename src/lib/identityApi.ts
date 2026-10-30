@@ -2,9 +2,11 @@ import type {
   AccessResource, AnswerHistoryItem, AnswerResult, AnswerBody, AttackPath, FederationFinding, FederationOverview, GroupDetail,
   GroupSummary, IdentityDetail, IdentitySummary, IdentityTimelineData, NonHuman, Overview, RemediationAck, RemediationDetail,
   RemediationList, RemediationStage, ReviewItem, RiskBand, RiskDetail, RiskScore, ScenarioChange, StewardDecision,
-  TimelineFinding, TimelineIdentity, TimelineStats, TrustDetail, WhatIfOptions, WhatIfResult, WhatIfScenario,
+  TimelineFinding, TimelineIdentity, TimelineStats, TrustDetail, WhatIfOptions, WhatIfResult, WhatIfScenario, LiveFeed,
 } from './identityTypes';
 import { parse, type AnswerCatalog } from './identityAnswerParser';
+import { simulate, validateChanges, type SimInputs } from './identityWhatIfEngine';
+import { createLiveDemo, type LiveDemo } from './identityLiveDemo';
 
 export * from './identityTypes';
 
@@ -38,6 +40,7 @@ interface PreviewData {
   whatifScenarios: { scenarios: WhatIfScenario[]; current_access_version: string | null };
   whatifDetails: Record<string, { scenario: WhatIfScenario; result: WhatIfResult | null }>;
   whatifOptions: WhatIfOptions;
+  whatifInputs: SimInputs;
   federation: FederationOverview;
   trustDetails: Record<string, TrustDetail>;
   federationFindings: { findings: FederationFinding[] };
@@ -72,6 +75,56 @@ function load(): Promise<PreviewData> {
   return cache;
 }
 
+const SCENARIO_STORE = 'identity-preview-scenarios-v1';
+const EVALUATE_MS = 2600;
+
+interface StoredScenario { scenario: WhatIfScenario; result: WhatIfResult | null; ready_at: number }
+
+function storedScenarios(): Record<string, StoredScenario> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SCENARIO_STORE) || '{}');
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveScenarios(all: Record<string, StoredScenario>) {
+  try {
+    localStorage.setItem(SCENARIO_STORE, JSON.stringify(all));
+  } catch {
+    throw new Error('This browser would not let the preview save your scenario. Free some site storage and try again.');
+  }
+}
+
+function evaluate(d: PreviewData, scenario: WhatIfScenario): StoredScenario {
+  const ready = Date.now() + EVALUATE_MS;
+  try {
+    return { scenario: { ...scenario, status: 'pending', error: null }, result: simulate(d.whatifInputs, scenario.changes || []), ready_at: ready };
+  } catch (e) {
+    return { scenario: { ...scenario, status: 'failed', error: (e as Error).message, evaluated_at: new Date(ready).toISOString() }, result: null, ready_at: ready };
+  }
+}
+
+function settled(s: StoredScenario, accessVersion: string): { scenario: WhatIfScenario; result: WhatIfResult | null } {
+  if (s.scenario.status === 'failed') return { scenario: s.scenario, result: null };
+  if (Date.now() < s.ready_at) return { scenario: { ...s.scenario, status: 'pending', summary: null }, result: null };
+  const evaluated_at = new Date(s.ready_at).toISOString();
+  return {
+    scenario: { ...s.scenario, status: 'done', evaluated_at, summary: s.result?.summary ?? null, access_version: accessVersion },
+    result: s.result ? ({ ...s.result, access_version: accessVersion, evaluated_at } as WhatIfResult) : null,
+  };
+}
+
+let demo: LiveDemo | null = null;
+function liveDemo(d: PreviewData): LiveDemo {
+  if (!demo) {
+    demo = createLiveDemo(d.graphPaths.paths, d.whatifInputs.xrefs, d.whatifOptions.groups.filter((g) => !g.privileged).map((g) => g.name),
+      d.timeline.stats?.events ?? 0);
+  }
+  return demo;
+}
+
 async function read<T>(pick: (d: PreviewData) => T | undefined): Promise<T> {
   const value = pick(await load());
   if (value === undefined) throw new Error('Not found');
@@ -85,7 +138,11 @@ function accountsMatch(d: PreviewData, id: string, q: string, fields: ('username
 }
 
 export const identityApi = {
-  overview: () => read((d) => d.overview),
+  overview: async () => {
+    const d = await load();
+    return liveDemo(d).grow(structuredClone(d.overview));
+  },
+  liveEvents: async (): Promise<LiveFeed> => liveDemo(await load()).feed(),
   identities: async (p: { search?: string; principal_type?: string; conflicts_only?: boolean; limit?: number; offset?: number }) => {
     const d = await load();
     const q = (p.search || '').trim().toLowerCase();
@@ -145,14 +202,50 @@ export const identityApi = {
     return structuredClone({ groups });
   },
   groupDetail: (key: string) => read((d) => d.groupDetails[key]),
-  whatifScenarios: () => read((d) => d.whatifScenarios),
-  whatifDetail: (id: string) => read((d) => d.whatifDetails[id]),
-  whatifOptions: () => read((d) => d.whatifOptions),
-  createScenario: async (_body: { name: string; description: string; changes: ScenarioChange[] }): Promise<RunAck> => {
-    throw new Error(`${READ_ONLY} The five sample scenarios are already fully evaluated.`);
+  whatifScenarios: async () => {
+    const d = await load();
+    const local = storedScenarios();
+    const av = d.whatifInputs.access_version;
+    const mine = Object.values(local).filter((s) => !d.whatifDetails[s.scenario.scenario_id])
+      .sort((a, b) => (b.scenario.created_at || '').localeCompare(a.scenario.created_at || ''))
+      .map((s) => settled(s, av).scenario);
+    const samples = d.whatifScenarios.scenarios.map((s) => (local[s.scenario_id] ? settled(local[s.scenario_id], av).scenario : s));
+    return structuredClone({ ...d.whatifScenarios, scenarios: [...mine, ...samples] });
   },
-  evaluateScenario: async (_id: string): Promise<RunAck> => {
-    throw new Error(READ_ONLY);
+  whatifDetail: async (id: string) => {
+    const d = await load();
+    const local = storedScenarios()[id];
+    if (local) return structuredClone(settled(local, d.whatifInputs.access_version));
+    const found = d.whatifDetails[id];
+    if (!found) throw new Error('Not found');
+    return structuredClone(found);
+  },
+  whatifOptions: () => read((d) => d.whatifOptions),
+  createScenario: async (body: { name: string; description: string; changes: ScenarioChange[] }): Promise<RunAck> => {
+    const d = await load();
+    const name = body.name.trim();
+    if (!name) throw new Error('Give the scenario a name');
+    if (name.length > 200) throw new Error('The name can be at most 200 characters');
+    if ((body.description || '').length > 1000) throw new Error('The description can be at most 1000 characters');
+    const changes = validateChanges(body.changes);
+    const scenario_id = `wi-local-${crypto.randomUUID().slice(0, 8)}`;
+    const now = new Date().toISOString();
+    const all = storedScenarios();
+    all[scenario_id] = evaluate(d, {
+      scenario_id, name, description: body.description.trim() || null, changes, source: 'analyst', status: 'pending',
+      error: null, created_by: 'You (preview)', created_at: now, evaluated_at: null,
+    });
+    saveScenarios(all);
+    return { scenario_id, triggered: true };
+  },
+  evaluateScenario: async (id: string): Promise<RunAck> => {
+    const d = await load();
+    const all = storedScenarios();
+    const scenario = all[id]?.scenario ?? d.whatifDetails[id]?.scenario;
+    if (!scenario) throw new Error('Not found');
+    all[id] = evaluate(d, scenario);
+    saveScenarios(all);
+    return { scenario_id: id, triggered: true };
   },
   federation: () => read((d) => d.federation),
   trustDetail: (id: string) => read((d) => d.trustDetails[id]),

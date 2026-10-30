@@ -283,6 +283,7 @@ def run_notebook(rel, landing, expect_exit=None, **widgets):
     finally:
         os.chdir(cwd)
     db.commit()
+    return ns
 
 
 def install_fastapi_stub():
@@ -408,6 +409,26 @@ def build_answers(call, query):
     return catalog, answers, as_of
 
 
+XREF_FIELDS = ("account_key", "canonical_id", "username", "display_name", "provider_object_id", "provider",
+               "normalized_state", "principal_type", "persona_type", "email")
+
+
+def simulator_inputs(ns):
+    """Exactly what the what-if notebook fed the simulator, trimmed to the fields the engine reads."""
+    from identity_access import departments_from_events, leavers_from_events
+    return {
+        "xrefs": [{k: x.get(k) for k in XREF_FIELDS} for x in ns["xrefs"]],
+        "resources": ns["resources"], "groups": ns["groups"], "edges": ns["edges"],
+        "departments": departments_from_events(ns["events"]),
+        "leavers": sorted(leavers_from_events(ns["events"])),
+        "timeline": [{k: f.get(k) for k in ("canonical_id", "severity", "detail", "status")} for f in ns["timeline"]],
+        "identity_findings": [{k: f.get(k) for k in ("canonical_id", "finding_type", "detail", "status")}
+                              for f in ns["id_findings"]],
+        "weights": ns["weights"],
+        "access_version": ns["av"],
+    }
+
+
 def main():
     sys.path.insert(0, os.path.join(NB, "_shared"))
     delta = types.ModuleType("delta")
@@ -419,7 +440,9 @@ def main():
         run_notebook("setup/07_seed_identity_fixtures.py", landing, seed_demo_data="true")
         for nb in ("01_identity_spine.py", "02_identity_timeline.py", "03_identity_access_risk.py",
                    "04_identity_whatif.py", "05_identity_federation.py"):
-            run_notebook(f"identity/{nb}", landing)
+            ns = run_notebook(f"identity/{nb}", landing)
+            if nb.startswith("04_"):
+                whatif_inputs = simulator_inputs(ns)
         run_notebook("identity/06_identity_remediation.py", landing, expect_exit="plan done", stage="plan")
         call, post, query = build_routes()
         seed_workflow(call, post, landing)
@@ -457,6 +480,7 @@ def main():
         "whatifDetails": {s["scenario_id"]: call("/whatif/scenarios/{scenario_id}", scenario_id=s["scenario_id"])
                           for s in scenarios["scenarios"]},
         "whatifOptions": call("/whatif/options"),
+        "whatifInputs": whatif_inputs,
         "federation": federation,
         "trustDetails": {t["trust_id"]: call("/federation/trusts/{trust_id}", trust_id=t["trust_id"])
                          for t in federation["trusts"]},

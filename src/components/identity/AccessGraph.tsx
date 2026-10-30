@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Share2, Crown, ShieldAlert, Server, Filter, Maximize2, Minimize2, Route, Network, Users, Waypoints } from 'lucide-react';
+import { Share2, Crown, ShieldAlert, Server, Filter, Maximize2, Minimize2, Route, Network, Users, Waypoints, Radio } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { identityApi, type AccessResource, type AttackPath } from '../../lib/identityApi';
+import { identityApi, type AccessResource, type AttackPath, type LiveEvent } from '../../lib/identityApi';
 import { Card, Empty, ErrorBanner, Loading, PageHeader, Tag, fmtTime } from './identityUi';
 import { BandPill, PathChain } from './identityRiskUi';
-import AccessGraphCanvas, { GraphLegend } from './AccessGraphCanvas';
+import AccessGraphCanvas, { GraphLegend, type GraphPulse } from './AccessGraphCanvas';
+import LiveFeed, { LiveBadge } from './LiveFeed';
+import { AnimatedNumber, TONE_COLOR, describeLiveEvent, liveTargets, useLiveFeed } from './identityLive';
 
 const TIER_TONE: Record<string, string> = {
   tier0: 'text-red-200 bg-red-500/15 border-red-500/40',
@@ -19,7 +21,9 @@ function Stat({ icon: Icon, label, value, tone = 'text-slate-100', accent }: { i
       <div className="relative flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-slate-500">
         <Icon size={13} style={{ color: accent }} /> {label}
       </div>
-      <div className={`relative text-[28px] font-semibold leading-tight mt-1.5 tabular-nums ${tone}`}>{value}</div>
+      <div className={`relative text-[28px] font-semibold leading-tight mt-1.5 tabular-nums ${tone}`}>
+        {typeof value === 'number' ? <AnimatedNumber value={value} /> : value}
+      </div>
     </Card>
   );
 }
@@ -95,6 +99,10 @@ export default function AccessGraph() {
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [side, setSide] = useState<'live' | 'routes'>('live');
+  const [pulse, setPulse] = useState<GraphPulse | null>(null);
+  const live = useLiveFeed();
+  const pulsedId = useRef<string | null>(null);
 
   const loadResources = useCallback(() => {
     setLoading(true);
@@ -126,6 +134,37 @@ export default function AccessGraph() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [expanded]);
+
+  useEffect(() => {
+    const e = live.fresh;
+    if (!e || pulsedId.current === e.event_id) return;
+    pulsedId.current = e.event_id;
+    const t = liveTargets(e, paths);
+    if (!t.paths.length && !t.nodes.length) return;
+    const v = describeLiveEvent(e);
+    setPulse({ id: e.event_id, paths: t.paths, nodes: t.nodes, color: TONE_COLOR[v.tone], label: v.short });
+    const timer = setTimeout(() => setPulse((cur) => (cur?.id === e.event_id ? null : cur)), 3400);
+    return () => clearTimeout(timer);
+  }, [live.fresh, paths]);
+
+  const activity = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const e of live.events) {
+      if (e.canonical_id) out[`p:${e.canonical_id}`] = (out[`p:${e.canonical_id}`] ?? 0) + 1;
+      if (e.account_key) out[e.account_key] = (out[e.account_key] ?? 0) + 1;
+    }
+    return out;
+  }, [live.events]);
+
+  const isMapped = useCallback((e: LiveEvent) => liveTargets(e, paths).paths.length > 0, [paths]);
+  const hoverEvent = useCallback((e: LiveEvent | null) => setHovered(e ? liveTargets(e, paths).paths[0] ?? null : null), [paths]);
+  const selectEvent = useCallback((e: LiveEvent) => {
+    const t = liveTargets(e, paths);
+    if (!t.paths.length) return;
+    setSelected(t.paths[0]);
+    const v = describeLiveEvent(e);
+    setPulse({ id: `${e.event_id}-${Date.now()}`, paths: t.paths, nodes: t.nodes, color: TONE_COLOR[v.tone], label: v.short });
+  }, [paths]);
 
   const jewels = resources.filter((r) => r.crown_jewel);
   const others = resources.filter((r) => !r.crown_jewel);
@@ -179,7 +218,7 @@ export default function AccessGraph() {
           <Empty title="No routes" hint="Nobody's active accounts reach this system with the current filter." />
         ) : (
           <div className="py-3">
-            <AccessGraphCanvas paths={paths} highlightPathId={hovered ?? selected} onSelectPath={setSelected} />
+            <AccessGraphCanvas paths={paths} highlightPathId={hovered ?? selected} onSelectPath={setSelected} pulse={pulse} activity={activity} />
           </div>
         )}
       </div>
@@ -194,9 +233,9 @@ export default function AccessGraph() {
         title="Access Graph & Attack Paths"
         subtitle="Every route from a person, workload or agent to your crown-jewel systems, through group nesting and takeover rights such as helpdesk password resets. Disabled accounts block a route."
         actions={meta ? (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-700/50 bg-slate-900/50 text-xs text-slate-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
-            {meta.edges} access links · built {fmtTime(meta.updated_at)}
+          <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-slate-700/50 bg-slate-900/50 text-xs text-slate-400">
+            <LiveBadge mode={live.meta?.mode} paused={live.paused} />
+            <span>{meta.edges} access links · built {fmtTime(meta.updated_at)}</span>
           </div>
         ) : undefined}
       />
@@ -247,23 +286,39 @@ export default function AccessGraph() {
               document.body,
             )}
 
-            <Card className="overflow-hidden flex flex-col 2xl:max-h-[720px]">
-              <div className="px-4 py-3.5 border-b border-slate-700/40">
-                <h2 className="text-sm font-semibold text-slate-100">Routes</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Takeover routes first, then the shortest.</p>
+            <div className="flex flex-col gap-3 min-h-0 2xl:max-h-[760px]">
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-xl border border-slate-700/50 bg-slate-900/60" role="tablist" aria-label="Side panel">
+                {([['live', 'Live feed', Radio], ['routes', `Routes (${paths.length})`, Route]] as const).map(([id, label, Icon]) => (
+                  <button key={id} type="button" role="tab" aria-selected={side === id} onClick={() => setSide(id)}
+                    className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${side === id ? 'bg-slate-800 text-slate-50 shadow-[inset_0_0_0_1px_rgba(94,234,212,0.25)]' : 'text-slate-400 hover:text-slate-200'}`}>
+                    <Icon size={12} className={side === id ? 'text-teal-300' : ''} /> {label}
+                  </button>
+                ))}
               </div>
-              {pathsLoading ? <Loading label="Loading routes" /> : paths.length === 0 ? (
-                <Empty title="No routes" hint="Try another system or turn off Takeover only." />
+
+              {side === 'live' ? (
+                <LiveFeed live={live} mapped={isMapped} onHoverEvent={hoverEvent} onSelectEvent={selectEvent}
+                  className="h-[520px] 2xl:h-auto 2xl:flex-1 animate-fade-in" />
               ) : (
-                <div className="divide-y divide-slate-800/80 overflow-y-auto max-h-[420px] 2xl:max-h-none">
-                  {paths.map((p) => (
-                    <PathRow key={p.path_id} p={p} selected={selected === p.path_id}
-                      onSelect={() => setSelected(selected === p.path_id ? null : p.path_id)}
-                      onHover={(on) => setHovered(on ? p.path_id : null)} />
-                  ))}
-                </div>
+                <Card className="overflow-hidden flex flex-col 2xl:flex-1 min-h-0 animate-fade-in">
+                  <div className="px-4 py-3.5 border-b border-slate-700/40">
+                    <h2 className="text-sm font-semibold text-slate-100">Routes</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Takeover routes first, then the shortest.</p>
+                  </div>
+                  {pathsLoading ? <Loading label="Loading routes" /> : paths.length === 0 ? (
+                    <Empty title="No routes" hint="Try another system or turn off Takeover only." />
+                  ) : (
+                    <div className="divide-y divide-slate-800/80 overflow-y-auto max-h-[420px] 2xl:max-h-none">
+                      {paths.map((p) => (
+                        <PathRow key={p.path_id} p={p} selected={selected === p.path_id}
+                          onSelect={() => setSelected(selected === p.path_id ? null : p.path_id)}
+                          onHover={(on) => setHovered(on ? p.path_id : null)} />
+                      ))}
+                    </div>
+                  )}
+                </Card>
               )}
-            </Card>
+            </div>
           </div>
 
           {selectedPath && (

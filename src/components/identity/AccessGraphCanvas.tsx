@@ -26,6 +26,14 @@ interface GEdge {
   paths: Set<string>;
 }
 
+export interface GraphPulse {
+  id: string;
+  paths: string[];
+  nodes: string[];
+  color: string;
+  label: string;
+}
+
 const ROW = 62;
 const TOP = 52;
 const NODE_W = 164;
@@ -171,10 +179,12 @@ function NodeChip({ n, dim, focused }: { n: GNode; dim: boolean; focused: boolea
   );
 }
 
-export default function AccessGraphCanvas({ paths, highlightPathId, onSelectPath }: {
+export default function AccessGraphCanvas({ paths, highlightPathId, onSelectPath, pulse = null, activity }: {
   paths: AttackPath[];
   highlightPathId: string | null;
   onSelectPath: (id: string | null) => void;
+  pulse?: GraphPulse | null;
+  activity?: Record<string, number>;
 }) {
   const uid = useId().replace(/:/g, '');
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -213,6 +223,20 @@ export default function AccessGraphCanvas({ paths, highlightPathId, onSelectPath
   const isActive = (s: Set<string>) => !active || [...s].some((p) => active.has(p));
   const single = active && active.size === 1;
   const focus = focusNode ? graph.nodes.get(focusNode) : null;
+
+  const pulseSet = new Set(pulse?.paths ?? []);
+  const pulseEdges = pulse ? graph.edges.filter((e) => [...e.paths].some((p) => pulseSet.has(p))) : [];
+  const pulseNodes: string[] = [];
+  if (pulse) {
+    const add = (id: string | undefined) => { if (id && coords.has(id) && !pulseNodes.includes(id)) pulseNodes.push(id); };
+    pulse.nodes.forEach(add);
+    for (const p of paths) {
+      if (!pulseSet.has(p.path_id)) continue;
+      add(`p:${p.canonical_id ?? p.path_id}`);
+      add(p.steps[p.steps.length - 1]?.id);
+    }
+  }
+  const floatAt = pulseNodes.map((id) => coords.get(id)!)[0];
 
   if (!paths.length) return null;
 
@@ -265,7 +289,41 @@ export default function AccessGraphCanvas({ paths, highlightPathId, onSelectPath
               </g>
             );
           })}
+
+          {pulse && (
+            <g key={pulse.id} style={{ color: pulse.color }}>
+              {pulseEdges.map((e) => {
+                const a = coords.get(e.from)!;
+                const b = coords.get(e.to)!;
+                const dx = Math.max(40, (b.x - a.x) * 0.5);
+                const d = `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+                return (
+                  <path key={e.key} d={d} pathLength={100} fill="none" stroke="currentColor" strokeWidth={4} strokeLinecap="round"
+                    className="id-live-comet" filter={`url(#${uid}-glow)`}
+                    style={{ animationDelay: `${graph.nodes.get(e.from)!.layer * 260}ms` }} />
+                );
+              })}
+            </g>
+          )}
         </svg>
+
+        {pulse && pulseNodes.map((id, i) => {
+          const c = coords.get(id)!;
+          const layer = graph.nodes.get(id)?.layer ?? 0;
+          return (
+            <span key={`${pulse.id}-${id}`} className="id-live-ripple" aria-hidden="true"
+              style={{ left: c.x, top: c.y, color: pulse.color, zIndex: 4, animationDelay: `${i === 0 ? 0 : layer * 260}ms` }} />
+          );
+        })}
+        {pulse && floatAt && (
+          <div key={`f-${pulse.id}`} className="id-live-float absolute pointer-events-none" style={{ left: floatAt.x, top: floatAt.y - 18, zIndex: 6 }}>
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-semibold whitespace-nowrap bg-slate-950/95 border shadow-xl"
+              style={{ color: pulse.color, borderColor: `${pulse.color}66`, boxShadow: `0 0 18px -4px ${pulse.color}` }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: pulse.color }} />
+              {pulse.label}
+            </span>
+          </div>
+        )}
 
         {graph.columns.map((_, l) => (
           <div key={l} className="absolute top-2 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 whitespace-nowrap"
@@ -305,6 +363,12 @@ export default function AccessGraphCanvas({ paths, highlightPathId, onSelectPath
               aria-label={`${n.label}, on ${n.paths.size} path${n.paths.size === 1 ? '' : 's'}`}
               title={n.label}>
               <NodeChip n={n} dim={!on} focused={focusNode === n.id} />
+              {!!activity?.[n.id] && on && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-teal-400 text-[9px] font-bold text-slate-950 flex items-center justify-center shadow-[0_0_10px_rgba(45,212,191,0.8)] animate-scale-in"
+                  title={`${activity[n.id]} recent event${activity[n.id] === 1 ? '' : 's'}`}>
+                  {activity[n.id]}
+                </span>
+              )}
             </button>
           );
         })}

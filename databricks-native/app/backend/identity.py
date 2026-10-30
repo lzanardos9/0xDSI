@@ -357,5 +357,7 @@ def build_identity_router(
     add_remediation_routes(router, query, execute_write, fqn, _analyst, audit, trigger_job)
     from backend.identity_answers import add_answer_routes
     add_answer_routes(router, query, execute_write, fqn, _analyst)
+    from backend.identity_live import add_live_routes
+    add_live_routes(router, query, fqn, _analyst)
 
     return router

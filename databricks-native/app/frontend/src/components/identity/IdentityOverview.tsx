@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Fingerprint, Users, Cpu, Bot, AlertTriangle, GitMerge, RefreshCw, Database, CheckCircle2, CircleDashed, XCircle } from 'lucide-react';
+import { Fingerprint, Users, Cpu, Bot, AlertTriangle, GitMerge, RefreshCw, Database, CheckCircle2, CircleDashed, XCircle, Activity, Radio, ArrowRight } from 'lucide-react';
 import { identityApi, Overview } from '../../lib/identityApi';
 import { Card, PageHeader, Loading, ErrorBanner, Empty, Tag, fmtTime, providerLabel, FINDING_LABEL } from './identityUi';
+import { AnimatedNumber, useLiveFeed, useNow } from './identityLive';
+import { LiveBadge, LiveEventRow } from './LiveFeed';
+
+const REFRESH_MS = 12000;
 
 interface Props {
   onNavigate: (view: string) => void;
@@ -25,6 +29,16 @@ export default function IdentityOverview({ onNavigate }: Props) {
   }, []);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      identityApi.overview().then(setData).catch(() => undefined);
+    }, REFRESH_MS);
+    return () => clearInterval(t);
+  }, []);
+
+  const live = useLiveFeed();
+  const now = useNow(4000);
 
   const runResolver = async () => {
     setRunning(true);
@@ -78,8 +92,8 @@ export default function IdentityOverview({ onNavigate }: Props) {
                       <span className="text-xs uppercase tracking-wider text-slate-500">{M.label}</span>
                       <M.icon size={16} className={M.tone} />
                     </div>
-                    <div className="text-3xl font-semibold text-slate-100 mt-3">{Number(row?.identities || 0)}</div>
-                    <div className="text-xs text-slate-500 mt-1">{Number(row?.accounts || 0)} source accounts</div>
+                    <div className="text-3xl font-semibold text-slate-100 mt-3"><AnimatedNumber value={Number(row?.identities || 0)} /></div>
+                    <div className="text-xs text-slate-500 mt-1"><AnimatedNumber value={Number(row?.accounts || 0)} /> source accounts</div>
                   </Card>
                 );
               })}
@@ -88,9 +102,47 @@ export default function IdentityOverview({ onNavigate }: Props) {
                   <span className="text-xs uppercase tracking-wider text-slate-500">Linked accounts</span>
                   <Database size={16} className="text-slate-400" />
                 </div>
-                <div className="text-3xl font-semibold text-slate-100 mt-3">{totalAccounts}</div>
+                <div className="text-3xl font-semibold text-slate-100 mt-3"><AnimatedNumber value={totalAccounts} /></div>
                 <div className="text-xs text-slate-500 mt-1">
                   {data.resolution ? `Resolution ${data.resolution.resolution_version}` : 'Not resolved yet'}
+                </div>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <Card className="p-5 overflow-hidden">
+                <div className="absolute -right-10 -top-10 w-36 h-36 rounded-full bg-teal-400/10 blur-2xl pointer-events-none" />
+                <div className="relative flex items-center justify-between">
+                  <span className="text-xs uppercase tracking-wider text-slate-500">Events processed · 24h</span>
+                  <Activity size={16} className="text-teal-300" />
+                </div>
+                <div className="relative text-3xl font-semibold text-slate-100 mt-3">
+                  {live.meta ? <AnimatedNumber value={live.meta.events_24h} /> : <span className="text-slate-600">—</span>}
+                </div>
+                <div className="relative flex items-center gap-2 mt-2">
+                  <LiveBadge mode={live.meta?.mode} />
+                  <span className="text-xs text-slate-500">Sign-ins, MFA, access changes and HR moves</span>
+                </div>
+              </Card>
+              <Card className="lg:col-span-2 overflow-hidden flex flex-col">
+                <div className="px-5 py-3.5 border-b border-slate-700/50 flex items-center gap-2">
+                  <Radio size={14} className="text-teal-300" />
+                  <span className="text-sm font-medium text-slate-200">Happening now</span>
+                  <button onClick={() => onNavigate('id_graph')}
+                    className="ml-auto inline-flex items-center gap-1 text-xs text-teal-300 hover:text-teal-200 transition-colors group">
+                    Watch it on the access map <ArrowRight size={12} className="transition-transform group-hover:translate-x-0.5" />
+                  </button>
+                </div>
+                <div className="px-2 py-1.5 space-y-0.5 h-[196px] overflow-hidden">
+                  {live.error && !live.events.length ? (
+                    <div className="px-3 py-8 text-center text-xs text-red-300">{live.error}</div>
+                  ) : !live.meta ? (
+                    <div className="space-y-2 p-2">{[0, 1, 2].map((i) => <div key={i} className="id-skeleton h-11 rounded-xl" />)}</div>
+                  ) : live.events.length === 0 ? (
+                    <div className="px-3 py-8 text-center text-xs text-slate-500">No identity activity yet.</div>
+                  ) : live.events.slice(0, 4).map((e) => (
+                    <LiveEventRow key={e.event_id} e={e} now={now} isNew={live.freshIds.has(e.event_id)} compact />
+                  ))}
                 </div>
               </Card>
             </div>
@@ -99,14 +151,14 @@ export default function IdentityOverview({ onNavigate }: Props) {
               <button onClick={() => onNavigate('id_review')} className="text-left">
                 <Card className="p-5 h-full hover:border-teal-500/50 transition-colors group">
                   <div className="flex items-center gap-2 text-sm text-slate-300"><GitMerge size={16} className="text-teal-300" /> Matches waiting for review</div>
-                  <div className="text-3xl font-semibold text-slate-100 mt-3">{data.open_reviews}</div>
+                  <div className="text-3xl font-semibold text-slate-100 mt-3"><AnimatedNumber value={Number(data.open_reviews) || 0} /></div>
                   <div className="text-xs text-slate-500 mt-1 group-hover:text-teal-300 transition-colors">Open Resolution Review</div>
                 </Card>
               </button>
               <button onClick={() => onNavigate('id_explorer')} className="text-left">
                 <Card className="p-5 h-full hover:border-amber-500/50 transition-colors group">
                   <div className="flex items-center gap-2 text-sm text-slate-300"><AlertTriangle size={16} className="text-amber-300" /> Identities with conflicting states</div>
-                  <div className="text-3xl font-semibold text-slate-100 mt-3">{conflicts}</div>
+                  <div className="text-3xl font-semibold text-slate-100 mt-3"><AnimatedNumber value={conflicts} /></div>
                   <div className="text-xs text-slate-500 mt-1 group-hover:text-amber-300 transition-colors">Disabled in one directory, active in another</div>
                 </Card>
               </button>
@@ -119,7 +171,7 @@ export default function IdentityOverview({ onNavigate }: Props) {
                     {data.findings.map((f) => (
                       <li key={f.finding_type} className="flex items-center justify-between text-sm">
                         <span className="text-slate-400">{FINDING_LABEL[f.finding_type] || f.finding_type}</span>
-                        <span className="font-mono text-slate-200">{f.cnt}</span>
+                        <span className="font-mono text-slate-200"><AnimatedNumber value={Number(f.cnt) || 0} /></span>
                       </li>
                     ))}
                   </ul>
@@ -163,8 +215,8 @@ export default function IdentityOverview({ onNavigate }: Props) {
                               : s.status === 'incomplete' ? <Tag tone="amber"><CircleDashed size={11} /> Incomplete</Tag>
                               : <Tag tone="red"><XCircle size={11} /> {s.error_category || 'Failed'}</Tag>}
                           </td>
-                          <td className="px-5 py-3 text-right font-mono">{s.records_received ?? '—'}</td>
-                          <td className="px-5 py-3 text-right font-mono">{s.records_accepted ?? '—'}</td>
+                          <td className="px-5 py-3 text-right font-mono">{s.records_received == null ? '—' : <AnimatedNumber value={Number(s.records_received)} />}</td>
+                          <td className="px-5 py-3 text-right font-mono">{s.records_accepted == null ? '—' : <AnimatedNumber value={Number(s.records_accepted)} />}</td>
                           <td className={`px-5 py-3 text-right font-mono ${Number(s.records_quarantined) > 0 ? 'text-red-300' : ''}`}>{s.records_quarantined ?? '—'}</td>
                           <td className="px-5 py-3 text-right font-mono">{s.stale ?? 0} / {s.tombstoned ?? 0}</td>
                           <td className="px-5 py-3 text-xs text-slate-400">{fmtTime(s.snapshot_at)}</td>

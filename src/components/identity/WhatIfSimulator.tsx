@@ -5,7 +5,37 @@ import { Card, Empty, ErrorBanner, Loading, PageHeader, Tag, fmtTime } from './i
 import WhatIfResultView from './WhatIfResult';
 import WhatIfBuilder from './WhatIfBuilder';
 
-const POLL_MS = 5000;
+const POLL_MS = 1500;
+
+const SIM_STEPS = ['Copying today\'s access map', 'Applying your changes', 'Re-tracing every route to the crown jewels', 'Re-scoring identity risk'];
+
+function Simulating() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => Math.min(SIM_STEPS.length - 1, s + 1)), 650);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <Card className="p-8 overflow-hidden">
+      <div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden"><div className="h-full w-1/3 bg-gradient-to-r from-transparent via-teal-300 to-transparent animate-[idSweep_1.4s_linear_infinite]" /></div>
+      <div className="flex items-center gap-3 mb-5">
+        <Loader2 size={20} className="animate-spin text-teal-300" />
+        <div>
+          <div className="text-sm font-medium text-slate-100">Simulating on a copy of today's access data</div>
+          <div className="text-xs text-slate-500 mt-0.5">Nothing changes in your real directories. The result appears here by itself.</div>
+        </div>
+      </div>
+      <ol className="space-y-2.5">
+        {SIM_STEPS.map((label, i) => (
+          <li key={label} className={`flex items-center gap-2.5 text-sm transition-colors duration-500 ${i < step ? 'text-slate-300' : i === step ? 'text-teal-200' : 'text-slate-600'}`}>
+            <span className={`w-2 h-2 rounded-full transition-all duration-500 ${i < step ? 'bg-emerald-400' : i === step ? 'bg-teal-300 shadow-[0_0_10px_rgba(94,234,212,0.9)] animate-pulse' : 'bg-slate-700'}`} />
+            {label}
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
 
 function StatusTag({ s }: { s: WhatIfScenario }) {
   if (s.status === 'pending') return <Tag tone="blue"><Loader2 size={10} className="animate-spin" /> evaluating</Tag>;
@@ -59,7 +89,7 @@ function ScenarioDetail({ id, onChanged }: { id: string; onChanged: () => void }
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold text-slate-100">{s.name}</h2>
-              {s.source === 'sample' ? <Tag tone="teal"><Sparkles size={10} /> sample</Tag> : <Tag tone="blue"><UserRound size={10} /> analyst</Tag>}
+              {s.source === 'sample' ? <Tag tone="teal"><Sparkles size={10} /> sample</Tag> : <Tag tone="blue"><UserRound size={10} /> custom</Tag>}
               <StatusTag s={s} />
             </div>
             {s.description && <p className="text-sm text-slate-400 mt-1 leading-relaxed">{s.description}</p>}
@@ -88,13 +118,7 @@ function ScenarioDetail({ id, onChanged }: { id: string; onChanged: () => void }
         </div>
       </Card>
 
-      {data.result ? <WhatIfResultView result={data.result} /> : pending ? (
-        <Card className="p-10 flex flex-col items-center text-center gap-3">
-          <Loader2 size={22} className="animate-spin text-teal-300" />
-          <div className="text-sm text-slate-300">Running the simulation on a copy of today's access data</div>
-          <div className="text-xs text-slate-500">This page refreshes by itself when the result is ready.</div>
-        </Card>
-      ) : (
+      {pending ? <Simulating /> : data.result ? <div key={s.evaluated_at ?? 'r'} className="animate-slide-up"><WhatIfResultView result={data.result} /></div> : (
         <Card><Empty title="No result yet" hint="Use Re-run to evaluate this scenario against today's access data." /></Card>
       )}
     </div>
@@ -107,7 +131,8 @@ export default function WhatIfSimulator() {
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
-  const [banner, setBanner] = useState('');
+  const [banner, setBanner] = useState<{ tone: 'ok' | 'warn'; text: string } | null>(null);
+  const [fresh, setFresh] = useState<string | null>(null);
 
   const load = useCallback(() => {
     identityApi.whatifScenarios()
@@ -137,12 +162,17 @@ export default function WhatIfSimulator() {
       />
 
       {error && <div className="mb-4"><ErrorBanner message={error} onRetry={load} /></div>}
-      {banner && <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200">{banner}</div>}
+      {banner && (
+        <div className={`mb-4 flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm animate-slide-down ${banner.tone === 'ok' ? 'border-teal-500/40 bg-teal-500/10 text-teal-100' : 'border-amber-500/40 bg-amber-500/10 text-amber-200'}`}>
+          <span className="flex-1">{banner.text}</span>
+          <button onClick={() => setBanner(null)} className="text-xs opacity-70 hover:opacity-100">Dismiss</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(300px,380px)_1fr] gap-6">
         <Card className="overflow-hidden self-start">
           {loading ? <Loading /> : scenarios.length === 0 ? (
-            <Empty title="No scenarios yet" hint="Create one, or run the identity job once to load the sample scenarios." />
+            <Empty title="No scenarios yet" hint="Use New scenario to try your first access change." />
           ) : (
             <div className="max-h-[75vh] overflow-y-auto divide-y divide-slate-800">
               {scenarios.map((s) => {
@@ -151,7 +181,7 @@ export default function WhatIfSimulator() {
                 const net = sum ? sum.risk_points_removed - sum.risk_points_added : 0;
                 return (
                   <button key={s.scenario_id} onClick={() => setSelected(s.scenario_id)}
-                    className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${active ? 'bg-teal-500/10' : 'hover:bg-slate-800/50'}`}>
+                    className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${active ? 'bg-teal-500/10' : 'hover:bg-slate-800/50'} ${fresh === s.scenario_id ? 'id-live-enter id-live-new' : ''}`}>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm text-slate-100 truncate">{s.name}</div>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -185,7 +215,8 @@ export default function WhatIfSimulator() {
           onClose={() => setBuilding(false)}
           onCreated={(id, note) => {
             setBuilding(false);
-            setBanner(note || '');
+            setBanner(note ? { tone: 'warn', text: note } : { tone: 'ok', text: 'Scenario saved. The simulation is running now.' });
+            setFresh(id);
             setSelected(id);
             load();
           }}
