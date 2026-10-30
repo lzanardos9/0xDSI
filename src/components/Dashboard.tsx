@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, ShieldAlert, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom, Scale } from 'lucide-react';
+import { Shield, ShieldAlert, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, ArrowUpRight, ArrowDownRight, Minus, DollarSign, TrendingDown, Award, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom, Scale, Fingerprint, GitMerge, Bot, Share2, FlaskConical, Wrench, Globe2, UsersRound, MessageSquareText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { trackView, setCurrentView } from '../lib/activityTracker';
 import ThreatGlobe from './ThreatGlobe';
@@ -72,6 +72,18 @@ import SwarmCrucible from './SwarmCrucible';
 import TrendEngineCET from './TrendEngineCET';
 import OperationBorrowedAuthority from './OperationBorrowedAuthority';
 import MCPRegistry from './MCPRegistry';
+import IdentityOverview from './identity/IdentityOverview';
+import IdentityExplorer from './identity/IdentityExplorer';
+import ResolutionReview from './identity/ResolutionReview';
+import NonHumanIdentities from './identity/NonHumanIdentities';
+import IdentityTimeline from './identity/IdentityTimeline';
+import IdentityRisk from './identity/IdentityRisk';
+import AccessGraph from './identity/AccessGraph';
+import GroupContext from './identity/GroupContext';
+import WhatIfSimulator from './identity/WhatIfSimulator';
+import FederationPosture from './identity/FederationPosture';
+import IdentityRemediation from './identity/IdentityRemediation';
+import IdentityAnswers from './identity/IdentityAnswers';
 import PhishingSimulator from './PhishingSimulator';
 import AttackUniverse from './AttackUniverse';
 import AgentControlPlane from './AgentControlPlane';
@@ -89,7 +101,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'phishing' | 'agentcontrolplane'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'phishing' | 'agentcontrolplane' | 'id_overview' | 'id_explorer' | 'id_review' | 'id_nhi' | 'id_timeline' | 'id_risk' | 'id_graph' | 'id_groups' | 'id_whatif' | 'id_federation' | 'id_remediation' | 'id_answers'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -348,6 +360,24 @@ const Dashboard = () => {
         { id: 'lists', label: 'Sessions & Events', icon: Activity },
         { id: 'vectorhunt', label: 'AI Threat Hunting', icon: TrendingUp },
         { id: 'patterns', label: 'Pattern Discovery', icon: Brain },
+      ]
+    },
+    {
+      section: 'Identity',
+      roles: ['analyst', 'engineer', 'admin'],
+      items: [
+        { id: 'id_overview', label: 'Identity Overview', icon: Fingerprint },
+        { id: 'id_explorer', label: 'Identity Explorer', icon: Users },
+        { id: 'id_review', label: 'Resolution Review', icon: GitMerge },
+        { id: 'id_nhi', label: 'Non-Human & Agents', icon: Bot },
+        { id: 'id_timeline', label: 'Identity Timeline', icon: Clock },
+        { id: 'id_risk', label: 'Identity Risk', icon: Gauge },
+        { id: 'id_graph', label: 'Access Graph & Paths', icon: Share2 },
+        { id: 'id_whatif', label: 'What-If Simulator', icon: FlaskConical },
+        { id: 'id_remediation', label: 'Identity Remediation', icon: Wrench },
+        { id: 'id_federation', label: 'Federation Posture', icon: Globe2 },
+        { id: 'id_groups', label: 'Group Context', icon: UsersRound },
+        { id: 'id_answers', label: 'Identity Answers', icon: MessageSquareText },
       ]
     },
     {
@@ -1038,6 +1068,18 @@ const Dashboard = () => {
           {selectedView === 'socoptimization' && <SOCOptimization />}
           {selectedView === 'multitenant' && <MultiTenantManager />}
           {selectedView === 'mcp' && <MCPRegistry />}
+          {selectedView === 'id_overview' && <IdentityOverview onNavigate={(v) => setSelectedView(v as typeof selectedView)} />}
+          {selectedView === 'id_explorer' && <IdentityExplorer />}
+          {selectedView === 'id_review' && <ResolutionReview />}
+          {selectedView === 'id_nhi' && <NonHumanIdentities />}
+          {selectedView === 'id_timeline' && <IdentityTimeline />}
+          {selectedView === 'id_risk' && <IdentityRisk />}
+          {selectedView === 'id_graph' && <AccessGraph />}
+          {selectedView === 'id_groups' && <GroupContext />}
+          {selectedView === 'id_whatif' && <WhatIfSimulator />}
+          {selectedView === 'id_federation' && <FederationPosture />}
+          {selectedView === 'id_remediation' && <IdentityRemediation />}
+          {selectedView === 'id_answers' && <IdentityAnswers onNavigate={(v) => setSelectedView(v as typeof selectedView)} />}
           {selectedView === 'aiplaybook' && <AIPlaybookGenerator />}
           {selectedView === 'stixtaxii' && <StixTaxiiManager />}
           {selectedView === 'advancedhunt' && <AdvancedHuntingQuery />}

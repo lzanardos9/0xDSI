@@ -522,6 +522,152 @@ export interface TrustDetail {
   guests: FederationGuest[];
 }
 
+export type RemediationStage = 'review' | 'approval' | 'in_progress' | 'done' | 'closed';
+export type RemediationStatus =
+  | 'proposed' | 'blocked' | 'pending_approval' | 'queued' | 'rollback_queued' | 'executed' | 'verified'
+  | 'rolled_back' | 'no_longer_needed' | 'rejected' | 'dismissed' | 'superseded' | 'failed' | 'rollback_failed';
+
+export interface RemediationReason {
+  source_kind: string;
+  finding_id: string;
+  finding_type: string;
+  severity: Severity;
+  detail: string;
+}
+
+export interface RemediationListItem {
+  action_id: string;
+  action_type: string;
+  title: string;
+  severity: Severity;
+  canonical_id: string | null;
+  display_name: string | null;
+  provider: string;
+  impact: Partial<WhatIfSummary>;
+  required_approvals: number;
+  approvals: number;
+  status: RemediationStatus;
+  blocked_reason: string | null;
+  requested_by: string | null;
+  requested_at: string | null;
+  executed_at: string | null;
+  verified_at: string | null;
+  rolled_back_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RemediationList {
+  stage: RemediationStage;
+  actions: RemediationListItem[];
+  stages: Record<RemediationStage, number>;
+  pending_points: number | null;
+}
+
+export interface RemediationAction extends Omit<RemediationListItem, 'impact' | 'approvals'> {
+  change: ScenarioChange & Record<string, unknown>;
+  reasons: RemediationReason[];
+  impact: {
+    summary: WhatIfSummary;
+    score_changes: WhatIfScoreChange[];
+    lockouts: WhatIfResult['lockouts'];
+    memberships_lost: WhatIfResult['memberships_lost'];
+    paths_removed: WhatIfPath[];
+  } | null;
+  approvals_count: number;
+  access_version: string | null;
+  action_hash: string;
+  request_note: string | null;
+  execution_mode: string | null;
+  before_state: Record<string, unknown> | null;
+  inverse: Record<string, unknown> | null;
+  provider_request: Record<string, unknown> | null;
+  rollback_requested_by: string | null;
+  rollback_reason: string | null;
+  error: string | null;
+}
+
+export interface RemediationApproval {
+  approval_id: string;
+  approver: string;
+  verdict: 'approve' | 'reject';
+  comment: string | null;
+  action_hash: string;
+  decided_at: string;
+}
+
+export interface RemediationOutbox {
+  outbox_id: string;
+  operation: 'execute' | 'rollback';
+  status: string;
+  attempts: number;
+  execution_mode: string | null;
+  request: Record<string, unknown> | null;
+  response: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RemediationDetail {
+  action: RemediationAction;
+  approvals: RemediationApproval[];
+  outbox: RemediationOutbox[];
+  can: { request: boolean; dismiss: boolean; decide: boolean; rollback: boolean };
+  you: string;
+}
+
+export interface RemediationAck {
+  action_id: string;
+  status: RemediationStatus;
+  approvals?: number;
+  required?: number;
+  triggered?: boolean;
+  reason?: string | null;
+}
+
+export type AnswerKind = 'identity' | 'resource' | 'group' | 'trust';
+export interface AnswerEntity { kind: AnswerKind; id: string; label: string }
+
+export interface AnswerBody {
+  headline: string;
+  sentences: string[];
+  columns: string[];
+  rows: (string | number | null)[][];
+  truncated: number;
+  citations: { source: string; key: string; label: string | null }[];
+  link: { view: string } | null;
+}
+
+export interface AnswerResult {
+  question_id: string;
+  question: string;
+  status: 'answer' | 'refused' | 'clarify' | 'need_entity' | 'no_match';
+  intent?: string | null;
+  entity?: AnswerEntity | null;
+  options?: AnswerEntity[];
+  kinds?: AnswerKind[];
+  reason?: string;
+  link?: string | null;
+  answer: AnswerBody | null;
+  as_of: string | null;
+  version: string;
+}
+
+export interface AnswerIntent {
+  intent: string;
+  title: string;
+  entity: AnswerKind[];
+  examples: string[];
+}
+
+export interface AnswerHistoryItem {
+  question_id: string;
+  question: string;
+  status: string;
+  intent: string | null;
+  asked_at: string;
+}
+
 interface RunAck {
   scenario_id: string;
   triggered: boolean;
@@ -624,4 +770,21 @@ export const identityApi = {
     if (p.scope) q.set('scope', p.scope);
     return request<{ findings: FederationFinding[] }>(`/federation/findings?${q}`);
   },
+  remediation: (stage: RemediationStage) =>
+    request<RemediationList>(`/remediation?stage=${encodeURIComponent(stage)}&limit=200`),
+  remediationDetail: (id: string) => request<RemediationDetail>(`/remediation/${encodeURIComponent(id)}`),
+  requestRemediation: (id: string, note: string) =>
+    request<RemediationAck>(`/remediation/${encodeURIComponent(id)}/request`, { method: 'POST', body: JSON.stringify({ note }) }),
+  decideRemediation: (id: string, verdict: 'approve' | 'reject', comment: string) =>
+    request<RemediationAck>(`/remediation/${encodeURIComponent(id)}/decide`, {
+      method: 'POST',
+      body: JSON.stringify({ verdict, comment }),
+    }),
+  rollbackRemediation: (id: string, reason: string) =>
+    request<RemediationAck>(`/remediation/${encodeURIComponent(id)}/rollback`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  dismissRemediation: (id: string, reason: string) =>
+    request<RemediationAck>(`/remediation/${encodeURIComponent(id)}/dismiss`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  answerCatalog: () => request<{ version: string; max_question: number; intents: AnswerIntent[] }>('/answers/catalog'),
+  ask: (question: string) => request<AnswerResult>('/answers/ask', { method: 'POST', body: JSON.stringify({ question }) }),
+  answerHistory: () => request<{ questions: AnswerHistoryItem[] }>('/answers/history'),
 };

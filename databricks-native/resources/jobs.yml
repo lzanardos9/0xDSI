@@ -1974,6 +1974,18 @@ resources:
               access_subdir: "identity_access"
               whatif_subdir: "identity_whatif"
               scenario_id: ""
+        - task_key: plan_remediation
+          depends_on:
+            - task_key: federation_posture
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/identity/06_identity_remediation.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              access_subdir: "identity_access"
+              stage: "plan"
+              execution_mode: "dry_run"
 
     identity_whatif:
       name: "[0xDSI] Identity 02 - What-If Simulator"
@@ -1992,6 +2004,28 @@ resources:
               access_subdir: "identity_access"
               whatif_subdir: "identity_whatif"
               scenario_id: ""
+
+    identity_remediation:
+      name: "[0xDSI] Identity 03 - Remediation Executor"
+      schedule:
+        quartz_cron_expression: "0 45 * * * ?"
+        timezone_id: "UTC"
+      max_concurrent_runs: 1
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+      tasks:
+        - task_key: execute_remediation
+          environment_key: default
+          notebook_task:
+            notebook_path: ../notebooks/identity/06_identity_remediation.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              access_subdir: "identity_access"
+              stage: "execute"
+              execution_mode: "dry_run"
 
     knowledge_store:
       name: "[0xDSI] Agent 42 - Knowledge Store Ingestion"

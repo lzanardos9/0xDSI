@@ -8,13 +8,13 @@ This tracks the identity blueprint phase by phase. Each phase has a menu page un
 |-------|-------|------------|--------|
 | Pre-req | Human approval for every response action | — | **Done.** Auto-approve is opt-in and refused in production |
 | Pre-req | On-behalf-of user auth | — | **Done.** App reads run with the signed-in user's Unity Catalog permissions (`sql` user scope); writes stay on the app identity behind role checks and a fail-closed audit record of the verified user |
-| Pre-req | Lakebase leases and outbox for actions | — | Open (needed before Phase 4) |
+| Pre-req | Leases and outbox for actions | — | **Done.** Delta outbox with compare-and-swap leases, lease expiry, an attempt cap and idempotency keys (`identity_remediation_outbox`); a dedicated Lakebase store remains an option if write volume grows |
 | 0 | Canonical identity spine: deterministic resolution, personas, NHI/agents, steward review, source health | Identity Overview, Identity Explorer, Resolution Review, Non-Human & Agents | **Done** (offline-verified; awaiting real snapshots) |
 | 1 | Entitlements, sign-in and HR lifecycle events on the spine | Identity Timeline | **Live on sample data** (offline-verified; awaiting real HR, sign-in, MFA and access event feeds) |
 | 2 | Explainable risk, access graph, group context | Identity Risk, Access Graph & Paths, Group Context | **Live on sample data** (offline-verified; awaiting real group, entitlement and crown-jewel feeds and AA-agreed weights) |
 | 3 | What-if simulation, federation posture | What-If Simulator, Federation Posture | **Live on sample data** (offline-verified; awaiting real trust/federation exports, directory audit log and AA baseline) |
-| 4 | Approved, reversible remediation | Identity Remediation | Not started (needs OBO + outbox) |
-| 5 | Governed natural-language answers | Identity Answers | Not started |
+| 4 | Approved, reversible remediation | Identity Remediation | **Live on sample data in dry-run mode** (offline-verified; live changes need a provider connector and AA sign-off) |
+| 5 | Governed natural-language answers | Identity Answers | **Live on sample data** (offline-verified; fixed question catalogue, no free-form SQL) |
 
 ## Phase 0 — what was built
 
@@ -144,6 +144,52 @@ Real feeds, in `/Volumes/<catalog>/<schema>/landing/identity_federation/`:
 - Optional `changes.jsonl`: `trust_id`, `setting`, `before`, `after`, `changed_at`, `changed_by`.
 - Optional `baseline.json`: a list of rules with `rule_id`, `kind`, `setting`, `op` (`eq`, `not_eq`, `in`, `max_age_days`, `min_days_ahead`), `value`, `severity`, `label`.
 - Analysts create what-if scenarios in the app; `landing/identity_whatif/scenarios.jsonl` only seeds samples.
+
+## Phase 4 — Identity Remediation
+
+| Piece | Location |
+|-------|----------|
+| Proposal, simulation, approval, lease and rollback rules (pure Python) | `notebooks/_shared/identity_remediation.py` |
+| Tables `identity_remediation_action`, `identity_remediation_approval`, `identity_remediation_outbox` | `notebooks/setup/06_identity_datalake_tables.py` |
+| Plan stage (task `plan_remediation` in Identity 01) and executor (job `Identity 03 - Remediation Executor`, hourly at :45) | `notebooks/identity/06_identity_remediation.py`, `resources/jobs.yml` |
+| Routes `/remediation`, `/remediation/{id}` and `request`, `decide`, `rollback`, `dismiss` | `app/backend/identity_remediation.py` |
+| Page | `app/frontend/src/components/identity/IdentityRemediation.tsx`, `RemediationDetail.tsx` |
+| Tests | `tests/property/test_identity_remediation.py` |
+
+How it works:
+
+- **Proposals only come from open findings** (leavers, privilege without a ticket, hidden nesting, segregation-of-duties conflicts, takeover paths, guest findings). Each one is run through the what-if engine first and shows the risk points it removes and who loses access.
+- **Only reversible changes** are proposed: disable an account, remove a membership, revoke a grant, remove a takeover right. Group deletion is never proposed.
+- **Lockout guard.** A proposal that would leave nobody able to reach a crown jewel is blocked, at planning time and again just before execution.
+- **Approval.** The requester can never approve their own request. Privileged groups, admin personas, workloads, agents and changes touching more than three identities need two approvers. Votes are tied to a fingerprint of the exact change and access version, so a vote on an older version does not count. One rejection stops the change.
+- **Execution.** Approved actions go into the outbox. The executor leases each item with a compare-and-swap token, re-checks approvals and the lockout guard, then sends the request. Before-state and the exact undo are stored with the action.
+- **Rollback** of an executed change uses that stored undo and goes through the same outbox.
+- **Verification.** Each plan run marks an executed change as verified once the directory feeds show it, and supersedes proposals whose finding no longer reproduces.
+- **Dry run by default.** Both jobs run with `execution_mode=dry_run`, which records the exact request without sending it. In `live` mode, with no connector registered, every action fails closed.
+
+To go live: AA must approve live mode per provider and supply a connector (Entra Graph, AD, Duo, Saviynt) with a least-privilege service principal, registered in `CONNECTORS` in the executor notebook. Then switch `execution_mode` to `live` on the Identity 03 job.
+
+## Phase 5 — Identity Answers
+
+| Piece | Location |
+|-------|----------|
+| Question parser and catalogue (pure Python, no model) | `app/backend/identity_answer_parser.py` |
+| Answer builders and routes `/answers/catalog`, `/answers/ask`, `/answers/history` | `app/backend/identity_answers.py` |
+| Table `identity_answer_log` | `notebooks/setup/06_identity_datalake_tables.py` |
+| Page | `app/frontend/src/components/identity/IdentityAnswers.tsx` |
+| Tests | `tests/property/test_identity_answers.py`; the browser preview copy is checked with `tools/identity_preview/check_answer_parity.mts` |
+
+How it works:
+
+- **Twelve approved question types**: riskiest identities, why someone is risky, what someone can reach, who can reach a system, recent activity, leavers with access, guests, people without MFA, pending remediation, group problems, trust posture, and who owns something.
+- **Fixed patterns, no generated SQL.** Each question type maps to one parameterised, read-only query with a row cap. Nothing typed by the user becomes SQL.
+- **Subjects are resolved against names that exist** (people, usernames, systems, groups, partners). The longest match wins; if two match equally, the page asks which one was meant instead of guessing.
+- **Refusals.** Questions asking for passwords, keys or tokens are refused. So are requests to change something, which are pointed to Identity Remediation.
+- **Sources.** Every answer lists the table and row it came from and links to the page with the full detail.
+- **Logged.** Every question, its outcome and the matched subject are written to `identity_answer_log` before the answer is returned. If that write fails, no answer is given.
+- Reads run with the signed-in user's own Unity Catalog permissions, so an answer never shows rows the asker could not query directly.
+
+To extend: add a question type to `INTENTS` and its answer to `build_answer`, add an example to the tests, then re-run the parity check.
 
 ## Inputs only AA can provide
 1. Read-only exports or connector access for AD, Entra ID, PingDirectory, Saviynt, Duo and key app-local stores.

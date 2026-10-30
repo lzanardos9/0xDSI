@@ -81,7 +81,8 @@ import AccessGraph from './identity/AccessGraph';
 import GroupContext from './identity/GroupContext';
 import WhatIfSimulator from './identity/WhatIfSimulator';
 import FederationPosture from './identity/FederationPosture';
-import IdentityRoadmap, { ROADMAP_PAGES, type RoadmapPageId } from './identity/IdentityRoadmap';
+import IdentityRemediation from './identity/IdentityRemediation';
+import IdentityAnswers from './identity/IdentityAnswers';
 import AttackUniverse from './AttackUniverse';
 import { lakehouse } from '../lib/lakehouse';
 
@@ -96,7 +97,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'attackuniverse' | 'id_overview' | 'id_explorer' | 'id_review' | 'id_nhi' | 'id_timeline' | 'id_risk' | 'id_graph' | 'id_groups' | 'id_whatif' | 'id_federation' | RoadmapPageId>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'attackuniverse' | 'id_overview' | 'id_explorer' | 'id_review' | 'id_nhi' | 'id_timeline' | 'id_risk' | 'id_graph' | 'id_groups' | 'id_whatif' | 'id_federation' | 'id_remediation' | 'id_answers'>('overview');
   const [scorecardType, setScorecardType] = useState<'business' | 'publicsector'>('business');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1059,7 +1060,8 @@ const Dashboard = () => {
           {selectedView === 'id_groups' && <GroupContext />}
           {selectedView === 'id_whatif' && <WhatIfSimulator />}
           {selectedView === 'id_federation' && <FederationPosture />}
-          {selectedView in ROADMAP_PAGES && <IdentityRoadmap page={selectedView as RoadmapPageId} />}
+          {selectedView === 'id_remediation' && <IdentityRemediation />}
+          {selectedView === 'id_answers' && <IdentityAnswers onNavigate={(v) => setSelectedView(v as typeof selectedView)} />}
           {selectedView === 'aiplaybook' && <AIPlaybookGenerator />}
           {selectedView === 'stixtaxii' && <StixTaxiiManager />}
           {selectedView === 'advancedhunt' && <AdvancedHuntingQuery />}

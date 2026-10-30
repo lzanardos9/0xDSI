@@ -13,7 +13,7 @@
 | Python notebooks | 174 compile cleanly (offline gate). |
 | Offline tests | 42 of 42 pass. |
 | App screens (frontend) | Built inside `app/` by the installer; uploaded via bundle `sync.include`. |
-| Bundle definition | 107 jobs + 2 serverless pipelines + 1 app; every referenced notebook exists. Custom model serving is opt-in. |
+| Bundle definition | 108 jobs + 2 serverless pipelines + 1 app; every referenced notebook exists. Custom model serving is opt-in. |
 | One-command installer | `./deploy.sh dev <WAREHOUSE_ID>` is the supported path. It builds, deploys, runs setup **and waits for it**, creates the agent tool functions, grants the app, and starts it. |
 | Table setup (`setup/01`) | Rewritten to valid Delta DDL: no non-constant defaults, no expression partitions, column-defaults feature enabled wherever `DEFAULT` is used. Creates all volumes. |
 | First real detection | Section 6 — five SQL/CLI steps after install. |
@@ -45,7 +45,7 @@
 | Volumes | `data, landing, checkpoints, models, artifacts, exports, quarantine` |
 | Tables | ~260 definitions; core ones created by `notebooks/setup/01_create_catalog_schema.py` |
 | UC tool functions | `lookup_ioc`, `get_alert_context`, `query_user_behavior`, `search_events`, `get_asset_info`, `create_case`, `execute_response_action` |
-| Jobs | 107 (`resources/jobs.yml`, including the Identity 01 job: canonical identity spine, then the identity timeline, then access-graph and risk scoring (`score_access_risk`), then federation posture and what-if evaluation; and the on-demand Identity 02 What-If Simulator job the app triggers), ~10 continuous, plus 3 ops jobs (health check, SLA alerting, checkpoint GC report) |
+| Jobs | 108 (`resources/jobs.yml`, including the Identity 01 job: canonical identity spine, then the identity timeline, then access-graph and risk scoring (`score_access_risk`), then federation posture and what-if evaluation, then remediation planning (`plan_remediation`); the on-demand Identity 02 What-If Simulator job the app triggers; and the hourly Identity 03 Remediation Executor, which runs in dry-run mode until a provider connector is approved), ~10 continuous, plus 3 ops jobs (health check, SLA alerting, checkpoint GC report) |
 | Pipelines | `bronze_silver_gold`, `attack_universe_realtime` (serverless) |
 | App | `0xdsi-agentic-soc` |
 | Groups | `soc_admins`, `soc_analysts` (created if missing) |
@@ -246,7 +246,7 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 ./deploy.sh production <WAREHOUSE_ID>
 ```
 - **Demo data:** loaded only where `seed_demo_data` is `"true"` (dev and staging). Production defaults to `"false"`; the seed notebook exits immediately. The seed **overwrites** tables such as `events`, `alerts`, `cases` — never enable it on a catalog holding real data.
-- **Cost:** outside dev, all scheduled jobs (Identity 02 is on-demand only) and both pipelines run on their schedules immediately, including ~10 continuous streams and 2 continuous serverless pipelines. Pause what you don't need.
+- **Cost:** outside dev, all scheduled jobs (Identity 02 is on-demand only; Identity 03 runs hourly) and both pipelines run on their schedules immediately, including ~10 continuous streams and 2 continuous serverless pipelines. Pause what you don't need.
 - **Roles:** set `SOC_ADMIN_EMAILS` / `SOC_ANALYST_EMAILS` for each run; they are written into the app's configuration.
 - **Custom model serving (optional):** after real agent models are registered in UC, add `resources/optional/model_serving.yml` to `include:` in `databricks.yml` and redeploy.
 
@@ -296,6 +296,8 @@ Events must carry at least `event_type`; recognised fields are in `01_raw_event_
 | ID-P1 | No lifecycle or sign-in history per identity | Phase 1 shipped on sample data: event and finding tables (`setup/06`), sample events (`setup/07`, demo only), `build_timeline` task in the Identity 01 job, timeline routes and the **Identity Timeline** page. Needs real HR, sign-in, MFA and access event feeds in `landing/identity_events/` to go live |
 | ID-P2 | No explainable identity risk, crown-jewel paths or group ownership view | Phase 2 shipped on sample data: eight access and risk tables (`setup/06`), sample resources, groups and edges (`setup/07`, demo only), `score_access_risk` task in the Identity 01 job, risk/graph/group routes and the **Identity Risk**, **Access Graph & Paths** and **Group Context** pages. Needs real resource, group-membership and entitlement feeds in `landing/identity_access/`, the crown-jewel list, segregation-of-duties rules and agreed weights (`risk_weights.json`) to go live |
 | ID-P3 | No way to preview access changes; no federation or guest posture | Phase 3 shipped on sample data: six what-if and federation tables (`setup/06`), sample scenarios, trusts, change log and guests (`setup/07`, demo only), `federation_posture` and `evaluate_whatif` tasks in Identity 01, the on-demand Identity 02 job, routes and the **What-If Simulator** and **Federation Posture** pages. Needs real trust and federation exports in `landing/identity_federation/trusts.jsonl`, the directory audit log as `changes.jsonl` and the AA baseline (`baseline.json`) to go live |
+| ID-P4 | No approved, reversible way to fix identity findings | Phase 4 shipped in dry-run mode: three remediation tables (`setup/06`), `plan_remediation` task in Identity 01, the hourly Identity 03 executor, approval routes and the **Identity Remediation** page. Needs AA approval for live mode and a provider connector with a least-privilege service principal per directory; until then the executor records requests without sending them, and live mode fails closed |
+| ID-P5 | No plain-language way to ask identity questions | Phase 5 shipped: `identity_answer_log` (`setup/06`), the fixed question catalogue and answer routes, and the **Identity Answers** page. Nothing further required; new question types are added to the catalogue with tests |
 
 ### 10.2 Remaining in-repo work
 
