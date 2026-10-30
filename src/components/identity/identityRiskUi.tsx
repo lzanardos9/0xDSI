@@ -11,7 +11,8 @@ export const BAND_STYLE: Record<RiskBand, { text: string; bg: string; bar: strin
 export function BandPill({ band }: { band: RiskBand }) {
   const s = BAND_STYLE[band] || BAND_STYLE.low;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md border text-[11px] font-medium uppercase tracking-wider ${s.text} ${s.bg}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-semibold uppercase tracking-[0.12em] ${s.text} ${s.bg}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.bar}`} />
       {band}
     </span>
   );
@@ -49,7 +50,7 @@ export function PathChain({ path }: { path: AttackPath }) {
                 <ArrowRight size={11} />
               </div>
             )}
-            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs ${chip}`} title={s.id}>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium shadow-sm ${chip}`} title={s.id}>
               <Icon size={12} />
               {s.label}
             </span>

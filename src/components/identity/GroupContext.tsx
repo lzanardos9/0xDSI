@@ -197,7 +197,7 @@ export default function GroupContext() {
   );
 
   return (
-    <div className="p-6 lg:p-8 bg-[#0A1628] min-h-full">
+    <div className="identity-page">
       <PageHeader
         icon={UsersRound}
         title="Group Context"

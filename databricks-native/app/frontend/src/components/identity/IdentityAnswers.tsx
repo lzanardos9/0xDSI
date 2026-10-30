@@ -163,7 +163,7 @@ export default function IdentityAnswers({ onNavigate }: { onNavigate?: (view: st
   const examples = intents.flatMap((i) => i.examples);
 
   return (
-    <div className="p-6 lg:p-8 bg-[#0A1628] min-h-full">
+    <div className="identity-page">
       <PageHeader
         icon={MessageSquareText}
         title="Identity Answers"

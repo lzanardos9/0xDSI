@@ -123,7 +123,7 @@ export default function WhatIfSimulator() {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="p-6 lg:p-8 bg-[#0A1628] min-h-full">
+    <div className="identity-page">
       <PageHeader
         icon={FlaskConical}
         title="What-If Simulator"

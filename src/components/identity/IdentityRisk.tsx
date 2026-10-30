@@ -208,7 +208,7 @@ export default function IdentityRisk() {
   }, [load]);
 
   return (
-    <div className="p-6 lg:p-8 bg-[#0A1628] min-h-full">
+    <div className="identity-page">
       <PageHeader
         icon={Gauge}
         title="Identity Risk"
@@ -222,7 +222,7 @@ export default function IdentityRisk() {
           const active = band === b;
           return (
             <button key={b} onClick={() => setBand(active ? '' : b)}
-              className={`text-left rounded-xl border p-4 transition-all ${active ? `${st.bg} ring-2 ${st.ring}` : 'bg-[#0F1D32] border-slate-700/50 hover:border-slate-500/60'}`}>
+              className={`text-left rounded-xl border p-4 transition-all ${active ? `${st.bg} ring-2 ${st.ring}` : 'bg-slate-900/50 backdrop-blur border-slate-700/50 hover:border-slate-500/60 hover:-translate-y-0.5'}`}>
               <div className={`text-2xl font-semibold ${st.text}`}>{bands[b] ?? 0}</div>
               <div className="text-xs text-slate-400 capitalize mt-0.5">{b}</div>
             </button>

@@ -35,7 +35,7 @@ export default function IdentityRemediation() {
   const current = STAGES.find((s) => s.id === stage)!;
 
   return (
-    <div className="p-6 lg:p-8 bg-[#0A1628] min-h-full">
+    <div className="identity-page">
       <PageHeader
         icon={Wrench}
         title="Identity Remediation"

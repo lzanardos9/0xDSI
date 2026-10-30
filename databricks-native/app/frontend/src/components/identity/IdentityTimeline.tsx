@@ -264,7 +264,7 @@ export default function IdentityTimeline() {
   const high = findings.filter((f) => f.severity === 'high').length;
 
   return (
-    <div className="min-h-screen bg-[#0A1628] text-slate-200 p-6">
+    <div className="identity-page">
       <div className="max-w-7xl mx-auto">
         <PageHeader icon={Clock} title="Identity Timeline"
           subtitle="One chronological story per identity across HR, directories, access governance and MFA, with lifecycle and sign-in risks called out." />

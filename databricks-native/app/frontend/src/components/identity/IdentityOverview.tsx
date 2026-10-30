@@ -43,7 +43,7 @@ export default function IdentityOverview({ onNavigate }: Props) {
   const conflicts = data?.by_type.reduce((s, t) => s + Number(t.state_conflicts || 0), 0) ?? 0;
 
   return (
-    <div className="min-h-screen bg-[#0A1628] text-slate-200 p-6">
+    <div className="identity-page">
       <div className="max-w-7xl mx-auto">
         <PageHeader
           icon={Fingerprint}

@@ -36,7 +36,7 @@ export default function IdentityExplorer() {
   useEffect(load, [load]);
 
   return (
-    <div className="min-h-screen bg-[#0A1628] text-slate-200 p-6">
+    <div className="identity-page">
       <div className="max-w-7xl mx-auto">
         <PageHeader
           icon={Users}

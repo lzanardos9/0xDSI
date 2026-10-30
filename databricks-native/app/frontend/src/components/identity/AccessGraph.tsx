@@ -1,37 +1,83 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Share2, Crown, ShieldAlert, Users, Server, Filter } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Share2, Crown, ShieldAlert, Server, Filter, Maximize2, Minimize2, Route, Network, Users, Waypoints } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { identityApi, type AccessResource, type AttackPath } from '../../lib/identityApi';
 import { Card, Empty, ErrorBanner, Loading, PageHeader, Tag, fmtTime } from './identityUi';
 import { BandPill, PathChain } from './identityRiskUi';
+import AccessGraphCanvas, { GraphLegend } from './AccessGraphCanvas';
+
+const TIER_TONE: Record<string, string> = {
+  tier0: 'text-red-200 bg-red-500/15 border-red-500/40',
+  tier1: 'text-amber-200 bg-amber-500/15 border-amber-500/40',
+};
+
+function Stat({ icon: Icon, label, value, tone = 'text-slate-100', accent }: { icon: LucideIcon; label: string; value: string | number; tone?: string; accent: string }) {
+  return (
+    <Card className="p-4 overflow-hidden">
+      <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full blur-2xl opacity-40" style={{ background: accent }} />
+      <div className="relative flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+        <Icon size={13} style={{ color: accent }} /> {label}
+      </div>
+      <div className={`relative text-[28px] font-semibold leading-tight mt-1.5 tabular-nums ${tone}`}>{value}</div>
+    </Card>
+  );
+}
 
 function ResourceCard({ r, active, onClick }: { r: AccessResource; active: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick}
-      className={`text-left rounded-xl border p-4 transition-all ${active ? 'border-teal-400/60 bg-teal-500/10 ring-2 ring-teal-500/30' : 'bg-[#0F1D32] border-slate-700/50 hover:border-slate-500/60 hover:-translate-y-0.5'}`}>
+    <button onClick={onClick} aria-pressed={active}
+      className={`group relative text-left rounded-2xl border p-4 transition-all duration-300 overflow-hidden ${active
+        ? 'border-amber-400/60 bg-gradient-to-br from-amber-500/15 to-slate-900/80 shadow-[0_0_0_1px_rgba(251,191,36,0.25),0_18px_40px_-18px_rgba(245,158,11,0.6)]'
+        : 'border-slate-700/50 bg-slate-900/50 backdrop-blur hover:border-slate-500/60 hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-20px_rgba(0,0,0,0.8)]'}`}>
+      {r.via_takeover > 0 && <span className="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-red-400 to-transparent" />}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Crown size={14} className="text-amber-300 flex-shrink-0" />
-          <span className="text-sm font-medium text-slate-100 truncate">{r.name}</span>
+          <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${active ? 'bg-amber-400/20' : 'bg-amber-500/10 group-hover:bg-amber-500/15'}`}>
+            <Crown size={14} className="text-amber-300" />
+          </span>
+          <span className="text-sm font-medium text-slate-100 truncate" title={r.name}>{r.name}</span>
         </div>
-        {r.tier && <Tag>{r.tier}</Tag>}
+        {r.tier && <span className={`px-1.5 py-0.5 rounded-md border text-[10px] font-semibold uppercase tracking-wider ${TIER_TONE[r.tier] || 'text-slate-300 bg-slate-700/40 border-slate-600/40'}`}>{r.tier}</span>}
       </div>
-      <div className="flex items-end gap-4 mt-3">
+      <div className="flex items-end gap-5 mt-4">
         <div>
-          <div className={`text-2xl font-semibold ${r.identities ? 'text-slate-100' : 'text-slate-500'}`}>{r.identities}</div>
-          <div className="text-[11px] text-slate-500">identities can reach</div>
+          <div className={`text-2xl font-semibold tabular-nums ${r.identities ? 'text-slate-50' : 'text-slate-600'}`}>{r.identities}</div>
+          <div className="text-[11px] text-slate-500">can reach</div>
         </div>
         {r.via_takeover > 0 && (
           <div>
-            <div className="text-2xl font-semibold text-red-300">{r.via_takeover}</div>
+            <div className="text-2xl font-semibold tabular-nums text-red-300">{r.via_takeover}</div>
             <div className="text-[11px] text-slate-500">via takeover</div>
           </div>
         )}
         {r.min_hops !== null && (
           <div className="ml-auto text-right">
-            <div className="text-sm text-slate-300">{r.min_hops}</div>
+            <div className="text-sm font-medium text-slate-300 tabular-nums">{r.min_hops}</div>
             <div className="text-[11px] text-slate-500">fewest hops</div>
           </div>
         )}
+      </div>
+    </button>
+  );
+}
+
+function PathRow({ p, selected, onSelect, onHover }: { p: AttackPath; selected: boolean; onSelect: () => void; onHover: (on: boolean) => void }) {
+  return (
+    <button onClick={onSelect} onMouseEnter={() => onHover(true)} onMouseLeave={() => onHover(false)} aria-pressed={selected}
+      className={`w-full text-left px-4 py-3.5 border-l-2 transition-all duration-200 ${selected
+        ? 'bg-teal-500/10 border-teal-400'
+        : p.via_takeover ? 'border-red-400/70 hover:bg-slate-800/40' : 'border-transparent hover:bg-slate-800/40'}`}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-sm font-medium text-slate-100 truncate">{p.display_name || p.canonical_id}</span>
+        {p.band && <BandPill band={p.band} />}
+        {p.via_takeover && <Tag tone="red"><ShieldAlert size={10} /> takeover</Tag>}
+      </div>
+      <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-500 min-w-0">
+        <Route size={11} className="flex-shrink-0" />
+        <span className="truncate">{p.resource_name || p.resource_id}</span>
+        <span className="flex-shrink-0">· {p.hops} hop{p.hops === 1 ? '' : 's'}</span>
+        {p.permission && <span className="flex-shrink-0 text-sky-300/80">· {p.permission}</span>}
       </div>
     </button>
   );
@@ -46,6 +92,9 @@ export default function AccessGraph() {
   const [loading, setLoading] = useState(true);
   const [pathsLoading, setPathsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selected, setSelected] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const loadResources = useCallback(() => {
     setLoading(true);
@@ -62,6 +111,7 @@ export default function AccessGraph() {
   useEffect(() => {
     let live = true;
     setPathsLoading(true);
+    setSelected(null);
     identityApi
       .graphPaths({ resource_id: resourceId, takeover_only: takeoverOnly })
       .then((d) => live && setPaths(d.paths))
@@ -70,89 +120,167 @@ export default function AccessGraph() {
     return () => { live = false; };
   }, [resourceId, takeoverOnly]);
 
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setExpanded(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expanded]);
+
   const jewels = resources.filter((r) => r.crown_jewel);
   const others = resources.filter((r) => !r.crown_jewel);
   const selectedName = resources.find((r) => r.resource_id === resourceId)?.name;
+  const selectedPath = paths.find((p) => p.path_id === selected) ?? null;
+
+  const stats = useMemo(() => {
+    const hops = jewels.map((r) => r.min_hops).filter((h): h is number => h !== null);
+    return {
+      jewels: jewels.length,
+      exposed: jewels.reduce((s, r) => s + r.identities, 0),
+      takeover: jewels.reduce((s, r) => s + r.via_takeover, 0),
+      fewest: hops.length ? Math.min(...hops) : '—',
+    };
+  }, [jewels]);
+
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      {resourceId && (
+        <button onClick={() => setResourceId('')} className="px-3 py-1.5 rounded-lg border border-slate-700/60 text-xs text-slate-300 hover:bg-slate-800 transition-colors">
+          Show all systems
+        </button>
+      )}
+      <button onClick={() => setTakeoverOnly(!takeoverOnly)} aria-pressed={takeoverOnly}
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors ${takeoverOnly ? 'border-red-500/50 bg-red-500/15 text-red-200' : 'border-slate-700/60 text-slate-300 hover:bg-slate-800'}`}>
+        <Filter size={12} /> Takeover only
+      </button>
+      <button onClick={() => setExpanded(!expanded)} aria-label={expanded ? 'Exit full screen' : 'Full screen'}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 text-xs text-slate-300 hover:bg-slate-800 transition-colors">
+        {expanded ? <Minimize2 size={12} /> : <Maximize2 size={12} />} {expanded ? 'Exit full screen' : 'Full screen'}
+      </button>
+    </div>
+  );
+
+  const graphPanel = (
+    <Card className={`overflow-hidden ${expanded ? 'absolute inset-3 sm:inset-6 flex flex-col animate-scale-in' : ''}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-700/40">
+        <div className="flex items-center gap-3">
+          <span className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/30 flex items-center justify-center">
+            <Network size={15} className="text-teal-300" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-100">{selectedName ? `Who can reach ${selectedName}` : 'Live access map to every crown jewel'}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{paths.length} route{paths.length === 1 ? '' : 's'} · hover a node to trace it, click to pin</p>
+          </div>
+        </div>
+        {toolbar}
+      </div>
+      <div className={`relative bg-[radial-gradient(ellipse_at_center,rgba(45,212,191,0.06),transparent_70%)] ${expanded ? 'flex-1 overflow-auto' : ''}`}>
+        {pathsLoading ? <Loading label="Mapping access routes" /> : paths.length === 0 ? (
+          <Empty title="No routes" hint="Nobody's active accounts reach this system with the current filter." />
+        ) : (
+          <div className="py-3">
+            <AccessGraphCanvas paths={paths} highlightPathId={hovered ?? selected} onSelectPath={setSelected} />
+          </div>
+        )}
+      </div>
+      <div className="px-5 py-3 border-t border-slate-700/40 bg-slate-950/30"><GraphLegend /></div>
+    </Card>
+  );
 
   return (
-    <div className="p-6 lg:p-8 bg-[#0A1628] min-h-full">
+    <div className="identity-page">
       <PageHeader
         icon={Share2}
         title="Access Graph & Attack Paths"
-        subtitle="The shortest route from each person, workload or agent to your crown-jewel systems, through group nesting and takeover rights such as helpdesk password resets. Disabled accounts block a route."
-        actions={meta ? <div className="text-xs text-slate-500">{meta.edges} access links · built {fmtTime(meta.updated_at)}</div> : undefined}
+        subtitle="Every route from a person, workload or agent to your crown-jewel systems, through group nesting and takeover rights such as helpdesk password resets. Disabled accounts block a route."
+        actions={meta ? (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-700/50 bg-slate-900/50 text-xs text-slate-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
+            {meta.edges} access links · built {fmtTime(meta.updated_at)}
+          </div>
+        ) : undefined}
       />
 
       {error && <div className="mb-4"><ErrorBanner message={error} onRetry={loadResources} /></div>}
 
       {loading ? (
-        <Loading label="Loading access graph" />
+        <Card><Loading label="Loading access graph" /></Card>
       ) : resources.length === 0 ? (
         <Card><Empty title="No access data yet" hint="Drop resources, groups and edges into the identity access landing folder, then run the Identity 01 job." /></Card>
       ) : (
-        <>
-          <div className="flex items-center gap-2 mb-3">
-            <Crown size={15} className="text-amber-300" />
-            <h2 className="text-sm font-semibold text-slate-200">Crown jewels</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-6">
-            {jewels.map((r) => (
-              <ResourceCard key={r.resource_id} r={r} active={resourceId === r.resource_id}
-                onClick={() => setResourceId(resourceId === r.resource_id ? '' : r.resource_id)} />
-            ))}
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Stat icon={Crown} label="Crown jewels" value={stats.jewels} accent="#f59e0b" />
+            <Stat icon={Users} label="Identity routes in" value={stats.exposed} accent="#2dd4bf" />
+            <Stat icon={ShieldAlert} label="Via takeover" value={stats.takeover} tone={stats.takeover ? 'text-red-300' : 'text-slate-100'} accent="#f87171" />
+            <Stat icon={Waypoints} label="Fewest hops" value={stats.fewest} accent="#38bdf8" />
           </div>
 
-          {others.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 mb-6 text-xs text-slate-500">
-              <Server size={13} />
-              <span>Other mapped systems:</span>
-              {others.map((r) => <Tag key={r.resource_id}>{r.name}</Tag>)}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Crown size={14} className="text-amber-300" />
+              <h2 className="text-sm font-semibold text-slate-200">Crown jewels</h2>
+              <span className="text-xs text-slate-500">Choose one to focus the map</span>
             </div>
-          )}
-
-          <Card className="overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-slate-700/50">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-200">{selectedName ? `Paths to ${selectedName}` : 'All crown-jewel paths'}</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Takeover paths are listed first, then the shortest routes.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {resourceId && (
-                  <button onClick={() => setResourceId('')} className="px-3 py-1.5 rounded-lg border border-slate-700/60 text-xs text-slate-300 hover:bg-slate-800 transition-colors">
-                    Show all
-                  </button>
-                )}
-                <button onClick={() => setTakeoverOnly(!takeoverOnly)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs transition-colors ${takeoverOnly ? 'border-red-500/50 bg-red-500/10 text-red-200' : 'border-slate-700/60 text-slate-300 hover:bg-slate-800'}`}>
-                  <Filter size={12} /> Takeover only
-                </button>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+              {jewels.map((r) => (
+                <ResourceCard key={r.resource_id} r={r} active={resourceId === r.resource_id}
+                  onClick={() => setResourceId(resourceId === r.resource_id ? '' : r.resource_id)} />
+              ))}
             </div>
-            {pathsLoading ? (
-              <Loading label="Loading paths" />
-            ) : paths.length === 0 ? (
-              <Empty title="No paths" hint="Nobody's active accounts reach this system with the current filter." />
-            ) : (
-              <div className="divide-y divide-slate-800">
-                {paths.map((p) => (
-                  <div key={p.path_id} className={`px-5 py-4 transition-colors hover:bg-slate-800/30 ${p.via_takeover ? 'border-l-2 border-red-400' : 'border-l-2 border-transparent'}`}>
-                    <div className="flex flex-wrap items-center gap-2 mb-2.5">
-                      <Users size={13} className="text-slate-500" />
-                      <span className="text-sm font-medium text-slate-100">{p.display_name || p.canonical_id}</span>
-                      {p.band && <BandPill band={p.band} />}
-                      <span className="text-xs text-slate-500">reaches</span>
-                      <span className="text-sm text-slate-200">{p.resource_name || p.resource_id}</span>
-                      <span className="text-xs text-slate-500">in {p.hops} hop{p.hops === 1 ? '' : 's'}</span>
-                      {p.permission && <Tag tone="blue">{p.permission}</Tag>}
-                      {p.via_takeover && <Tag tone="red"><ShieldAlert size={11} /> takeover</Tag>}
-                    </div>
-                    <PathChain path={p} />
-                  </div>
-                ))}
+            {others.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mt-4 text-xs text-slate-500">
+                <Server size={13} />
+                <span>Other mapped systems:</span>
+                {others.map((r) => <Tag key={r.resource_id}>{r.name}</Tag>)}
               </div>
             )}
-          </Card>
-        </>
+          </div>
+
+          <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_360px] gap-4">
+            {expanded ? <Card className="p-10"><Empty title="Map open in full screen" hint="Press Escape or Exit full screen to return." /></Card> : graphPanel}
+            {expanded && createPortal(
+              <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="Access map, full screen">
+                <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm animate-fade-in" onClick={() => setExpanded(false)} />
+                {graphPanel}
+              </div>,
+              document.body,
+            )}
+
+            <Card className="overflow-hidden flex flex-col 2xl:max-h-[720px]">
+              <div className="px-4 py-3.5 border-b border-slate-700/40">
+                <h2 className="text-sm font-semibold text-slate-100">Routes</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Takeover routes first, then the shortest.</p>
+              </div>
+              {pathsLoading ? <Loading label="Loading routes" /> : paths.length === 0 ? (
+                <Empty title="No routes" hint="Try another system or turn off Takeover only." />
+              ) : (
+                <div className="divide-y divide-slate-800/80 overflow-y-auto max-h-[420px] 2xl:max-h-none">
+                  {paths.map((p) => (
+                    <PathRow key={p.path_id} p={p} selected={selected === p.path_id}
+                      onSelect={() => setSelected(selected === p.path_id ? null : p.path_id)}
+                      onHover={(on) => setHovered(on ? p.path_id : null)} />
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+
+          {selectedPath && (
+            <Card className="p-5 animate-slide-up">
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <Route size={14} className="text-teal-300" />
+                <span className="text-sm font-semibold text-slate-100">{selectedPath.display_name || selectedPath.canonical_id}</span>
+                <span className="text-xs text-slate-500">reaches</span>
+                <span className="text-sm text-amber-200">{selectedPath.resource_name || selectedPath.resource_id}</span>
+                <span className="text-xs text-slate-500">in {selectedPath.hops} hop{selectedPath.hops === 1 ? '' : 's'}</span>
+                {selectedPath.via_takeover && <Tag tone="red"><ShieldAlert size={10} /> takeover</Tag>}
+                <button onClick={() => setSelected(null)} className="ml-auto text-xs text-slate-400 hover:text-slate-200 transition-colors">Clear</button>
+              </div>
+              <PathChain path={selectedPath} />
+            </Card>
+          )}
+        </div>
       )}
     </div>
   );
