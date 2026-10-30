@@ -786,6 +786,8 @@ export const identityApi = {
     request<RunAck>('/whatif/scenarios', { method: 'POST', body: JSON.stringify(body) }),
   evaluateScenario: (id: string) =>
     request<RunAck>(`/whatif/scenarios/${encodeURIComponent(id)}/evaluate`, { method: 'POST' }),
+  deleteScenario: (id: string) =>
+    request<{ scenario_id: string; deleted: boolean }>(`/whatif/scenarios/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   federation: () => request<FederationOverview>('/federation'),
   trustDetail: (id: string) => request<TrustDetail>(`/federation/trusts/${encodeURIComponent(id)}`),
   federationFindings: (p: { severity?: string; scope?: string }) => {

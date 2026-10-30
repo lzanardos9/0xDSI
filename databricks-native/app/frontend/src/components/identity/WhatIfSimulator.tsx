@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FlaskConical, Plus, RotateCw, ChevronRight, AlertOctagon, Loader2, Sparkles, UserRound, ListChecks } from 'lucide-react';
+import { FlaskConical, Plus, RotateCw, ChevronRight, AlertOctagon, Loader2, Sparkles, UserRound, ListChecks, Trash2 } from 'lucide-react';
 import { identityApi, type WhatIfResult, type WhatIfScenario } from '../../lib/identityApi';
 import { Card, Empty, ErrorBanner, Loading, PageHeader, Tag, fmtTime } from './identityUi';
 import WhatIfResultView from './WhatIfResult';
@@ -43,17 +43,19 @@ function StatusTag({ s }: { s: WhatIfScenario }) {
   return null;
 }
 
-function ScenarioDetail({ id, onChanged }: { id: string; onChanged: () => void }) {
+function ScenarioDetail({ id, onChanged, onDeleted }: { id: string; onChanged: () => void; onDeleted: (name: string) => void }) {
   const [data, setData] = useState<{ scenario: WhatIfScenario; result: WhatIfResult | null } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(() => {
     identityApi.whatifDetail(id).then((d) => { setData(d); setError(''); }).catch((e: Error) => setError(e.message));
   }, [id]);
 
-  useEffect(() => { setData(null); setNote(''); load(); }, [load]);
+  useEffect(() => { setData(null); setNote(''); setConfirming(false); load(); }, [load]);
 
   const pending = data?.scenario.status === 'pending';
   useEffect(() => {
@@ -74,6 +76,20 @@ function ScenarioDetail({ id, onChanged }: { id: string; onChanged: () => void }
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setDeleting(true);
+    setNote('');
+    try {
+      await identityApi.deleteScenario(id);
+      onDeleted(data?.scenario.name ?? 'Scenario');
+    } catch (e) {
+      setNote((e as Error).message);
+      setConfirming(false);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -98,11 +114,31 @@ function ScenarioDetail({ id, onChanged }: { id: string; onChanged: () => void }
               {s.evaluated_at ? <>Last evaluated {fmtTime(s.evaluated_at)}</> : 'Not evaluated yet'}
             </div>
           </div>
-          <button onClick={rerun} disabled={busy || pending}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40 transition-colors">
-            <RotateCw size={13} className={busy ? 'animate-spin' : ''} /> Re-run on today's data
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={rerun} disabled={busy || pending || deleting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40 transition-colors">
+              <RotateCw size={13} className={busy ? 'animate-spin' : ''} /> Re-run on today's data
+            </button>
+            {s.source !== 'sample' && !confirming && (
+              <button onClick={() => setConfirming(true)} disabled={deleting} aria-label="Delete scenario" title="Delete scenario"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700/60 text-sm text-slate-400 hover:text-red-200 hover:border-red-500/50 hover:bg-red-500/10 disabled:opacity-40 transition-colors">
+                <Trash2 size={13} /> Delete
+              </button>
+            )}
+          </div>
         </div>
+        {confirming && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 animate-slide-down">
+            <Trash2 size={15} className="text-red-300 flex-shrink-0" />
+            <span className="text-sm text-red-100 flex-1 min-w-[200px]">Delete “{s.name}” and its results? This can't be undone.</span>
+            <button onClick={() => setConfirming(false)} disabled={deleting}
+              className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
+            <button onClick={remove} disabled={deleting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500 text-white text-sm font-medium hover:bg-red-400 disabled:opacity-60 transition-colors">
+              {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Delete scenario
+            </button>
+          </div>
+        )}
         {note && <div className="mt-3 text-xs text-amber-300">{note}</div>}
         {s.error && <div className="mt-3 text-sm text-red-300">The simulation could not run: {s.error}</div>}
 
@@ -204,7 +240,14 @@ export default function WhatIfSimulator() {
           )}
         </Card>
         <div>
-          {selected ? <ScenarioDetail id={selected} onChanged={load} /> : (
+          {selected ? (
+            <ScenarioDetail id={selected} onChanged={load}
+              onDeleted={(name) => {
+                setBanner({ tone: 'ok', text: `“${name}” was deleted.` });
+                setSelected(null);
+                load();
+              }} />
+          ) : (
             <Card><Empty title="Pick a scenario" hint="Select a scenario on the left, or create a new one." /></Card>
           )}
         </div>

@@ -174,3 +174,16 @@ def add_whatif_routes(router: APIRouter, query: Callable, execute_write: Callabl
         execute_write(f"""UPDATE {fqn('identity_whatif_scenario')} SET status = 'pending', error = NULL
                           WHERE scenario_id = :sid""", {"sid": scenario_id})
         return {"scenario_id": scenario_id, **_run(scenario_id)}
+
+    @router.delete("/whatif/scenarios/{scenario_id}")
+    async def delete_scenario(scenario_id: str, request: Request):
+        user = analyst(request)
+        found = query(f"SELECT source FROM {fqn('identity_whatif_scenario')} WHERE scenario_id = :sid", {"sid": scenario_id})
+        if not found:
+            raise HTTPException(status_code=404, detail="Scenario not found")
+        if found[0].get("source") == "sample":
+            raise HTTPException(status_code=400, detail="Sample scenarios are part of the demo data and can't be deleted")
+        audit(user, "identity_whatif_delete", "identity_whatif_scenario", json.dumps({"scenario_id": scenario_id}))
+        execute_write(f"DELETE FROM {fqn('identity_whatif_result')} WHERE scenario_id = :sid", {"sid": scenario_id})
+        execute_write(f"DELETE FROM {fqn('identity_whatif_scenario')} WHERE scenario_id = :sid", {"sid": scenario_id})
+        return {"scenario_id": scenario_id, "deleted": True}

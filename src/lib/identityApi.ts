@@ -247,6 +247,15 @@ export const identityApi = {
     saveScenarios(all);
     return { scenario_id: id, triggered: true };
   },
+  deleteScenario: async (id: string) => {
+    const d = await load();
+    if (d.whatifDetails[id]) throw new Error("Sample scenarios are part of the demo data and can't be deleted");
+    const all = storedScenarios();
+    if (!all[id]) throw new Error('Scenario not found');
+    delete all[id];
+    saveScenarios(all);
+    return { scenario_id: id, deleted: true };
+  },
   federation: () => read((d) => d.federation),
   trustDetail: (id: string) => read((d) => d.trustDetails[id]),
   federationFindings: async (p: { severity?: string; scope?: string }) => {
