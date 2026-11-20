@@ -1,7 +1,7 @@
 """
 Guard: backend modules must be imported the way the server is actually launched.
 
-app/app.yaml starts the API as `uvicorn backend.server:app` with working
+The app command in resources/app.yml starts the API as `uvicorn backend.server:app` with working
 directory `app/`, so `app/` is on sys.path and the package is `backend`. A bare
 `from audit import ...` inside server.py therefore fails at startup -- the module
 is only importable as `backend.audit`. Syntax compilation does not catch this

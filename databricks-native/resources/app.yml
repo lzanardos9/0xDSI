@@ -6,6 +6,29 @@ resources:
       source_code_path: ../app
       user_api_scopes:
         - sql
+      # Least-privilege bindings for the app service principal. Deploying grants exactly these.
+      resources:
+        - name: sql-warehouse
+          description: "Serverless SQL warehouse for all backend queries"
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+        - name: llm-primary
+          serving_endpoint:
+            name: ${var.llm_endpoint}
+            permission: CAN_QUERY
+        - name: llm-fallback
+          serving_endpoint:
+            name: ${var.llm_fallback_endpoint}
+            permission: CAN_QUERY
+        - name: identity-custody-key
+          description: "HMAC key that seals identity evidence (chain of custody)"
+          secret:
+            scope: ${var.secret_scope}
+            key: identity_custody_key
+            permission: READ
+      # Single source of runtime config (there is intentionally no app/app.yaml).
+      # Databricks substitutes DATABRICKS_APP_PORT in the command; nothing else is shell-expanded.
       config:
         command:
           - python
@@ -35,6 +58,20 @@ resources:
             value: ${var.soc_analyst_emails}
           - name: SOC_DATA_ACCESS_MODE
             value: ${var.data_access_mode}
+          - name: SOC_SECRET_SCOPE
+            value: ${var.secret_scope}
+          - name: IDENTITY_CUSTODY_SECRET_KEY
+            value: identity_custody_key
+          - name: LAKEWATCH_CATALOG
+            value: ${var.lakewatch_catalog}
+          - name: LAKEWATCH_SCHEMA
+            value: ${var.lakewatch_schema}
+          - name: LAKEWATCH_TABLES
+            value: ${var.lakewatch_tables}
+          - name: WORKFLOW_ALLOWED_HOSTS
+            value: ${var.workflow_allowed_hosts}
+          - name: WORKFLOW_WEBHOOK_SECRET_KEY
+            value: workflow_webhook_token
       permissions:
         - level: CAN_MANAGE
           group_name: "soc_admins"
