@@ -376,7 +376,7 @@ export type N8nWorkflow = {
   enabled: boolean;
   configuration: any;
   auth_method: 'header' | 'query' | 'basic' | 'none';
-  auth_credentials: any;
+  auth_credentials?: Record<string, unknown>;
   created_by?: string;
   created_at: string;
   updated_at: string;

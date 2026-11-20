@@ -1,0 +1,121 @@
+{
+  "projectId": "57925642",
+  "functions": {
+    "agent-chat": {
+      "hasChanged": false,
+      "hash": "03ba308b97aac5ac91b750cadb8ebc44eddb257d28aacb63b9562bdbf1af4af6"
+    },
+    "agent-orchestrator": {
+      "hasChanged": false,
+      "hash": "00655b49dc401e81388bfd74c1b7c66a1d4308ee92c130b2e32f0eb6ffd9f37e"
+    },
+    "ai-assistant": {
+      "hasChanged": false,
+      "hash": "57d365e42978c906400843c69b796f4d9021b6cebc40b87a4b0186f4175e4a27"
+    },
+    "analyze-communication-psychology": {
+      "hasChanged": false,
+      "hash": "4e9f46a0ac625fc9e652fd117d107cb867ff99f15b05e1b4dac5f5e3d7861b72"
+    },
+    "analyze-document": {
+      "hasChanged": false,
+      "hash": "0c59f2517398b7272104798a531b1c87fa622184cc3831082490006321a74ed9"
+    },
+    "aviation-live": {
+      "hasChanged": false,
+      "hash": "d004227e7eec72a86ee76c13fd709156bba74a0143ce974e58787e8b4511512b"
+    },
+    "correlation-engine": {
+      "hasChanged": false,
+      "hash": "3eba35103d4744f7340f2cc7c1d878554a2c3b683b45b541b2797059d79e5e3c"
+    },
+    "crash-analyze": {
+      "hasChanged": false,
+      "hash": "071a760669d3d3e5066871ee905816239d2ee2d025f209dcafedd9942aacc561"
+    },
+    "create-user": {
+      "hasChanged": false,
+      "hash": "24f93ff366cd42fdbe79294cce08681cfc6ba1da61b46a9ba85e561f1ba6d2d3"
+    },
+    "edge-connector-api": {
+      "hasChanged": false,
+      "hash": "8fb77b43252253394fcbb8f229010558cd5a9debf8cf75d30fbb5eb19e0815ca"
+    },
+    "enrichment-engine": {
+      "hasChanged": false,
+      "hash": "3b5e0fe1642eac79bbd473e92c80c5de8e5c64d3ddafbc1638490d85afd5615b"
+    },
+    "etl-ingest": {
+      "hasChanged": false,
+      "hash": "bfca3b29aea8164f677c2b195cf6da78adcd1187b2593234704ec135b3212117"
+    },
+    "etl-orchestrator": {
+      "hasChanged": false,
+      "hash": "f2df26e5f823c7d6be55881e8479fdb5caa12153ba409b2cab807d8e747a76f7"
+    },
+    "etl-processor": {
+      "hasChanged": false,
+      "hash": "1b6a35b066371ff9c86c03afe68c96bf3d657ac501cf53bfd9abc0eaa3c1b78a"
+    },
+    "exploit-chain-analyze": {
+      "hasChanged": false,
+      "hash": "5e17e807fbf9e7effc6235c7e16211b125b9962b058ec2d64fefdc79abf49d77"
+    },
+    "feature-lab": {
+      "hasChanged": false,
+      "hash": "d53543f53945b5a6a078487f6e4d72e5aae1cdc56263ea8c9e9ada81c661115d"
+    },
+    "feature-runtime": {
+      "hasChanged": false,
+      "hash": "ef5bc4b6cc78151602dbfb785a02d40ac6bb331576cac9d17c549778c114b21d"
+    },
+    "generate-connector": {
+      "hasChanged": false,
+      "hash": "9309ed0d018da844efb7456aca1628c470a83592c353ccd87c596a54268106cc"
+    },
+    "generate-correlation-rule": {
+      "hasChanged": false,
+      "hash": "3e7a5bf96689328885220e1aa96cba906c2e96d65727b685db1fc7802c452262"
+    },
+    "geopolitical-risk-fetch": {
+      "hasChanged": false,
+      "hash": "3e07cb705618d685dafd985990dfa12a7810a2f68e78dd28fa491d2fbee7befc"
+    },
+    "migrate-dashboard": {
+      "hasChanged": false,
+      "hash": "fb08c82381895cb4cd0f8deb9d8b0b6048e48ea17be003c07409c7193f7b26b7"
+    },
+    "oba-engine": {
+      "hasChanged": false,
+      "hash": "c711028bd438cc4c0632d1834e20b1a4b2ca16b16383bdcec88626004719bdd9"
+    },
+    "simulate-threat": {
+      "hasChanged": false,
+      "hash": "d109e013e4676bb6cf5a114a15e9a3bdf81791a613647f332ba558f4bc3c9296"
+    },
+    "threat-radar-analyze": {
+      "hasChanged": false,
+      "hash": "46726de9d716876354fa166bc5b31b032d34ecd2948a9f67e43b26f623aa53aa"
+    },
+    "threat-radar-fetch": {
+      "hasChanged": false,
+      "hash": "400d6ace0a5ab3d30e1e12bdb9b0ed81ae62bf424173d3ca11d47de468ed97ca"
+    },
+    "threat-radar-probe": {
+      "hasChanged": false,
+      "hash": "fb848aaefa3642e7d32da5c3cde53f1b6f4387829b07714db4ddf568bcefcd90"
+    },
+    "update-username": {
+      "hasChanged": false,
+      "hash": "90f25f82a4a323212b0b58f296960f737ac06e9b6487fb9b720a211a2c3a8731"
+    },
+    "verify-password": {
+      "hasChanged": false,
+      "hash": "efb18c27b550897f53fc4b77f4c69202c1bf99049238bcb6e26b446ff5b91956"
+    },
+    "execute-workflow": {
+      "hasChanged": false,
+      "hash": "99e10d549fb9436d3cf3858c90765bbddbb69e036aef661861c90c94ec792d4b"
+    }
+  }
+}
