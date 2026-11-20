@@ -179,6 +179,33 @@ def test_workflow_target_validation():
     assert validate_target("https://hooks.example.com/x", hosts)
 
 
+ADMIN = {"X-Forwarded-Email": "admin@example.com", "X-Forwarded-User": "admin@example.com"}
+
+
+def test_golive_report_is_no_go_when_warehouse_down():
+    server = _load_server({**CONFIGURED, "SOC_ADMIN_EMAILS": "admin@example.com"})
+    server.query = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down"))
+    r = _client(server).get("/api/golive", headers=ANALYST)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["verdict"] == "no_go" and body["can_decide"] is False
+    states = {i["id"]: i["state"] for i in body["items"]}
+    assert states["warehouse"] == "fail" and states["identity_tables"] == "unknown"
+
+
+def test_golive_decisions_admin_only_validated_and_audited():
+    server = _load_server({**CONFIGURED, "SOC_ADMIN_EMAILS": "admin@example.com"})
+    writes, audits = [], []
+    server.execute_write = lambda sql, params=None: writes.append(params)
+    server._audit_log = lambda user, op, table, detail="": audits.append(op)
+    c = _client(server)
+    assert c.post("/api/golive/runbook", headers=ANALYST, json={"decision": "signed", "note": "x" * 20}).status_code == 403
+    assert c.post("/api/golive/custody_key", headers=ADMIN, json={"decision": "waived", "note": "x" * 20}).status_code == 400
+    r = c.post("/api/golive/runbook", headers=ADMIN, json={"decision": "signed", "note": "On-call rota SOC-12"})
+    assert r.status_code == 200, r.text
+    assert audits == ["golive_signed"] and writes[0]["cid"] == "runbook" and writes[0]["by"] == "admin@example.com"
+
+
 def test_bundle_binds_least_privilege_resources():
     import yaml
 
