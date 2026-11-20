@@ -453,6 +453,14 @@ DDL = {
         answers_version STRING,
         asked_at TIMESTAMP NOT NULL
     """,
+    "go_live_signoff": """
+        signoff_id STRING NOT NULL,
+        check_id STRING NOT NULL,
+        decision STRING NOT NULL,
+        note STRING,
+        decided_by STRING NOT NULL,
+        decided_at TIMESTAMP NOT NULL
+    """,
 }
 
 for name, cols in DDL.items():
