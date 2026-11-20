@@ -555,7 +555,6 @@ Every notebook starts with `%run ../_shared/bootstrap` to initialize all service
   ├── 0xDSI_DETECTION_ENGINE_EXPLAINED.md ─── Detection methodology reference
   │
   ├── app/ ────────────────────────────── Databricks App (web application)
-  │   ├── app.yaml ────────────────────── App runtime config
   │   ├── package.json ────────────────── Node.js dependencies
   │   ├── requirements.txt ────────────── Python dependencies (FastAPI, SDK)
   │   ├── vite.config.ts ─────────────── Vite build configuration
@@ -1040,37 +1039,12 @@ cd databricks-native
 #   6. Print connection URLs and next steps
 ```
 
-### Step 2: Manual Deployment (Alternative)
+### Step 2: Manual Deployment (not supported)
 
-```bash
-# ─────────────────────────────────────────────────────────────────────────────
-# OPTION B: Manual Step-by-Step
-# ─────────────────────────────────────────────────────────────────────────────
-
-# 1. Authenticate
-databricks auth login --host https://YOUR-WORKSPACE.cloud.databricks.com
-
-# 2. Upload notebooks
-databricks workspace import-dir ./notebooks /Workspace/0xDSI --overwrite
-
-# 3. Create catalog and schema
-databricks jobs run-now --notebook-path /Workspace/0xDSI/setup/01_create_catalog_schema
-
-# 4. Seed demo data
-databricks jobs run-now --notebook-path /Workspace/0xDSI/setup/02_seed_demo_data
-databricks jobs run-now --notebook-path /Workspace/0xDSI/setup/03_seed_all_platform_data
-
-# 5. Register ML models
-databricks jobs run-now --notebook-path /Workspace/0xDSI/setup/04_register_model_serving
-
-# 6. Seed correlation rules library
-databricks jobs run-now --notebook-path /Workspace/0xDSI/setup/05_seed_correlation_rules_library
-
-# 7. Deploy the Databricks App
-databricks apps create --name 0xdsi-soc \
-  --source-code-path ./app \
-  --config ./app/app.yaml
-```
+The app's start command, environment and resource grants live only in the bundle
+(`resources/app.yml`), so deploying the app outside the bundle is not supported.
+Use `./deploy.sh` or the `make deploy-*` targets. The step-by-step reference is
+`docs/INSTALLATION_MANUAL.md`, section "Databricks App deployment".
 
 ### Step 3: Configure Secrets
 

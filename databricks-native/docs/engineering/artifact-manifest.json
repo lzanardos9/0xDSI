@@ -2,52 +2,61 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 627,
-  "total_bytes": 11625126,
+  "total_files": 659,
+  "total_bytes": 11975649,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
-      "backend_service": 9,
-      "build_config": 12,
-      "databricks_notebook": 144,
+      "backend_service": 16,
+      "build_config": 11,
+      "databricks_notebook": 145,
       "deployment_config": 6,
-      "documentation": 15,
+      "documentation": 18,
       "frontend_entry": 1,
-      "frontend_module": 316,
-      "other": 3,
-      "shared_library": 47,
-      "stylesheet": 1,
-      "test": 57,
+      "frontend_module": 329,
+      "other": 5,
+      "shared_library": 48,
+      "stylesheet": 2,
+      "test": 61,
       "test_script": 1,
-      "tooling": 5
+      "tooling": 6
     },
     "by_shipping_status": {
       "asset": 10,
-      "build_config": 19,
+      "build_config": 20,
       "deployment": 6,
-      "documentation": 15,
+      "documentation": 18,
       "experimental": 1,
       "production": 3,
       "setup": 7,
-      "shared_library": 46,
-      "test": 58,
-      "unreviewed": 462
+      "shared_library": 47,
+      "test": 62,
+      "unreviewed": 485
     },
     "by_runtime": {
-      "browser": 318,
+      "browser": 332,
       "build-tooling": 17,
       "databricks-bundle": 6,
-      "databricks-spark": 144,
-      "n/a": 28,
-      "python": 57,
-      "python (databricks runtime)": 47,
-      "python-fastapi": 9,
+      "databricks-spark": 145,
+      "n/a": 33,
+      "python": 61,
+      "python (databricks runtime)": 48,
+      "python-fastapi": 16,
       "shell": 1
     },
     "reviewed": 4,
-    "unreviewed": 462
+    "unreviewed": 485
   },
   "artifacts": [
+    {
+      "path": ".env.example",
+      "artifact_type": "other",
+      "runtime": "n/a",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5375abc5e78d53ebe6ad868fefcdb207af3235e14dc52493d116f38859dd1de9",
+      "bytes": 1553
+    },
     {
       "path": ".github/workflows/offline-gate.yml",
       "artifact_type": "other",
@@ -56,6 +65,15 @@
       "review": "auto",
       "sha256": "6eb5ef9eb2c4df6c26805e5f2428f620ef07fcd8c546f1f85f7ab0a62b8110ba",
       "bytes": 1550
+    },
+    {
+      "path": ".gitignore",
+      "artifact_type": "other",
+      "runtime": "n/a",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d935fd63ff27401fe785f93b8b8e398234349dfe028b70e1c140cce08a0ce173",
+      "bytes": 93
     },
     {
       "path": "ARCHITECTURE_DEEP_DIVE.md",
@@ -72,8 +90,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "14b3800eba9ae66b79a74c56195be0b720022627acc084a714abe0d68b824b0c",
-      "bytes": 5343
+      "sha256": "bc27a78a76ff435dc5e293628ce8af5603c1c5d0269a46cc60405254a2b114e3",
+      "bytes": 5521
     },
     {
       "path": "README.md",
@@ -81,17 +99,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "b54e383860a3411e4e08b7c24a25a45a906fca73793ae97eb608f065766c0c99",
-      "bytes": 109589
-    },
-    {
-      "path": "app/app.yaml",
-      "artifact_type": "build_config",
-      "runtime": "build-tooling",
-      "shipping_status": "build_config",
-      "review": "auto",
-      "sha256": "ebf9700735e92b8ee7861478d7e8ce3d7052e4fac03c436d65284e03cb29e786",
-      "bytes": 586
+      "sha256": "cb22c79a58f0ff8306630f343f74af5c943b230d7e68657728fa287011f76199",
+      "bytes": 108400
     },
     {
       "path": "app/backend/audit.py",
@@ -117,8 +126,8 @@
       "runtime": "python-fastapi",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "6097086c97c06d0abbf348fe3892699b0675c8ea716e7b433acac90f790d2b3b",
-      "bytes": 19502
+      "sha256": "df49d67ce86c078a60243fafde366f01af5fc193fa25f94e3b0cab1d5062b500",
+      "bytes": 20088
     },
     {
       "path": "app/backend/identity_access.py",
@@ -130,6 +139,33 @@
       "bytes": 9609
     },
     {
+      "path": "app/backend/identity_answer_parser.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "02b85483418d256135d9b9a79e8efb7501240f69de024bce9bec1ce6ff9c8137",
+      "bytes": 7704
+    },
+    {
+      "path": "app/backend/identity_answers.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "2ec9f21750ef1e7a1d88935dba52a48af0dc9af1e85328571744671a045135d0",
+      "bytes": 19137
+    },
+    {
+      "path": "app/backend/identity_custody.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9fd800fb99569ea0dd8011ace3e60a90bcf5e0252e737fc7aa0123bb15f42ef7",
+      "bytes": 4104
+    },
+    {
       "path": "app/backend/identity_federation.py",
       "artifact_type": "backend_service",
       "runtime": "python-fastapi",
@@ -139,13 +175,40 @@
       "bytes": 6129
     },
     {
+      "path": "app/backend/identity_live.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "09b970b697b6a4e3dc0de0f3d1a600869a505622149c538f358e5d56e9862f92",
+      "bytes": 8437
+    },
+    {
+      "path": "app/backend/identity_remediation.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "eaacfbd467c50f7f498f9f7998fa19d33347e3dceea54da84fe03101d3d9c478",
+      "bytes": 12469
+    },
+    {
       "path": "app/backend/identity_whatif.py",
       "artifact_type": "backend_service",
       "runtime": "python-fastapi",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "b5b52329fa01628314478a44dbb35ccea715f84c24f39de8f75902a2c82aaa86",
-      "bytes": 9989
+      "sha256": "77b18c5c5aee68211bf53bb4240c0ec442b661ef688d773999bf10bc9e161111",
+      "bytes": 11177
+    },
+    {
+      "path": "app/backend/lakewatch.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f848bda31b409b9286c252bb60e0ba05417bac410cfcc21d0d28061b289ca1df",
+      "bytes": 2349
     },
     {
       "path": "app/backend/readiness.py",
@@ -162,8 +225,8 @@
       "runtime": "python-fastapi",
       "shipping_status": "production",
       "review": "curated",
-      "sha256": "fa9f4a16786c1df269bea6b2dfb0de48c346236678bd3ff4a91a5e7285258a09",
-      "bytes": 175747,
+      "sha256": "6892c50384fbeb46962490be0edce410ac1455e8734e5a0a97f6f9b4bdda1643",
+      "bytes": 177357,
       "capability": "data-api-gateway",
       "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
     },
@@ -175,6 +238,15 @@
       "review": "auto",
       "sha256": "4ec6494439d3de64e7489d65adb1c46b4dfbd548a335bdb4a0ac1c1e436740a8",
       "bytes": 2545
+    },
+    {
+      "path": "app/backend/workflow_runner.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5f0a383be5ec599eb2b244ea90388371200e444f897d37d4079b9d2bbd2cf90c",
+      "bytes": 3458
     },
     {
       "path": "app/frontend/.env.production",
@@ -571,8 +643,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "2ef3cf16063b1ad6b4cd12cfd8003ec6faa27a3a237743d2383336b0fdc67c69",
-      "bytes": 68282
+      "sha256": "9561e614e6e0ecc0c9a9848c527fc23c294e222e75547ed8d251be67ebabbfcb",
+      "bytes": 41760
     },
     {
       "path": "app/frontend/src/components/DashboardOld.tsx",
@@ -1174,8 +1246,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "a65d68604b0a9555c96b138aac4df092fe189c5f4985de585d478c732bb79caa",
-      "bytes": 23365
+      "sha256": "ce36f347af6c9b80e5441ac50e0df961a0aaaa6e49d572f21aba31bbc9f60515",
+      "bytes": 23129
     },
     {
       "path": "app/frontend/src/components/command-center/AgentCommsPanel.tsx",
@@ -2092,8 +2164,17 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "6d5a47fddd4b93b4fd246d497dc21f0d3de3c6a0c75590a1cfba4eb2c5ddd623",
-      "bytes": 7982
+      "sha256": "41aad02a59cb475078bdf681e480d0bdd4ae06771650055ec4a36898952be6b6",
+      "bytes": 19423
+    },
+    {
+      "path": "app/frontend/src/components/identity/AccessGraphCanvas.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3e7532ba2c5d00b2197511d695c4f8a1c02866cb20fa8ea9df432ef9ec2f3b1f",
+      "bytes": 19232
     },
     {
       "path": "app/frontend/src/components/identity/FederationPosture.tsx",
@@ -2101,8 +2182,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "b80c4844a71b6aef27976efe19eea92934b487fe7c02fa4f6334731cadbcc2f0",
-      "bytes": 12883
+      "sha256": "1e3bed6b0d76491dff8dee56fcf76396cd5e82b49281fa47ea22c0d7b4e7c265",
+      "bytes": 12862
     },
     {
       "path": "app/frontend/src/components/identity/FederationTrustDetail.tsx",
@@ -2119,8 +2200,17 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "57161b0049a791ea1c04e2222c26140d653e0952cef85c157b60055c16734a8a",
-      "bytes": 13653
+      "sha256": "abf3f2445e4caa1338d6fe4123d2a4c9c43fab20fcd3528b166f8652e79a7a1d",
+      "bytes": 13632
+    },
+    {
+      "path": "app/frontend/src/components/identity/IdentityAnswers.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "f59c0b58eee43ab214de28ee997118e7e44e8e1436b8770d1dfdca0ff1109e80",
+      "bytes": 11487
     },
     {
       "path": "app/frontend/src/components/identity/IdentityExplorer.tsx",
@@ -2128,8 +2218,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "f4f0af0de19d5f390dfe71fa02433e2560aee2c3b46cfdaec779615d90836aa8",
-      "bytes": 13287
+      "sha256": "e63271ba83588d589e6278100f0a43a3f6633d0a41ee6b73aed8028e26d2616a",
+      "bytes": 13256
     },
     {
       "path": "app/frontend/src/components/identity/IdentityOverview.tsx",
@@ -2137,8 +2227,17 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "6151deb7febe2cdee18bbcb2d7864cd81e7681dd5c8bf33d32efbe54e9e6a6ed",
-      "bytes": 10065
+      "sha256": "53b26f5bcb43fe422a20d571d4296dacf9d137286620b86dbfab306fe4a01b48",
+      "bytes": 14007
+    },
+    {
+      "path": "app/frontend/src/components/identity/IdentityRemediation.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "5ad17fc5303e59b658baf61cbaf31ac1d34f828e184e60e13be1c08b68d87a4b",
+      "bytes": 6396
     },
     {
       "path": "app/frontend/src/components/identity/IdentityRisk.tsx",
@@ -2146,17 +2245,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "d41b2ebe4e53f659ede00a2ba02baa8b1daecd49c14722559c6529abef983899",
-      "bytes": 14239
-    },
-    {
-      "path": "app/frontend/src/components/identity/IdentityRoadmap.tsx",
-      "artifact_type": "frontend_module",
-      "runtime": "browser",
-      "shipping_status": "unreviewed",
-      "review": "auto",
-      "sha256": "ba88f78d68cb25afc87534565f82a089b5aee70b69ba6a4086aa3500ec824dc2",
-      "bytes": 2650
+      "sha256": "9f16cfd45f55893032558f4ccb14627536f52b5d40382dd47f7642bdf2997da8",
+      "bytes": 14258
     },
     {
       "path": "app/frontend/src/components/identity/IdentityTimeline.tsx",
@@ -2164,8 +2254,44 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "3af60cdcee49e8f4c59102a459990a011aab9efc593ac52740a371e9119add9e",
-      "bytes": 18807
+      "sha256": "caaf1390474427f440c01243dbd7af54ce5f6dc01b69995dec3f89ae6d7ce801",
+      "bytes": 18776
+    },
+    {
+      "path": "app/frontend/src/components/identity/LiveCustody.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "d896a00526c82ba19a40eb711c9b34d3dac7d61dd8151f3990b4fb3b02c347a1",
+      "bytes": 10328
+    },
+    {
+      "path": "app/frontend/src/components/identity/LiveEventDrawer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "eab002dc1c2fc61b44afba833e165615ceb6df55b793b2f236e49a95a9daefd5",
+      "bytes": 8645
+    },
+    {
+      "path": "app/frontend/src/components/identity/LiveEventGraph.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "4fbd04c5c4933938bc64cfadeba60c04d0d0fe4e14a908f8d8d3575f0776beec",
+      "bytes": 5521
+    },
+    {
+      "path": "app/frontend/src/components/identity/LiveFeed.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "36feb3a919c252104732623cd94920f29cd1ce870047e29f317a25a7cb8ace05",
+      "bytes": 16935
     },
     {
       "path": "app/frontend/src/components/identity/NonHumanIdentities.tsx",
@@ -2173,8 +2299,17 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "30d82f80c819b3257a3a6d8233944d5108e55651dea8c4fe587ebbfa7943ea7a",
-      "bytes": 6657
+      "sha256": "4f7f72c5e2e1ab532defe8aea593b4031614a4d0b4b087ab4aebf9037d72a45f",
+      "bytes": 6626
+    },
+    {
+      "path": "app/frontend/src/components/identity/RemediationDetail.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "94a0f4edef6bfee65ffd2d83da1391017d1d1c36a9c4d3bc66a8e9430c5e108b",
+      "bytes": 14417
     },
     {
       "path": "app/frontend/src/components/identity/ResolutionReview.tsx",
@@ -2182,8 +2317,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "7780f2a7ca601a66de41394509137ec26b6e8499ec62d2d9245c4845af5ceed5",
-      "bytes": 9068
+      "sha256": "032b6cb50ed9c05648e335fd8dccba749b4938cc881e54720fe0ce39c1241373",
+      "bytes": 9037
     },
     {
       "path": "app/frontend/src/components/identity/WhatIfBuilder.tsx",
@@ -2209,8 +2344,44 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "0e160766ccb1946e1bbd2bd64527627bdd015b039073cdbfc86631c80c6105c5",
-      "bytes": 9174
+      "sha256": "4fc030310baca205b18f2df6c49a11b4899bfd60390610c8a0f1d60a32eea626",
+      "bytes": 13351
+    },
+    {
+      "path": "app/frontend/src/components/identity/identity.css",
+      "artifact_type": "stylesheet",
+      "runtime": "browser",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "c1363e583d9e9d08e63ed265a0cbe545a0920a34fe5cddf917a9a81c464432a9",
+      "bytes": 6348
+    },
+    {
+      "path": "app/frontend/src/components/identity/identityCustody.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "3ce6b103b6d114ac41d582bbd6844195c7d9cb545099c1c8b3835223570ab46f",
+      "bytes": 2002
+    },
+    {
+      "path": "app/frontend/src/components/identity/identityLive.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "617f15bf5415cc50097fade9e307a3addc84668d360082e6d55966436a5a119e",
+      "bytes": 10235
+    },
+    {
+      "path": "app/frontend/src/components/identity/identityLiveRules.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "b25051f384d004ea3f4e2ec14c3db388b904798c4b1ca5f1a81711b43d178e95",
+      "bytes": 1315
     },
     {
       "path": "app/frontend/src/components/identity/identityRiskUi.tsx",
@@ -2218,8 +2389,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "52fbbc09e65a7bc7c3227a9909d4241b0cf5b5419245a90287e56e989ae1daf1",
-      "bytes": 2808
+      "sha256": "afade5036823dee8a68f79c9140a079e7c8fa4959ca7d4b885fd17b1dfb01be0",
+      "bytes": 2910
     },
     {
       "path": "app/frontend/src/components/identity/identityUi.tsx",
@@ -2227,8 +2398,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "fed29773f1235135161dc591d9e65be7f02ad36fe8a63775c655a0d0a550b6a8",
-      "bytes": 4735
+      "sha256": "c7e68fdb0b61aed05add6543dce263bd393b48dec0f6224d5ec91542a4d7bcb7",
+      "bytes": 6085
     },
     {
       "path": "app/frontend/src/components/industry-threats/AirlineThreats.tsx",
@@ -2400,6 +2571,33 @@
       "review": "auto",
       "sha256": "ab228ce3a75bd5a67ee8a358094dfac4e33a9ed6adc560af8ca9b0a296139e9a",
       "bytes": 5935
+    },
+    {
+      "path": "app/frontend/src/components/overview/OverviewCharts.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "30a7863350d32ea22c804cd150a7b31617f2496354a8b4c9e78ab6986210252a",
+      "bytes": 8626
+    },
+    {
+      "path": "app/frontend/src/components/overview/OverviewDashboard.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "72e4c8aced6f15dd5060da7777eb8761813a7301a057204b8dc738d59a1abcd4",
+      "bytes": 22169
+    },
+    {
+      "path": "app/frontend/src/components/overview/overviewData.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "9d98986503d2c578b6a42e98fe9a5660512998183a095bcbf882cbd1db1a1f73",
+      "bytes": 6386
     },
     {
       "path": "app/frontend/src/components/swarm/CAIPanels.tsx",
@@ -2722,8 +2920,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "fa969cf3d1c0afa979583bbe54cad41d7d376ece0c4f4bc96a11e12ea0e95ebc",
-      "bytes": 18939
+      "sha256": "eb3f86175ae37374c2563e2ab5f1f0f812141b2e12b41384e0c87c8ceda68de1",
+      "bytes": 26724
     },
     {
       "path": "app/frontend/src/lib/lakehouse.ts",
@@ -3226,8 +3424,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "22a4c132aa0dff725731b6053cb3407939a8611c8ec14c5efd4309d3649a697d",
-      "bytes": 2673
+      "sha256": "e9ea50675f4424816f3091d884e79fab87f9147e9db214d30e6fbc5f2d365964",
+      "bytes": 3594
     },
     {
       "path": "deploy.sh",
@@ -3235,8 +3433,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "c1d123c7aceb02552b01cb83babd4bd3ec2387f10f7955dff2cd791d06c754fc",
-      "bytes": 67015
+      "sha256": "ee9d7d737823c1e4fd285921c98c3785c40f57c7fc709ea7a3dd8ac4607ce182",
+      "bytes": 67760
     },
     {
       "path": "docs/COVERAGE_MATRIX.md",
@@ -3253,8 +3451,26 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "c180e62409e61dacfb4b6987c3f424fe8764f39cf7ad387be9d4263ae1ec10d0",
-      "bytes": 15837
+      "sha256": "b4b971361d0dffab7f2eef71579935058a1aa601728eda499f30b116249ea03f",
+      "bytes": 20955
+    },
+    {
+      "path": "docs/IDENTITY_DEMO_NARRATIVE.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "abc52ff5a757dc6769ab2abe54fbb21af73bd7f7fe8b69b5cff5c3aa5ceb633f",
+      "bytes": 15420
+    },
+    {
+      "path": "docs/IDENTITY_DEMO_NARRATIVE_V2.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "35a9080efaaa3a1d42b84570d326dcea7a8b113c50eec646e495c4fe5204c119",
+      "bytes": 28067
     },
     {
       "path": "docs/INSTALLATION_MANUAL.md",
@@ -3262,8 +3478,17 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "f4dbddafd0f63a346ac6d695f7fe3a4ddb47b8ab17b2ab0eb0abe1bac476b1a8",
-      "bytes": 23033
+      "sha256": "94ada8fd32c46f7dca798fa8f3470fbc188eeadc31a2f6053b65edb597c4eb8c",
+      "bytes": 25159
+    },
+    {
+      "path": "docs/RFP_COMPLIANCE_RESPONSE.md",
+      "artifact_type": "documentation",
+      "runtime": "n/a",
+      "shipping_status": "documentation",
+      "review": "auto",
+      "sha256": "222e5f0dad6deed4132693800f6663684508658014e6eeaa32b41129ccb831dd",
+      "bytes": 25107
     },
     {
       "path": "docs/competitive/0xDSI-vs-Securonix.md",
@@ -3543,8 +3768,8 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "7b76e16b5901cb9cfcd9d3f1cf876682827cf2da159c564f015da4b7795a2d0c",
-      "bytes": 6384
+      "sha256": "f7fafd104bb681399ae55a9b96a541b40b1573bbe76cccb4fc072fabda77487c",
+      "bytes": 6698
     },
     {
       "path": "notebooks/_shared/identity_event_fixtures.py",
@@ -3579,8 +3804,17 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "d67a8a5d7ed9b6be3620793107a108ba24d02ac46d230acca3f245931ea240df",
-      "bytes": 10259
+      "sha256": "ec46e15e7715a4ade704a8d063e39f02d0328d863741f6bc7f45fac7d8df94f7",
+      "bytes": 10593
+    },
+    {
+      "path": "notebooks/_shared/identity_remediation.py",
+      "artifact_type": "shared_library",
+      "runtime": "python (databricks runtime)",
+      "shipping_status": "shared_library",
+      "review": "auto",
+      "sha256": "ae93855021f846450da651af75a6e66eb2afc836c5811b58e7174fec2aa2b470",
+      "bytes": 18141
     },
     {
       "path": "notebooks/_shared/identity_resolution.py",
@@ -3615,8 +3849,8 @@
       "runtime": "python (databricks runtime)",
       "shipping_status": "shared_library",
       "review": "auto",
-      "sha256": "a92ae650282ff93eca3a856e2eff57026a3945bd40dbbf00710ff66caaa11c72",
-      "bytes": 2211
+      "sha256": "5513bfbd91c99784b3f7b0b7444b74fdcc431af2074e74e12424d1e2bbe9128f",
+      "bytes": 2634
     },
     {
       "path": "notebooks/_shared/ingest_accounting.py",
@@ -4620,6 +4854,15 @@
       "bytes": 6763
     },
     {
+      "path": "notebooks/identity/06_identity_remediation.py",
+      "artifact_type": "databricks_notebook",
+      "runtime": "databricks-spark",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "6b8e2ce70bd1695ca81765a2c419845780ce8ffe3d98369751913b6d44e93f2f",
+      "bytes": 12742
+    },
+    {
       "path": "notebooks/ingestion/01_raw_event_ingestion.py",
       "artifact_type": "databricks_notebook",
       "runtime": "databricks-spark",
@@ -5066,8 +5309,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "setup",
       "review": "auto",
-      "sha256": "047c61be6dc792601055c10b70a33595c887510c99791b03c05026005aca1381",
-      "bytes": 12436
+      "sha256": "ace88c530be627d407edf3dc58fff9b01e3204648a36a2a926e2e22ecdf57128",
+      "bytes": 14689
     },
     {
       "path": "notebooks/setup/07_seed_identity_fixtures.py",
@@ -5102,8 +5345,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "b8840fb3664f8f79610e1a6bea49dccb7c6d82497244f30531ed7e5adf4c120a",
-      "bytes": 1284
+      "sha256": "a75164785763ef05b85b3d5d91ae73f61ab447aa81c76884e07b5ecaa67aad8f",
+      "bytes": 2858
     },
     {
       "path": "resources/jobs.yml",
@@ -5111,8 +5354,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "baf1e08bb5060c42bff76722e701d53b291fd603daf56ea1ed8262b99f595613",
-      "bytes": 109830
+      "sha256": "5c0c557f0dbdf6860dfedb687408e0e3fc58e0732dff5ab7a2e731f5d3343cbe",
+      "bytes": 111007
     },
     {
       "path": "resources/optional/model_serving.yml",
@@ -5147,8 +5390,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "99dd2a7743d553a84878012ea52625019e4f6bda850b75882393ca8adfd776b7",
-      "bytes": 3504
+      "sha256": "09c282cafd747adbe1031b421937387ca795b1608fe3883f02afdbe6c6a379f8",
+      "bytes": 3528
     },
     {
       "path": "tests/contract/test_bundle_config.py",
@@ -5448,6 +5691,24 @@
       "bytes": 7025
     },
     {
+      "path": "tests/property/test_identity_answers.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "357ea32665fd7c4a899dae8ffc6b1fd482f8af9b66dd87eb3dba4ddbdefc1f21",
+      "bytes": 4176
+    },
+    {
+      "path": "tests/property/test_identity_custody.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "fb1f0575abff2b2845d4223a7c5d91e2749c4bd2148c6ce4a2963cbec4277035",
+      "bytes": 3250
+    },
+    {
       "path": "tests/property/test_identity_federation.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -5455,6 +5716,15 @@
       "review": "auto",
       "sha256": "49ac95e17d5d575096f3af931c217da809e7b0cecd6ad48d9a288dd274d40cb0",
       "bytes": 4783
+    },
+    {
+      "path": "tests/property/test_identity_remediation.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "85574460cc6571cc2bf75e1b2e978b0e6cafdebb3aaa951adcea05c074154208",
+      "bytes": 6285
     },
     {
       "path": "tests/property/test_identity_resolution.py",
@@ -5610,6 +5880,15 @@
       "bytes": 7181
     },
     {
+      "path": "tests/security/test_production_readiness.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "8c596959b093f7dd679be97ce1af87c18449ad5687c689e144fc1d9d3f6ad784",
+      "bytes": 8879
+    },
+    {
       "path": "tests/security/test_tool_arg_validation.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -5698,6 +5977,15 @@
       "review": "auto",
       "sha256": "30ddf4563e1d247abffcccff5250e6dd2edca16da6dae56e6cd1d88ce7fc55ac",
       "bytes": 13516
+    },
+    {
+      "path": "tools/release_check.py",
+      "artifact_type": "tooling",
+      "runtime": "build-tooling",
+      "shipping_status": "build_config",
+      "review": "auto",
+      "sha256": "34859e9d53dd715171794f5aea755d7102d98b19740708278770a9a464590747",
+      "bytes": 3072
     }
   ]
 }

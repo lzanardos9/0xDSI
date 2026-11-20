@@ -28,9 +28,16 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+
+# Local development only: a deployed app gets its env from resources/app.yml and has no .env.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+
 from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
+from backend.lakewatch import LakewatchConfig
+from backend.workflow_runner import WorkflowRunError, run_workflow
 from backend.audit import AuditPersistenceError, build_audit_record, persist_audit
 from backend.identity import build_identity_router
 from backend import user_auth
@@ -89,15 +96,23 @@ class AppConfig:
         )
 
     def missing_required(self) -> list[str]:
-        """Names of required settings that are not configured (empty)."""
+        """Names of required settings that are not configured (empty) or not safe to use."""
         missing = []
         if not self.warehouse_id:
             missing.append("DATABRICKS_WAREHOUSE_ID")
-        if not self.catalog:
-            missing.append("UNITY_CATALOG")
-        if not self.schema:
-            missing.append("UNITY_SCHEMA")
+        elif not _WAREHOUSE_ID_RE.match(self.warehouse_id):
+            missing.append("DATABRICKS_WAREHOUSE_ID (invalid format)")
+        for name, value in (("UNITY_CATALOG", self.catalog), ("UNITY_SCHEMA", self.schema)):
+            if not value:
+                missing.append(name)
+            elif not _UC_NAME_RE.match(value):
+                missing.append(f"{name} (invalid name)")
         return missing
+
+
+# Catalog/schema are interpolated into backticked SQL identifiers, so only plain names are accepted.
+_UC_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,254}$")
+_WAREHOUSE_ID_RE = re.compile(r"^[A-Za-z0-9]{8,64}$")
 
 
 CONFIG = AppConfig.load()
@@ -105,6 +120,7 @@ CONFIG = AppConfig.load()
 # Backwards-compatible module-level aliases. CONFIG is the single source of
 # truth; these names keep existing call sites working without change.
 CATALOG = CONFIG.catalog
+LAKEWATCH = LakewatchConfig.load()
 SCHEMA = CONFIG.schema
 WAREHOUSE_ID = CONFIG.warehouse_id
 LLM_ENDPOINT = CONFIG.llm_endpoint
@@ -486,19 +502,23 @@ app = FastAPI(
     default_response_class=SafeJSONResponse,
 )
 
-_allowed_origins = ["*"] if not APP_DOMAIN else [
-    f"https://{APP_DOMAIN}",
-    f"https://{APP_DOMAIN}:443",
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_allowed_origins,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Client-Info"],
-)
+# The UI is served from this same origin, so cross-origin access is off unless a domain is configured.
+if APP_DOMAIN:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[f"https://{APP_DOMAIN}"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "X-Client-Info"],
+    )
 
 user_auth.install(app)
+
+
+def _internal_error(exc: Exception) -> HTTPException:
+    """Log the real failure server-side; give the client only a reference id."""
+    ref = uuid.uuid4().hex[:12]
+    logger.error("Request failed [ref=%s]: %s: %s", ref, type(exc).__name__, exc)
+    return HTTPException(status_code=500, detail=f"Internal error (ref {ref})")
 
 
 @app.middleware("http")
@@ -620,7 +640,8 @@ def _warehouse_canary_probe():
     except Exception as e:  # noqa: BLE001 - classify, never swallow into ready
         elapsed_ms = (time.monotonic() - start) * 1000.0
         state = readiness_classify(None, 1, elapsed_ms, READINESS_CANARY_BUDGET_MS, error_text=str(e))
-        return readiness_probe("warehouse", state, detail=str(e)[:200])
+        logger.warning("Readiness canary failed: %s: %s", type(e).__name__, e)
+        return readiness_probe("warehouse", state, detail=type(e).__name__)
 
 
 @app.get("/ready")
@@ -645,6 +666,8 @@ async def ready():
         "not_ready": verdict["not_ready"],
         "catalog": CATALOG,
         "schema": SCHEMA,
+        "missing_config": missing,
+        "lakewatch": {"configured": LAKEWATCH.configured},
     }
     return JSONResponse(status_code=200 if verdict["ready"] else 503, content=payload)
 
@@ -866,6 +889,67 @@ def _parse_or(expr: str) -> tuple[str, dict]:
     return "(" + " OR ".join(clauses) + ")", params
 
 
+@app.get("/api/lakewatch/status")
+async def lakewatch_status(request: Request):
+    _require_authenticated(_get_user_from_request(request))
+    return LAKEWATCH.status()
+
+
+@app.get("/api/lakewatch/{table_name}")
+async def lakewatch_rows(table_name: str, request: Request, limit: int = Query(100, ge=1, le=1000)):
+    """Read rows from an operator-configured Lakewatch table (as the signed-in user)."""
+    _require_analyst(_get_user_from_request(request))
+    if not LAKEWATCH.configured:
+        return JSONResponse(status_code=503, content={"error": "lakewatch_not_configured", **LAKEWATCH.status()})
+    try:
+        table = LAKEWATCH.fqn(table_name)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Table is not in LAKEWATCH_TABLES")
+    try:
+        rows = query(f"SELECT * FROM {table} LIMIT :lim", {"lim": limit})
+    except Exception as e:
+        raise _internal_error(e)
+    return {"data": rows, "count": len(rows)}
+
+
+@app.post("/api/workflows/execute")
+async def execute_workflow(request: Request):
+    """Run an automation webhook server-side; credentials never reach the browser."""
+    user = _get_user_from_request(request)
+    _require_analyst(user)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+    workflow_id = str(body.get("workflow_id") or "")[:128]
+    payload = {
+        "execution_id": str(uuid.uuid4()),
+        "workflow_id": workflow_id,
+        "trigger_type": "manual",
+        "triggered_by": user.get("email") or user.get("username"),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        result = run_workflow(body.get("webhook_url"), payload)
+    except WorkflowRunError as e:
+        raise HTTPException(status_code=e.status, detail=e.message)
+    logger.info("Workflow %s executed by %s: status=%s", workflow_id, payload["triggered_by"], result["status"])
+    return {"execution_id": payload["execution_id"], **result}
+
+
+QUERY_MAX_ROWS = 5000
+QUERY_MAX_OFFSET = 1_000_000
+
+
+def _bounded_int(value, name: str, low: int, high: int) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"'{name}' must be an integer")
+    if n < low:
+        raise HTTPException(status_code=400, detail=f"'{name}' must be >= {low}")
+    return min(n, high)
+
+
 @app.post("/api/query/{table_name}")
 async def query_table(table_name: str, request: Request):
     """
@@ -879,12 +963,14 @@ async def query_table(table_name: str, request: Request):
     authorize(_get_user_from_request(request), "read", table_name)
 
     body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
     columns = _validate_columns(body.get("select", "*"))
     filters = body.get("filters", [])
     order = body.get("order", None)
     order_asc = body.get("ascending", False)
-    limit_val = min(int(body.get("limit", 1000)), 10000)
-    offset_val = int(body.get("offset", 0))
+    limit_val = _bounded_int(body.get("limit", 1000), "limit", 1, QUERY_MAX_ROWS)
+    offset_val = _bounded_int(body.get("offset", 0), "offset", 0, QUERY_MAX_OFFSET)
     single = body.get("single", False)
     count_only = body.get("count", False)
 
@@ -928,7 +1014,7 @@ async def query_table(table_name: str, request: Request):
             if single:
                 return JSONResponse(content=None)
             return JSONResponse(content=[])
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/mutate/{table_name}")
@@ -1034,7 +1120,7 @@ async def mutate_table(table_name: str, request: Request):
         error_msg = str(e).lower()
         if "table_or_view_not_found" in error_msg or "does not exist" in error_msg or "not found" in error_msg:
             return JSONResponse(content={"data": None})
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/rpc/{function_name}")
@@ -1053,7 +1139,7 @@ async def rpc_call(function_name: str, request: Request):
         results = query(sql, params if params else None)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/{table_name}")
@@ -1084,7 +1170,7 @@ async def get_table(
         results = query(sql)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/{table_name}/{record_id}")
@@ -1103,7 +1189,7 @@ async def get_record(table_name: str, record_id: str, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1143,7 +1229,7 @@ async def agent_status():
         results = query(sql)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/correlation/matches")
@@ -1159,7 +1245,7 @@ async def correlation_matches(limit: int = 50):
         results = query(sql)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/threat-intel/summary")
@@ -1174,7 +1260,7 @@ async def threat_intel_summary():
         results = query(sql)
         return JSONResponse(content=results[0] if results else {})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/user-behavior/risk-scores")
@@ -1192,7 +1278,7 @@ async def user_risk_scores(limit: int = 20):
         results = query(sql)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1223,7 +1309,7 @@ async def psychological_profiles(limit: int = 50, min_risk: float = 0.0):
         results = query(sql)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/psychological-profiles/{user_id}")
@@ -1256,7 +1342,7 @@ async def psychological_profile_detail(user_id: str):
             "baseline": baseline[0] if baseline else None,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/psychological-profiles/trends/{user_id}")
@@ -1276,7 +1362,7 @@ async def psychological_trends(user_id: str, days: int = 30):
         """, {"user_id": user_id})
         return JSONResponse(content=trends)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/behavioral-indicators/summary")
@@ -1307,7 +1393,7 @@ async def behavioral_indicators_summary():
         """)
         return {"summary": summary, "top_risk_users": top_risk_users}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1332,7 +1418,7 @@ async def entity_spine_stats():
         """)
         return {"stats": stats, "top_entities": top_entities}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/entity-spine/users")
@@ -1382,7 +1468,7 @@ async def entity_spine_users(
             "by_department": by_department,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/entity-spine/import")
@@ -1519,7 +1605,7 @@ async def entity_spine_resolve(identifier: str):
             """, {"eid": eid})
         return {"entities": results, "edges": edges}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/knowledge-store/stats")
@@ -1540,7 +1626,7 @@ async def knowledge_store_stats():
         """)
         return {"stats": stats, "recent_entries": recent}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1560,7 +1646,7 @@ async def ueo_recent(limit: int = 20):
         """)
         return JSONResponse(content=ueos)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/fuse-engine/results")
@@ -1578,7 +1664,7 @@ async def fuse_engine_results(limit: int = 20):
         """)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/fuse-engine/disagreements")
@@ -1595,7 +1681,7 @@ async def fuse_engine_disagreements(limit: int = 20):
         """)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1616,7 +1702,7 @@ async def entity_drift_scores(limit: int = 20):
         """)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/bytecode/recent-analysis")
@@ -1632,7 +1718,7 @@ async def bytecode_recent(limit: int = 20):
         """)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1653,7 +1739,7 @@ async def muse_proposals(status: str = "pending", limit: int = 30):
         """, {"status": status})
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/muse/metrics")
@@ -1674,7 +1760,7 @@ async def muse_metrics():
         """)
         return {"metrics": metrics, "weight_proposals": weight_proposals}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1706,7 +1792,7 @@ async def compliance_posture():
         """)
         return {"posture": posture, "open_violations": violations, "sla_metrics": sla}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1753,7 +1839,7 @@ async def edge_collector_fleet():
         """)
         return {"collectors": collectors, "stats": stats, "open_incidents": incidents}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/edge-collectors/{collector_id}/heartbeats")
@@ -1770,7 +1856,7 @@ async def edge_collector_heartbeats(collector_id: str, limit: int = 50):
         """, {"cid": collector_id})
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1796,7 +1882,7 @@ async def typed_bronze_metrics():
         """)
         return {"metrics": metrics, "quarantine_summary": quarantine}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1832,7 +1918,7 @@ async def pipeline_overview():
         )[0]["cnt"]
         return JSONResponse(content=overview)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -1847,7 +1933,7 @@ async def health():
     except Exception as e:
         return JSONResponse(
             status_code=503,
-            content={"status": "unhealthy", "error": str(e)}
+            content={"status": "unhealthy", "error": _internal_error(e).detail}
         )
 
 
@@ -1905,7 +1991,7 @@ async def ai_assistant(request: Request):
         answer = response.choices[0].message.content
         return {"answer": answer, "response": answer, "queries_used": []}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/agent-chat")
@@ -1927,7 +2013,7 @@ async def agent_chat(request: Request):
         )
         return {"response": response.choices[0].message.content, "agent_id": agent_id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/correlation-engine")
@@ -1965,7 +2051,7 @@ async def generate_correlation_rule(request: Request):
             rule = {"name": "Generated Rule", "raw": rule_text}
         return {"rule": rule, "saved": False}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/simulate-threat")
@@ -1981,7 +2067,7 @@ async def simulate_threat(request: Request):
         )
         return {"scenario": scenario, "simulated_events": simulated_events, "status": "complete"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/analyze-document")
@@ -2002,7 +2088,7 @@ async def analyze_document(request: Request):
         )
         return {"analysis": response.choices[0].message.content}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/enrichment-engine")
@@ -2022,7 +2108,7 @@ async def enrichment_engine(request: Request):
             asset_info = assets[0] if assets else None
         return {"ioc_results": results, "asset_info": asset_info}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/etl-ingest/status")
@@ -2033,7 +2119,7 @@ async def etl_status():
         configs = query(f"SELECT * FROM {fqn('etl_ingestion_configs')} WHERE enabled = true")
         return {"runs": runs, "configs": configs}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/threat-radar/analyze")
@@ -2054,7 +2140,7 @@ async def threat_radar_analyze(request: Request):
         )
         return {"items": items, "analysis": response.choices[0].message.content}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # Aliases: frontend calls these with hyphens (edge function naming convention)
@@ -2078,7 +2164,7 @@ async def threat_radar_probe(request: Request):
         )
         return {"item": item, "dossier": response.choices[0].message.content}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/threat-radar-analyze")
@@ -2095,7 +2181,7 @@ async def threat_radar_fetch_post(request: Request):
         sources = query(f"SELECT * FROM {fqn('threat_radar_sources')} WHERE enabled = true")
         return {"items": items, "sources": sources}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/geopolitical-risk-fetch")
@@ -2106,7 +2192,7 @@ async def geopolitical_risk_fetch(request: Request):
         scores = query(f"SELECT * FROM {fqn('geopolitical_risk_scores')} ORDER BY assessed_at DESC LIMIT 30")
         return {"events": events, "risk_scores": scores}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/feature-lab")
@@ -2244,7 +2330,7 @@ Return ONLY the complete HTML (starting with <!DOCTYPE html>)."""
         features = query(f"SELECT * FROM {fqn('feature_lab_creations')} WHERE id = :id", {"id": feature_id})
         return {"feature": features[0] if features else None, "status": "executed"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/generate-connector")
@@ -2276,7 +2362,7 @@ async def generate_connector(request: Request):
             connector = {"raw": result_text, "type": connector_type}
         return {"connector": connector, "status": "generated"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/threat-radar/fetch")
@@ -2287,7 +2373,7 @@ async def threat_radar_fetch():
         sources = query(f"SELECT * FROM {fqn('threat_radar_sources')} WHERE enabled = true")
         return {"items": items, "sources": sources}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ─── Edge Connector Control Plane API ───
@@ -2345,7 +2431,7 @@ async def edge_fleet_overview():
             "total_eps": eps_total[0]["total_eps"] if eps_total else 0,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/edge-connectors/dna-catalog")
@@ -2362,7 +2448,7 @@ async def dna_catalog():
         """)
         return {"dna_catalog": dnas}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/edge-connectors/generate-token")
@@ -2394,7 +2480,7 @@ async def generate_edge_token(request: Request):
             },
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
     return {
         "token": token,
@@ -2541,7 +2627,7 @@ async def edge_heartbeat(request: Request):
 
         return {"ack": True, "config": config[0] if config else {}}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/edge-connectors/action")
@@ -2571,7 +2657,7 @@ async def edge_connector_action(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/geopolitical-risk")
@@ -2582,7 +2668,7 @@ async def geopolitical_risk():
         scores = query(f"SELECT * FROM {fqn('geopolitical_risk_scores')} ORDER BY assessed_at DESC LIMIT 30")
         return {"events": events, "risk_scores": scores}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/threat-globe")
@@ -2636,7 +2722,7 @@ async def pipeline_health_status(request: Request):
                 pass
         return {"pipelines": rows, "stale_threshold_minutes": stale_threshold_minutes}
     except Exception as e:
-        return {"pipelines": [], "error": str(e)}
+        return {"pipelines": [], "error": _internal_error(e).detail}
 
 
 @app.post("/api/feature-lab/run")
@@ -2648,7 +2734,7 @@ async def feature_lab_run(request: Request):
         features = query(f"SELECT * FROM {fqn('feature_lab_creations')} WHERE id = :id", {"id": feature_id})
         return {"feature": features[0] if features else None, "status": "executed"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/feature-runtime")
@@ -2681,7 +2767,7 @@ async def feature_runtime(request: Request):
             return {"response": response.choices[0].message.content, "error": None}
         return {"data": None, "error": "Unknown action"}
     except Exception as e:
-        return JSONResponse(content={"data": None, "error": str(e)}, status_code=200)
+        return JSONResponse(content={"data": None, "error": _internal_error(e).detail}, status_code=200)
 
 
 @app.post("/api/migrate-dashboard")
@@ -2738,7 +2824,7 @@ async def agent_orchestrator_endpoint(request: Request):
         else:
             return {"status": "unknown_action"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 _COMM_TEMPLATES = {
@@ -2872,7 +2958,7 @@ async def list_jobs():
             })
         return JSONResponse(content=all_jobs)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/control/jobs/trigger")
@@ -2906,7 +2992,7 @@ async def toggle_agent(agent_id: str, request: Request):
         """, {"agent_id": agent_id})
         return {"agent_id": agent_id, "enabled": enabled, "updated_by": user.get("username")}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/agents/{agent_id}/config")
@@ -2941,7 +3027,7 @@ async def update_agent_config(agent_id: str, request: Request):
         """, params)
         return {"agent_id": agent_id, "updated": True, "updated_by": user.get("username")}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/control/agents/{agent_id}/run")
@@ -2961,7 +3047,7 @@ async def trigger_agent_run(agent_id: str, request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3000,7 +3086,7 @@ async def create_correlation_rule(request: Request):
         })
         return {"created": True, "name": body["name"]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/correlation-rules/{rule_id}/toggle")
@@ -3016,7 +3102,7 @@ async def toggle_correlation_rule(rule_id: str, request: Request):
         """, {"rule_id": rule_id})
         return {"rule_id": rule_id, "enabled": enabled}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/correlation-rules/{rule_id}")
@@ -3044,7 +3130,7 @@ async def update_correlation_rule(rule_id: str, request: Request):
         """, params)
         return {"rule_id": rule_id, "updated": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.delete("/api/control/correlation-rules/{rule_id}")
@@ -3058,7 +3144,7 @@ async def delete_correlation_rule(rule_id: str, request: Request):
         """, {"rule_id": rule_id})
         return {"rule_id": rule_id, "deleted": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3089,7 +3175,7 @@ async def update_detection_rule(rule_id: str, request: Request):
         """, params)
         return {"rule_id": rule_id, "updated": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3112,7 +3198,7 @@ async def update_alert_status(alert_id: str, request: Request):
         """, {"alert_id": alert_id, "status": status})
         return {"alert_id": alert_id, "status": status, "updated_by": user.get("username")}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3139,7 +3225,7 @@ async def create_case(request: Request):
         })
         return {"created": True, "title": body["title"]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/cases/{case_id}/status")
@@ -3158,7 +3244,7 @@ async def update_case_status(case_id: str, request: Request):
         """, {"case_id": case_id, "status": status})
         return {"case_id": case_id, "status": status, "updated_by": user.get("username")}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/cases/{case_id}/assign")
@@ -3173,7 +3259,7 @@ async def assign_case(case_id: str, request: Request):
         """, {"case_id": case_id, "assignee": body["assigned_to"]})
         return {"case_id": case_id, "assigned_to": body["assigned_to"]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3274,7 +3360,7 @@ async def approve_response_action(action_id: str, request: Request):
             "rev": bound_revision,
         })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
     # Dispatch is best-effort and separate from the approval record; approval
     # does not claim the action was executed.
@@ -3295,7 +3381,7 @@ async def reject_response_action(action_id: str, request: Request):
         """, {"action_id": action_id, "user": user.get("username", "system"), "reason": body.get("reason", "")})
         return {"action_id": action_id, "status": "rejected"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/response-actions/{action_id}/rollback")
@@ -3310,7 +3396,7 @@ async def rollback_response_action(action_id: str, request: Request):
         """, {"action_id": action_id, "user": user.get("username", "system")})
         return {"action_id": action_id, "status": "rolled_back"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3330,7 +3416,7 @@ async def toggle_threat_feed(feed_id: str, request: Request):
         """, {"feed_id": feed_id})
         return {"feed_id": feed_id, "enabled": enabled}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/control/threat-feeds/{feed_id}/sync")
@@ -3363,7 +3449,7 @@ async def update_system_settings(request: Request):
             updated.append(key)
         return {"updated": updated, "updated_by": user.get("username")}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.get("/api/control/settings")
@@ -3378,7 +3464,7 @@ async def get_system_settings(category: Optional[str] = None):
             results = query(sql)
         return JSONResponse(content=results)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3398,7 +3484,7 @@ async def toggle_guardrail(policy_id: str, request: Request):
         """, {"policy_id": policy_id})
         return {"policy_id": policy_id, "enabled": enabled}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/guardrails/{policy_id}")
@@ -3422,7 +3508,7 @@ async def update_guardrail(policy_id: str, request: Request):
         """, params)
         return {"policy_id": policy_id, "updated": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3463,7 +3549,7 @@ async def register_edge_collector(request: Request):
         })
         return {"collector_id": body["collector_id"], "status": "registered", "registered_by": user.get("username")}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/edge-collectors/{collector_id}/decommission")
@@ -3477,7 +3563,7 @@ async def decommission_edge_collector(collector_id: str, request: Request):
         """, {"cid": collector_id})
         return {"collector_id": collector_id, "status": "decommissioned"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/edge-collectors/{collector_id}/config")
@@ -3511,7 +3597,7 @@ async def update_edge_collector_config(collector_id: str, request: Request):
         trigger_job("[0xDSI] Ingestion 09 - Edge Collector Config Sync")
         return {"collector_id": collector_id, "config_pushed": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3530,7 +3616,7 @@ async def approve_muse_proposal(proposal_id: str, request: Request):
         """, {"proposal_id": proposal_id, "user": user.get("username", "system")})
         return {"proposal_id": proposal_id, "status": "approved"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/muse/proposals/{proposal_id}/reject")
@@ -3546,7 +3632,7 @@ async def reject_muse_proposal(proposal_id: str, request: Request):
         """, {"proposal_id": proposal_id, "user": user.get("username", "system"), "reason": body.get("reason", "")})
         return {"proposal_id": proposal_id, "status": "rejected"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.put("/api/control/muse/weights/{proposal_id}/approve")
@@ -3561,7 +3647,7 @@ async def approve_weight_proposal(proposal_id: str, request: Request):
         """, {"proposal_id": proposal_id, "user": user.get("username", "system")})
         return {"proposal_id": proposal_id, "status": "approved"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3581,7 +3667,7 @@ async def resolve_compliance_violation(violation_id: str, request: Request):
         """, {"violation_id": violation_id, "resolution": body.get("resolution", f"Resolved by {user.get('username')}")})
         return {"violation_id": violation_id, "resolved": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3601,7 +3687,7 @@ async def toggle_workflow(workflow_id: str, request: Request):
         """, {"workflow_id": workflow_id})
         return {"workflow_id": workflow_id, "enabled": enabled}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3628,7 +3714,7 @@ async def create_active_list(request: Request):
         })
         return {"created": True, "name": body["name"]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.delete("/api/control/active-lists/{list_id}")
@@ -3638,7 +3724,7 @@ async def delete_active_list(list_id: str, request: Request):
         execute_write(f"DELETE FROM {fqn('active_lists')} WHERE id = :list_id", {"list_id": list_id})
         return {"list_id": list_id, "deleted": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3659,7 +3745,7 @@ async def toggle_honeypot(honeypot_id: str, request: Request):
         """, {"honeypot_id": honeypot_id, "status": status})
         return {"honeypot_id": honeypot_id, "status": status}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3679,7 +3765,7 @@ async def toggle_etl_config(config_id: str, request: Request):
         """, {"config_id": config_id})
         return {"config_id": config_id, "enabled": enabled}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3697,7 +3783,7 @@ async def deactivate_ioc(ioc_id: str, request: Request):
         """, {"ioc_id": ioc_id})
         return {"ioc_id": ioc_id, "is_active": False}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3717,7 +3803,7 @@ async def toggle_cep_pattern(pattern_id: str, request: Request):
         """, {"pattern_id": pattern_id})
         return {"pattern_id": pattern_id, "enabled": enabled}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3737,7 +3823,7 @@ async def toggle_negative_rule(rule_id: str, request: Request):
         """, {"rule_id": rule_id})
         return {"rule_id": rule_id, "enabled": enabled}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3757,7 +3843,7 @@ async def toggle_escalation_rule(rule_id: str, request: Request):
         """, {"rule_id": rule_id})
         return {"rule_id": rule_id, "enabled": enabled}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────
@@ -3900,7 +3986,7 @@ Provide a clear, actionable answer. Include specific numbers, IPs, or entities w
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 @app.post("/api/genie/executive-briefing")
@@ -3957,7 +4043,7 @@ async def genie_executive_briefing(request: Request):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e)
 
 
 # ──────────────────────────────────────────────

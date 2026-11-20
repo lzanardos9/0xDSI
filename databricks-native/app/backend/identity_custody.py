@@ -9,6 +9,8 @@ decimals and integral floats become integers, so the browser can rebuild the exa
 import hashlib
 import hmac
 import json
+import base64
+import logging
 import os
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -63,9 +65,40 @@ def verify(key: bytes, event_id: str, record_digest: str, signed_at: str, signat
     return hmac.compare_digest(sign(key, event_id, record_digest, signed_at), str(signature or ""))
 
 
+SECRET_SCOPE_ENV = "SOC_SECRET_SCOPE"
+SECRET_KEY_ENV = "IDENTITY_CUSTODY_SECRET_KEY"
+_cached_secret = None
+
+
+def _secret_from_workspace():
+    """Read the signing key from the Databricks secret bound to the app (bytes or None)."""
+    global _cached_secret
+    if _cached_secret is not None:
+        return _cached_secret or None
+    scope = os.environ.get(SECRET_SCOPE_ENV, "").strip()
+    name = os.environ.get(SECRET_KEY_ENV, "").strip()
+    if not scope or not name:
+        _cached_secret = b""
+        return None
+    try:
+        from databricks.sdk import WorkspaceClient
+
+        value = WorkspaceClient().secrets.get_secret(scope=scope, key=name).value or ""
+        raw = base64.b64decode(value).strip()
+    except Exception as exc:  # noqa: BLE001 - unsigned records are flagged, never faked
+        logging.getLogger("soc-backend").warning(
+            "Chain-of-custody key could not be read from secret %s/%s: %s", scope, name, type(exc).__name__
+        )
+        return None
+    _cached_secret = raw if len(raw) >= 32 else b""
+    return _cached_secret or None
+
+
 def load_key():
     raw = os.environ.get(KEY_ENV, "").strip()
-    return raw.encode("utf-8") if len(raw) >= 32 else None
+    if len(raw) >= 32:
+        return raw.encode("utf-8")
+    return _secret_from_workspace()
 
 
 def seal(record: dict, key, signed_at: str = None) -> dict:

@@ -244,17 +244,7 @@ Every live identity event opened in **Identity → Access Graph** (or the Overvi
 openssl rand -hex 32 | databricks secrets put-secret soc-secrets identity_custody_key
 ```
 
-Then bind it to the app in `resources/app.yml` (key must be at least 32 characters):
-
-```yaml
-      resources:
-        - name: identity-custody-key
-          secret: { scope: soc-secrets, key: identity_custody_key, permission: READ }
-      config:
-        env:
-          - name: IDENTITY_CUSTODY_KEY
-            valueFrom: identity-custody-key
-```
+`deploy.sh` generates this key automatically the first time (it never overwrites an existing one). The bundle already binds it to the app as a `secret` resource with `READ` permission, and the backend reads it at runtime through the Databricks SDK using `SOC_SECRET_SCOPE` and `IDENTITY_CUSTODY_SECRET_KEY` (both set in `resources/app.yml`). The key must be at least 32 characters. For local runs only, `IDENTITY_CUSTODY_KEY` can hold the raw key instead.
 
 Rotating the key changes the key id shown on new seals; earlier exported seals can only be checked with the key that made them, so keep retired keys in the scope under a dated name.
 
@@ -270,6 +260,72 @@ Rotating the key changes the key id shown on new seals; earlier exported seals c
 - **Cost:** outside dev, all scheduled jobs (Identity 02 is on-demand only; Identity 03 runs hourly) and both pipelines run on their schedules immediately, including ~10 continuous streams and 2 continuous serverless pipelines. Pause what you don't need.
 - **Roles:** set `SOC_ADMIN_EMAILS` / `SOC_ANALYST_EMAILS` for each run; they are written into the app's configuration.
 - **Custom model serving (optional):** after real agent models are registered in UC, add `resources/optional/model_serving.yml` to `include:` in `databricks.yml` and redeploy.
+
+---
+
+## Databricks App deployment
+
+This is the supported path for running 0xDSI as a Databricks App. Runtime configuration lives in exactly one place, `resources/app.yml` (there is no `app/app.yaml`).
+
+### Prerequisites
+- Databricks CLI **0.283.0 or newer** (`databricks --version`), authenticated with OAuth: `databricks auth login --host https://<workspace>`. Do not use personal access tokens in files.
+- Unity Catalog enabled; a SQL warehouse (serverless or pro) you can grant `CAN_USE` on.
+- Workspace groups `soc_admins` and `soc_analysts`.
+- Node 18+ and Python 3.11 for building and local runs.
+- Databricks Apps enabled; for on-behalf-of user mode, a workspace admin must allow user authorization for apps (the `sql` scope).
+
+### Clean install and build
+```bash
+cd databricks-native
+make install                      # npm ci
+make build                        # app/dist/ (only VITE_DATABRICKS_MODE is baked in; no secrets)
+make release-check                # dist present + newer than sources + secret scan
+```
+
+### Local run (against a real workspace, read-only use)
+```bash
+cp .env.example .env              # fill placeholders; prefer DATABRICKS_CONFIG_PROFILE over tokens
+cd app && pip install -r requirements.txt
+python -m uvicorn backend.server:app --port 8000
+curl localhost:8000/health        # liveness
+curl localhost:8000/ready         # 503 + missing_config until configured
+```
+Locally there are no Databricks proxy identity headers, so `/api/*` returns 401; that is expected.
+
+### Validate and deploy
+```bash
+databricks bundle validate -t dev --var="warehouse_id=<id>"
+make deploy-dev WAREHOUSE_ID=<id>       # build + release-check + bundle deploy
+# or the full guided path (secret scope, schema, jobs, app):
+./deploy.sh dev <warehouse-id>
+databricks bundle run oxdsi_soc -t dev    # start/redeploy the app
+```
+Rollback destroys the bundle and now needs explicit confirmation: `CONFIRM_DESTROY=dev ./deploy.sh dev <id> --rollback` (production also asks you to type the target name). Unity Catalog data is not dropped.
+
+### What the bundle grants (least privilege)
+| Resource | Permission | Why |
+|---|---|---|
+| SQL warehouse `${var.warehouse_id}` | CAN_USE | All queries |
+| Serving endpoints (primary, fallback LLM) | CAN_QUERY | AI features |
+| Secret `<scope>/identity_custody_key` | READ | Chain-of-custody signing |
+| App: `soc_admins` CAN_MANAGE, `soc_analysts` CAN_USE | | Who can open / manage the app |
+
+You must still grant in Unity Catalog, to the app service principal (and to users when `data_access_mode=user`): `USE CATALOG`, `USE SCHEMA`, `SELECT` on the app schema, plus `MODIFY` on tables the app writes (audit, actions). For workflow webhooks, put the token at `<scope>/workflow_webhook_token` and give the app service principal `READ` on the scope.
+
+### Auth model
+- The browser never holds a Databricks token. The SPA calls the FastAPI backend on the same origin; the Databricks Apps proxy authenticates the user and forwards identity headers.
+- `data_access_mode=user`: reads run as the signed-in user via the forwarded user token (`user_api_scopes: [sql]`), so Unity Catalog row/column policies apply per user. Users must approve the scope on first open and need their own UC grants.
+- `data_access_mode=app`: everything runs as the app service principal; app-level RBAC (`SOC_ADMIN_EMAILS`, `SOC_ANALYST_EMAILS`) is then the only per-user control.
+- Writes and audit always run as the app service principal. Audit is fail-closed.
+- Cross-origin requests are refused unless `APP_DOMAIN` is set. Server errors return a reference id; details go only to the app logs.
+
+### Lakewatch
+Lakewatch table names are workspace-specific and are not guessed. Set the bundle variables `lakewatch_catalog`, `lakewatch_schema` and `lakewatch_tables` (comma-separated). Until then `/api/lakewatch/*` returns a clear `lakewatch_not_configured` setup error and `/ready` reports `lakewatch.configured=false` (it does not block readiness).
+
+### Diagnostics
+- App logs: workspace UI, Compute, Apps, the app, Logs; or `databricks apps logs <app-name>`.
+- `/ready` lists `missing_config` by setting name and the warehouse canary state.
+- A 500 response shows `Internal error (ref xxxx)`; search the app logs for that ref.
 
 ---
 

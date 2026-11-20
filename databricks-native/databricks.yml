@@ -1,10 +1,14 @@
 bundle:
   name: 0xdsi-agentic-soc
+  # apps.config (the app's start command and env) requires CLI 0.283.0+.
+  databricks_cli_version: ">= 0.283.0"
 
 workspace:
   root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
 
 # app/dist is git-ignored build output but must be uploaded for the app to serve the UI.
+# Frontend sources and package.json stay out of the upload so Databricks does not run npm on deploy;
+# build first with `make build` (or deploy.sh) - `make deploy-*` refuses to ship a missing or stale build.
 sync:
   include:
     - app/dist/**
@@ -45,6 +49,18 @@ variables:
   secret_scope:
     default: soc-secrets
     description: "Databricks secret scope for API keys"
+  lakewatch_catalog:
+    description: "Catalog holding Lakewatch tables (empty until the workspace's Lakewatch tables are known)"
+    default: ""
+  lakewatch_schema:
+    description: "Schema holding Lakewatch tables"
+    default: ""
+  lakewatch_tables:
+    description: "Comma-separated Lakewatch table names the app may read"
+    default: ""
+  workflow_allowed_hosts:
+    description: "Comma-separated https webhook hosts the backend may call (empty disables workflow execution)"
+    default: ""
   classic_spark_version:
     default: "15.4.x-scala2.12"
     description: "Databricks Runtime for classic job clusters (continuous streaming + JVM libraries such as GraphFrames)"
@@ -75,6 +91,10 @@ targets:
     variables:
       catalog: soc_platform
       schema: agentic_soc
+      seed_demo_data: "false"
+    permissions:
+      - level: CAN_MANAGE
+        group_name: soc_admins
 
 include:
   - resources/*.yml

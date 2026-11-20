@@ -37,13 +37,16 @@ WAREHOUSE_ID ?= $(DATABRICKS_WAREHOUSE_ID)
 check-warehouse:
 	@test -n "$(WAREHOUSE_ID)" || (echo "Set WAREHOUSE_ID=<sql warehouse id>" && exit 1)
 
-deploy-dev: check-warehouse build ## Deploy bundle to dev (bundle only; use deploy.sh for full setup)
+release-check: ## Verify app/dist is present and fresh and that no secrets are in the source or bundle
+	python3 tools/release_check.py
+
+deploy-dev: check-warehouse build release-check ## Deploy bundle to dev (bundle only; use deploy.sh for full setup)
 	databricks bundle deploy --target dev --var="warehouse_id=$(WAREHOUSE_ID)"
 
-deploy-staging: check-warehouse build ## Deploy bundle to staging (bundle only)
+deploy-staging: check-warehouse build release-check ## Deploy bundle to staging (bundle only)
 	databricks bundle deploy --target staging --var="warehouse_id=$(WAREHOUSE_ID)"
 
-deploy-prod: check-warehouse build ## Deploy bundle to production (bundle only)
+deploy-prod: check-warehouse build release-check ## Deploy bundle to production (bundle only)
 	databricks bundle deploy --target production --var="warehouse_id=$(WAREHOUSE_ID)"
 
 deploy: check-warehouse ## One-command full deploy to dev (uses deploy.sh)

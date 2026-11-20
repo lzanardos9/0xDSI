@@ -719,10 +719,24 @@ if [ "${ROLLBACK}" = "--rollback" ]; then
   phase_art deploy
   log_warn "Rollback mode enabled for target '${TARGET}'"
 
+  # Destroy removes the deployed app and jobs; require the operator to name the target explicitly.
+  if [ "${CONFIRM_DESTROY:-}" != "${TARGET}" ]; then
+    log_fail "Rollback destroys the '${TARGET}' bundle. Re-run with CONFIRM_DESTROY=${TARGET} to proceed."
+    exit 1
+  fi
+  if [ "${TARGET}" = "production" ]; then
+    printf "  Type the target name (production) to destroy it: "
+    read -r typed_target
+    [ "${typed_target}" = "production" ] || { log_fail "Confirmation did not match; nothing was destroyed."; exit 1; }
+  fi
+
   cd "${SCRIPT_DIR}" || exit 1
-  databricks bundle destroy -t "${TARGET}" "${BUNDLE_VARS[@]}" --auto-approve || true
+  if ! databricks bundle destroy -t "${TARGET}" "${BUNDLE_VARS[@]}" --auto-approve; then
+    log_fail "Bundle destroy failed for '${TARGET}'. Local state was kept so you can retry."
+    exit 1
+  fi
   clean_local_state
-  log_ok "Rollback attempt complete. Unity Catalog objects are preserved unless manually dropped."
+  log_ok "Rollback complete. Unity Catalog objects are preserved unless manually dropped."
   exit 0
 fi
 
@@ -863,6 +877,14 @@ databricks secrets put-secret "${SECRET_SCOPE}" "embedding_endpoint" --string-va
 databricks secrets put-secret "${SECRET_SCOPE}" "warehouse_id" --string-value "${WAREHOUSE_ID}" >/dev/null 2>&1 || true
 databricks secrets put-secret "${SECRET_SCOPE}" "catalog" --string-value "${CATALOG}" >/dev/null 2>&1 || true
 databricks secrets put-secret "${SECRET_SCOPE}" "schema" --string-value "${SCHEMA}" >/dev/null 2>&1 || true
+# The app binds identity_custody_key as a resource, so it must exist before bundle deploy.
+# Generate it once; never overwrite (rotating would orphan existing custody seals). Value is never printed.
+if ! databricks secrets list --scope "${SECRET_SCOPE}" --output json 2>/dev/null | grep -q '"identity_custody_key"'; then
+  python3 -c "import secrets; print(secrets.token_hex(32), end='')" \
+    | databricks secrets put-secret "${SECRET_SCOPE}" "identity_custody_key" >/dev/null 2>&1 \
+    && log_ok "Generated chain-of-custody signing key (identity_custody_key)" \
+    || die "Could not create secret ${SECRET_SCOPE}/identity_custody_key (required by the app)."
+fi
 log_ok "All model endpoint configurations stored"
 printf "\n"
 
@@ -987,6 +1009,7 @@ npm ci --no-audit --no-fund || die "npm ci failed in app/."
 VITE_DATABRICKS_MODE=true npm run build || die "Frontend build failed."
 
 [ -f "dist/index.html" ] || die "Frontend build failed: app/dist/index.html not found."
+python3 "${SCRIPT_DIR}/tools/release_check.py" || die "Release check failed (stale bundle or secret found)."
 
 log_ok "Frontend built -> app/dist/ (uploaded by the bundle sync rules)"
 printf "\n"

@@ -84,28 +84,21 @@ const WorkflowsPanel = () => {
 
       if (execution.error) throw execution.error;
 
-      const response = await fetch(workflow.n8n_webhook_url, {
+      const response = await fetch('/api/workflows/execute', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(workflow.auth_method === 'header' && workflow.auth_credentials?.token
-            ? { Authorization: `Bearer ${workflow.auth_credentials.token}` }
-            : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          execution_id: execution.data.id,
           workflow_id: workflow.id,
-          trigger_type: 'manual',
-          timestamp: new Date().toISOString(),
+          webhook_url: workflow.n8n_webhook_url,
         }),
       });
 
-      const responseData = await response.json();
+      const responseData = await response.json().catch(() => null);
 
       await lakehouse
         .from('workflow_executions')
         .update({
-          execution_status: response.ok ? 'success' : 'failed',
+          execution_status: response.ok && responseData?.ok ? 'success' : 'failed',
           response_data: responseData,
           completed_at: new Date().toISOString(),
         })
