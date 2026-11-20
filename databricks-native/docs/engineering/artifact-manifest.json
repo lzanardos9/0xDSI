@@ -2,22 +2,22 @@
   "manifest_schema_version": "1.0.0",
   "generator_version": "1.0.0",
   "root": "databricks-native",
-  "total_files": 659,
-  "total_bytes": 11975649,
+  "total_files": 664,
+  "total_bytes": 12017650,
   "summary": {
     "by_artifact_type": {
       "asset": 10,
-      "backend_service": 16,
+      "backend_service": 17,
       "build_config": 11,
       "databricks_notebook": 145,
       "deployment_config": 6,
       "documentation": 18,
       "frontend_entry": 1,
-      "frontend_module": 329,
-      "other": 5,
+      "frontend_module": 333,
+      "other": 4,
       "shared_library": 48,
       "stylesheet": 2,
-      "test": 61,
+      "test": 62,
       "test_script": 1,
       "tooling": 6
     },
@@ -30,22 +30,22 @@
       "production": 3,
       "setup": 7,
       "shared_library": 47,
-      "test": 62,
-      "unreviewed": 485
+      "test": 63,
+      "unreviewed": 489
     },
     "by_runtime": {
-      "browser": 332,
+      "browser": 336,
       "build-tooling": 17,
       "databricks-bundle": 6,
       "databricks-spark": 145,
-      "n/a": 33,
-      "python": 61,
+      "n/a": 32,
+      "python": 62,
       "python (databricks runtime)": 48,
-      "python-fastapi": 16,
+      "python-fastapi": 17,
       "shell": 1
     },
     "reviewed": 4,
-    "unreviewed": 485
+    "unreviewed": 489
   },
   "artifacts": [
     {
@@ -65,15 +65,6 @@
       "review": "auto",
       "sha256": "6eb5ef9eb2c4df6c26805e5f2428f620ef07fcd8c546f1f85f7ab0a62b8110ba",
       "bytes": 1550
-    },
-    {
-      "path": ".gitignore",
-      "artifact_type": "other",
-      "runtime": "n/a",
-      "shipping_status": "unreviewed",
-      "review": "auto",
-      "sha256": "d935fd63ff27401fe785f93b8b8e398234349dfe028b70e1c140cce08a0ce173",
-      "bytes": 93
     },
     {
       "path": "ARCHITECTURE_DEEP_DIVE.md",
@@ -119,6 +110,15 @@
       "review": "auto",
       "sha256": "9a95649d4605ef00ea57f9a8a978afa4a4ac2a1ee3bb192c3e968664593eac2a",
       "bytes": 5258
+    },
+    {
+      "path": "app/backend/golive.py",
+      "artifact_type": "backend_service",
+      "runtime": "python-fastapi",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "c46b3249426774954aa288c45e2176153762b139819ae0720aa70d31d6da30d9",
+      "bytes": 6508
     },
     {
       "path": "app/backend/identity.py",
@@ -225,8 +225,8 @@
       "runtime": "python-fastapi",
       "shipping_status": "production",
       "review": "curated",
-      "sha256": "6892c50384fbeb46962490be0edce410ac1455e8734e5a0a97f6f9b4bdda1643",
-      "bytes": 177357,
+      "sha256": "d281f40c1199b8e28eaf1a40bdd5ffc0c37c515d62ec1cc83a3b54683714a12e",
+      "bytes": 182943,
       "capability": "data-api-gateway",
       "notes": "Shipped FastAPI backend. Exposes generic /api/query, /api/mutate and /api/rpc table access (audit-flagged) alongside typed read endpoints. Fail-closed auth and SQL parameterization landed; full authorize() centralization is Phase 1 open."
     },
@@ -643,8 +643,8 @@
       "runtime": "browser",
       "shipping_status": "unreviewed",
       "review": "auto",
-      "sha256": "9561e614e6e0ecc0c9a9848c527fc23c294e222e75547ed8d251be67ebabbfcb",
-      "bytes": 41760
+      "sha256": "cbad8f8ccfeee6744069e92b85b6d73038fa68b72a79eae70e703dc16e0ab761",
+      "bytes": 41975
     },
     {
       "path": "app/frontend/src/components/DashboardOld.tsx",
@@ -2195,6 +2195,24 @@
       "bytes": 8051
     },
     {
+      "path": "app/frontend/src/components/identity/GoLiveCheckDrawer.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "64de09c3833079ca22103cd6578854140d1bc65465df414bcd7204acccdd7214",
+      "bytes": 7273
+    },
+    {
+      "path": "app/frontend/src/components/identity/GoLiveReadiness.tsx",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "24725f78a2b90a4eaab9fc1a71cf6986dd0b0b7f3d06806ad36bda384b63ddf8",
+      "bytes": 9673
+    },
+    {
       "path": "app/frontend/src/components/identity/GroupContext.tsx",
       "artifact_type": "frontend_module",
       "runtime": "browser",
@@ -2906,6 +2924,24 @@
       "bytes": 9095
     },
     {
+      "path": "app/frontend/src/lib/goLiveApi.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "7d4c2661a48df904b899cb5cd7e62ee54be50922553fb20df561d96ed5d2ab23",
+      "bytes": 1229
+    },
+    {
+      "path": "app/frontend/src/lib/goLiveTypes.ts",
+      "artifact_type": "frontend_module",
+      "runtime": "browser",
+      "shipping_status": "unreviewed",
+      "review": "auto",
+      "sha256": "54ee732dbd251badf3f6979b07f9547ca7500702fe5c319b2d74a2b8e389c1ed",
+      "bytes": 1217
+    },
+    {
       "path": "app/frontend/src/lib/guardrailsData.ts",
       "artifact_type": "frontend_module",
       "runtime": "browser",
@@ -3433,8 +3469,8 @@
       "runtime": "databricks-bundle",
       "shipping_status": "deployment",
       "review": "auto",
-      "sha256": "ee9d7d737823c1e4fd285921c98c3785c40f57c7fc709ea7a3dd8ac4607ce182",
-      "bytes": 67760
+      "sha256": "3d3ee684bd52a303a9cdf34823a95157c6f50cb02d030fbd670f7544134102f5",
+      "bytes": 68426
     },
     {
       "path": "docs/COVERAGE_MATRIX.md",
@@ -3478,8 +3514,8 @@
       "runtime": "n/a",
       "shipping_status": "documentation",
       "review": "auto",
-      "sha256": "94ada8fd32c46f7dca798fa8f3470fbc188eeadc31a2f6053b65edb597c4eb8c",
-      "bytes": 25159
+      "sha256": "bb391d8465bfbea9e7f46ddd58f08ba70844b175be67794165c5225c5f1c7f67",
+      "bytes": 29514
     },
     {
       "path": "docs/RFP_COMPLIANCE_RESPONSE.md",
@@ -5309,8 +5345,8 @@
       "runtime": "databricks-spark",
       "shipping_status": "setup",
       "review": "auto",
-      "sha256": "ace88c530be627d407edf3dc58fff9b01e3204648a36a2a926e2e22ecdf57128",
-      "bytes": 14689
+      "sha256": "d785bbc4a1f86e17332b6e7533373dad3d195d62eb4cbed63ea061767d4b6830",
+      "bytes": 14924
     },
     {
       "path": "notebooks/setup/07_seed_identity_fixtures.py",
@@ -5664,6 +5700,15 @@
       "bytes": 5617
     },
     {
+      "path": "tests/property/test_golive.py",
+      "artifact_type": "test",
+      "runtime": "python",
+      "shipping_status": "test",
+      "review": "auto",
+      "sha256": "8bd1ac60ec99d1fa65a15d726d6532f4f3548560368eec8b4c1355ba6c7018a2",
+      "bytes": 3626
+    },
+    {
       "path": "tests/property/test_governed_agent.py",
       "artifact_type": "test",
       "runtime": "python",
@@ -5885,8 +5930,8 @@
       "runtime": "python",
       "shipping_status": "test",
       "review": "auto",
-      "sha256": "8c596959b093f7dd679be97ce1af87c18449ad5687c689e144fc1d9d3f6ad784",
-      "bytes": 8879
+      "sha256": "6a07bbb2a389ad313c0dfe7a8d548043f053f2b7d57d51f0c27f1c8970cef262",
+      "bytes": 10393
     },
     {
       "path": "tests/security/test_tool_arg_validation.py",
@@ -5984,8 +6029,8 @@
       "runtime": "build-tooling",
       "shipping_status": "build_config",
       "review": "auto",
-      "sha256": "34859e9d53dd715171794f5aea755d7102d98b19740708278770a9a464590747",
-      "bytes": 3072
+      "sha256": "cb665d880db8765eab2b3499e5f6604687853ecdc4c205c93d24585c8a9e585b",
+      "bytes": 3069
     }
   ]
 }

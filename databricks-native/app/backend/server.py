@@ -37,6 +37,10 @@ from databricks import sql as databricks_sql
 from databricks.sdk import WorkspaceClient
 
 from backend.lakewatch import LakewatchConfig
+from backend import golive
+from backend.identity import IDENTITY_TABLES
+from backend.identity_custody import load_key as load_custody_key
+from backend.workflow_runner import allowed_hosts as workflow_allowed_hosts
 from backend.workflow_runner import WorkflowRunError, run_workflow
 from backend.audit import AuditPersistenceError, build_audit_record, persist_audit
 from backend.identity import build_identity_router
@@ -934,6 +938,101 @@ async def execute_workflow(request: Request):
         raise HTTPException(status_code=e.status, detail=e.message)
     logger.info("Workflow %s executed by %s: status=%s", workflow_id, payload["triggered_by"], result["status"])
     return {"execution_id": payload["execution_id"], **result}
+
+
+def _golive_auto_checks() -> dict:
+    """Measure every automated go-live check; a check that cannot be measured is 'unknown', never 'pass'."""
+    checks = {}
+    missing = CONFIG.missing_required()
+    checks["config"] = ("fail", "Missing: " + ", ".join(missing)) if missing else ("pass", "All required settings present")
+    if missing:
+        checks["warehouse"] = ("unknown", "Skipped until configuration is complete")
+    else:
+        probe = _warehouse_canary_probe()
+        ok = probe.get("state") == READINESS_READY
+        checks["warehouse"] = ("pass" if ok else "fail", str(probe.get("detail") or probe.get("state")))
+    mode = user_auth.DATA_ACCESS_MODE
+    checks["access_mode"] = ("pass", "On-behalf-of user") if mode == "user" else (
+        "warn", "Runs as the app service principal; per-user Unity Catalog rules do not apply")
+    checks["custody_key"] = ("pass", "Signing key loaded") if load_custody_key() else (
+        "fail", "No key: create the identity_custody_key secret (deploy.sh does this)")
+    checks["roles"] = ("pass", f"{len(ADMIN_EMAILS)} admin(s), {len(ANALYST_EMAILS)} analyst(s)") if ADMIN_EMAILS and ANALYST_EMAILS else (
+        "fail", "Set SOC_ADMIN_EMAILS and SOC_ANALYST_EMAILS")
+    checks["lakewatch"] = ("pass", f"{len(LAKEWATCH.tables)} table(s) in {LAKEWATCH.catalog}.{LAKEWATCH.schema}") if LAKEWATCH.configured else (
+        "warn", "; ".join(LAKEWATCH.problems()))
+    checks["llm"] = ("pass", LLM_ENDPOINT) if LLM_ENDPOINT else ("warn", "LLM_ENDPOINT is empty")
+    hosts = workflow_allowed_hosts()
+    checks["workflows"] = ("pass", f"{len(hosts)} host(s) allowed") if hosts else ("warn", "Workflow execution disabled")
+
+    if missing or checks["warehouse"][0] != "pass":
+        for cid in ("identity_tables", "identity_populated", "identity_sources"):
+            checks[cid] = ("unknown", "Needs a reachable warehouse")
+        return checks
+    try:
+        present = {r["table_name"] for r in query(
+            f"SELECT table_name FROM `{CATALOG}`.information_schema.tables WHERE table_schema = :s", {"s": SCHEMA})}
+        absent = [t for t in IDENTITY_TABLES if t not in present]
+        checks["identity_tables"] = ("fail", f"{len(absent)} missing, e.g. {absent[0]} - run setup notebook 06") if absent else (
+            "pass", f"All {len(IDENTITY_TABLES)} present")
+        if "identity_canonical" in present:
+            n = int(query(f"SELECT COUNT(*) AS cnt FROM {fqn('identity_canonical')}")[0]["cnt"])
+            checks["identity_populated"] = ("pass", f"{n:,} identities") if n else ("fail", "No identities yet - run the resolver job")
+        else:
+            checks["identity_populated"] = ("unknown", "identity_canonical is missing")
+        if "identity_source_health" in present:
+            n = int(query(f"SELECT COUNT(DISTINCT provider) AS cnt FROM {fqn('identity_source_health')}")[0]["cnt"])
+            checks["identity_sources"] = ("pass", f"{n} provider(s) reporting") if n else ("warn", "No provider has reported health")
+        else:
+            checks["identity_sources"] = ("unknown", "identity_source_health is missing")
+    except Exception as e:  # noqa: BLE001
+        ref = _internal_error(e).detail
+        for cid in ("identity_tables", "identity_populated", "identity_sources"):
+            checks.setdefault(cid, ("unknown", ref))
+    return checks
+
+
+def _golive_decisions() -> dict:
+    try:
+        rows = query(f"SELECT check_id, decision, note, decided_by, decided_at FROM {fqn('go_live_signoff')}")
+    except Exception as e:  # noqa: BLE001 - a missing table means nothing is signed yet
+        logger.warning("Go-live sign-offs unavailable: %s", type(e).__name__)
+        return {}
+    return golive.latest_decisions(rows)
+
+
+@app.get("/api/golive")
+async def golive_report(request: Request):
+    user = _get_user_from_request(request)
+    _require_analyst(user)
+    report = golive.evaluate(_golive_auto_checks(), _golive_decisions())
+    report["can_decide"] = bool(user.get("is_admin"))
+    report["evaluated_at"] = datetime.now(timezone.utc).isoformat()
+    return report
+
+
+@app.post("/api/golive/{check_id}")
+async def golive_decide(check_id: str, request: Request):
+    """Admins sign or waive a check. Append-only and audited before it is recorded."""
+    user = _get_user_from_request(request)
+    _require_admin(user)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+    decision = str(body.get("decision", "")).strip().lower()
+    note = str(body.get("note", "")).strip()[:1000]
+    problem = golive.validate_decision(check_id, decision, note)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    actor = user.get("email") or user.get("username")
+    _audit_log(user, f"golive_{decision}", "go_live_signoff", json.dumps({"check_id": check_id, "note": note}))
+    try:
+        execute_write(f"""
+            INSERT INTO {fqn('go_live_signoff')} (signoff_id, check_id, decision, note, decided_by, decided_at)
+            VALUES (:id, :cid, :d, :note, :by, current_timestamp())
+        """, {"id": str(uuid.uuid4()), "cid": check_id, "d": decision, "note": note, "by": actor})
+    except Exception as e:
+        raise _internal_error(e)
+    return {"check_id": check_id, "decision": decision, "decided_by": actor}
 
 
 QUERY_MAX_ROWS = 5000

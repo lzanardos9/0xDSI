@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, ShieldAlert, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, DollarSign, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom, Fingerprint, GitMerge, Bot, Share2, FlaskConical, Wrench, Globe2, UsersRound, MessageSquareText } from 'lucide-react';
+import { Shield, ShieldAlert, Activity, AlertTriangle, Users, Database, TrendingUp, Clock, Target, Workflow, Zap, Rss, Menu, X, ChevronRight, Globe, Briefcase, Scan, Calculator, Network, Brain, LogOut, Layers, CheckCircle2, ShieldCheck, DollarSign, BarChart3, Bug, Crosshair, Settings, FileText, BookOpen, Eye, LayoutGrid, Radar, Grid3x3 as Grid3X3, Sparkles, Gauge, Building2, GitBranch, Terminal, Server, FileBarChart, Coins, Swords, Atom, Fingerprint, GitMerge, Bot, Share2, FlaskConical, Wrench, Globe2, UsersRound, MessageSquareText, Rocket } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import OverviewDashboard from './overview/OverviewDashboard';
 import { trackView, setCurrentView } from '../lib/activityTracker';
@@ -76,6 +76,7 @@ import IdentityRisk from './identity/IdentityRisk';
 import AccessGraph from './identity/AccessGraph';
 import GroupContext from './identity/GroupContext';
 import WhatIfSimulator from './identity/WhatIfSimulator';
+import GoLiveReadiness from './identity/GoLiveReadiness';
 import FederationPosture from './identity/FederationPosture';
 import IdentityRemediation from './identity/IdentityRemediation';
 import IdentityAnswers from './identity/IdentityAnswers';
@@ -93,7 +94,7 @@ const Dashboard = () => {
 
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
-  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'attackuniverse' | 'id_overview' | 'id_explorer' | 'id_review' | 'id_nhi' | 'id_timeline' | 'id_risk' | 'id_graph' | 'id_groups' | 'id_whatif' | 'id_federation' | 'id_remediation' | 'id_answers'>('overview');
+  const [selectedView, setSelectedView] = useState<'overview' | 'lists' | 'events' | 'alerts' | 'cases' | 'workflows' | 'responses' | 'feeds' | 'iocs' | 'attackvectors' | 'patterns' | 'escalation' | 'vectorhunt' | 'topology' | 'agentbricks' | 'architecture' | 'threatmodeling' | 'userbehavior' | 'streaminggraph' | 'services' | 'vulnerabilities' | 'malwaresandbox' | 'redteam' | 'dataconnectors' | 'usermanagement' | 'settings' | 'reports' | 'executive' | 'ocsf' | 'compliance' | 'notebooks' | 'poisonguard' | 'docanalysis' | 'honeypot' | 'correlationrules' | 'soc3d' | 'dashboardstudio' | 'guardrails' | 'glasswing' | 'negcorrelation' | 'simulations' | 'financialthreat' | 'mitre' | 'entityinvestigation' | 'aisummarizer' | 'socoptimization' | 'multitenant' | 'aiplaybook' | 'responseapprovals' | 'stixtaxii' | 'advancedhunt' | 'sapconnector' | 'reportbuilder' | 'platformeconomics' | 'industrythreats' | 'featurelab' | 'mcp' | 'backdoordefense' | 'attackuniverse' | 'id_overview' | 'id_explorer' | 'id_review' | 'id_nhi' | 'id_timeline' | 'id_risk' | 'id_graph' | 'id_groups' | 'id_whatif' | 'id_federation' | 'id_remediation' | 'id_answers' | 'id_golive'>('overview');
   const [dashboardMode, setDashboardMode] = useState<'analytics' | 'commandcenter' | 'eventpipeline'>('analytics');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userRole, setUserRole] = useState<'analyst' | 'engineer' | 'admin' | 'ciso'>('admin');
@@ -364,6 +365,7 @@ const Dashboard = () => {
         { id: 'id_federation', label: 'Federation Posture', icon: Globe2 },
         { id: 'id_groups', label: 'Group Context', icon: UsersRound },
         { id: 'id_answers', label: 'Identity Answers', icon: MessageSquareText },
+        { id: 'id_golive', label: 'Go-Live Readiness', icon: Rocket },
       ]
     },
     {
@@ -741,6 +743,7 @@ const Dashboard = () => {
           {selectedView === 'id_whatif' && <WhatIfSimulator />}
           {selectedView === 'id_federation' && <FederationPosture />}
           {selectedView === 'id_remediation' && <IdentityRemediation />}
+          {selectedView === 'id_golive' && <GoLiveReadiness />}
           {selectedView === 'id_answers' && <IdentityAnswers onNavigate={(v) => setSelectedView(v as typeof selectedView)} />}
           {selectedView === 'aiplaybook' && <AIPlaybookGenerator />}
           {selectedView === 'stixtaxii' && <StixTaxiiManager />}

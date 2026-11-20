@@ -322,6 +322,9 @@ You must still grant in Unity Catalog, to the app service principal (and to user
 ### Lakewatch
 Lakewatch table names are workspace-specific and are not guessed. Set the bundle variables `lakewatch_catalog`, `lakewatch_schema` and `lakewatch_tables` (comma-separated). Until then `/api/lakewatch/*` returns a clear `lakewatch_not_configured` setup error and `/ready` reports `lakewatch.configured=false` (it does not block readiness).
 
+### Go-live gate (Identity > Go-Live Readiness)
+The app measures 11 automated checks live (settings, warehouse canary, access mode, custody key, roles, identity tables present and populated, source health, Lakewatch, model endpoint, webhook allowlist) and holds 6 sign-offs (UC grants, user authorization, security review, restore rehearsal, runbook, business approval). Admins sign or waive from the screen; every decision is audited and appended to `go_live_signoff` (created by setup notebook 06). Blockers cannot be waived; the verdict stays **Not ready** while any blocker is failing, unmeasured or unsigned. API: `GET /api/golive`, `POST /api/golive/{check_id}`.
+
 ### Diagnostics
 - App logs: workspace UI, Compute, Apps, the app, Logs; or `databricks apps logs <app-name>`.
 - `/ready` lists `missing_config` by setting name and the warehouse canary state.
